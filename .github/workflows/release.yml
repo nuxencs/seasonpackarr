@@ -1,0 +1,77 @@
+name: goreleaser
+
+on:
+  push:
+    branches:
+      - "develop"
+    tags:
+      - 'v*'
+  pull_request:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  goreleaserbuild:
+    name: Build Go binaries
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      # 1.20 is the last version to support Windows < 10, Server < 2016, and MacOS < 1.15.
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 'stable'
+          cache: true
+
+      - name: Run GoReleaser build
+        uses: goreleaser/goreleaser-action@v4
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean --skip-publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload assets
+        uses: actions/upload-artifact@v3
+        with:
+          name: seasonpackarr
+          path: dist/*
+  goreleaser:
+    name: Build and publish binaries
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      # 1.20 is the last version to support Windows < 10, Server < 2016, and MacOS < 1.15.
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 'stable'
+          cache: true
+
+      - name: Run GoReleaser build and publish tags
+        uses: goreleaser/goreleaser-action@v4
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload assets
+        uses: actions/upload-artifact@v3
+        with:
+          name: seasonpackarr
+          path: dist/*
