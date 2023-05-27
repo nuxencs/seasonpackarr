@@ -118,7 +118,7 @@ func getClient(req *request) error {
 		})
 
 		if err := c.(*qbittorrent.Client).Login(); err != nil {
-			log.Fatal().Msgf("failed to log into qBittorrent")
+			log.Fatal().Err(err).Msg("failed to log into qBittorrent")
 		}
 
 		clientMap.Store(s, c)
@@ -322,7 +322,7 @@ func createHardlink(srcPath string, trgPath string) {
 		log.Error().Err(err).Msgf("error creating target directory %s", trgDir)
 	}
 
-	if _, err := os.Stat(trgPath); os.IsNotExist(err) {
+	if _, err = os.Stat(trgPath); os.IsNotExist(err) {
 		// target file does not exist, create a hardlink
 		err = os.Link(srcPath, trgPath)
 		if err != nil {
