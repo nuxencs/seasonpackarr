@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -222,13 +223,15 @@ func handleSeasonPack(w http.ResponseWriter, r *http.Request) {
 						break
 					}
 
-					childPath := filepath.Join(child.t.SavePath, fileName)
-					packPath := filepath.Join(preImportPath, req.Name, fileName)
+					packDirName := formatSeasonPackTitle(req.Name)
 
-					http.Error(w, fmt.Sprintf("create hardlink of %q into folder %q\n",
-						childPath, packPath), 250)
+					childPath := filepath.Join(child.t.SavePath, fileName)
+					packPath := filepath.Join(preImportPath, packDirName, fileName)
 
 					createHardlink(childPath, packPath)
+
+					http.Error(w, fmt.Sprintf("created hardlink of %q into folder %q\n",
+						childPath, packPath), 250)
 					continue
 				}
 			}
@@ -248,7 +251,7 @@ func checkCandidates(requestrls, child *Entry) int {
 		if getFormattedTitle(rlsInClient) == getFormattedTitle(rlsRelease) {
 			if rlsInClient.Episode != rlsRelease.Episode {
 				// check if same episode and if season pack
-				log.Info().Msgf("create hardlink of %q into folder %q", rlsInClient, rlsRelease)
+				log.Info().Msgf("create hardlink of %q into season pack folder", rlsInClient)
 				return 250
 			}
 			log.Info().Msgf("release already exists in client")
@@ -303,4 +306,13 @@ func createHardlink(srcPath string, trgPath string) {
 	} else {
 		log.Error().Msgf("target file already exists, not creating hardlink for %s", srcPath)
 	}
+}
+
+func formatSeasonPackTitle(packName string) string {
+	// replace spaces with periods
+	packName = strings.ReplaceAll(packName, " ", ".")
+	// replace wrong audio naming
+	packName = strings.ReplaceAll(packName, "DDP.5.1", "DDP5.1")
+
+	return packName
 }
