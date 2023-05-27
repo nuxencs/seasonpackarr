@@ -4,6 +4,14 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/autobrr/go-qbittorrent"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -12,13 +20,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
-	"net/http"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
-	"sync"
-	"time"
+
+	"seasonpackarr/config"
 )
 
 type Entry struct {
@@ -48,10 +51,8 @@ type entryTime struct {
 }
 
 var (
-	userConfigDir, _ = os.UserConfigDir()
-	configPath       = filepath.Join(userConfigDir, "seasonpackarr")
-	clientMap        sync.Map
-	torrentMap       sync.Map
+	clientMap  sync.Map
+	torrentMap sync.Map
 )
 
 const usage = `seasonpackarr - Automatically hardlink downloaded episodes into a season folder once the season pack gets announced.
@@ -68,50 +69,18 @@ Provide a configuration file using one of the following methods:
 ` + "\n"
 
 func init() {
-	pflag.StringVarP(&configPath, "config", "c", configPath, "config file (default is ~/.config/seasonpackarr/config.toml)")
-
 	pflag.Usage = func() {
 		_, err := fmt.Fprint(flag.CommandLine.Output(), usage)
 		if err != nil {
 			return
 		}
 	}
-	pflag.Parse()
 
 	zerolog.TimeFieldFormat = time.RFC3339
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	log.Logger = zerolog.New(os.Stdout).With().Timestamp().Stack().Logger()
 
-	initConfig()
-}
-
-func initConfig() {
-	viper.AddConfigPath(configPath)
-	viper.SetConfigName("config")
-	viper.SetConfigType("toml")
-
-	viper.SetDefault("Host", "127.0.0.1")
-	viper.SetDefault("Port", 42069)
-	viper.SetDefault("PreImportPath", "")
-
-	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			err = viper.SafeWriteConfig()
-			if err != nil {
-				log.Fatal().Err(err).Msg("failed to write to config file")
-			}
-		} else {
-			log.Fatal().Err(err).Msg("failed to read config file")
-		}
-	}
-
-	if viper.GetString("PreImportPath") == "" {
-		log.Fatal().Msg("PreImportPath can't be empty, please provide a valid path to your pre import torrent directory")
-	}
-
-	if _, err := os.Stat(viper.GetString("PreImportPath")); os.IsNotExist(err) {
-		log.Fatal().Err(err).Msg("PreImportPath doesn't exist, please make sure you entered the correct path")
-	}
+	config.InitConfig()
 }
 
 func main() {
