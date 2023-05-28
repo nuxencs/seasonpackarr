@@ -68,9 +68,14 @@ func InitConfig() {
 	}
 
 	if _, err = os.Stat(configPath); os.IsNotExist(err) {
+		err = os.MkdirAll(filepath.Dir(configPath), os.ModePerm)
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to create config directory")
+		}
+
 		configFile, err2 := os.Create(configPath)
 		if err2 != nil {
-			log.Fatal().Err(err2).Msg("failed to create config configFile")
+			log.Fatal().Err(err2).Msg("failed to create config")
 		}
 		defer func(configFile *os.File) {
 			err2 = configFile.Close()
