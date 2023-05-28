@@ -76,7 +76,7 @@ sudo systemctl status seasonpackarr@$USER
 
 On first run it will create a default config, `~/.config/seasonpackarr/config.toml` that you will need to edit.
 
-After the config is edited you need to restart the service `sudo systemctl restart omegabrr@$USERNAME.service`.
+After the config is edited you need to restart the service `sudo systemctl restart seasonpackarr@$USER.service`.
 
 ## autobrr Filter setup
 
