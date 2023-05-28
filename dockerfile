@@ -45,7 +45,7 @@ RUN mkdir "${APP_DIR}" && \
 
 WORKDIR /config
 
-EXPOSE 8484
+EXPOSE 42069
 
 ENTRYPOINT ["seasonpackarr", "run", "--config", "/config/config.toml"]
 #CMD ["--config", "/config"]
