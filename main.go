@@ -2,13 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
-	"github.com/autobrr/go-qbittorrent"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/moistari/rls"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,6 +11,17 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/autobrr/go-qbittorrent"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/moistari/rls"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
+
+	"seasonpackarr/config"
 )
 
 type Entry struct {
@@ -45,17 +51,39 @@ type entryTime struct {
 }
 
 var (
-	torrentFilesPath = "/data/torrents"
-	preImportDir     = "tv-hd"
-	clientMap        sync.Map
-	torrentMap       sync.Map
+	clientMap  sync.Map
+	torrentMap sync.Map
 )
 
-func main() {
+const usage = `seasonpackarr - Automatically hardlink downloaded episodes into a season folder once the season pack gets announced.
+
+Usage:
+  seasonpackarr [flags]
+
+Flags:
+  -c, --config <path>  Path to configuration file (default is config.toml in the default user config directory)
+
+Provide a configuration file using one of the following methods:
+1. Use the --config <path> or -c <path> flag.
+2. Place a config.toml file in the default user configuration directory (e.g., ~/.config/seasonpackarr/).
+` + "\n"
+
+func init() {
+	pflag.Usage = func() {
+		_, err := fmt.Fprint(flag.CommandLine.Output(), usage)
+		if err != nil {
+			return
+		}
+	}
+
 	zerolog.TimeFieldFormat = time.RFC3339
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	log.Logger = zerolog.New(os.Stdout).With().Timestamp().Stack().Logger()
 
+	config.InitConfig()
+}
+
+func main() {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -68,9 +96,9 @@ func main() {
 	r.Get("/api/health", heartbeat)
 
 	r.Post("/api/pack", handleSeasonPack)
-	err := http.ListenAndServe(":42069", r)
+	err := http.ListenAndServe(fmt.Sprintf("%s:%d", viper.GetString("Host"), viper.GetInt("Port")), r)
 	if err != nil {
-		log.Fatal().Msgf("Error listening on port 42069: %s", err)
+		log.Fatal().Err(err).Msgf("failed to listen on %s:%d", viper.GetString("Host"), viper.GetInt("Port"))
 	}
 }
 
@@ -90,7 +118,7 @@ func getClient(req *request) error {
 		})
 
 		if err := c.(*qbittorrent.Client).Login(); err != nil {
-			log.Fatal().Msgf("Error logging into qBittorrent: %s", err)
+			log.Fatal().Err(err).Msg("failed to log into qBittorrent")
 		}
 
 		clientMap.Store(s, c)
@@ -209,8 +237,6 @@ func handleSeasonPack(w http.ResponseWriter, r *http.Request) {
 					break
 				}
 				if res == 250 {
-					preImportPath := filepath.Join(torrentFilesPath, preImportDir)
-
 					m, err := req.getFiles(child.t.Hash)
 					if err != nil {
 						fmt.Printf("Failed to get Files %q: %q\n", req.Name, err)
@@ -226,7 +252,7 @@ func handleSeasonPack(w http.ResponseWriter, r *http.Request) {
 					packDirName := formatSeasonPackTitle(req.Name)
 
 					childPath := filepath.Join(child.t.SavePath, fileName)
-					packPath := filepath.Join(preImportPath, packDirName, fileName)
+					packPath := filepath.Join(viper.GetString("PreImportPath"), packDirName, fileName)
 
 					createHardlink(childPath, packPath)
 
@@ -293,14 +319,14 @@ func createHardlink(srcPath string, trgPath string) {
 	trgDir := filepath.Dir(trgPath)
 	err := os.MkdirAll(trgDir, 0755)
 	if err != nil {
-		log.Error().Msgf("could not create target directory %s: %v", trgDir, err)
+		log.Error().Err(err).Msgf("error creating target directory %s", trgDir)
 	}
 
-	if _, err := os.Stat(trgPath); os.IsNotExist(err) {
+	if _, err = os.Stat(trgPath); os.IsNotExist(err) {
 		// target file does not exist, create a hardlink
 		err = os.Link(srcPath, trgPath)
 		if err != nil {
-			log.Error().Msgf("could not create hardlink for %s: %v", srcPath, err)
+			log.Error().Err(err).Msgf("error creating hardlink for %s", srcPath)
 		}
 		log.Info().Msgf("successfully created hardlink for %s", srcPath)
 	} else {
