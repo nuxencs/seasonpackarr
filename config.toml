@@ -1,0 +1,19 @@
+# config.toml
+
+# Hostname / IP
+#
+# Default: "0.0.0.0"
+#
+host = "0.0.0.0"
+
+# Port
+#
+# Default: 42069
+#
+port = 42069
+
+# Pre Import Path of qBittorrent for Sonarr
+#
+# Default: ""
+#
+preImportPath = ""
