@@ -1,11 +1,10 @@
 # seasonpackarr
 
-A companion app for autobrr that will automatically hardlink any files that match a pushed season pack.\
-At the moment the port and the directories are hardcoded, but I plan on making them configurable.
+A companion app for autobrr that will automatically hardlink already downloaded episodes into a season pack folder as\
+soon as the season pack gets announced. This way you don't have to download any episodes that you already have.
 
-
-Huge credit goes to [upgraderr](https://github.com/KyleSanderson/upgraderr) and specifically [@KyleSanderson](https://github.com/KyleSanderson), whose project provided great functions\
-that I could make use of.
+Huge credit goes to [upgraderr](https://github.com/KyleSanderson/upgraderr) and specifically [@KyleSanderson](https://github.com/KyleSanderson), whose project provided great\
+functions that I could make use of.
 
 ## Installation
 
