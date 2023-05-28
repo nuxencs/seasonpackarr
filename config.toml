@@ -13,6 +13,7 @@ host = "0.0.0.0"
 port = 42069
 
 # Pre Import Path of qBittorrent for Sonarr
+# Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
 #
 # Default: ""
 #

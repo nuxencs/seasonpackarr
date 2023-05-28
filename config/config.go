@@ -38,6 +38,7 @@ host = "{{ .Host }}"
 port = {{ .Port }}
 
 # Pre Import Path of qBittorrent for Sonarr
+# Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
 #
 # Default: ""
 #
