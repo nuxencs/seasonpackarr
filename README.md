@@ -72,3 +72,41 @@ sudo systemctl status seasonpackarr@$USER
 On first run it will create a default config, `~/.config/seasonpackarr/config.toml` that you will need to edit.
 
 After the config is edited you need to restart the service `sudo systemctl restart omegabrr@$USERNAME.service`.
+
+## autobrr Filter setup
+
+You can import this filter into your autobrr instance. Currently, seasonpackarr only supports one output folder, so if\
+you have multiple Sonarr instances with different pre import directories, you need to create multiple filters and run\
+multiple instances of seasonpackarr. The filter below is an example for a 1080p instance.
+
+```
+{
+    "name": "arr-Seasonpackarr",
+    "version": "1.0",
+    "data": {
+        "enabled": true,
+        "priority": 15,
+        "seasons": "1-99",
+        "episodes": "0",
+        "resolutions": [
+            "1080p",
+            "1080i"
+        ]
+    }
+}
+```
+
+After adding this filter, you need to go to the `External` tab and enable the `Webhook` functionality.\
+`Host` should look like this, with host and port from the config: `http://<host>:<port>/api/pack`.\
+`Expected HTTP status` has to be set to `250`. Finally, `Data (JSON)` needs to look like this, with the variables\
+replaced by your information:
+
+```
+{ "host":"http://<qbit_host>:<qbit_port>",
+  "user":"<qbit_user>",
+  "password":"<qbit_pass>",
+  "name":"{{ .TorrentName | js }}" }
+```
+
+Next you need to go to the `Actions` tab and select qBittorrent as the `Client` and your Sonarr pre import category\
+in the `Category` field. Last but not least, you should enable `Skip Hash Check` to catch the initial swarm.
