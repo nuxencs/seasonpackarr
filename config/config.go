@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"text/template"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -11,13 +12,41 @@ import (
 	"github.com/spf13/viper"
 )
 
+type Config struct {
+	Host          string
+	Port          int
+	PreImportPath string
+}
+
 var (
 	userConfigDir, _ = os.UserConfigDir()
-	configPath       = filepath.Join(userConfigDir, "seasonpackarr")
+	configPath       = filepath.Join(userConfigDir, "seasonpackarr", "config.toml")
 )
 
+var configTemplate = `# config.toml
+
+# Hostname / IP
+#
+# Default: "0.0.0.0"
+#
+host = "{{ .Host }}"
+
+# Port
+#
+# Default: 42069
+#
+port = {{ .Port }}
+
+# Pre Import Path of qBittorrent for Sonarr
+# Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
+#
+# Default: ""
+#
+preImportPath = "{{ .PreImportPath }}"
+`
+
 func init() {
-	pflag.StringVarP(&configPath, "config", "c", configPath, "config file location (default is ~/.config/seasonpackarr/config.toml)")
+	pflag.StringVarP(&configPath, "config", "c", configPath, "config file (default is ~/.config/seasonpackarr/config.toml)")
 
 	pflag.Parse()
 
@@ -27,23 +56,38 @@ func init() {
 }
 
 func InitConfig() {
-	viper.AddConfigPath(configPath)
-	viper.SetConfigName("config")
-	viper.SetConfigType("toml")
+	defaultConfig := Config{
+		Host:          "0.0.0.0",
+		Port:          42069,
+		PreImportPath: "",
+	}
 
-	viper.SetDefault("Host", "127.0.0.1")
-	viper.SetDefault("Port", 42069)
-	viper.SetDefault("PreImportPath", "")
+	tmpl, err := template.New("config").Parse(configTemplate)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to create config template")
+	}
 
-	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			err = viper.SafeWriteConfig()
-			if err != nil {
-				log.Fatal().Err(err).Msg("failed to write to config file")
-			}
-		} else {
-			log.Fatal().Err(err).Msg("failed to read config file")
+	if _, err = os.Stat(configPath); os.IsNotExist(err) {
+		configFile, err2 := os.Create(configPath)
+		if err2 != nil {
+			log.Fatal().Err(err2).Msg("failed to create config configFile")
 		}
+		defer func(configFile *os.File) {
+			err2 = configFile.Close()
+			if err2 != nil {
+				log.Fatal().Err(err2).Msg("failed to close config configFile")
+			}
+		}(configFile)
+
+		err2 = tmpl.Execute(configFile, defaultConfig)
+		if err2 != nil {
+			log.Fatal().Err(err2).Msg("failed to apply template to config configFile")
+		}
+	}
+
+	viper.SetConfigFile(configPath)
+	if err = viper.ReadInConfig(); err != nil {
+		log.Fatal().Err(err).Msg("failed to read from config file")
 	}
 
 	if viper.GetString("PreImportPath") == "" {
