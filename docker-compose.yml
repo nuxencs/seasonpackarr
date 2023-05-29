@@ -1,0 +1,10 @@
+version: '3.9'
+
+  services:
+    seasonpackarr:
+      container_name: seasonpackarr
+      image: ghcr.io/nuxencs/seasonpackarr:latest
+      user: ${PUID}:${PGID} #UID and GID 
+      volumes:
+        - ${DOCKERCONFDIR}/seasonpackarr:/config #location of the config file
+        - ${DOCKERDATADIR}/torrents/cross-seeds:/data #PreImportPath can be /data or whatever, just needs to fit in the config file with docker 
