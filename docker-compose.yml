@@ -7,4 +7,4 @@ services:
     user: ${PUID}:${PGID} #UID and GID
     volumes:
       - ${DOCKERCONFDIR}/seasonpackarr:/config # location of the config file
-      - /data/torrents/tv-hd:/data/torrents/tv-hd # these need to be the path you want your season packs to sit at
+      - /data/torrents:/data/torrents # your torrent data directory
