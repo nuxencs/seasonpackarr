@@ -84,7 +84,8 @@ You find the docker image on the right side under "Packages"
 
 See `docker-compose.yml` for an example.
 
-Make sure you use the correct path you have mapped within the container in the config file.
+Make sure you use the correct path you have mapped within the container in the config file.\
+After the first start you will need to setup the created config file in your config directory and start the container again.
 
 ## autobrr Filter setup
 
