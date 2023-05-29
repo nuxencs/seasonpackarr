@@ -78,6 +78,15 @@ On first run it will create a default config, `~/.config/seasonpackarr/config.to
 
 After the config is edited you need to restart the service `sudo systemctl restart seasonpackarr@$USER.service`.
 
+### Docker
+
+You find the docker image on the right side under "Packages" 
+
+See `docker-compose.yml` for an example.
+
+Make sure you use the correct path you have mapped within the container in the config file. After the first start you\
+will need to setup the created config file in your config directory and start the container again.
+
 ## autobrr Filter setup
 
 You can import this filter into your autobrr instance. Currently, seasonpackarr only supports one output folder, so if\
