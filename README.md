@@ -76,7 +76,15 @@ sudo systemctl status seasonpackarr@$USER
 
 On first run it will create a default config, `~/.config/seasonpackarr/config.toml` that you will need to edit.
 
-After the config is edited you need to restart the service `sudo systemctl restart seasonpackarr@$USER.service`.
+After the config is edited you need to restart the service `sudo systemctl restart omegabrr@$USERNAME.service`.
+
+### Docker
+
+You find the docker image on the right side under "Packages" 
+
+See `docker-compose.yml` for an example.
+
+Make sure you use the correct path you have mapped within the container in the config file.
 
 ## autobrr Filter setup
 
