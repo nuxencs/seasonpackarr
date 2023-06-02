@@ -125,6 +125,5 @@ Next you need to go to the `Actions` tab and select qBittorrent as the `Client` 
 in the `Category` field. Last but not least, you should enable `Skip Hash Check` to catch the initial swarm.
 
 > **Warning**
-
-If you enable that option, you currently need to have all episodes of the pack downloaded already, otherwise the\
-season pack torrent will error in your qBittorrent client.
+> If you enable that option, you currently need to have all episodes of the pack downloaded already, otherwise the 
+> season pack torrent will error in your qBittorrent client.
