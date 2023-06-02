@@ -127,5 +127,5 @@ in the `Category` field. Last but not least, you should enable `Skip Hash Check`
 
 > **Warning**
 
-If you are skipping the hash check, you currently need to have all episodes of the pack downloaded already, otherwise\
-the season pack torrent will error in your qBittorrent client.
+If you enable that option, you currently need to have all episodes of the pack downloaded already, otherwise the\
+season pack torrent will error in your qBittorrent client.
