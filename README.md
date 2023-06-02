@@ -6,7 +6,6 @@ as the season pack gets announced. This way you won't have to download any episo
 Huge credit goes to [upgraderr](https://github.com/KyleSanderson/upgraderr) and specifically [@KyleSanderson](https://github.com/KyleSanderson), whose project provided great functions that I could\
 make use of.
 
-## A word of warning
 > **Warning**
 
 This application is still in the very early stages of development, so bugs to happen, especially with weird episode\
@@ -127,4 +126,6 @@ Next you need to go to the `Actions` tab and select qBittorrent as the `Client` 
 in the `Category` field. Last but not least, you should enable `Skip Hash Check` to catch the initial swarm.
 
 > **Warning**
-> If you are doing this, you currently need to have all episodes of the pack downloaded already, otherwise the season pack torrent will error in your qBittorrent client.
+
+If you are skipping the hash check, you currently need to have all episodes of the pack downloaded already, otherwise\
+the season pack torrent will error in your qBittorrent client.
