@@ -9,7 +9,7 @@ make use of.
 ## A word of warning
 
 This application is still in the very early stages of development, so bugs to happen, especially with weird episode\
-or season pack naming.
+or season pack naming. 
 
 ## Installation
 
@@ -123,4 +123,9 @@ replaced by your information:
 ```
 
 Next you need to go to the `Actions` tab and select qBittorrent as the `Client` and your Sonarr pre import category\
-in the `Category` field. Last but not least, you should enable `Skip Hash Check` to catch the initial swarm.
+in the `Category` field. Last but not least, you should enable `Skip Hash Check` to catch the initial swarm.\
+
+> **Warning**
+> **If you are doing this, you currently need to have all episodes of the pack downloaded already, otherwise the\
+season pack torrent will error in your qBittorrent client.**
+> 
