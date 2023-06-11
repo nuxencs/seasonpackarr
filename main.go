@@ -335,10 +335,15 @@ func createHardlink(srcPath string, trgPath string) {
 }
 
 func formatSeasonPackTitle(packName string) string {
+	reIllegal := regexp.MustCompile(`(?i)[\\/:"*?<>|]`)
+	reAudio := regexp.MustCompile(`(?i)DDP\.(\d\.\d)`)
+
+	// remove illegal characters
+	packName = reIllegal.ReplaceAllString(packName, "")
 	// replace spaces with periods
 	packName = strings.ReplaceAll(packName, " ", ".")
 	// replace wrong audio naming
-	packName = strings.ReplaceAll(packName, "DDP.5.1", "DDP5.1")
+	packName = reAudio.ReplaceAllString(packName, "DDP$1")
 
 	return packName
 }
