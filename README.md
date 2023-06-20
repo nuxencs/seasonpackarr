@@ -30,7 +30,7 @@ directory like `~/.bin`.
 tar -C /usr/bin -xzf seasonpackarr*.tar.gz
 ```
 
-This will extract `seasonpackarr` to `/usr/local/bin`.
+This will extract `seasonpackarr` to `/usr/bin`.
 Note: If the command fails, prefix it with `sudo ` and re-run again.
 
 #### Systemd (Recommended)
