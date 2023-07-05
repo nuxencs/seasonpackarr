@@ -2,9 +2,10 @@ package utils
 
 import (
 	"fmt"
-	"github.com/moistari/rls"
 	"regexp"
 	"strings"
+
+	"github.com/moistari/rls"
 )
 
 func GetFormattedTitle(r rls.Release) string {
