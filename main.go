@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +20,7 @@ import (
 	"github.com/spf13/viper"
 
 	"seasonpackarr/config"
+	"seasonpackarr/utils"
 )
 
 type Entry struct {
@@ -179,7 +178,7 @@ func (c *request) getAllTorrents() entryTime {
 			res.d[t.Name] = r
 		}
 
-		s := getFormattedTitle(r)
+		s := utils.GetFormattedTitle(r)
 		res.e[s] = append(res.e[s], Entry{t: t, r: r})
 	}
 
@@ -215,7 +214,7 @@ func handleSeasonPack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	requestrls := Entry{r: rls.ParseString(req.Name)}
-	if v, ok := mp.e[getFormattedTitle(requestrls.r)]; ok {
+	if v, ok := mp.e[utils.GetFormattedTitle(requestrls.r)]; ok {
 		existsInClient := false
 		for _, child := range v {
 			if rls.Compare(requestrls.r, child.r) == 0 {
@@ -249,7 +248,7 @@ func handleSeasonPack(w http.ResponseWriter, r *http.Request) {
 						break
 					}
 
-					packDirName := formatSeasonPackTitle(req.Name)
+					packDirName := utils.FormatSeasonPackTitle(req.Name)
 
 					childPath := filepath.Join(child.t.SavePath, fileName)
 					packPath := filepath.Join(viper.GetString("PreImportPath"), packDirName, fileName)
@@ -274,7 +273,7 @@ func checkCandidates(requestrls, child *Entry) int {
 	// check if season pack and no extension
 	if fmt.Sprint(rlsRelease.Type) == "series" && rlsRelease.Ext == "" {
 		// compare formatted titles
-		if getFormattedTitle(rlsInClient) == getFormattedTitle(rlsRelease) {
+		if utils.GetFormattedTitle(rlsInClient) == utils.GetFormattedTitle(rlsRelease) {
 			if rlsInClient.Episode != rlsRelease.Episode {
 				// check if same episode and if season pack
 				log.Info().Msgf("create hardlink of %q into season pack folder", rlsInClient)
@@ -287,31 +286,6 @@ func checkCandidates(requestrls, child *Entry) int {
 	// not season pack
 	log.Info().Msgf("not a season pack")
 	return 211
-}
-
-func getFormattedTitle(r rls.Release) string {
-	s := fmt.Sprintf("%s%d%d%s%s%s%s", rls.MustNormalize(r.Title), r.Year, r.Series,
-		rls.MustNormalize(r.Resolution), rls.MustNormalize(r.Source),
-		fmt.Sprintf("%s", r.HDR), r.Group)
-	for _, a := range r.Cut {
-		s += rls.MustNormalize(a)
-	}
-
-	for _, a := range r.Edition {
-		s += rls.MustNormalize(a)
-	}
-
-	for _, a := range r.Other {
-		s += rls.MustNormalize(a)
-	}
-
-	re := regexp.MustCompile(`(?i)(?:\d{3,4}p|Repack\d?|Proper\d?|Real)[-_. ](\w+)[-_. ]WEB`)
-	service := re.FindStringSubmatch(fmt.Sprintf("%q", r))
-	if len(service) > 1 {
-		s += rls.MustNormalize(service[1])
-	}
-
-	return s
 }
 
 func createHardlink(srcPath string, trgPath string) {
@@ -332,18 +306,4 @@ func createHardlink(srcPath string, trgPath string) {
 	} else {
 		log.Error().Msgf("target file already exists, not creating hardlink for %s", srcPath)
 	}
-}
-
-func formatSeasonPackTitle(packName string) string {
-	reIllegal := regexp.MustCompile(`(?i)[\\/:"*?<>|]`)
-	reAudio := regexp.MustCompile(`(?i)(AAC|DDP)\.(\d\.\d)`)
-
-	// remove illegal characters
-	packName = reIllegal.ReplaceAllString(packName, "")
-	// replace spaces with periods
-	packName = strings.ReplaceAll(packName, " ", ".")
-	// replace wrong audio naming
-	packName = reAudio.ReplaceAllString(packName, "$1$2")
-
-	return packName
 }
