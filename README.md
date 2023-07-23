@@ -7,7 +7,7 @@ Huge credit goes to [upgraderr](https://github.com/KyleSanderson/upgraderr) and 
 make use of.
 
 > **Warning**
-> This application is still in the very early stages of development, so bugs to happen, especially with weird episode 
+> This application is still in the very early stages of development, so expect bugs to happen, especially with weird episode 
 > or season pack naming.
 
 ## Installation
