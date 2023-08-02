@@ -30,30 +30,35 @@ builds:
         goarch: arm64
     main: ./main.go
     binary: seasonpackarr
-    ldflags:
-      - -s -w -X main.version={{ .Version }} -X main.commit={{ .ShortCommit }} -X main.date={{ .CommitDate }}
 
 archives:
-  - format: tar.gz
-    rlcp: true
+  - id: seasonpackarr
+    builds:
+      - seasonpackarr
+    format_overrides:
+      - goos: windows
+        format: zip
     files:
       - none*
     name_template: >-
       {{ .ProjectName }}_
-      {{- trim .Version }}_
-      {{- trim .Os }}_
+      {{- .Version }}_
+      {{- .Os }}_
       {{- if eq .Arch "amd64" }}x86_64
-      {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
-      {{- if .Arm }}v{{ .Arm }}{{ end }}
-    format_overrides:
-      - goos: windows
-        format: zip
 
 release:
   prerelease: auto
   footer: |
     **Full Changelog**: https://github.com/nuxencs/seasonpackarr/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+    ## Docker images
+
+    - `docker pull ghcr.io/nuxencs/seasonpackarr:{{ .Tag }}`
+
+    ## What to do next?
+    
+    - Read the [documentation](https://github.com/nuxencs/seasonpackarr#readme)
 
 checksum:
   name_template: '{{ .ProjectName }}_{{ .Version }}_checksums.txt'
