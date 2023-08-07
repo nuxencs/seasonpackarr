@@ -72,6 +72,11 @@ func Test_FormatSeasonPackTitle(t *testing.T) {
 			packName: "What If... S01 1080p DNSP WEB-DL DDP 5.1 H.264-FLUX",
 			want:     "What.If.S01.1080p.DNSP.WEB-DL.DDP5.1.H.264-FLUX",
 		},
+		{
+			name:     "pack_13",
+			packName: "Demon Slayer Kimetsu no Yaiba S04 2023 1080p WEB-DL AVC AAC 2.0 Dual Audio -ZR-",
+			want:     "Demon Slayer Kimetsu no Yaiba S04 2023 1080p WEB-DL AVC AAC 2.0 Dual Audio -ZR-",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

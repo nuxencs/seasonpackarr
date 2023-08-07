@@ -34,18 +34,25 @@ func GetFormattedTitle(r rls.Release) string {
 }
 
 func FormatSeasonPackTitle(packName string) string {
+	// regex for groups that don't need the folder name to be adjusted
+	reIgnoredRlsGrps := regexp.MustCompile(`(?i)(ZR)`)
+
 	reIllegal := regexp.MustCompile(`(?i)[\\/:"*?<>|]`)
 	reAudio := regexp.MustCompile(`(?i)(AAC|DDP)\.(\d\.\d)`)
 	reDots := regexp.MustCompile(`(?i)\.+`)
 
-	// remove illegal characters
-	packName = reIllegal.ReplaceAllString(packName, "")
-	// replace spaces with periods
-	packName = strings.ReplaceAll(packName, " ", ".")
-	// replace wrong audio naming
-	packName = reAudio.ReplaceAllString(packName, "$1$2")
-	// replace multiple dots with only one
-	packName = reDots.ReplaceAllString(packName, ".")
+	r := rls.ParseString(packName)
 
+	// check if RlsGrp of release is in ignore regex
+	if !reIgnoredRlsGrps.MatchString(r.Group) {
+		// remove illegal characters
+		packName = reIllegal.ReplaceAllString(packName, "")
+		// replace spaces with periods
+		packName = strings.ReplaceAll(packName, " ", ".")
+		// replace wrong audio naming
+		packName = reAudio.ReplaceAllString(packName, "$1$2")
+		// replace multiple dots with only one
+		packName = reDots.ReplaceAllString(packName, ".")
+	}
 	return packName
 }
