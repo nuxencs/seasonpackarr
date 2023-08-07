@@ -215,50 +215,49 @@ func handleSeasonPack(w http.ResponseWriter, r *http.Request) {
 
 	requestrls := Entry{r: rls.ParseString(req.Name)}
 	if v, ok := mp.e[utils.GetFormattedTitle(requestrls.r)]; ok {
-		existsInClient := false
 		for _, child := range v {
-			if rls.Compare(requestrls.r, child.r) == 0 {
-				existsInClient = true
+			if checkCandidates(&requestrls, &child) == 210 {
+				log.Info().Msgf("release already exists in client: %q", req.Name)
 				http.Error(w, fmt.Sprintf("release already exists in client: %q\n", req.Name), 210)
-				break
+				return
 			}
 		}
-		if !existsInClient {
-			for _, child := range v {
-				res := checkCandidates(&requestrls, &child)
+		for _, child := range v {
+			res := checkCandidates(&requestrls, &child)
 
-				if res == 210 {
-					http.Error(w, fmt.Sprintf("release already exists in client: %q\n", req.Name), 210)
-					break
-				}
-				if res == 211 {
-					http.Error(w, fmt.Sprintf("not a season pack: %q\n", req.Name), 211)
-					break
-				}
-				if res == 250 {
-					m, err := req.getFiles(child.t.Hash)
-					if err != nil {
-						fmt.Printf("Failed to get Files %q: %q\n", req.Name, err)
-						continue
-					}
-
-					fileName := ""
-					for _, v := range *m {
-						fileName = v.Name
-						break
-					}
-
-					packDirName := utils.FormatSeasonPackTitle(req.Name)
-
-					childPath := filepath.Join(child.t.SavePath, fileName)
-					packPath := filepath.Join(viper.GetString("PreImportPath"), packDirName, fileName)
-
-					createHardlink(childPath, packPath)
-
-					http.Error(w, fmt.Sprintf("created hardlink of %q into folder %q\n",
-						childPath, packPath), 250)
+			if res == 210 {
+				log.Info().Msgf("release already exists in client: %q", req.Name)
+				http.Error(w, fmt.Sprintf("release already exists in client: %q\n", req.Name), res)
+				break
+			}
+			if res == 211 {
+				log.Info().Msgf("not a season pack: %q", req.Name)
+				http.Error(w, fmt.Sprintf("not a season pack: %q\n", req.Name), res)
+				break
+			}
+			if res == 250 {
+				m, err := req.getFiles(child.t.Hash)
+				if err != nil {
+					log.Error().Err(err).Msgf("failed to get files for %q", req.Name)
 					continue
 				}
+
+				fileName := ""
+				for _, v := range *m {
+					fileName = v.Name
+					break
+				}
+
+				packDirName := utils.FormatSeasonPackTitle(req.Name)
+
+				childPath := filepath.Join(child.t.SavePath, fileName)
+				packPath := filepath.Join(viper.GetString("PreImportPath"), packDirName, fileName)
+
+				createHardlink(childPath, packPath)
+
+				http.Error(w, fmt.Sprintf("created hardlink of %q into folder %q\n",
+					childPath, packPath), res)
+				continue
 			}
 		}
 	} else {
@@ -274,17 +273,16 @@ func checkCandidates(requestrls, child *Entry) int {
 	if fmt.Sprint(rlsRelease.Type) == "series" && rlsRelease.Ext == "" {
 		// compare formatted titles
 		if utils.GetFormattedTitle(rlsInClient) == utils.GetFormattedTitle(rlsRelease) {
-			if rlsInClient.Episode != rlsRelease.Episode {
-				// check if same episode and if season pack
-				log.Info().Msgf("create hardlink of %q into season pack folder", rlsInClient)
-				return 250
+			// check if same episode
+			if rlsInClient.Episode == rlsRelease.Episode {
+				// release is already in client
+				return 210
 			}
-			log.Info().Msgf("release already exists in client")
-			return 210
+			// season pack with matching episodes
+			return 250
 		}
 	}
-	// not season pack
-	log.Info().Msgf("not a season pack")
+	// not a season pack
 	return 211
 }
 
