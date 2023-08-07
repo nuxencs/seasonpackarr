@@ -35,7 +35,7 @@ func GetFormattedTitle(r rls.Release) string {
 
 func FormatSeasonPackTitle(packName string) string {
 	// regex for groups that don't need the folder name to be adjusted
-	reIgnoredRlsGrps := regexp.MustCompile(`(?i)(ZR)`)
+	reIgnoredRlsGrps := regexp.MustCompile(`(?i)^(ZR)$`)
 
 	reIllegal := regexp.MustCompile(`(?i)[\\/:"*?<>|]`)
 	reAudio := regexp.MustCompile(`(?i)(AAC|DDP)\.(\d\.\d)`)
