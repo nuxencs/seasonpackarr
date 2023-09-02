@@ -18,3 +18,10 @@ port = 42069
 # Default: ""
 #
 preImportPath = ""
+
+# Boolean value to decide if the torrent file should be parsed for folder naming
+# autobrr filter needs to be adjusted according to the readme
+#
+# Default: false
+#
+parseTorrentFile = false

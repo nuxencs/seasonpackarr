@@ -13,9 +13,10 @@ import (
 )
 
 type Config struct {
-	Host          string
-	Port          int
-	PreImportPath string
+	Host             string
+	Port             int
+	PreImportPath    string
+	ParseTorrentFile bool
 }
 
 var (
@@ -43,6 +44,13 @@ port = {{ .Port }}
 # Default: ""
 #
 preImportPath = "{{ .PreImportPath }}"
+
+# Boolean value to decide if the torrent file should be parsed for folder naming
+# autobrr filter needs to be adjusted according to the readme
+#
+# Default: false
+#
+parseTorrentFile = {{ .ParseTorrentFile }}
 `
 
 func init() {
@@ -57,9 +65,10 @@ func init() {
 
 func InitConfig() {
 	defaultConfig := Config{
-		Host:          "0.0.0.0",
-		Port:          42069,
-		PreImportPath: "",
+		Host:             "0.0.0.0",
+		Port:             42069,
+		PreImportPath:    "",
+		ParseTorrentFile: false,
 	}
 
 	tmpl, err := template.New("config").Parse(configTemplate)
@@ -96,10 +105,10 @@ func InitConfig() {
 	}
 
 	if viper.GetString("PreImportPath") == "" {
-		log.Fatal().Msg("PreImportPath can't be empty, please provide a valid path to your pre import torrent directory")
+		log.Fatal().Msg("preImportPath can't be empty, please provide a valid path to your pre import torrent directory")
 	}
 
 	if _, err := os.Stat(viper.GetString("PreImportPath")); os.IsNotExist(err) {
-		log.Fatal().Err(err).Msg("PreImportPath doesn't exist, please make sure you entered the correct path")
+		log.Fatal().Err(err).Msg("preImportPath doesn't exist, please make sure you entered the correct path")
 	}
 }

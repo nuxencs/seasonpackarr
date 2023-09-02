@@ -13,6 +13,7 @@ import (
 	"github.com/autobrr/go-qbittorrent"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/j-muller/go-torrent-parser"
 	"github.com/moistari/rls"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -36,9 +37,9 @@ type request struct {
 	Host     string
 	Port     uint
 
-	Hash    string
-	Torrent json.RawMessage
-	Client  *qbittorrent.Client
+	Hash        string
+	TorrentPath string
+	Client      *qbittorrent.Client
 }
 
 type entryTime struct {
@@ -95,6 +96,7 @@ func main() {
 	r.Get("/api/health", heartbeat)
 
 	r.Post("/api/pack", handleSeasonPack)
+	r.Post("/api/push", handlePackPush)
 	err := http.ListenAndServe(fmt.Sprintf("%s:%d", viper.GetString("Host"), viper.GetInt("Port")), r)
 	if err != nil {
 		log.Fatal().Err(err).Msgf("failed to listen on %s:%d", viper.GetString("Host"), viper.GetInt("Port"))
@@ -190,6 +192,14 @@ func (c *request) getFiles(hash string) (*qbittorrent.TorrentFiles, error) {
 	return c.Client.GetFilesInformation(hash)
 }
 
+func (c *request) parseFolderName() string {
+	torrent, err := gotorrentparser.ParseFromFile(c.TorrentPath)
+	if err != nil {
+		log.Fatal().Err(err).Msg("unable to parse torrent file")
+	}
+	return torrent.Files[0].Path[0]
+}
+
 func handleSeasonPack(w http.ResponseWriter, r *http.Request) {
 	var req request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -214,54 +224,130 @@ func handleSeasonPack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	requestrls := Entry{r: rls.ParseString(req.Name)}
-	if v, ok := mp.e[utils.GetFormattedTitle(requestrls.r)]; ok {
-		for _, child := range v {
-			if checkCandidates(&requestrls, &child) == 210 {
-				log.Info().Msgf("release already exists in client: %q", req.Name)
-				http.Error(w, fmt.Sprintf("release already exists in client: %q\n", req.Name), 210)
-				return
-			}
+
+	v, ok := mp.e[utils.GetFormattedTitle(requestrls.r)]
+	if !ok {
+		http.Error(w, fmt.Sprintf("unique submission: %q\n", req.Name), 200)
+	}
+
+	packDirName := utils.FormatSeasonPackTitle(req.Name)
+
+	for _, child := range v {
+		if checkCandidates(&requestrls, &child) == 210 {
+			log.Info().Msgf("release already exists in client: %q", req.Name)
+			http.Error(w, fmt.Sprintf("release already exists in client: %q\n", req.Name), 210)
+			return
 		}
-		for _, child := range v {
-			res := checkCandidates(&requestrls, &child)
+	}
 
-			if res == 210 {
-				log.Info().Msgf("release already exists in client: %q", req.Name)
-				http.Error(w, fmt.Sprintf("release already exists in client: %q\n", req.Name), res)
-				break
-			}
-			if res == 211 {
-				log.Info().Msgf("not a season pack: %q", req.Name)
-				http.Error(w, fmt.Sprintf("not a season pack: %q\n", req.Name), res)
-				break
-			}
-			if res == 250 {
-				m, err := req.getFiles(child.t.Hash)
-				if err != nil {
-					log.Error().Err(err).Msgf("failed to get files for %q", req.Name)
-					continue
-				}
+	for _, child := range v {
+		res := checkCandidates(&requestrls, &child)
 
-				fileName := ""
-				for _, v := range *m {
-					fileName = v.Name
-					break
-				}
+		if res == 210 {
+			log.Info().Msgf("release already exists in client: %q", req.Name)
+			http.Error(w, fmt.Sprintf("release already exists in client: %q\n", req.Name), res)
+			break
+		}
 
-				packDirName := utils.FormatSeasonPackTitle(req.Name)
+		if res == 211 {
+			log.Info().Msgf("not a season pack: %q", req.Name)
+			http.Error(w, fmt.Sprintf("not a season pack: %q\n", req.Name), res)
+			break
+		}
 
-				childPath := filepath.Join(child.t.SavePath, fileName)
-				packPath := filepath.Join(viper.GetString("PreImportPath"), packDirName, fileName)
-
-				createHardlink(childPath, packPath)
-
-				http.Error(w, fmt.Sprintf("created hardlink of %q into folder %q\n",
-					childPath, packPath), res)
+		if res == 250 {
+			if viper.GetBool("ParseTorrentFile") {
+				log.Info().Msgf("episode %q matches season pack: %q", child.t.Name, req.Name)
+				http.Error(w, fmt.Sprintf("episode %q matches season pack: %q\n", child.t.Name, req.Name), res)
 				continue
 			}
+
+			m, err := req.getFiles(child.t.Hash)
+			if err != nil {
+				log.Error().Err(err).Msgf("failed to get files for %q", req.Name)
+				continue
+			}
+
+			fileName := ""
+			for _, v := range *m {
+				fileName = v.Name
+				break
+			}
+
+			childPath := filepath.Join(child.t.SavePath, fileName)
+			packPath := filepath.Join(viper.GetString("PreImportPath"), packDirName, fileName)
+
+			createHardlink(childPath, packPath)
+
+			http.Error(w, fmt.Sprintf("created hardlink of %q into folder %q\n", childPath, packPath), res)
+			continue
 		}
-	} else {
-		http.Error(w, fmt.Sprintf("unique submission: %q\n", req.Name), 200)
+	}
+}
+
+func handlePackPush(w http.ResponseWriter, r *http.Request) {
+	var req request
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), 470)
+		return
+	}
+
+	if len(req.Name) == 0 {
+		http.Error(w, fmt.Sprintf("No title passed.\n"), 469)
+		return
+	}
+
+	if err := getClient(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Unable to get client: %q\n", err), 471)
+		return
+	}
+
+	mp := req.getAllTorrents()
+	if mp.err != nil {
+		http.Error(w, fmt.Sprintf("Unable to get result: %q\n", mp.err), 468)
+		return
+	}
+
+	requestrls := Entry{r: rls.ParseString(req.Name)}
+
+	v, ok := mp.e[utils.GetFormattedTitle(requestrls.r)]
+	if !ok {
+		http.Error(w, fmt.Sprintf("Not a seasonpackarr submission: %q\n", req.Name), 420)
+		return
+	}
+
+	packDirName := req.parseFolderName()
+
+	for _, child := range v {
+		if checkCandidates(&requestrls, &child) == 210 {
+			log.Info().Msgf("release already exists in client: %q", req.Name)
+			http.Error(w, fmt.Sprintf("release already exists in client: %q\n", req.Name), 210)
+			return
+		}
+	}
+
+	for _, child := range v {
+		if checkCandidates(&requestrls, &child) == 250 {
+			m, err := req.getFiles(child.t.Hash)
+			if err != nil {
+				log.Error().Err(err).Msgf("failed to get files for %q", req.Name)
+				continue
+			}
+
+			fileName := ""
+			for _, v := range *m {
+				fileName = v.Name
+				break
+			}
+
+			childPath := filepath.Join(child.t.SavePath, fileName)
+			packPath := filepath.Join(viper.GetString("PreImportPath"), packDirName, fileName)
+
+			createHardlink(childPath, packPath)
+
+			http.Error(w, fmt.Sprintf("created hardlink of %q into folder %q\n", childPath, packPath), 250)
+			continue
+		}
 	}
 }
 
@@ -300,7 +386,7 @@ func createHardlink(srcPath string, trgPath string) {
 		if err != nil {
 			log.Error().Err(err).Msgf("error creating hardlink for %s", srcPath)
 		}
-		log.Info().Msgf("successfully created hardlink for %s", srcPath)
+		log.Info().Msgf("created hardlink of %q into folder %q", srcPath, trgPath)
 	} else {
 		log.Error().Msgf("target file already exists, not creating hardlink for %s", srcPath)
 	}
