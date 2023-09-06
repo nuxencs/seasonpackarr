@@ -214,23 +214,27 @@ func (c *request) getFiles(hash string) (*qbittorrent.TorrentFiles, error) {
 func handleSeasonPack(w http.ResponseWriter, r *http.Request) {
 	var req request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Error().Err(err).Msgf("error decoding request")
 		http.Error(w, err.Error(), 470)
 		return
 	}
 
 	if len(req.Name) == 0 {
-		http.Error(w, fmt.Sprintf("No title passed.\n"), 469)
+		log.Error().Msgf("no title passed")
+		http.Error(w, fmt.Sprintf("no title passed\n"), 469)
 		return
 	}
 
 	if err := getClient(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Unable to get client: %q\n", err), 471)
+		log.Error().Err(err).Msgf("unable to get client")
+		http.Error(w, fmt.Sprintf("unable to get client: %q\n", err), 471)
 		return
 	}
 
 	mp := req.getAllTorrents()
 	if mp.err != nil {
-		http.Error(w, fmt.Sprintf("Unable to get result: %q\n", mp.err), 468)
+		log.Error().Err(mp.err).Msgf("unable to get torrents")
+		http.Error(w, fmt.Sprintf("unable to get torrents: %q\n", mp.err), 468)
 		return
 	}
 
@@ -276,12 +280,13 @@ func handleSeasonPack(w http.ResponseWriter, r *http.Request) {
 
 				createHardlink(childPath, packPath)
 
-				http.Error(w, fmt.Sprintf("created hardlink of %q into folder %q\n",
+				http.Error(w, fmt.Sprintf("created hardlink of %q into %q\n",
 					childPath, packPath), res)
 				continue
 			}
 		}
 	} else {
+		log.Info().Msgf("unique submission: %q", req.Name)
 		http.Error(w, fmt.Sprintf("unique submission: %q\n", req.Name), 200)
 	}
 }
@@ -312,17 +317,17 @@ func createHardlink(srcPath string, trgPath string) {
 	trgDir := filepath.Dir(trgPath)
 	err := os.MkdirAll(trgDir, 0755)
 	if err != nil {
-		log.Error().Err(err).Msgf("error creating target directory %s", trgDir)
+		log.Error().Err(err).Msgf("error creating target directory: %s", trgDir)
 	}
 
 	if _, err = os.Stat(trgPath); os.IsNotExist(err) {
 		// target file does not exist, create a hardlink
 		err = os.Link(srcPath, trgPath)
 		if err != nil {
-			log.Error().Err(err).Msgf("error creating hardlink for %s", srcPath)
+			log.Error().Err(err).Msgf("error creating hardlink: %s", srcPath)
 		}
-		log.Info().Msgf("successfully created hardlink for %s", srcPath)
+		log.Info().Msgf("created hardlink of %q into %q", srcPath, trgPath)
 	} else {
-		log.Error().Msgf("target file already exists, not creating hardlink for %s", srcPath)
+		log.Error().Msgf("file already exists, not creating hardlink: %s", srcPath)
 	}
 }
