@@ -18,3 +18,35 @@ port = 42069
 # Default: ""
 #
 preImportPath = ""
+
+# seasonpackarr logs file
+# If not defined, logs to stdout
+# Make sure to use forward slashes and include the filename with extension. eg: "logs/seasonpackarr.log", "C:/seasonpackarr/logs/seasonpackarr.log"
+#
+# Optional
+#
+#logPath = "logs/seasonpackarr.log"
+
+# Log level
+#
+# Default: "DEBUG"
+#
+# Options: "ERROR", "DEBUG", "INFO", "WARN", "TRACE"
+#
+logLevel = "DEBUG"
+
+# Log Max Size
+#
+# Default: 50
+#
+# Max log size in megabytes
+#
+#logMaxSize = 50
+
+# Log Max Backups
+#
+# Default: 3
+#
+# Max amount of old log files
+#
+#logMaxBackups = 3

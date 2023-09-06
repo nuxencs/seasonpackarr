@@ -47,4 +47,4 @@ WORKDIR /config
 
 EXPOSE 42069
 
-ENTRYPOINT ["seasonpackarr", "--config", "/config/config.toml"]
+ENTRYPOINT ["seasonpackarr", "--config", "/config"]

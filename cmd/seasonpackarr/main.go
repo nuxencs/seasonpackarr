@@ -10,17 +10,16 @@ import (
 	"sync"
 	"time"
 
+	"seasonpackarr/internal/config"
+	"seasonpackarr/internal/logger"
+	"seasonpackarr/internal/utils"
+
 	"github.com/autobrr/go-qbittorrent"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/moistari/rls"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
-
-	"seasonpackarr/config"
-	"seasonpackarr/utils"
 )
 
 type Entry struct {
@@ -54,6 +53,13 @@ var (
 	torrentMap sync.Map
 )
 
+var (
+	log     logger.Logger
+	version = "dev"
+	commit  = ""
+	date    = ""
+)
+
 const usage = `seasonpackarr - Automatically hardlink downloaded episodes into a season folder once the season pack gets announced.
 
 Usage:
@@ -67,7 +73,8 @@ Provide a configuration file using one of the following methods:
 2. Place a config.toml file in the default user configuration directory (e.g., ~/.config/seasonpackarr/).
 ` + "\n"
 
-func init() {
+func main() {
+	var configPath string
 	pflag.Usage = func() {
 		_, err := fmt.Fprint(flag.CommandLine.Output(), usage)
 		if err != nil {
@@ -75,14 +82,28 @@ func init() {
 		}
 	}
 
-	zerolog.TimeFieldFormat = time.RFC3339
-	zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	log.Logger = zerolog.New(os.Stdout).With().Timestamp().Stack().Logger()
+	pflag.StringVar(&configPath, "config", "", "path to configuration file")
+	pflag.Parse()
 
-	config.InitConfig()
-}
+	// read config
+	cfg := config.New(configPath, version)
 
-func main() {
+	// init new logger
+	log = logger.New(cfg.Config)
+
+	if err := cfg.UpdateConfig(); err != nil {
+		log.Error().Err(err).Msgf("error updating config")
+	}
+
+	// init dynamic config
+	cfg.DynamicReload(log)
+
+	log.Info().Msgf("Starting seasonpackarr")
+	log.Info().Msgf("Version: %s", version)
+	log.Info().Msgf("Commit: %s", commit)
+	log.Info().Msgf("Build date: %s", date)
+	log.Info().Msgf("Log-level: %s", cfg.Config.LogLevel)
+
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -95,9 +116,9 @@ func main() {
 	r.Get("/api/health", heartbeat)
 
 	r.Post("/api/pack", handleSeasonPack)
-	err := http.ListenAndServe(fmt.Sprintf("%s:%d", viper.GetString("Host"), viper.GetInt("Port")), r)
+	err := http.ListenAndServe(fmt.Sprintf("%s:%d", viper.GetString("host"), viper.GetInt("port")), r)
 	if err != nil {
-		log.Fatal().Err(err).Msgf("failed to listen on %s:%d", viper.GetString("Host"), viper.GetInt("Port"))
+		log.Fatal().Err(err).Msgf("failed to listen on %s:%d", viper.GetString("host"), viper.GetInt("port"))
 	}
 }
 
@@ -251,7 +272,7 @@ func handleSeasonPack(w http.ResponseWriter, r *http.Request) {
 				packDirName := utils.FormatSeasonPackTitle(req.Name)
 
 				childPath := filepath.Join(child.t.SavePath, fileName)
-				packPath := filepath.Join(viper.GetString("PreImportPath"), packDirName, fileName)
+				packPath := filepath.Join(viper.GetString("preImportPath"), packDirName, fileName)
 
 				createHardlink(childPath, packPath)
 

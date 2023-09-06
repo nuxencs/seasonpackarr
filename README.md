@@ -49,7 +49,7 @@ After=syslog.target network-online.target
 Type=simple
 User=%i
 Group=%i
-ExecStart=/usr/bin/seasonpackarr --config=/home/%i/.config/seasonpackarr/config.toml
+ExecStart=/usr/bin/seasonpackarr --config=/home/%i/.config/seasonpackarr
 
 [Install]
 WantedBy=multi-user.target
