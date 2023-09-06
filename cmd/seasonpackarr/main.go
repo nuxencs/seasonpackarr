@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -60,27 +59,8 @@ var (
 	date    = ""
 )
 
-const usage = `seasonpackarr - Automatically hardlink downloaded episodes into a season folder once the season pack gets announced.
-
-Usage:
-  seasonpackarr [flags]
-
-Flags:
-  -c, --config <path>  Path to configuration file (default is config.toml in the default user config directory)
-
-Provide a configuration file using one of the following methods:
-1. Use the --config <path> or -c <path> flag.
-2. Place a config.toml file in the default user configuration directory (e.g., ~/.config/seasonpackarr/).
-` + "\n"
-
 func main() {
 	var configPath string
-	pflag.Usage = func() {
-		_, err := fmt.Fprint(flag.CommandLine.Output(), usage)
-		if err != nil {
-			return
-		}
-	}
 
 	pflag.StringVar(&configPath, "config", "", "path to configuration file")
 	pflag.Parse()
