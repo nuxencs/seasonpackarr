@@ -147,6 +147,7 @@ func (c *AppConfig) writeConfig(configPath string, configFile string) error {
 
 type Config interface {
 	UpdateConfig() error
+	DynamicReload(log logger.Logger)
 }
 
 type AppConfig struct {
