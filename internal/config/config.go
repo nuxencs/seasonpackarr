@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"text/template"
@@ -46,7 +47,7 @@ preImportPath = ""
 #
 # Optional
 #
-#logPath = "logs/seasonpackarr.log"
+#logPath = ""
 
 # Log level
 #
@@ -162,6 +163,15 @@ func New(configPath string, version string) *AppConfig {
 	c.Config.ConfigPath = configPath
 
 	c.load(configPath)
+	c.loadFromEnv()
+
+	if c.Config.PreImportPath == "" {
+		log.Fatal("preImportPath can't be empty, please provide a valid path to the directory you want seasonpacks to be hardlinked to")
+	}
+
+	if _, err := os.Stat(c.Config.PreImportPath); os.IsNotExist(err) {
+		log.Fatal("preImportPath doesn't exist, please make sure you entered the correct path")
+	}
 
 	return c
 }
@@ -178,6 +188,42 @@ func (c *AppConfig) defaults() {
 		LogMaxBackups: 3,
 	}
 
+}
+
+func (c *AppConfig) loadFromEnv() {
+	prefix := "SEASONPACKARR__"
+
+	envs := os.Environ()
+	for _, env := range envs {
+		if strings.HasPrefix(env, prefix) {
+			envPair := strings.SplitN(env, "=", 2)
+
+			if envPair[1] != "" {
+				switch envPair[0] {
+				case prefix + "HOST":
+					c.Config.Host = envPair[1]
+				case prefix + "PORT":
+					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
+						c.Config.Port = int(i)
+					}
+				case prefix + "PRE_IMPORT_PATH":
+					c.Config.PreImportPath = envPair[1]
+				case prefix + "LOG_LEVEL":
+					c.Config.LogLevel = envPair[1]
+				case prefix + "LOG_PATH":
+					c.Config.LogPath = envPair[1]
+				case prefix + "LOG_MAX_SIZE":
+					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
+						c.Config.LogMaxSize = int(i)
+					}
+				case prefix + "LOG_MAX_BACKUPS":
+					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
+						c.Config.LogMaxBackups = int(i)
+					}
+				}
+			}
+		}
+	}
 }
 
 func (c *AppConfig) load(configPath string) {
@@ -210,27 +256,9 @@ func (c *AppConfig) load(configPath string) {
 		viper.AddConfigPath("$HOME/.seasonpackarr")
 	}
 
-	viper.SetEnvPrefix("SEASONPACKARR")
-
 	// read config
 	if err := viper.ReadInConfig(); err != nil {
 		log.Printf("config read error: %q", err)
-	}
-
-	if viper.GetString("preImportPath") == "" {
-		log.Fatal("preImportPath can't be empty, please provide a valid path to the directory you want seasonpacks to be hardlinked to")
-	}
-
-	if _, err := os.Stat(viper.GetString("preImportPath")); os.IsNotExist(err) {
-		log.Fatal("preImportPath doesn't exist, please make sure you entered the correct path")
-	}
-
-	for _, key := range viper.AllKeys() {
-		envKey := strings.ToUpper(strings.ReplaceAll(key, ".", "_"))
-		err := viper.BindEnv(key, "SEASONPACKARR__"+envKey)
-		if err != nil {
-			log.Fatal("config: unable to bind env: " + err.Error())
-		}
 	}
 
 	if err := viper.Unmarshal(c.Config); err != nil {
@@ -262,19 +290,19 @@ func (c *AppConfig) DynamicReload(log logger.Logger) {
 }
 
 func (c *AppConfig) UpdateConfig() error {
-	file := path.Join(c.Config.ConfigPath, "config.toml")
+	filePath := path.Join(c.Config.ConfigPath, "config.toml")
 
-	f, err := os.ReadFile(file)
+	f, err := os.ReadFile(filePath)
 	if err != nil {
-		return errors.Wrap(err, "could not read config file: %s", file)
+		return errors.Wrap(err, "could not read config filePath: %s", filePath)
 	}
 
 	lines := strings.Split(string(f), "\n")
 	lines = c.processLines(lines)
 
 	output := strings.Join(lines, "\n")
-	if err := os.WriteFile(file, []byte(output), 0644); err != nil {
-		return errors.Wrap(err, "could not write config file: %s", file)
+	if err := os.WriteFile(filePath, []byte(output), 0644); err != nil {
+		return errors.Wrap(err, "could not write config file: %s", filePath)
 	}
 
 	return nil
