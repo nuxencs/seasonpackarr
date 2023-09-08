@@ -18,7 +18,6 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/moistari/rls"
 	"github.com/spf13/pflag"
-	"github.com/spf13/viper"
 )
 
 type Entry struct {
@@ -54,6 +53,7 @@ var (
 
 var (
 	log     logger.Logger
+	cfg     *config.AppConfig
 	version = "dev"
 	commit  = ""
 	date    = ""
@@ -66,7 +66,7 @@ func main() {
 	pflag.Parse()
 
 	// read config
-	cfg := config.New(configPath, version)
+	cfg = config.New(configPath, version)
 
 	// init new logger
 	log = logger.New(cfg.Config)
@@ -96,9 +96,9 @@ func main() {
 	r.Get("/api/health", heartbeat)
 
 	r.Post("/api/pack", handleSeasonPack)
-	err := http.ListenAndServe(fmt.Sprintf("%s:%d", viper.GetString("host"), viper.GetInt("port")), r)
+	err := http.ListenAndServe(fmt.Sprintf("%s:%d", cfg.Config.Host, cfg.Config.Port), r)
 	if err != nil {
-		log.Fatal().Err(err).Msgf("failed to listen on %s:%d", viper.GetString("host"), viper.GetInt("port"))
+		log.Fatal().Err(err).Msgf("failed to listen on %s:%d", cfg.Config.Host, cfg.Config.Port)
 	}
 }
 
@@ -256,7 +256,7 @@ func handleSeasonPack(w http.ResponseWriter, r *http.Request) {
 				packDirName := utils.FormatSeasonPackTitle(req.Name)
 
 				childPath := filepath.Join(child.t.SavePath, fileName)
-				packPath := filepath.Join(viper.GetString("preImportPath"), packDirName, fileName)
+				packPath := filepath.Join(cfg.Config.PreImportPath, packDirName, fileName)
 
 				createHardlink(childPath, packPath)
 
