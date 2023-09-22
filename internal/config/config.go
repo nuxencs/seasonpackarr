@@ -18,8 +18,8 @@ import (
 
 	"seasonpackarr/internal/domain"
 	"seasonpackarr/internal/logger"
+	"seasonpackarr/pkg/errors"
 
-	"github.com/autobrr/autobrr/pkg/errors"
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
 )
