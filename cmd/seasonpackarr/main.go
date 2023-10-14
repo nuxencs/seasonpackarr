@@ -193,6 +193,7 @@ func (c *request) getFiles(hash string) (*qbittorrent.TorrentFiles, error) {
 
 func handleSeasonPack(w http.ResponseWriter, r *http.Request) {
 	var req request
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Error().Err(err).Msgf("error decoding request")
 		http.Error(w, err.Error(), 470)
@@ -219,55 +220,56 @@ func handleSeasonPack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	requestrls := Entry{r: rls.ParseString(req.Name)}
-	if v, ok := mp.e[utils.GetFormattedTitle(requestrls.r)]; ok {
-		for _, child := range v {
-			if checkCandidates(&requestrls, &child) == 210 {
-				log.Info().Msgf("release already exists in client: %q", req.Name)
-				http.Error(w, fmt.Sprintf("release already exists in client: %q\n", req.Name), 210)
-				return
-			}
-		}
-		for _, child := range v {
-			res := checkCandidates(&requestrls, &child)
-
-			if res == 210 {
-				log.Info().Msgf("release already exists in client: %q", req.Name)
-				http.Error(w, fmt.Sprintf("release already exists in client: %q\n", req.Name), res)
-				break
-			}
-			if res == 211 {
-				log.Info().Msgf("not a season pack: %q", req.Name)
-				http.Error(w, fmt.Sprintf("not a season pack: %q\n", req.Name), res)
-				break
-			}
-			if res == 250 {
-				m, err := req.getFiles(child.t.Hash)
-				if err != nil {
-					log.Error().Err(err).Msgf("failed to get files for %q", req.Name)
-					continue
-				}
-
-				fileName := ""
-				for _, v := range *m {
-					fileName = v.Name
-					break
-				}
-
-				packDirName := utils.FormatSeasonPackTitle(req.Name)
-
-				childPath := filepath.Join(child.t.SavePath, fileName)
-				packPath := filepath.Join(cfg.Config.PreImportPath, packDirName, fileName)
-
-				createHardlink(childPath, packPath)
-
-				http.Error(w, fmt.Sprintf("created hardlink of %q into %q\n",
-					childPath, packPath), res)
-				continue
-			}
-		}
-	} else {
+	v, ok := mp.e[utils.GetFormattedTitle(requestrls.r)]
+	if !ok {
 		log.Info().Msgf("unique submission: %q", req.Name)
 		http.Error(w, fmt.Sprintf("unique submission: %q\n", req.Name), 200)
+	}
+
+	for _, child := range v {
+		if checkCandidates(&requestrls, &child) == 210 {
+			log.Info().Msgf("release already exists in client: %q", req.Name)
+			http.Error(w, fmt.Sprintf("release already exists in client: %q\n", req.Name), 210)
+			return
+		}
+	}
+
+	for _, child := range v {
+		switch res := checkCandidates(&requestrls, &child); res {
+		case 210:
+			log.Info().Msgf("release already exists in client: %q", req.Name)
+			http.Error(w, fmt.Sprintf("release already exists in client: %q\n", req.Name), res)
+			break
+
+		case 211:
+			log.Info().Msgf("not a season pack: %q", req.Name)
+			http.Error(w, fmt.Sprintf("not a season pack: %q\n", req.Name), res)
+			break
+
+		case 250:
+			m, err := req.getFiles(child.t.Hash)
+			if err != nil {
+				log.Error().Err(err).Msgf("failed to get files for %q", req.Name)
+				continue
+			}
+
+			fileName := ""
+			for _, v := range *m {
+				fileName = v.Name
+				break
+			}
+
+			packDirName := utils.FormatSeasonPackTitle(req.Name)
+
+			childPath := filepath.Join(child.t.SavePath, fileName)
+			packPath := filepath.Join(cfg.Config.PreImportPath, packDirName, fileName)
+
+			createHardlink(childPath, packPath)
+
+			http.Error(w, fmt.Sprintf("created hardlink of %q into %q\n",
+				childPath, packPath), res)
+			continue
+		}
 	}
 }
 
