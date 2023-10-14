@@ -38,6 +38,30 @@ host = "{{ .host }}"
 #
 port = 42069
 
+# qBittorrent Hostname / IP
+#
+# Default: "127.0.0.1"
+#
+qbitHost = "127.0.0.1"
+
+# qBittorrent Port
+#
+# Default: 8080
+#
+qbitPort = 8080
+
+# qBittorrent Username
+#
+# Default: "admin"
+#
+qbitUsername = "admin"
+
+# qBittorrent Password
+#
+# Default: "adminadmin"
+#
+qbitPassword = "adminadmin"
+
 # Pre Import Path of qBittorrent for Sonarr
 # Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
 #
@@ -182,14 +206,18 @@ func New(configPath string, version string) *AppConfig {
 
 func (c *AppConfig) defaults() {
 	c.Config = &domain.Config{
-		Version:       "dev",
-		Host:          "0.0.0.0",
-		Port:          42069,
-		PreImportPath: "",
-		LogLevel:      "DEBUG",
-		LogPath:       "",
-		LogMaxSize:    50,
-		LogMaxBackups: 3,
+		Version:               "dev",
+		Host:                  "0.0.0.0",
+		Port:                  42069,
+		TorrentClientHost:     "127.0.0.1",
+		TorrentClientPort:     8080,
+		TorrentClientUsername: "admin",
+		TorrentClientPassword: "adminadmin",
+		PreImportPath:         "",
+		LogLevel:              "DEBUG",
+		LogPath:               "",
+		LogMaxSize:            50,
+		LogMaxBackups:         3,
 	}
 
 }
@@ -210,6 +238,16 @@ func (c *AppConfig) loadFromEnv() {
 					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
 						c.Config.Port = int(i)
 					}
+				case prefix + "QBIT_HOST":
+					c.Config.TorrentClientHost = envPair[1]
+				case prefix + "QBIT_PORT":
+					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
+						c.Config.TorrentClientPort = int(i)
+					}
+				case prefix + "QBIT_USERNAME":
+					c.Config.TorrentClientUsername = envPair[1]
+				case prefix + "QBIT_PASSWORD":
+					c.Config.TorrentClientPassword = envPair[1]
 				case prefix + "PRE_IMPORT_PATH":
 					c.Config.PreImportPath = envPair[1]
 				case prefix + "LOG_LEVEL":

@@ -26,14 +26,7 @@ type Entry struct {
 }
 
 type request struct {
-	Name string
-
-	User     string
-	Password string
-	Host     string
-	Port     uint
-
-	Hash    string
+	Name    string
 	Torrent json.RawMessage
 	Client  *qbittorrent.Client
 }
@@ -104,17 +97,17 @@ func main() {
 
 func getClient(req *request) error {
 	s := qbittorrent.Config{
-		Host:     req.Host,
-		Username: req.User,
-		Password: req.Password,
+		Host:     fmt.Sprintf("http://%s:%d", cfg.Config.TorrentClientHost, cfg.Config.TorrentClientPort),
+		Username: cfg.Config.TorrentClientUsername,
+		Password: cfg.Config.TorrentClientPassword,
 	}
 
 	c, ok := clientMap.Load(s)
 	if !ok {
 		c = qbittorrent.NewClient(qbittorrent.Config{
-			Host:     req.Host,
-			Username: req.User,
-			Password: req.Password,
+			Host:     fmt.Sprintf("http://%s:%d", cfg.Config.TorrentClientHost, cfg.Config.TorrentClientPort),
+			Username: cfg.Config.TorrentClientUsername,
+			Password: cfg.Config.TorrentClientPassword,
 		})
 
 		if err := c.(*qbittorrent.Client).Login(); err != nil {
@@ -134,9 +127,9 @@ func heartbeat(w http.ResponseWriter, _ *http.Request) {
 
 func (c *request) getAllTorrents() entryTime {
 	set := qbittorrent.Config{
-		Host:     c.Host,
-		Username: c.User,
-		Password: c.Password,
+		Host:     fmt.Sprintf("http://%s:%d", cfg.Config.TorrentClientHost, cfg.Config.TorrentClientPort),
+		Username: cfg.Config.TorrentClientUsername,
+		Password: cfg.Config.TorrentClientPassword,
 	}
 
 	f := func() *entryTime {

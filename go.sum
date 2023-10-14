@@ -38,8 +38,6 @@ cloud.google.com/go/storage v1.14.0/go.mod h1:GrKmX003DSIwi9o29oFT7YDnHYwZoctc3f
 dmitri.shuralyov.com/gpu/mtl v0.0.0-20190408044501-666a987793e9/go.mod h1:H6x//7gZCb22OMCxBHrMx7a5I7Hp++hsVxbQ4BYO7hU=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
-github.com/autobrr/autobrr v1.28.0 h1:XwNYQ0t0sazQN9a7bTmZ9f4RtvafvbmaD7G8mD+W7nc=
-github.com/autobrr/autobrr v1.28.0/go.mod h1:4HA8l+XFmdRlgDDOPxssVRcnsDCLnFA46HT94+7dnWA=
 github.com/autobrr/go-qbittorrent v1.3.3 h1:kc48/hsmDgbrTVtlsNc7qXIQrDCkZ6CdBYQVtprU5l0=
 github.com/autobrr/go-qbittorrent v1.3.3/go.mod h1:z88B3+O/1/3doQABErvIOOxE4hjpmIpulu6XzDG/q78=
 github.com/avast/retry-go v3.0.0+incompatible h1:4SOWQ7Qs+oroOTQOYnAHqelpCO0biHSxpiH9JdtuBj0=
