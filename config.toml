@@ -12,6 +12,30 @@ host = "0.0.0.0"
 #
 port = 42069
 
+# qBittorrent Hostname / IP
+#
+# Default: "127.0.0.1"
+#
+qbitHost = "127.0.0.1"
+
+# qBittorrent Port
+#
+# Default: 8080
+#
+qbitPort = 8080
+
+# qBittorrent Username
+#
+# Default: "admin"
+#
+qbitUsername = "admin"
+
+# qBittorrent Password
+#
+# Default: "adminadmin"
+#
+qbitPassword = "adminadmin"
+
 # Pre Import Path of qBittorrent for Sonarr
 # Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
 #

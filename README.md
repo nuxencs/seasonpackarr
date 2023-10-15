@@ -49,7 +49,7 @@ After=syslog.target network-online.target
 Type=simple
 User=%i
 Group=%i
-ExecStart=/usr/bin/seasonpackarr --config=/home/%i/.config/seasonpackarr
+ExecStart=/usr/bin/seasonpackarr start --config=/home/%i/.config/seasonpackarr
 
 [Install]
 WantedBy=multi-user.target
@@ -100,13 +100,10 @@ You can import this filter into your autobrr instance. Currently, seasonpackarr 
 }
 ```
 
-After adding this filter, you need to go to the `External` tab and enable the `Webhook` functionality. `Host` should look like this, with host and port from the config: `http://<host>:<port>/api/pack`. `Expected HTTP status` has to be set to `250`. Finally `Data (JSON)` needs to look like this, with the variables replaced by your information:
+After adding this filter, you need to go to the `External` tab and enable the `Webhook` functionality. `Host` should look like this, with host and port from the config: `http://<host>:<port>/api/pack`. `Expected HTTP status` has to be set to `250`. Finally `Data (JSON)` needs to look like this:
 
 ```
-{ "host":"http://<qbit_host>:<qbit_port>",
-  "user":"<qbit_user>",
-  "password":"<qbit_pass>",
-  "name":"{{ .TorrentName | js }}" }
+{ "name":"{{ .TorrentName | js }}" }
 ```
 
 Next you need to go to the `Actions` tab and select qBittorrent as the `Client` and your Sonarr pre import category in the `Category` field. Last but not least, you should leave `Skip Hash Check` disabled to prevent any torrents added by seasonpackarr from erroring in your qBittorrent client when you are missing some episodes of a season.
