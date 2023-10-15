@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"seasonpackarr/internal/config"
 	"seasonpackarr/internal/logger"
 	"seasonpackarr/internal/utils"
+	"seasonpackarr/pkg/errors"
 
 	"github.com/autobrr/go-qbittorrent"
 	"github.com/go-chi/chi/v5"
@@ -52,46 +54,117 @@ var (
 	date    = ""
 )
 
+const usage = `seasonpackarr - Automagically hardlink already downloaded episode files into a season folder when a matching season pack announce hits autobrr.
+
+Usage:
+  seasonpackarr [command] [flags]
+
+Commands:
+  start          Start seasonpackarr
+  version        Print version info
+  help           Show this help message
+
+Flags:
+  -c, --config <path>  Path to configuration file (default is in the default user config directory)
+
+Provide a configuration file using one of the following methods:
+1. Use the --config <path> or -c <path> flag.
+2. Place a config.toml file in the default user configuration directory (e.g., ~/.config/seasonpackarr/).
+3. Place a config.toml file a folder inside your home directory (e.g., ~/.seasonpackarr/).
+4. Place a config.toml file in the directory of the binary.
+
+For more information and examples, visit https://github.com/nuxencs/seasonpackarr
+` + "\n"
+
+func init() {
+	pflag.Usage = func() {
+		fmt.Fprint(flag.CommandLine.Output(), usage)
+	}
+}
+
 func main() {
 	var configPath string
 
-	pflag.StringVar(&configPath, "config", "", "path to configuration file")
+	pflag.StringVarP(&configPath, "config", "c", "", "path to configuration file")
 	pflag.Parse()
 
-	// read config
-	cfg = config.New(configPath, version)
+	switch cmd := pflag.Arg(0); cmd {
+	case "version":
+		fmt.Printf("Version: %v\nCommit: %v\n", version, commit)
 
-	// init new logger
-	log = logger.New(cfg.Config)
+		// get the latest release tag from api
+		client := http.Client{
+			Timeout: 10 * time.Second,
+		}
 
-	if err := cfg.UpdateConfig(); err != nil {
-		log.Error().Err(err).Msgf("error updating config")
-	}
+		resp, err := client.Get("https://api.github.com/repos/nuxencs/seasonpackarr/releases/latest")
+		if err != nil {
+			if errors.Is(err, http.ErrHandlerTimeout) {
+				fmt.Println("Server timed out while fetching latest release from api")
+			} else {
+				fmt.Printf("Failed to fetch latest release from api: %v\n", err)
+			}
+			os.Exit(1)
+		}
+		defer resp.Body.Close()
 
-	// init dynamic config
-	cfg.DynamicReload(log)
+		// api returns 500 instead of 404 here
+		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusInternalServerError {
+			fmt.Print("No release found")
+			os.Exit(1)
+		}
 
-	log.Info().Msgf("Starting seasonpackarr")
-	log.Info().Msgf("Version: %s", version)
-	log.Info().Msgf("Commit: %s", commit)
-	log.Info().Msgf("Build date: %s", date)
-	log.Info().Msgf("Log-level: %s", cfg.Config.LogLevel)
+		var rel struct {
+			TagName string `json:"tag_name"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+			fmt.Printf("Failed to decode response from api: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Latest release: %v\n", rel.TagName)
 
-	r := chi.NewRouter()
+	case "start":
+		// read config
+		cfg = config.New(configPath, version)
 
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-	r.Use(middleware.URLFormat)
-	r.Use(middleware.Timeout(60 * time.Second))
+		// init new logger
+		log = logger.New(cfg.Config)
 
-	r.Get("/api/health", heartbeat)
+		if err := cfg.UpdateConfig(); err != nil {
+			log.Error().Err(err).Msgf("error updating config")
+		}
 
-	r.Post("/api/pack", handleSeasonPack)
-	err := http.ListenAndServe(fmt.Sprintf("%s:%d", cfg.Config.Host, cfg.Config.Port), r)
-	if err != nil {
-		log.Fatal().Err(err).Msgf("failed to listen on %s:%d", cfg.Config.Host, cfg.Config.Port)
+		// init dynamic config
+		cfg.DynamicReload(log)
+
+		log.Info().Msgf("Starting seasonpackarr")
+		log.Info().Msgf("Version: %s", version)
+		log.Info().Msgf("Commit: %s", commit)
+		log.Info().Msgf("Build date: %s", date)
+		log.Info().Msgf("Log-level: %s", cfg.Config.LogLevel)
+
+		r := chi.NewRouter()
+
+		r.Use(middleware.RequestID)
+		r.Use(middleware.RealIP)
+		r.Use(middleware.Logger)
+		r.Use(middleware.Recoverer)
+		r.Use(middleware.URLFormat)
+		r.Use(middleware.Timeout(60 * time.Second))
+
+		r.Get("/api/health", heartbeat)
+
+		r.Post("/api/pack", handleSeasonPack)
+		err := http.ListenAndServe(fmt.Sprintf("%s:%d", cfg.Config.Host, cfg.Config.Port), r)
+		if err != nil {
+			log.Fatal().Err(err).Msgf("failed to listen on %s:%d", cfg.Config.Host, cfg.Config.Port)
+		}
+
+	default:
+		pflag.Usage()
+		if cmd != "help" {
+			os.Exit(0)
+		}
 	}
 }
 
