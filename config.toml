@@ -74,3 +74,10 @@ logLevel = "DEBUG"
 # Max amount of old log files
 #
 #logMaxBackups = 3
+
+# API Token
+# If not defined, removes api authentication
+#
+# Optional
+#
+#apiToken = ""

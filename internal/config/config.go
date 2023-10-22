@@ -100,6 +100,13 @@ logLevel = "DEBUG"
 # Max amount of old log files
 #
 #logMaxBackups = 3
+
+# API Token
+# If not defined, removes api authentication
+#
+# Optional
+#
+#apiToken = ""
 `
 
 func (c *AppConfig) writeConfig(configPath string, configFile string) error {
@@ -206,20 +213,20 @@ func New(configPath string, version string) *AppConfig {
 
 func (c *AppConfig) defaults() {
 	c.Config = &domain.Config{
-		Version:               "dev",
-		Host:                  "0.0.0.0",
-		Port:                  42069,
-		TorrentClientHost:     "127.0.0.1",
-		TorrentClientPort:     8080,
-		TorrentClientUsername: "admin",
-		TorrentClientPassword: "adminadmin",
-		PreImportPath:         "",
-		LogLevel:              "DEBUG",
-		LogPath:               "",
-		LogMaxSize:            50,
-		LogMaxBackups:         3,
+		Version:       "dev",
+		Host:          "0.0.0.0",
+		Port:          42069,
+		QbitHost:      "127.0.0.1",
+		QbitPort:      8080,
+		QbitUsername:  "admin",
+		QbitPassword:  "adminadmin",
+		PreImportPath: "",
+		LogLevel:      "DEBUG",
+		LogPath:       "",
+		LogMaxSize:    50,
+		LogMaxBackups: 3,
+		APIToken:      "",
 	}
-
 }
 
 func (c *AppConfig) loadFromEnv() {
@@ -239,15 +246,15 @@ func (c *AppConfig) loadFromEnv() {
 						c.Config.Port = int(i)
 					}
 				case prefix + "QBIT_HOST":
-					c.Config.TorrentClientHost = envPair[1]
+					c.Config.QbitHost = envPair[1]
 				case prefix + "QBIT_PORT":
 					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
-						c.Config.TorrentClientPort = int(i)
+						c.Config.QbitPort = int(i)
 					}
 				case prefix + "QBIT_USERNAME":
-					c.Config.TorrentClientUsername = envPair[1]
+					c.Config.QbitUsername = envPair[1]
 				case prefix + "QBIT_PASSWORD":
-					c.Config.TorrentClientPassword = envPair[1]
+					c.Config.QbitPassword = envPair[1]
 				case prefix + "PRE_IMPORT_PATH":
 					c.Config.PreImportPath = envPair[1]
 				case prefix + "LOG_LEVEL":
@@ -262,6 +269,8 @@ func (c *AppConfig) loadFromEnv() {
 					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
 						c.Config.LogMaxBackups = int(i)
 					}
+				case prefix + "API_TOKEN":
+					c.Config.APIToken = envPair[1]
 				}
 			}
 		}

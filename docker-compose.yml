@@ -17,6 +17,7 @@ services:
       - SEASONPACKARR__LOG_PATH=
       - SEASONPACKARR__LOG_MAX_SIZE=
       - SEASONPACKARR__LOG_MAX_BACKUPS=
+      - SEASONPACKARR__API_TOKEN=
     volumes:
       - ${DOCKERCONFDIR}/seasonpackarr:/config # location of the config file
       - /data/torrents:/data/torrents # your torrent data directory

@@ -6,6 +6,8 @@ require (
 	github.com/autobrr/go-qbittorrent v1.3.3
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/go-chi/chi/v5 v5.0.8
+	github.com/go-chi/render v1.0.3
+	github.com/google/uuid v1.1.2
 	github.com/moistari/rls v0.5.9
 	github.com/pkg/errors v0.9.1
 	github.com/rs/zerolog v1.30.0
@@ -16,6 +18,7 @@ require (
 )
 
 require (
+	github.com/ajg/form v1.5.1 // indirect
 	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
