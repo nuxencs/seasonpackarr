@@ -172,6 +172,8 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 		netHTTP.Error(w, fmt.Sprintf("unique submission: %q", p.req.Name), 200)
 	}
 
+	packDirName := utils.FormatSeasonPackTitle(p.req.Name)
+
 	for _, child := range v {
 		if checkCandidates(&requestrls, &child) == 210 {
 			p.log.Info().Msgf("release already exists in client: %q", p.req.Name)
@@ -204,8 +206,6 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 				fileName = v.Name
 				break
 			}
-
-			packDirName := utils.FormatSeasonPackTitle(p.req.Name)
 
 			childPath := filepath.Join(child.t.SavePath, fileName)
 			packPath := filepath.Join(p.cfg.Config.PreImportPath, packDirName, fileName)
