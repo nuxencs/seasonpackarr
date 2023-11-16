@@ -126,18 +126,11 @@ func main() {
 		}()
 
 		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGKILL, syscall.SIGTERM)
+		signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
 
 		for sig := range sigCh {
-			switch sig {
-			case syscall.SIGHUP:
-				log.Log().Msg("shutting down server sighup")
-				os.Exit(1)
-			case syscall.SIGINT, syscall.SIGQUIT:
-				os.Exit(1)
-			case syscall.SIGKILL, syscall.SIGTERM:
-				os.Exit(1)
-			}
+			log.Info().Msgf("received signal: %v, shutting down server.", sig)
+			os.Exit(0)
 		}
 
 	default:
