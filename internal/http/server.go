@@ -43,12 +43,12 @@ func (s Server) Handler() http.Handler {
 	r.Use(middleware.URLFormat)
 	r.Use(middleware.Timeout(60 * time.Second))
 
-	r.Get("/api/healthz", s.handleHealth)
+	r.Route("/api", func(r chi.Router) {
+		r.Get("/healthz", s.handleHealth)
 
-	r.Group(func(r chi.Router) {
-		r.Use(s.isAuthenticated)
+		r.Group(func(r chi.Router) {
+			r.Use(s.isAuthenticated)
 
-		r.Route("/api", func(r chi.Router) {
 			r.Route("/", newWebhookHandler(s.log, s.cfg).Routes)
 		})
 	})
