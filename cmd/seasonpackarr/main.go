@@ -2,306 +2,141 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
-	"net/http"
+	netHTTP "net/http"
 	"os"
-	"path/filepath"
-	"sync"
+	"os/signal"
+	"syscall"
 	"time"
 
-	"github.com/autobrr/go-qbittorrent"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/moistari/rls"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
+	"seasonpackarr/internal/api"
+	"seasonpackarr/internal/config"
+	"seasonpackarr/internal/http"
+	"seasonpackarr/internal/logger"
+	"seasonpackarr/pkg/errors"
+
 	"github.com/spf13/pflag"
-	"github.com/spf13/viper"
-
-	"seasonpackarr/config"
-	"seasonpackarr/utils"
 )
-
-type Entry struct {
-	t qbittorrent.Torrent
-	r rls.Release
-}
-
-type request struct {
-	Name string
-
-	User     string
-	Password string
-	Host     string
-	Port     uint
-
-	Hash    string
-	Torrent json.RawMessage
-	Client  *qbittorrent.Client
-}
-
-type entryTime struct {
-	e   map[string][]Entry
-	d   map[string]rls.Release
-	t   time.Time
-	err error
-	sync.Mutex
-}
 
 var (
-	clientMap  sync.Map
-	torrentMap sync.Map
+	version = "dev"
+	commit  = ""
+	date    = ""
 )
 
-const usage = `seasonpackarr - Automatically hardlink downloaded episodes into a season folder once the season pack gets announced.
+const usage = `seasonpackarr - Automagically hardlink already downloaded episode files into a season folder when a matching season pack announce hits autobrr.
 
 Usage:
-  seasonpackarr [flags]
+  seasonpackarr [command] [flags]
+
+Commands:
+  start          Start seasonpackarr
+  gen-token      Generate an API Token
+  version        Print version info
+  help           Show this help message
 
 Flags:
-  -c, --config <path>  Path to configuration file (default is config.toml in the default user config directory)
+  -c, --config <path> Path to configuration directory (default is in the default user config directory)
 
 Provide a configuration file using one of the following methods:
 1. Use the --config <path> or -c <path> flag.
 2. Place a config.toml file in the default user configuration directory (e.g., ~/.config/seasonpackarr/).
+3. Place a config.toml file a folder inside your home directory (e.g., ~/.seasonpackarr/).
+4. Place a config.toml file in the directory of the binary.
+
+For more information and examples, visit https://github.com/nuxencs/seasonpackarr
 ` + "\n"
 
 func init() {
 	pflag.Usage = func() {
-		_, err := fmt.Fprint(flag.CommandLine.Output(), usage)
-		if err != nil {
-			return
-		}
+		fmt.Print(usage)
 	}
-
-	zerolog.TimeFieldFormat = time.RFC3339
-	zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	log.Logger = zerolog.New(os.Stdout).With().Timestamp().Stack().Logger()
-
-	config.InitConfig()
 }
 
 func main() {
-	r := chi.NewRouter()
+	var configPath string
 
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-	r.Use(middleware.URLFormat)
-	r.Use(middleware.Timeout(60 * time.Second))
+	pflag.StringVarP(&configPath, "config", "c", "", "path to configuration directory")
+	pflag.Parse()
 
-	r.Get("/api/health", heartbeat)
+	switch cmd := pflag.Arg(0); cmd {
+	case "version":
+		fmt.Printf("Version: %v\nCommit: %v\n", version, commit)
 
-	r.Post("/api/pack", handleSeasonPack)
-	err := http.ListenAndServe(fmt.Sprintf("%s:%d", viper.GetString("Host"), viper.GetInt("Port")), r)
-	if err != nil {
-		log.Fatal().Err(err).Msgf("failed to listen on %s:%d", viper.GetString("Host"), viper.GetInt("Port"))
-	}
-}
-
-func getClient(req *request) error {
-	s := qbittorrent.Config{
-		Host:     req.Host,
-		Username: req.User,
-		Password: req.Password,
-	}
-
-	c, ok := clientMap.Load(s)
-	if !ok {
-		c = qbittorrent.NewClient(qbittorrent.Config{
-			Host:     req.Host,
-			Username: req.User,
-			Password: req.Password,
-		})
-
-		if err := c.(*qbittorrent.Client).Login(); err != nil {
-			log.Fatal().Err(err).Msg("failed to log into qBittorrent")
+		// get the latest release tag from api
+		client := netHTTP.Client{
+			Timeout: 10 * time.Second,
 		}
 
-		clientMap.Store(s, c)
-	}
-
-	req.Client = c.(*qbittorrent.Client)
-	return nil
-}
-
-func heartbeat(w http.ResponseWriter, _ *http.Request) {
-	http.Error(w, "alive", 200)
-}
-
-func (c *request) getAllTorrents() entryTime {
-	set := qbittorrent.Config{
-		Host:     c.Host,
-		Username: c.User,
-		Password: c.Password,
-	}
-
-	f := func() *entryTime {
-		te, ok := torrentMap.Load(set)
-		if ok {
-			return te.(*entryTime)
-		}
-
-		res := &entryTime{d: make(map[string]rls.Release)}
-		torrentMap.Store(set, res)
-		return res
-	}
-
-	res := f()
-	cur := time.Now()
-	if res.t.After(cur) {
-		return *res
-	}
-
-	res.Lock()
-	defer res.Unlock()
-
-	res = f()
-	if res.t.After(cur) {
-		return *res
-	}
-
-	torrents, err := c.Client.GetTorrents(qbittorrent.TorrentFilterOptions{})
-	if err != nil {
-		return entryTime{err: err}
-	}
-
-	nt := time.Now()
-	res = &entryTime{e: make(map[string][]Entry), t: nt.Add(nt.Sub(cur)), d: res.d}
-
-	for _, t := range torrents {
-		r, ok := res.d[t.Name]
-		if !ok {
-			r = rls.ParseString(t.Name)
-			res.d[t.Name] = r
-		}
-
-		s := utils.GetFormattedTitle(r)
-		res.e[s] = append(res.e[s], Entry{t: t, r: r})
-	}
-
-	torrentMap.Store(set, res)
-	return *res
-}
-
-func (c *request) getFiles(hash string) (*qbittorrent.TorrentFiles, error) {
-	return c.Client.GetFilesInformation(hash)
-}
-
-func handleSeasonPack(w http.ResponseWriter, r *http.Request) {
-	var req request
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), 470)
-		return
-	}
-
-	if len(req.Name) == 0 {
-		http.Error(w, fmt.Sprintf("No title passed.\n"), 469)
-		return
-	}
-
-	if err := getClient(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Unable to get client: %q\n", err), 471)
-		return
-	}
-
-	mp := req.getAllTorrents()
-	if mp.err != nil {
-		http.Error(w, fmt.Sprintf("Unable to get result: %q\n", mp.err), 468)
-		return
-	}
-
-	requestrls := Entry{r: rls.ParseString(req.Name)}
-	if v, ok := mp.e[utils.GetFormattedTitle(requestrls.r)]; ok {
-		for _, child := range v {
-			if checkCandidates(&requestrls, &child) == 210 {
-				log.Info().Msgf("release already exists in client: %q", req.Name)
-				http.Error(w, fmt.Sprintf("release already exists in client: %q\n", req.Name), 210)
-				return
-			}
-		}
-		for _, child := range v {
-			res := checkCandidates(&requestrls, &child)
-
-			if res == 210 {
-				log.Info().Msgf("release already exists in client: %q", req.Name)
-				http.Error(w, fmt.Sprintf("release already exists in client: %q\n", req.Name), res)
-				break
-			}
-			if res == 211 {
-				log.Info().Msgf("not a season pack: %q", req.Name)
-				http.Error(w, fmt.Sprintf("not a season pack: %q\n", req.Name), res)
-				break
-			}
-			if res == 250 {
-				m, err := req.getFiles(child.t.Hash)
-				if err != nil {
-					log.Error().Err(err).Msgf("failed to get files for %q", req.Name)
-					continue
-				}
-
-				fileName := ""
-				for _, v := range *m {
-					fileName = v.Name
-					break
-				}
-
-				packDirName := utils.FormatSeasonPackTitle(req.Name)
-
-				childPath := filepath.Join(child.t.SavePath, fileName)
-				packPath := filepath.Join(viper.GetString("PreImportPath"), packDirName, fileName)
-
-				createHardlink(childPath, packPath)
-
-				http.Error(w, fmt.Sprintf("created hardlink of %q into folder %q\n",
-					childPath, packPath), res)
-				continue
-			}
-		}
-	} else {
-		http.Error(w, fmt.Sprintf("unique submission: %q\n", req.Name), 200)
-	}
-}
-
-func checkCandidates(requestrls, child *Entry) int {
-	rlsRelease := requestrls.r
-	rlsInClient := child.r
-
-	// check if season pack and no extension
-	if fmt.Sprint(rlsRelease.Type) == "series" && rlsRelease.Ext == "" {
-		// compare formatted titles
-		if utils.GetFormattedTitle(rlsInClient) == utils.GetFormattedTitle(rlsRelease) {
-			// check if same episode
-			if rlsInClient.Episode == rlsRelease.Episode {
-				// release is already in client
-				return 210
-			}
-			// season pack with matching episodes
-			return 250
-		}
-	}
-	// not a season pack
-	return 211
-}
-
-func createHardlink(srcPath string, trgPath string) {
-	// create the target directory if it doesn't exist
-	trgDir := filepath.Dir(trgPath)
-	err := os.MkdirAll(trgDir, 0755)
-	if err != nil {
-		log.Error().Err(err).Msgf("error creating target directory %s", trgDir)
-	}
-
-	if _, err = os.Stat(trgPath); os.IsNotExist(err) {
-		// target file does not exist, create a hardlink
-		err = os.Link(srcPath, trgPath)
+		resp, err := client.Get("https://api.github.com/repos/nuxencs/seasonpackarr/releases/latest")
 		if err != nil {
-			log.Error().Err(err).Msgf("error creating hardlink for %s", srcPath)
+			if errors.Is(err, netHTTP.ErrHandlerTimeout) {
+				fmt.Println("Server timed out while fetching latest release from api")
+			} else {
+				fmt.Printf("Failed to fetch latest release from api: %v\n", err)
+			}
+			os.Exit(1)
 		}
-		log.Info().Msgf("successfully created hardlink for %s", srcPath)
-	} else {
-		log.Error().Msgf("target file already exists, not creating hardlink for %s", srcPath)
+		defer resp.Body.Close()
+
+		// api returns 500 instead of 404 here
+		if resp.StatusCode == netHTTP.StatusNotFound || resp.StatusCode == netHTTP.StatusInternalServerError {
+			fmt.Print("No release found")
+			os.Exit(1)
+		}
+
+		var rel struct {
+			TagName string `json:"tag_name"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+			fmt.Printf("Failed to decode response from api: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Latest release: %v\n", rel.TagName)
+
+	case "gen-token":
+		key := api.GenerateToken()
+		fmt.Printf("API Token: %v\nJust copy and paste it into your config file!\n", key)
+
+	case "start":
+		// read config
+		cfg := config.New(configPath, version)
+
+		// init new logger
+		log := logger.New(cfg.Config)
+
+		if err := cfg.UpdateConfig(); err != nil {
+			log.Error().Err(err).Msgf("error updating config")
+		}
+
+		// init dynamic config
+		cfg.DynamicReload(log)
+
+		srv := http.NewServer(log, cfg)
+
+		log.Info().Msgf("Starting seasonpackarr")
+		log.Info().Msgf("Version: %s", version)
+		log.Info().Msgf("Commit: %s", commit)
+		log.Info().Msgf("Build date: %s", date)
+		log.Info().Msgf("Log-level: %s", cfg.Config.LogLevel)
+
+		errorChannel := make(chan error)
+		go func() {
+			errorChannel <- srv.Open()
+		}()
+
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
+
+		for sig := range sigCh {
+			log.Info().Msgf("received signal: %v, shutting down server.", sig)
+			os.Exit(0)
+		}
+
+	default:
+		pflag.Usage()
+		if cmd != "help" {
+			os.Exit(0)
+		}
 	}
 }

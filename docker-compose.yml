@@ -3,8 +3,21 @@ version: '3.9'
 services:
   seasonpackarr:
     container_name: seasonpackarr
-    image: ghcr.io/nuxencs/seasonpackarr:develop
+    image: ghcr.io/nuxencs/seasonpackarr
     user: ${PUID}:${PGID} #UID and GID
+    environment:
+      - SEASONPACKARR__HOST=
+      - SEASONPACKARR__PORT=
+      - SEASONPACKARR__QBIT_HOST=
+      - SEASONPACKARR__QBIT_PORT=
+      - SEASONPACKARR__QBIT_USERNAME=
+      - SEASONPACKARR__QBIT_PASSWORD=
+      - SEASONPACKARR__PRE_IMPORT_PATH=
+      - SEASONPACKARR__LOG_LEVEL=
+      - SEASONPACKARR__LOG_PATH=
+      - SEASONPACKARR__LOG_MAX_SIZE=
+      - SEASONPACKARR__LOG_MAX_BACKUPS=
+      - SEASONPACKARR__API_TOKEN=
     volumes:
       - ${DOCKERCONFDIR}/seasonpackarr:/config # location of the config file
       - /data/torrents:/data/torrents # your torrent data directory

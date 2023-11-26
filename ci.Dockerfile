@@ -1,24 +1,24 @@
 # build app
-FROM golang:1.20-alpine3.18 AS app-builder
+FROM --platform=$BUILDPLATFORM golang:1.20-alpine3.18 AS app-builder
 
 ARG VERSION=dev
 ARG REVISION=dev
 ARG BUILDTIME
+ARG TARGETOS TARGETARCH
 
-RUN apk add --no-cache git build-base tzdata
+RUN apk add --no-cache git tzdata
 
 ENV SERVICE=seasonpackarr
 
 WORKDIR /src
 COPY . ./
 
-COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=target=. \
+    go mod download
 
-#ENV GOOS=linux
-ENV CGO_ENABLED=0
 
-RUN go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION} -X main.date=${BUILDTIME}" -o bin/seasonpackarr cmd/seasonpackarr/main.go
+RUN --mount=target=. \
+    GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION} -X main.date=${BUILDTIME}" -o /out/bin/seasonpackarr cmd/seasonpackarr/main.go
 
 # build runner
 FROM alpine:latest
@@ -35,7 +35,7 @@ WORKDIR /app
 
 VOLUME /config
 
-COPY --from=app-builder /src/bin/seasonpackarr /usr/bin/
+COPY --from=app-builder /out/bin/seasonpackarr /usr/bin/
 
 EXPOSE 42069
 
