@@ -36,7 +36,7 @@ Commands:
   help           Show this help message
 
 Flags:
-  -c, --config <path>  Path to configuration file (default is in the default user config directory)
+  -c, --config <path> Path to configuration directory (default is in the default user config directory)
 
 Provide a configuration file using one of the following methods:
 1. Use the --config <path> or -c <path> flag.
@@ -56,7 +56,7 @@ func init() {
 func main() {
 	var configPath string
 
-	pflag.StringVarP(&configPath, "config", "c", "", "path to configuration file")
+	pflag.StringVarP(&configPath, "config", "c", "", "path to configuration directory")
 	pflag.Parse()
 
 	switch cmd := pflag.Arg(0); cmd {
