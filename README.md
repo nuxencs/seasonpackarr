@@ -24,7 +24,7 @@ wget $(curl -s https://api.github.com/repos/nuxencs/seasonpackarr/releases/lates
 
 #### Unpack
 
-Run with `root` or `sudo`. If you do not have root, or are on a shared system, place the binaries somewhere in your home
+Run with `root` or `sudo`. If you do not have root, or are on a shared system, place the binary somewhere in your home
 directory like `~/.bin`.
 
 ```bash
@@ -39,7 +39,7 @@ Afterwards you need to make the binary executable by running the following comma
 chmod +x /usr/bin/seasonpackarr
 ```
 
-Note: If the commands fail, prefix them with sudo and run them again.
+Note: If the commands fail, prefix them with `sudo ` and run them again.
 
 #### Systemd (Recommended)
 
