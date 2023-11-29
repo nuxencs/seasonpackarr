@@ -34,6 +34,16 @@ tar -C /usr/bin -xzf seasonpackarr*.tar.gz
 This will extract `seasonpackarr` to `/usr/bin`.
 Note: If the command fails, prefix it with `sudo ` and re-run again.
 
+#### Make Executable
+
+Run with `root` or `sudo`. If you do not have root, or are on a shared system, place the binaries somewhere in your home
+directory like `~/.bin`.
+
+```bash
+chmod +x /usr/bin/seasonpackarr
+```
+Note: If the command fails, prefix it with `sudo ` and re-run again.
+
 #### Systemd (Recommended)
 
 On Linux-based systems, it is recommended to run seasonpackarr as a sort of service with auto-restarting capabilities,
