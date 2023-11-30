@@ -7,7 +7,7 @@ Huge credit goes to [upgraderr](https://github.com/KyleSanderson/upgraderr) and
 specifically [@KyleSanderson](https://github.com/KyleSanderson), whose project provided great functions that I could
 make use of.
 
-> **Warning**
+> [!WARNING]
 > This application is still in the very early stages of development, so expect bugs to happen, especially with weird
 > episode or season pack naming.
 
@@ -180,6 +180,6 @@ qBittorrent or also integrate with Sonarr, you'll need to complete either the `S
 Last but not least, under `Rules`, make sure that `Skip Hash Check` remains disabled. This precaution prevents torrents
 added by seasonpackarr from causing errors in your qBittorrent client when some episodes of a season are missing.
 
-> **Warning**
+> [!WARNING]
 > If you enable that option regardless, you will most likely have to deal with errored torrents, which would require you
 > to manually trigger a recheck on them to fix the issue.
