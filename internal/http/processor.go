@@ -153,7 +153,7 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 	clientIndex = findClientIndex(p.cfg.Config, p.req.ClientName)
 
 	if clientIndex == -1 {
-		p.log.Error().Msgf("client name %q not found in config, using first client ", p.req.ClientName)
+		p.log.Info().Msgf("client name %q not found in config file, using first client defined in config: %q ", p.req.ClientName, p.cfg.Config.Clients[0].Name)
 		clientIndex = 0
 	}
 
