@@ -191,7 +191,7 @@ type AppConfig struct {
 }
 
 func New(configPath string, version string) *AppConfig {
-	if _, err := os.Stat(filepath.Join(configPath, "config.toml")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(configPath, "config.toml")); err == nil {
 		log.Fatalf("A legacy 'config.toml' file has been detected. " +
 			"To continue, please migrate your configuration to the new 'config.yaml' format. " +
 			"You can easily do this by copying the settings from 'config.toml' to 'config.yaml' and then renaming 'config.toml' to 'config.toml.old'. " +
