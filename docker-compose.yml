@@ -5,6 +5,8 @@ services:
     container_name: seasonpackarr
     image: ghcr.io/nuxencs/seasonpackarr
     user: ${PUID}:${PGID} #UID and GID
+    ports:
+      - "42069:42069"
     environment:
       - SEASONPACKARR__HOST=
       - SEASONPACKARR__PORT=
