@@ -4,19 +4,24 @@
 
 package domain
 
+type Client struct {
+	Name          string `yaml:"name"`
+	Host          string `yaml:"host"`
+	Port          int    `yaml:"port"`
+	Username      string `yaml:"username"`
+	Password      string `yaml:"password"`
+	PreImportPath string `yaml:"preImportPath"`
+}
+
 type Config struct {
 	Version       string
 	ConfigPath    string
-	Host          string `toml:"host"`
-	Port          int    `toml:"port"`
-	QbitHost      string `toml:"qbitHost"`
-	QbitPort      int    `toml:"qbitPort"`
-	QbitUsername  string `toml:"qbitUsername"`
-	QbitPassword  string `toml:"qbitPassword"`
-	PreImportPath string `toml:"preImportPath"`
-	LogPath       string `toml:"logPath"`
-	LogLevel      string `toml:"logLevel"`
-	LogMaxSize    int    `toml:"logMaxSize"`
-	LogMaxBackups int    `toml:"logMaxBackups"`
-	APIToken      string `toml:"apiToken"`
+	Host          string    `yaml:"host"`
+	Port          int       `yaml:"port"`
+	Clients       []*Client `yaml:"clients"`
+	LogPath       string    `yaml:"logPath"`
+	LogLevel      string    `yaml:"logLevel"`
+	LogMaxSize    int       `yaml:"logMaxSize"`
+	LogMaxBackups int       `yaml:"logMaxBackups"`
+	APIToken      string    `yaml:"apiToken"`
 }

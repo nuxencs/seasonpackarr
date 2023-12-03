@@ -1,0 +1,82 @@
+# config.yaml
+
+# Hostname / IP
+#
+# Default: "0.0.0.0"
+#
+host: "{{ .host }}"
+
+# Port
+#
+# Default: 42069
+#
+port: 42069
+
+clients:
+  - name: default
+    # qBittorrent Hostname / IP
+    #
+    # Default: "127.0.0.1"
+    #
+    host: "127.0.0.1"
+
+    # qBittorrent Port
+    #
+    # Default: 8080
+    #
+    port: 8080
+
+    # qBittorrent Username
+    #
+    # Default: "admin"
+    #
+    username: "admin"
+
+    # qBittorrent Password
+    #
+    # Default: "adminadmin"
+    #
+    password: "adminadmin"
+
+    # Pre Import Path of qBittorrent for Sonarr
+    # Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
+    #
+    # Default: ""
+    #
+    preImportPath: ""
+
+# seasonpackarr logs file
+# If not defined, logs to stdout
+# Make sure to use forward slashes and include the filename with extension. eg: "logs/seasonpackarr.log", "C:/seasonpackarr/logs/seasonpackarr.log"
+#
+# Optional
+#
+# logPath: ""
+
+# Log level
+# Default: "DEBUG"
+#
+# Options: "ERROR", "DEBUG", "INFO", "WARN", "TRACE"
+#
+logLevel: "DEBUG"
+
+# Log Max Size
+# Max log size in megabytes
+#
+# Default: 50
+#
+# logMaxSize: 50
+
+# Log Max Backups
+# Max amount of old log files
+#
+# Default: 3
+#
+# logMaxBackups: 3
+
+# API Token
+# If not defined, removes api authentication
+#
+# Optional
+#
+# apiToken: ""

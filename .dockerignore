@@ -3,6 +3,7 @@ distrib
 .gitignore
 .goreleaser.yaml
 config.toml
+config.yaml
 docker-compose.yml
 Dockerfile
 README.md

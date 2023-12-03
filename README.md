@@ -7,7 +7,7 @@ Huge credit goes to [upgraderr](https://github.com/KyleSanderson/upgraderr) and
 specifically [@KyleSanderson](https://github.com/KyleSanderson), whose project provided great functions that I could
 make use of.
 
-> **Warning**
+> [!WARNING]
 > This application is still in the very early stages of development, so expect bugs to happen, especially with weird
 > episode or season pack naming.
 
@@ -81,7 +81,7 @@ Make sure it's running and **active**.
 sudo systemctl status seasonpackarr@$USER
 ```
 
-On first run it will create a default config, `~/.config/seasonpackarr/config.toml` that you will need to edit.
+On first run it will create a default config, `~/.config/seasonpackarr/config.yaml` that you will need to edit.
 
 After the config is edited you need to restart the service.
 
@@ -130,19 +130,24 @@ option `Import filter`. Just paste the content below into the text box that appe
 ### External filters
 
 After adding the filter, you need to head to the `External` tab of the filter, click on `Add new` and select `Webhook`
-in the `Type` field. The `Host` field should look like this, with `host` and `port` from the config:
+in the `Type` field. The `Endpoint` field should look like this, with `host` and `port` taken from your config:
 
 ```
 http://host:port/api/pack
 ```
 
-`Expected HTTP status` has to be set to `250` and `Data (JSON)` needs to look like this:
+`HTTP Method` needs to be set to `POST`, `Expected HTTP status` has to be set to `250` and the `Data (JSON)` field needs
+to look like this:
 
 ```json
 {
-  "name": "{{ .TorrentName | js }}"
+   "name": "{{ .TorrentName | js }}",
+   "clientname": "default"
 }
 ```
+
+You need to replace the `clientname` value with the name you gave your desired qBittorrent client in your config.
+If you don't specify a `clientname` in the json payload, the first client defined in your config will be used.
 
 #### API Authentication
 
@@ -153,15 +158,15 @@ generate a token for you that you can copy and paste into your config:
 seasonpackarr gen-token
 ```
 
-After you've set the API token in your config, you'll need to either include it in the `Host` field or pass it
-along in the `Headers` of your autobrr request; if not, the request will be rejected. I recommend using headers to pass
-the API token, but I'll explain both options here.
+After you've set the API token in your config, you'll need to either include it in the `Endpoint` field or pass it
+along in the `HTTP Request Headers` of your autobrr request; if not, the request will be rejected. I recommend using
+headers to pass the API token, but I'll explain both options here.
 
-1. **Header**: Edit the `Headers` field and replace `api_token` with the token you set in your config.
+1. **Header**: Edit the `HTTP Request Headers` field and replace `api_token` with the token you set in your config.
     ```
     X-API-Token=api_token
     ```
-2. **Query Parameter**: Append `?apikey=api_token` at the end of your `Host` field and replace `api_token` with the
+2. **Query Parameter**: Append `?apikey=api_token` at the end of your `Endpoint` field and replace `api_token` with the
    token you've set in your config.
     ```
     http://host:port/api/pack?apikey=api_token
@@ -180,6 +185,6 @@ qBittorrent or also integrate with Sonarr, you'll need to complete either the `S
 Last but not least, under `Rules`, make sure that `Skip Hash Check` remains disabled. This precaution prevents torrents
 added by seasonpackarr from causing errors in your qBittorrent client when some episodes of a season are missing.
 
-> **Warning**
+> [!WARNING]
 > If you enable that option regardless, you will most likely have to deal with errored torrents, which would require you
 > to manually trigger a recheck on them to fix the issue.

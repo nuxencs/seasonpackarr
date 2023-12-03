@@ -3,8 +3,10 @@ package http
 import (
 	"encoding/json"
 	"fmt"
+	"golang.org/x/exp/slices"
 	netHTTP "net/http"
 	"path/filepath"
+	"seasonpackarr/internal/domain"
 	"sync"
 	"time"
 
@@ -29,9 +31,10 @@ type entry struct {
 }
 
 type request struct {
-	Name    string
-	Torrent json.RawMessage
-	Client  *qbittorrent.Client
+	Name       string
+	Torrent    json.RawMessage
+	Client     *qbittorrent.Client
+	ClientName string
 }
 
 type entryTime struct {
@@ -43,8 +46,9 @@ type entryTime struct {
 }
 
 var (
-	clientMap  sync.Map
-	torrentMap sync.Map
+	clientIndex int
+	clientMap   sync.Map
+	torrentMap  sync.Map
 )
 
 func newProcessor(log logger.Logger, config *config.AppConfig) *processor {
@@ -56,17 +60,17 @@ func newProcessor(log logger.Logger, config *config.AppConfig) *processor {
 
 func (p processor) getClient() error {
 	s := qbittorrent.Config{
-		Host:     fmt.Sprintf("http://%s:%d", p.cfg.Config.QbitHost, p.cfg.Config.QbitPort),
-		Username: p.cfg.Config.QbitUsername,
-		Password: p.cfg.Config.QbitPassword,
+		Host:     fmt.Sprintf("http://%s:%d", p.cfg.Config.Clients[clientIndex].Host, p.cfg.Config.Clients[clientIndex].Port),
+		Username: p.cfg.Config.Clients[clientIndex].Username,
+		Password: p.cfg.Config.Clients[clientIndex].Password,
 	}
 
 	c, ok := clientMap.Load(s)
 	if !ok {
 		c = qbittorrent.NewClient(qbittorrent.Config{
-			Host:     fmt.Sprintf("http://%s:%d", p.cfg.Config.QbitHost, p.cfg.Config.QbitPort),
-			Username: p.cfg.Config.QbitUsername,
-			Password: p.cfg.Config.QbitPassword,
+			Host:     fmt.Sprintf("http://%s:%d", p.cfg.Config.Clients[clientIndex].Host, p.cfg.Config.Clients[clientIndex].Port),
+			Username: p.cfg.Config.Clients[clientIndex].Username,
+			Password: p.cfg.Config.Clients[clientIndex].Password,
 		})
 
 		if err := c.(*qbittorrent.Client).Login(); err != nil {
@@ -82,9 +86,9 @@ func (p processor) getClient() error {
 
 func (p processor) getAllTorrents() entryTime {
 	set := qbittorrent.Config{
-		Host:     fmt.Sprintf("http://%s:%d", p.cfg.Config.QbitHost, p.cfg.Config.QbitPort),
-		Username: p.cfg.Config.QbitUsername,
-		Password: p.cfg.Config.QbitPassword,
+		Host:     fmt.Sprintf("http://%s:%d", p.cfg.Config.Clients[clientIndex].Host, p.cfg.Config.Clients[clientIndex].Port),
+		Username: p.cfg.Config.Clients[clientIndex].Username,
+		Password: p.cfg.Config.Clients[clientIndex].Password,
 	}
 
 	f := func() *entryTime {
@@ -144,6 +148,13 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 		p.log.Error().Err(err).Msgf("error decoding request")
 		netHTTP.Error(w, err.Error(), 470)
 		return
+	}
+
+	clientIndex = findClientIndex(p.cfg.Config, p.req.ClientName)
+
+	if clientIndex == -1 {
+		p.log.Error().Msgf("client name %q not found in config, using first client ", p.req.ClientName)
+		clientIndex = 0
 	}
 
 	if len(p.req.Name) == 0 {
@@ -208,7 +219,7 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 			}
 
 			childPath := filepath.Join(child.t.SavePath, fileName)
-			packPath := filepath.Join(p.cfg.Config.PreImportPath, packDirName, fileName)
+			packPath := filepath.Join(p.cfg.Config.Clients[clientIndex].PreImportPath, packDirName, fileName)
 
 			err = utils.CreateHardlink(childPath, packPath)
 			if err != nil {
@@ -244,4 +255,11 @@ func checkCandidates(requestrls, child *entry) int {
 	}
 	// not a season pack
 	return 211
+}
+
+func findClientIndex(config *domain.Config, clientName string) int {
+	idx := slices.IndexFunc(config.Clients, func(c *domain.Client) bool {
+		return c.Name == clientName
+	})
+	return idx
 }
