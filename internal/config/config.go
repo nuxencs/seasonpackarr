@@ -24,50 +24,52 @@ import (
 	"github.com/spf13/viper"
 )
 
-var configTemplate = `# config.toml
+var configTemplate = `# config.yaml
 
 # Hostname / IP
 #
 # Default: "0.0.0.0"
 #
-host = "{{ .host }}"
+host: "{{ .host }}"
 
 # Port
 #
 # Default: 42069
 #
-port = 42069
+port: 42069
 
-# qBittorrent Hostname / IP
-#
-# Default: "127.0.0.1"
-#
-qbitHost = "127.0.0.1"
+clients:
+  - name: default
+    # qBittorrent Hostname / IP
+    #
+    # Default: "127.0.0.1"
+    #
+    qbitHost: "127.0.0.1"
 
-# qBittorrent Port
-#
-# Default: 8080
-#
-qbitPort = 8080
+    # qBittorrent Port
+    #
+    # Default: 8080
+    #
+    qbitPort: 8080
 
-# qBittorrent Username
-#
-# Default: "admin"
-#
-qbitUsername = "admin"
+    # qBittorrent Username
+    #
+    # Default: "admin"
+    #
+    qbitUsername: "admin"
 
-# qBittorrent Password
-#
-# Default: "adminadmin"
-#
-qbitPassword = "adminadmin"
+    # qBittorrent Password
+    #
+    # Default: "adminadmin"
+    #
+    qbitPassword: "adminadmin"
 
-# Pre Import Path of qBittorrent for Sonarr
-# Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
-#
-# Default: ""
-#
-preImportPath = ""
+    # Pre Import Path of qBittorrent for Sonarr
+    # Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
+    #
+    # Default: ""
+    #
+    preImportPath: ""
 
 # seasonpackarr logs file
 # If not defined, logs to stdout
@@ -75,38 +77,35 @@ preImportPath = ""
 #
 # Optional
 #
-#logPath = ""
+# logPath: ""
 
 # Log level
-#
 # Default: "DEBUG"
 #
 # Options: "ERROR", "DEBUG", "INFO", "WARN", "TRACE"
 #
-logLevel = "DEBUG"
+logLevel: "DEBUG"
 
 # Log Max Size
+# Max log size in megabytes
 #
 # Default: 50
 #
-# Max log size in megabytes
-#
-#logMaxSize = 50
+# logMaxSize: 50
 
 # Log Max Backups
+# Max amount of old log files
 #
 # Default: 3
 #
-# Max amount of old log files
-#
-#logMaxBackups = 3
+# logMaxBackups: 3
 
 # API Token
 # If not defined, removes api authentication
 #
 # Optional
 #
-#apiToken = ""
+# apiToken: ""
 `
 
 func (c *AppConfig) writeConfig(configPath string, configFile string) error {
@@ -188,11 +187,20 @@ type Config interface {
 
 type AppConfig struct {
 	Config *domain.Config
-	m      sync.Mutex
+	m      *sync.Mutex
 }
 
 func New(configPath string, version string) *AppConfig {
-	c := &AppConfig{}
+	if _, err := os.Stat(filepath.Join(configPath, "config.toml")); err == nil {
+		log.Fatalf("A legacy 'config.toml' file has been detected. " +
+			"To continue, please migrate your configuration to the new 'config.yaml' format. " +
+			"You can easily do this by copying the settings from 'config.toml' to 'config.yaml' and then renaming 'config.toml' to 'config.toml.old'. " +
+			"The only difference between the old and the new config is, that the qbit client info is now stored in an array to allow for multiple clients to be configured.")
+	}
+
+	c := &AppConfig{
+		m: new(sync.Mutex),
+	}
 	c.defaults()
 	c.Config.Version = version
 	c.Config.ConfigPath = configPath
@@ -200,12 +208,14 @@ func New(configPath string, version string) *AppConfig {
 	c.load(configPath)
 	c.loadFromEnv()
 
-	if c.Config.PreImportPath == "" {
-		log.Fatal("preImportPath can't be empty, please provide a valid path to the directory you want seasonpacks to be hardlinked to")
-	}
+	for _, client := range c.Config.Clients {
+		if client.PreImportPath == "" {
+			log.Fatalf("preImportPath for client %q can't be empty, please provide a valid path to the directory you want seasonpacks to be hardlinked to", client.Name)
+		}
 
-	if _, err := os.Stat(c.Config.PreImportPath); os.IsNotExist(err) {
-		log.Fatal("preImportPath doesn't exist, please make sure you entered the correct path")
+		if _, err := os.Stat(client.PreImportPath); os.IsNotExist(err) {
+			log.Fatalf("preImportPath for client %q doesn't exist, please make sure you entered the correct path", client.Name)
+		}
 	}
 
 	return c
@@ -216,17 +226,23 @@ func (c *AppConfig) defaults() {
 		Version:       "dev",
 		Host:          "0.0.0.0",
 		Port:          42069,
-		QbitHost:      "127.0.0.1",
-		QbitPort:      8080,
-		QbitUsername:  "admin",
-		QbitPassword:  "adminadmin",
-		PreImportPath: "",
 		LogLevel:      "DEBUG",
 		LogPath:       "",
 		LogMaxSize:    50,
 		LogMaxBackups: 3,
 		APIToken:      "",
 	}
+
+	defaultClient := &domain.Client{
+		Name:          "default",
+		Host:          "127.0.0.1",
+		Port:          8080,
+		Username:      "admin",
+		Password:      "adminadmin",
+		PreImportPath: "",
+	}
+
+	c.Config.Clients = append(c.Config.Clients, defaultClient)
 }
 
 func (c *AppConfig) loadFromEnv() {
@@ -245,18 +261,6 @@ func (c *AppConfig) loadFromEnv() {
 					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
 						c.Config.Port = int(i)
 					}
-				case prefix + "QBIT_HOST":
-					c.Config.QbitHost = envPair[1]
-				case prefix + "QBIT_PORT":
-					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
-						c.Config.QbitPort = int(i)
-					}
-				case prefix + "QBIT_USERNAME":
-					c.Config.QbitUsername = envPair[1]
-				case prefix + "QBIT_PASSWORD":
-					c.Config.QbitPassword = envPair[1]
-				case prefix + "PRE_IMPORT_PATH":
-					c.Config.PreImportPath = envPair[1]
 				case prefix + "LOG_LEVEL":
 					c.Config.LogLevel = envPair[1]
 				case prefix + "LOG_PATH":
@@ -278,18 +282,18 @@ func (c *AppConfig) loadFromEnv() {
 }
 
 func (c *AppConfig) load(configPath string) {
-	viper.SetConfigType("toml")
+	viper.SetConfigType("yaml")
 
 	// clean trailing slash from configPath
 	configPath = path.Clean(configPath)
 	if configPath != "" {
 		// check if path and file exists
 		// if not, create path and file
-		if err := c.writeConfig(configPath, "config.toml"); err != nil {
+		if err := c.writeConfig(configPath, "config.yaml"); err != nil {
 			log.Printf("write error: %q", err)
 		}
 
-		viper.SetConfigFile(path.Join(configPath, "config.toml"))
+		viper.SetConfigFile(path.Join(configPath, "config.yaml"))
 	} else {
 		viper.SetConfigName("config")
 
@@ -313,9 +317,6 @@ func (c *AppConfig) DynamicReload(log logger.Logger) {
 	viper.OnConfigChange(func(e fsnotify.Event) {
 		c.m.Lock()
 
-		preImportPath := viper.GetString("preImportPath")
-		c.Config.PreImportPath = preImportPath
-
 		logLevel := viper.GetString("logLevel")
 		c.Config.LogLevel = logLevel
 		log.SetLogLevel(c.Config.LogLevel)
@@ -331,7 +332,7 @@ func (c *AppConfig) DynamicReload(log logger.Logger) {
 }
 
 func (c *AppConfig) UpdateConfig() error {
-	filePath := path.Join(c.Config.ConfigPath, "config.toml")
+	filePath := path.Join(c.Config.ConfigPath, "config.yaml")
 
 	f, err := os.ReadFile(filePath)
 	if err != nil {
@@ -357,15 +358,15 @@ func (c *AppConfig) processLines(lines []string) []string {
 	)
 
 	for i, line := range lines {
-		if !foundLineLogLevel && strings.Contains(line, "logLevel =") {
-			lines[i] = fmt.Sprintf(`logLevel = "%s"`, c.Config.LogLevel)
+		if !foundLineLogLevel && strings.Contains(line, "logLevel:") {
+			lines[i] = fmt.Sprintf(`logLevel: "%s"`, c.Config.LogLevel)
 			foundLineLogLevel = true
 		}
-		if !foundLineLogPath && strings.Contains(line, "logPath =") {
+		if !foundLineLogPath && strings.Contains(line, "logPath:") {
 			if c.Config.LogPath == "" {
-				lines[i] = `#logPath = ""`
+				lines[i] = `#logPath: ""`
 			} else {
-				lines[i] = fmt.Sprintf(`logPath = "%s"`, c.Config.LogPath)
+				lines[i] = fmt.Sprintf(`logPath: "%s"`, c.Config.LogPath)
 			}
 			foundLineLogPath = true
 		}
@@ -378,7 +379,7 @@ func (c *AppConfig) processLines(lines []string) []string {
 		lines = append(lines, "#")
 		lines = append(lines, `# Options: "ERROR", "DEBUG", "INFO", "WARN", "TRACE"`)
 		lines = append(lines, "#")
-		lines = append(lines, fmt.Sprintf(`logLevel = "%s"`, c.Config.LogLevel))
+		lines = append(lines, fmt.Sprintf(`logLevel: "%s"`, c.Config.LogLevel))
 	}
 
 	if !foundLineLogPath {
@@ -387,9 +388,9 @@ func (c *AppConfig) processLines(lines []string) []string {
 		lines = append(lines, "# Optional")
 		lines = append(lines, "#")
 		if c.Config.LogPath == "" {
-			lines = append(lines, `#logPath = ""`)
+			lines = append(lines, `#logPath: ""`)
 		} else {
-			lines = append(lines, fmt.Sprintf(`logPath = "%s"`, c.Config.LogPath))
+			lines = append(lines, fmt.Sprintf(`logPath: "%s"`, c.Config.LogPath))
 		}
 	}
 

@@ -40,9 +40,9 @@ Flags:
 
 Provide a configuration file using one of the following methods:
 1. Use the --config <path> or -c <path> flag.
-2. Place a config.toml file in the default user configuration directory (e.g., ~/.config/seasonpackarr/).
-3. Place a config.toml file a folder inside your home directory (e.g., ~/.seasonpackarr/).
-4. Place a config.toml file in the directory of the binary.
+2. Place a config.yaml file in the default user configuration directory (e.g., ~/.config/seasonpackarr/).
+3. Place a config.yaml file a folder inside your home directory (e.g., ~/.seasonpackarr/).
+4. Place a config.yaml file in the directory of the binary.
 
 For more information and examples, visit https://github.com/nuxencs/seasonpackarr
 ` + "\n"
