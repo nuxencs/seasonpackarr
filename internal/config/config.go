@@ -39,30 +39,31 @@ host: "{{ .host }}"
 port: 42069
 
 clients:
-  - name: default
+  - name: "default"
+
     # qBittorrent Hostname / IP
     #
     # Default: "127.0.0.1"
     #
-    qbitHost: "127.0.0.1"
+    host: "127.0.0.1"
 
     # qBittorrent Port
     #
     # Default: 8080
     #
-    qbitPort: 8080
+    port: 8080
 
     # qBittorrent Username
     #
     # Default: "admin"
     #
-    qbitUsername: "admin"
+    username: "admin"
 
     # qBittorrent Password
     #
     # Default: "adminadmin"
     #
-    qbitPassword: "adminadmin"
+    password: "adminadmin"
 
     # Pre Import Path of qBittorrent for Sonarr
     # Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
