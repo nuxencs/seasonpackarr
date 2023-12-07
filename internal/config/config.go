@@ -290,7 +290,7 @@ func (c *AppConfig) load(configPath string) {
 		// check if path and file exists
 		// if not, create path and file
 		if err := c.writeConfig(configPath, "config.yaml"); err != nil {
-			log.Printf("write error: %q", err)
+			log.Printf("config write error: %q", err)
 		}
 
 		viper.SetConfigFile(path.Join(configPath, "config.yaml"))
