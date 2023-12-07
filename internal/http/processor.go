@@ -20,10 +20,9 @@ import (
 )
 
 type processor struct {
-	log        zerolog.Logger
-	cfg        *config.AppConfig
-	req        *request
-	torrentMap *sync.Map
+	log zerolog.Logger
+	cfg *config.AppConfig
+	req *request
 }
 
 type entry struct {
@@ -47,14 +46,14 @@ type entryTime struct {
 }
 
 var (
-	clientMap sync.Map
+	clientMap  sync.Map
+	torrentMap sync.Map
 )
 
 func newProcessor(log logger.Logger, config *config.AppConfig) *processor {
 	return &processor{
-		log:        log.With().Str("module", "processor").Logger(),
-		cfg:        config,
-		torrentMap: new(sync.Map),
+		log: log.With().Str("module", "processor").Logger(),
+		cfg: config,
 	}
 }
 
@@ -92,13 +91,13 @@ func (p processor) getAllTorrents(clientIndex int) entryTime {
 	}
 
 	f := func() *entryTime {
-		te, ok := p.torrentMap.Load(set)
+		te, ok := torrentMap.Load(set)
 		if ok {
 			return te.(*entryTime)
 		}
 
 		res := &entryTime{d: make(map[string]rls.Release)}
-		p.torrentMap.Store(set, res)
+		torrentMap.Store(set, res)
 		return res
 	}
 
@@ -135,7 +134,7 @@ func (p processor) getAllTorrents(clientIndex int) entryTime {
 		res.e[s] = append(res.e[s], entry{t: t, r: r})
 	}
 
-	p.torrentMap.Store(set, res)
+	torrentMap.Store(set, res)
 	return *res
 }
 
