@@ -58,20 +58,16 @@ func newProcessor(log logger.Logger, config *config.AppConfig) *processor {
 	}
 }
 
-func (p processor) getClient(clientIndex int) error {
+func (p processor) getClient(client *domain.Client) error {
 	s := qbittorrent.Config{
-		Host:     fmt.Sprintf("http://%s:%d", p.cfg.Config.Clients[clientIndex].Host, p.cfg.Config.Clients[clientIndex].Port),
-		Username: p.cfg.Config.Clients[clientIndex].Username,
-		Password: p.cfg.Config.Clients[clientIndex].Password,
+		Host:     fmt.Sprintf("http://%s:%d", client.Host, client.Port),
+		Username: client.Username,
+		Password: client.Password,
 	}
 
 	c, ok := clientMap.Load(s)
 	if !ok {
-		c = qbittorrent.NewClient(qbittorrent.Config{
-			Host:     fmt.Sprintf("http://%s:%d", p.cfg.Config.Clients[clientIndex].Host, p.cfg.Config.Clients[clientIndex].Port),
-			Username: p.cfg.Config.Clients[clientIndex].Username,
-			Password: p.cfg.Config.Clients[clientIndex].Password,
-		})
+		c = qbittorrent.NewClient(s)
 
 		if err := c.(*qbittorrent.Client).Login(); err != nil {
 			p.log.Fatal().Err(err).Msg("error logging into qBittorrent")
@@ -84,11 +80,11 @@ func (p processor) getClient(clientIndex int) error {
 	return nil
 }
 
-func (p processor) getAllTorrents(clientIndex int) entryTime {
+func (p processor) getAllTorrents(client *domain.Client) entryTime {
 	set := qbittorrent.Config{
-		Host:     fmt.Sprintf("http://%s:%d", p.cfg.Config.Clients[clientIndex].Host, p.cfg.Config.Clients[clientIndex].Port),
-		Username: p.cfg.Config.Clients[clientIndex].Username,
-		Password: p.cfg.Config.Clients[clientIndex].Password,
+		Host:     fmt.Sprintf("http://%s:%d", client.Host, client.Port),
+		Username: client.Username,
+		Password: client.Password,
 	}
 
 	f := func() *entryTime {
@@ -160,19 +156,21 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 		clientIndex = 0
 	}
 
+	client := p.cfg.Config.Clients[clientIndex]
+
 	if len(p.req.Name) == 0 {
 		p.log.Error().Msgf("error getting announce name")
 		netHTTP.Error(w, fmt.Sprintf("error getting announce name"), 469)
 		return
 	}
 
-	if err := p.getClient(clientIndex); err != nil {
+	if err := p.getClient(client); err != nil {
 		p.log.Error().Err(err).Msgf("error getting client")
 		netHTTP.Error(w, fmt.Sprintf("error getting client: %q", err), 471)
 		return
 	}
 
-	mp := p.getAllTorrents(clientIndex)
+	mp := p.getAllTorrents(client)
 	if mp.err != nil {
 		p.log.Error().Err(mp.err).Msgf("error getting torrents")
 		netHTTP.Error(w, fmt.Sprintf("error getting torrents: %q", mp.err), 468)
@@ -182,16 +180,16 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 	requestrls := entry{r: rls.ParseString(p.req.Name)}
 	v, ok := mp.e[utils.GetFormattedTitle(requestrls.r)]
 	if !ok {
-		p.log.Info().Msgf("no matching releases in client %q: %q", p.cfg.Config.Clients[clientIndex].Name, p.req.Name)
-		netHTTP.Error(w, fmt.Sprintf("no matching releases in client %q: %q", p.cfg.Config.Clients[clientIndex].Name, p.req.Name), 200)
+		p.log.Info().Msgf("no matching releases in client %q: %q", client.Name, p.req.Name)
+		netHTTP.Error(w, fmt.Sprintf("no matching releases in client %q: %q", client.Name, p.req.Name), 200)
 	}
 
 	packDirName := utils.FormatSeasonPackTitle(p.req.Name)
 
 	for _, child := range v {
 		if checkCandidates(&requestrls, &child) == 210 {
-			p.log.Info().Msgf("release already in client %q: %q", p.cfg.Config.Clients[clientIndex].Name, p.req.Name)
-			netHTTP.Error(w, fmt.Sprintf("release already in client %q: %q", p.cfg.Config.Clients[clientIndex].Name, p.req.Name), 210)
+			p.log.Info().Msgf("release already in client %q: %q", client.Name, p.req.Name)
+			netHTTP.Error(w, fmt.Sprintf("release already in client %q: %q", client.Name, p.req.Name), 210)
 			return
 		}
 	}
@@ -199,8 +197,8 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 	for _, child := range v {
 		switch res := checkCandidates(&requestrls, &child); res {
 		case 210:
-			p.log.Info().Msgf("release already in client %q: %q", p.cfg.Config.Clients[clientIndex].Name, p.req.Name)
-			netHTTP.Error(w, fmt.Sprintf("release already in client %q: %q", p.cfg.Config.Clients[clientIndex].Name, p.req.Name), res)
+			p.log.Info().Msgf("release already in client %q: %q", client.Name, p.req.Name)
+			netHTTP.Error(w, fmt.Sprintf("release already in client %q: %q", client.Name, p.req.Name), res)
 			break
 
 		case 211:
@@ -222,7 +220,7 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 			}
 
 			childPath := filepath.Join(child.t.SavePath, fileName)
-			packPath := filepath.Join(p.cfg.Config.Clients[clientIndex].PreImportPath, packDirName, fileName)
+			packPath := filepath.Join(client.PreImportPath, packDirName, fileName)
 
 			err = utils.CreateHardlink(childPath, packPath)
 			if err != nil {
