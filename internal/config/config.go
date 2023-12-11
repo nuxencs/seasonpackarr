@@ -7,6 +7,7 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path"
@@ -113,7 +114,7 @@ func (c *AppConfig) writeConfig(configPath string, configFile string) error {
 	cfgPath := filepath.Join(configPath, configFile)
 
 	// check if configPath exists, if not create it
-	if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(configPath); errors.Is(err, fs.ErrNotExist) {
 		err := os.MkdirAll(configPath, os.ModePerm)
 		if err != nil {
 			log.Println(err)
@@ -122,7 +123,7 @@ func (c *AppConfig) writeConfig(configPath string, configFile string) error {
 	}
 
 	// check if config exists, if not create it
-	if _, err := os.Stat(cfgPath); errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(cfgPath); errors.Is(err, fs.ErrNotExist) {
 		// set default host
 		host := "0.0.0.0"
 
@@ -214,7 +215,7 @@ func New(configPath string, version string) *AppConfig {
 			log.Fatalf("preImportPath for client %q can't be empty, please provide a valid path to the directory you want seasonpacks to be hardlinked to", client.Name)
 		}
 
-		if _, err := os.Stat(client.PreImportPath); errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Stat(client.PreImportPath); errors.Is(err, fs.ErrNotExist) {
 			log.Fatalf("preImportPath for client %q doesn't exist, please make sure you entered the correct path", client.Name)
 		}
 	}
