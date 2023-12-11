@@ -214,7 +214,7 @@ func New(configPath string, version string) *AppConfig {
 			log.Fatalf("preImportPath for client %q can't be empty, please provide a valid path to the directory you want seasonpacks to be hardlinked to", client.Name)
 		}
 
-		if _, err := os.Stat(client.PreImportPath); os.IsNotExist(err) {
+		if _, err := os.Stat(client.PreImportPath); errors.Is(err, os.ErrNotExist) {
 			log.Fatalf("preImportPath for client %q doesn't exist, please make sure you entered the correct path", client.Name)
 		}
 	}
