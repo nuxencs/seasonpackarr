@@ -3,20 +3,21 @@ package http
 import (
 	"encoding/json"
 	"fmt"
-	"golang.org/x/exp/slices"
 	netHTTP "net/http"
 	"path/filepath"
-	"seasonpackarr/internal/domain"
 	"sync"
 	"time"
 
 	"seasonpackarr/internal/config"
+	"seasonpackarr/internal/domain"
 	"seasonpackarr/internal/logger"
 	"seasonpackarr/internal/utils"
 
 	"github.com/autobrr/go-qbittorrent"
 	"github.com/moistari/rls"
 	"github.com/rs/zerolog"
+
+	"golang.org/x/exp/slices"
 )
 
 type processor struct {
