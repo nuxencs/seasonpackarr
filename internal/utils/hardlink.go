@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -19,7 +20,7 @@ func CreateHardlink(srcPath, trgPath string) error {
 	if _, err = os.Stat(trgPath); err == nil {
 		// target file exist
 		return fmt.Errorf("file already exist")
-	} else if errors.Is(err, os.ErrNotExist) {
+	} else if errors.Is(err, fs.ErrNotExist) {
 		// target file does not exist, create a hardlink
 		err = os.Link(srcPath, trgPath)
 		if err != nil {
