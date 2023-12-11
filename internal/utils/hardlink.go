@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"seasonpackarr/pkg/errors"
 )
 
 func CreateHardlink(srcPath, trgPath string) error {
@@ -14,14 +16,18 @@ func CreateHardlink(srcPath, trgPath string) error {
 		return err
 	}
 
-	if _, err = os.Stat(trgPath); os.IsNotExist(err) {
+	if _, err = os.Stat(trgPath); err == nil {
+		// target file exist
+		return fmt.Errorf("file already exist")
+	} else if errors.Is(err, os.ErrNotExist) {
 		// target file does not exist, create a hardlink
 		err = os.Link(srcPath, trgPath)
 		if err != nil {
 			return err
 		}
 	} else {
-		return fmt.Errorf("file already exist")
+		// any other error
+		return err
 	}
 	return nil
 }
