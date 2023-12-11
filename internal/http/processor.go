@@ -58,9 +58,7 @@ func newProcessor(log logger.Logger, config *config.AppConfig) *processor {
 	}
 }
 
-func (p processor) getClient(clientIndex int) error {
-	client := p.cfg.Config.Clients[clientIndex]
-
+func (p processor) getClient(client *domain.Client) error {
 	s := qbittorrent.Config{
 		Host:     fmt.Sprintf("http://%s:%d", client.Host, client.Port),
 		Username: client.Username,
@@ -82,9 +80,7 @@ func (p processor) getClient(clientIndex int) error {
 	return nil
 }
 
-func (p processor) getAllTorrents(clientIndex int) entryTime {
-	client := p.cfg.Config.Clients[clientIndex]
-
+func (p processor) getAllTorrents(client *domain.Client) entryTime {
 	set := qbittorrent.Config{
 		Host:     fmt.Sprintf("http://%s:%d", client.Host, client.Port),
 		Username: client.Username,
@@ -168,13 +164,13 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 		return
 	}
 
-	if err := p.getClient(clientIndex); err != nil {
+	if err := p.getClient(client); err != nil {
 		p.log.Error().Err(err).Msgf("error getting client")
 		netHTTP.Error(w, fmt.Sprintf("error getting client: %q", err), 471)
 		return
 	}
 
-	mp := p.getAllTorrents(clientIndex)
+	mp := p.getAllTorrents(client)
 	if mp.err != nil {
 		p.log.Error().Err(mp.err).Msgf("error getting torrents")
 		netHTTP.Error(w, fmt.Sprintf("error getting torrents: %q", mp.err), 468)
