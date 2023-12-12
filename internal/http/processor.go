@@ -16,8 +16,6 @@ import (
 	"github.com/autobrr/go-qbittorrent"
 	"github.com/moistari/rls"
 	"github.com/rs/zerolog"
-
-	"golang.org/x/exp/slices"
 )
 
 type processor struct {
@@ -146,17 +144,18 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 		return
 	}
 
-	clientIndex := findClientIndex(p.cfg.Config, p.req.ClientName)
+	clientName := p.req.ClientName
 
-	if clientIndex == -1 {
-		// default to first client in config
-		p.log.Info().Msgf("client not found in config: %q", p.req.ClientName)
-		p.log.Info().Msgf("using first client defined in config: %q ", p.cfg.Config.Clients[0].Name)
+	client, ok := p.cfg.Config.Clients[clientName]
+	if !ok {
+		p.log.Info().Msgf("client not found in config: %q", clientName)
 
-		clientIndex = 0
+		// use default client
+		clientName = "default"
+		client = p.cfg.Config.Clients[clientName]
+
+		p.log.Info().Msgf("using default client serving at %s:%d", client.Host, client.Port)
 	}
-
-	client := p.cfg.Config.Clients[clientIndex]
 
 	if len(p.req.Name) == 0 {
 		p.log.Error().Msgf("error getting announce name")
@@ -180,16 +179,16 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 	requestrls := entry{r: rls.ParseString(p.req.Name)}
 	v, ok := mp.e[utils.GetFormattedTitle(requestrls.r)]
 	if !ok {
-		p.log.Info().Msgf("no matching releases in client %q: %q", client.Name, p.req.Name)
-		netHTTP.Error(w, fmt.Sprintf("no matching releases in client %q: %q", client.Name, p.req.Name), 200)
+		p.log.Info().Msgf("no matching releases in client %q: %q", clientName, p.req.Name)
+		netHTTP.Error(w, fmt.Sprintf("no matching releases in client %q: %q", clientName, p.req.Name), 200)
 	}
 
 	packDirName := utils.FormatSeasonPackTitle(p.req.Name)
 
 	for _, child := range v {
 		if checkCandidates(&requestrls, &child) == 210 {
-			p.log.Info().Msgf("release already in client %q: %q", client.Name, p.req.Name)
-			netHTTP.Error(w, fmt.Sprintf("release already in client %q: %q", client.Name, p.req.Name), 210)
+			p.log.Info().Msgf("release already in client %q: %q", clientName, p.req.Name)
+			netHTTP.Error(w, fmt.Sprintf("release already in client %q: %q", clientName, p.req.Name), 210)
 			return
 		}
 	}
@@ -197,8 +196,8 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 	for _, child := range v {
 		switch res := checkCandidates(&requestrls, &child); res {
 		case 210:
-			p.log.Info().Msgf("release already in client %q: %q", client.Name, p.req.Name)
-			netHTTP.Error(w, fmt.Sprintf("release already in client %q: %q", client.Name, p.req.Name), res)
+			p.log.Info().Msgf("release already in client %q: %q", clientName, p.req.Name)
+			netHTTP.Error(w, fmt.Sprintf("release already in client %q: %q", clientName, p.req.Name), res)
 			break
 
 		case 211:
@@ -255,11 +254,4 @@ func checkCandidates(requestrls, child *entry) int {
 	}
 	// not a season pack
 	return 211
-}
-
-func findClientIndex(config *domain.Config, clientName string) int {
-	idx := slices.IndexFunc(config.Clients, func(c *domain.Client) bool {
-		return c.Name == clientName
-	})
-	return idx
 }

@@ -40,8 +40,7 @@ host: "{{ .host }}"
 port: 42069
 
 clients:
-  - name: "default"
-
+  default:
     # qBittorrent Hostname / IP
     #
     # Default: "127.0.0.1"
@@ -210,13 +209,13 @@ func New(configPath string, version string) *AppConfig {
 	c.load(configPath)
 	c.loadFromEnv()
 
-	for _, client := range c.Config.Clients {
+	for clientName, client := range c.Config.Clients {
 		if client.PreImportPath == "" {
-			log.Fatalf("preImportPath for client %q can't be empty, please provide a valid path to the directory you want seasonpacks to be hardlinked to", client.Name)
+			log.Fatalf("preImportPath for client %q can't be empty, please provide a valid path to the directory you want seasonpacks to be hardlinked to", clientName)
 		}
 
 		if _, err := os.Stat(client.PreImportPath); errors.Is(err, fs.ErrNotExist) {
-			log.Fatalf("preImportPath for client %q doesn't exist, please make sure you entered the correct path", client.Name)
+			log.Fatalf("preImportPath for client %q doesn't exist, please make sure you entered the correct path", clientName)
 		}
 	}
 
@@ -225,26 +224,24 @@ func New(configPath string, version string) *AppConfig {
 
 func (c *AppConfig) defaults() {
 	c.Config = &domain.Config{
-		Version:       "dev",
-		Host:          "0.0.0.0",
-		Port:          42069,
+		Version: "dev",
+		Host:    "0.0.0.0",
+		Port:    42069,
+		Clients: map[string]*domain.Client{
+			"default": {
+				Host:          "127.0.0.1",
+				Port:          8080,
+				Username:      "admin",
+				Password:      "adminadmin",
+				PreImportPath: "",
+			},
+		},
 		LogLevel:      "DEBUG",
 		LogPath:       "",
 		LogMaxSize:    50,
 		LogMaxBackups: 3,
 		APIToken:      "",
 	}
-
-	defaultClient := &domain.Client{
-		Name:          "default",
-		Host:          "127.0.0.1",
-		Port:          8080,
-		Username:      "admin",
-		Password:      "adminadmin",
-		PreImportPath: "",
-	}
-
-	c.Config.Clients = append(c.Config.Clients, defaultClient)
 }
 
 func (c *AppConfig) loadFromEnv() {
