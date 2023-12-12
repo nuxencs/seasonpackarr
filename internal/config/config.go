@@ -40,8 +40,7 @@ host: "{{ .host }}"
 port: 42069
 
 clients:
-  - name: "default"
-
+  default:
     # qBittorrent Hostname / IP
     #
     # Default: "127.0.0.1"
