@@ -219,7 +219,7 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 			}
 
 			childPath := filepath.Join(child.t.SavePath, fileName)
-			packPath := filepath.Join(client.PreImportPath, packDirName, fileName)
+			packPath := filepath.Join(client.PreImportPath, packDirName, filepath.Base(fileName))
 
 			err = utils.CreateHardlink(childPath, packPath)
 			if err != nil {
