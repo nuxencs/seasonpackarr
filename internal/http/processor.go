@@ -44,8 +44,14 @@ type entryTime struct {
 	sync.Mutex
 }
 
+type matchPaths struct {
+	episodePath string
+	packPath    string
+}
+
 var (
 	clientMap  sync.Map
+	matchesMap sync.Map
 	torrentMap sync.Map
 )
 
@@ -181,6 +187,7 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 	if !ok {
 		p.log.Info().Msgf("no matching releases in client %q: %q", clientName, p.req.Name)
 		netHTTP.Error(w, fmt.Sprintf("no matching releases in client %q: %q", clientName, p.req.Name), 200)
+		return
 	}
 
 	packDirName := utils.FormatSeasonPackTitle(p.req.Name)
@@ -198,12 +205,12 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 		case 210:
 			p.log.Info().Msgf("release already in client %q: %q", clientName, p.req.Name)
 			netHTTP.Error(w, fmt.Sprintf("release already in client %q: %q", clientName, p.req.Name), res)
-			break
+			return
 
 		case 211:
 			p.log.Info().Msgf("release is not a season pack: %q", p.req.Name)
 			netHTTP.Error(w, fmt.Sprintf("release is not a season pack: %q", p.req.Name), res)
-			break
+			return
 
 		case 250:
 			m, err := p.getFiles(child.t.Hash)
@@ -218,19 +225,38 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 				break
 			}
 
-			childPath := filepath.Join(child.t.SavePath, fileName)
+			episodePath := filepath.Join(child.t.SavePath, fileName)
 			packPath := filepath.Join(client.PreImportPath, packDirName, filepath.Base(fileName))
 
-			err = utils.CreateHardlink(childPath, packPath)
-			if err != nil {
-				p.log.Error().Err(err).Msgf("error creating hardlink for: %q", childPath)
-				netHTTP.Error(w, fmt.Sprintf("error creating hardlink for: %q", childPath), res)
-				continue
+			currentMatch := []matchPaths{
+				{
+					episodePath: episodePath,
+					packPath:    packPath,
+				},
 			}
 
-			p.log.Log().Msgf("created hardlink of %q into %q", childPath, packPath)
-			netHTTP.Error(w, fmt.Sprintf("created hardlink of %q into %q", childPath, packPath), res)
+			oldMatches, ok := matchesMap.Load(p.req.Name)
+			if !ok {
+				oldMatches = currentMatch
+			}
+
+			newMatches := append(oldMatches.([]matchPaths), currentMatch...)
+			matchesMap.Store(p.req.Name, newMatches)
 			continue
+		}
+	}
+
+	if matchesSlice, ok := matchesMap.Load(p.req.Name); ok {
+		matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
+
+		for _, match := range matches {
+			if err := utils.CreateHardlink(match.episodePath, match.packPath); err != nil {
+				p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.episodePath)
+				netHTTP.Error(w, fmt.Sprintf("error creating hardlink for: %q", match.episodePath), 250)
+				continue
+			}
+			p.log.Log().Msgf("created hardlink of %q into %q", match.episodePath, match.packPath)
+			netHTTP.Error(w, fmt.Sprintf("created hardlink of %q into %q", match.episodePath, match.packPath), 250)
 		}
 	}
 }
