@@ -2,11 +2,12 @@ package utils
 
 import (
 	"fmt"
-	"golang.org/x/exp/slices"
 	"regexp"
 	"strings"
 
 	"github.com/moistari/rls"
+
+	"golang.org/x/exp/slices"
 )
 
 func GetFormattedTitle(r rls.Release) string {

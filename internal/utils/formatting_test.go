@@ -1,9 +1,9 @@
 package utils
 
 import (
-	"github.com/moistari/rls"
 	"testing"
 
+	"github.com/moistari/rls"
 	"github.com/stretchr/testify/assert"
 )
 
