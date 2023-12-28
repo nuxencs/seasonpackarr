@@ -6,21 +6,31 @@ import (
 	"strings"
 
 	"github.com/moistari/rls"
+
+	"golang.org/x/exp/slices"
 )
 
 func GetFormattedTitle(r rls.Release) string {
-	s := fmt.Sprintf("%s%d%d%s%s%s%s", rls.MustNormalize(r.Title), r.Year, r.Series,
-		rls.MustNormalize(r.Resolution), rls.MustNormalize(r.Source),
-		fmt.Sprintf("%s", r.HDR), r.Group)
+	s := fmt.Sprintf("%s%d%d%s%s%s", rls.MustNormalize(r.Title), r.Year, r.Series,
+		rls.MustNormalize(r.Resolution), rls.MustNormalize(r.Source), rls.MustNormalize(r.Group))
+
+	slices.Sort(r.Cut)
 	for _, a := range r.Cut {
 		s += rls.MustNormalize(a)
 	}
 
+	slices.Sort(r.Edition)
 	for _, a := range r.Edition {
 		s += rls.MustNormalize(a)
 	}
 
+	slices.Sort(r.Other)
 	for _, a := range r.Other {
+		s += rls.MustNormalize(a)
+	}
+
+	slices.Sort(r.HDR)
+	for _, a := range r.HDR {
 		s += rls.MustNormalize(a)
 	}
 
