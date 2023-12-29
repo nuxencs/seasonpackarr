@@ -100,10 +100,10 @@ will need to adjust the created config file to your needs and start the containe
 
 ## autobrr Filter setup
 
-Currently, seasonpackarr only supports one output folder, so if you have multiple Sonarr instances with different pre
-import directories or want to send to multiple qBittorrent instances, you will need to run multiple instances of
-seasonpackarr and create multiple filters. The following is a simple example filter that only allows 1080p season packs
-to be matched.
+Support for multiple Sonarr and qBittorrent instances with different pre import directories was added with v0.4.0, so
+you will need to run multiple instances of seasonpackarr and create multiple filters to achieve the same functionality
+in lower versions. If you are running v0.4.0 or above you just need to set up your filters according to [External Filters](#external-filters).
+The following is a simple example filter that only allows 1080p season packs to be matched.
 
 ### Create Filter
 
@@ -141,13 +141,13 @@ to look like this:
 
 ```json
 {
-   "name": "{{ .TorrentName | js }}",
-   "clientname": "default"
+  "name": "{{ .TorrentName | js }}",
+  "clientname": "default"
 }
 ```
 
 You need to replace the `clientname` value with the name you gave your desired qBittorrent client in your config.
-If you don't specify a `clientname` in the json payload, the first client defined in your config will be used.
+If you don't specify a `clientname` in the json payload, the `default` client defined in your config will be used.
 
 #### API Authentication
 
