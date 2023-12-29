@@ -6,6 +6,7 @@ package http
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
@@ -30,7 +31,33 @@ func NewServer(log logger.Logger, config *config.AppConfig) *Server {
 
 func (s Server) Open() error {
 	addr := fmt.Sprintf("%v:%v", s.cfg.Config.Host, s.cfg.Config.Port)
-	return http.ListenAndServe(addr, s.Handler())
+
+	var err error
+	for _, proto := range []string{"tcp", "tcp4", "tcp6"} {
+		if err = s.tryToServe(addr, proto); err == nil {
+			break
+		}
+
+		s.log.Error().Err(err).Msgf("Failed to start %s server while attempting to listen on %s", proto, addr)
+	}
+
+	return err
+}
+
+func (s Server) tryToServe(addr, proto string) error {
+	listener, err := net.Listen(proto, addr)
+	if err != nil {
+		return err
+	}
+
+	s.log.Info().Msgf("Starting %s server. Listening on %s", proto, listener.Addr().String())
+
+	server := http.Server{
+		Handler:           s.Handler(),
+		ReadHeaderTimeout: time.Second * 15,
+	}
+
+	return server.Serve(listener)
 }
 
 func (s Server) Handler() http.Handler {
