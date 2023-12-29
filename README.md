@@ -127,7 +127,7 @@ option `Import filter`. Just paste the content below into the text box that appe
 }
 ```
 
-### External filters
+### External Filters
 
 After adding the filter, you need to head to the `External` tab of the filter, click on `Add new` and select `Webhook`
 in the `Type` field. The `Endpoint` field should look like this, with `host` and `port` taken from your config:
