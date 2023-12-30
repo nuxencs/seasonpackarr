@@ -40,6 +40,11 @@ host: "{{ .host }}"
 port: 42069
 
 clients:
+  # Client name used in the autobrr filter, can be customized to whatever you like
+  # if you change the name of the default client you always need to specify the client name in the autobrr filter
+  #
+  # Default: default
+  #
   default:
     # qBittorrent Hostname / IP
     #
@@ -64,6 +69,38 @@ clients:
     # Default: "adminadmin"
     #
     password: "adminadmin"
+
+    # Pre Import Path of qBittorrent for Sonarr
+    # Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
+    #
+    # Default: ""
+    #
+    preImportPath: ""
+
+  multi_client_example:
+    # qBittorrent Hostname / IP
+    #
+    # Default: "127.0.0.1"
+    #
+    host: "127.0.0.1"
+
+    # qBittorrent Port
+    #
+    # Default: 8080
+    #
+    port: 18080
+
+    # qBittorrent Username
+    #
+    # Default: "admin"
+    #
+    username: "example"
+
+    # qBittorrent Password
+    #
+    # Default: "adminadmin"
+    #
+    password: "example"
 
     # Pre Import Path of qBittorrent for Sonarr
     # Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"

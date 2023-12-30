@@ -146,15 +146,16 @@ to look like this:
 }
 ```
 
-You need to replace the `clientname` value with the name you gave your desired qBittorrent client in your config.
-If you don't specify a `clientname` in the json payload, the `default` client defined in your config will be used.
+Replace the `clientname` value, in this case `default`, with the name you gave your desired qBittorrent client in your
+config under the `clients` section. If you don't specify `clientname` in the JSON payload, the `default` client defined
+in your config will be used.
 
 #### API Authentication
 
 I strongly suggest enabling API authentication by providing an API token in the config. The following command will
 generate a token for you that you can copy and paste into your config:
 
-```
+```bash
 seasonpackarr gen-token
 ```
 
@@ -175,12 +176,12 @@ headers to pass the API token, but I'll explain both options here.
 ### Actions
 
 Next, navigate to the Actions tab and choose qBittorrent as the Client. Depending on whether you intend to only send to
-qBittorrent or also integrate with Sonarr, you'll need to complete either the `Save Path` or `Category` field, respectively.
+qBittorrent or also integrate with Sonarr, you'll need to fill out different fields.
 
-1. **Only qBittorrent**: Fill in the `Save Path` field with the directory where your torrent data resides, for
-   instance, `/data/torrents`.
+1. **Only qBittorrent**: Fill in the `Save Path` field with the directory where your torrent data resides, for instance
+   `/data/torrents`, or the `Category` field with a qBittorrent category that saves to your desired location. 
 2. **Sonarr Integration**: Fill in the `Category` field with the category that Sonarr utilizes for all its downloads,
-   such as `tv-hd`.
+   such as `tv-hd` or `tv-uhd`.
 
 Last but not least, under `Rules`, make sure that `Skip Hash Check` remains disabled. This precaution prevents torrents
 added by seasonpackarr from causing errors in your qBittorrent client when some episodes of a season are missing.
