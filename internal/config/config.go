@@ -40,6 +40,12 @@ host: "{{ .host }}"
 port: 42069
 
 clients:
+  # Client name used in the autobrr filter, can be customized to whatever you like
+  # If you change the name of the default client you always need to specify that name in the autobrr filter
+  # Note that a client name has to be unique and can only be used once
+  #
+  # Default: default
+  #
   default:
     # qBittorrent Hostname / IP
     #
@@ -71,6 +77,20 @@ clients:
     # Default: ""
     #
     preImportPath: ""
+
+  # Below you can find an example on how to define a second qBittorrent client
+  # If you want to define even more clients just copy this segment and adjust the values accordingly
+  #
+  #multi_client_example:
+  #  host: "127.0.0.1"
+  #
+  #  port: 9090
+  #
+  #  username: "example"
+  #
+  #  password: "example"
+  #
+  #  preImportPath: ""
 
 # seasonpackarr logs file
 # If not defined, logs to stdout
