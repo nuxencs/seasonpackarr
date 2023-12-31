@@ -1,5 +1,5 @@
 # build app
-FROM golang:1.20-alpine3.18 AS app-builder
+FROM golang:1.20-alpine3.19 AS app-builder
 
 ARG VERSION=dev
 ARG REVISION=dev
@@ -10,10 +10,12 @@ RUN apk add --no-cache git build-base tzdata
 ENV SERVICE=seasonpackarr
 
 WORKDIR /src
-COPY . ./
 
+# Cache Go modules
 COPY go.mod go.sum ./
 RUN go mod download
+
+COPY . ./
 
 #ENV GOOS=linux
 ENV CGO_ENABLED=0
@@ -32,11 +34,10 @@ ENV HOME="/config" \
 RUN apk add --no-cache ca-certificates curl tzdata jq
 
 WORKDIR /app
-
 VOLUME /config
+EXPOSE 42069
 
 COPY --from=app-builder /src/bin/seasonpackarr /usr/bin/
 
-EXPOSE 42069
 
 ENTRYPOINT ["/usr/bin/seasonpackarr", "start", "--config", "/config"]
