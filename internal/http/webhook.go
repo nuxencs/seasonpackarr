@@ -24,7 +24,7 @@ func newWebhookHandler(log logger.Logger, cfg *config.AppConfig) *webhookHandler
 
 func (h webhookHandler) Routes(r chi.Router) {
 	r.Post("/pack", h.pack)
-	r.Post("/parse", h.push)
+	r.Post("/parse", h.parse)
 }
 
 func (h webhookHandler) pack(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +32,7 @@ func (h webhookHandler) pack(w http.ResponseWriter, r *http.Request) {
 	render.Status(r, http.StatusOK)
 }
 
-func (h webhookHandler) push(w http.ResponseWriter, r *http.Request) {
+func (h webhookHandler) parse(w http.ResponseWriter, r *http.Request) {
 	newProcessor(h.log, h.cfg).ParseTorrent(w, r)
 	render.Status(r, http.StatusOK)
 }
