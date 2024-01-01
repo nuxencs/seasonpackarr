@@ -99,7 +99,7 @@ logLevel: "DEBUG"
 #
 # Default: false
 #
-# parseTorrent: false
+# parseTorrentFile: false
 
 # API Token
 # If not defined, removes api authentication

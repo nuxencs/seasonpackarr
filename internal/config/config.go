@@ -126,7 +126,7 @@ logLevel: "DEBUG"
 #
 # Default: false
 #
-# parseTorrent: false
+# parseTorrentFile: false
 
 # API Token
 # If not defined, removes api authentication
@@ -263,12 +263,12 @@ func (c *AppConfig) defaults() {
 				PreImportPath: "",
 			},
 		},
-		LogLevel:      "DEBUG",
-		LogPath:       "",
-		LogMaxSize:    50,
-		LogMaxBackups: 3,
-		ParseTorrent:  false,
-		APIToken:      "",
+		LogLevel:         "DEBUG",
+		LogPath:          "",
+		LogMaxSize:       50,
+		LogMaxBackups:    3,
+		ParseTorrentFile: false,
+		APIToken:         "",
 	}
 }
 
@@ -300,9 +300,9 @@ func (c *AppConfig) loadFromEnv() {
 					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
 						c.Config.LogMaxBackups = int(i)
 					}
-				case prefix + "PARSE_TORRENT":
+				case prefix + "PARSE_TORRENT_FILE":
 					if b, err := strconv.ParseBool(envPair[1]); err == nil {
-						c.Config.ParseTorrent = b
+						c.Config.ParseTorrentFile = b
 					}
 				case prefix + "API_TOKEN":
 					c.Config.APIToken = envPair[1]

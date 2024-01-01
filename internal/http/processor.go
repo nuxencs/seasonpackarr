@@ -247,7 +247,7 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 	}
 
 	if matchesSlice, ok := matchesMap.Load(p.req.Name); ok {
-		if p.cfg.Config.ParseTorrent {
+		if p.cfg.Config.ParseTorrentFile {
 			p.log.Log().Msgf("found matching episodes for season pack: %q", p.req.Name)
 			netHTTP.Error(w, fmt.Sprintf("found matching episodes for season pack: %q", p.req.Name), 250)
 			return
