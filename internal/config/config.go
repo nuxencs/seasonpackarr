@@ -300,6 +300,10 @@ func (c *AppConfig) loadFromEnv() {
 					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
 						c.Config.LogMaxBackups = int(i)
 					}
+				case prefix + "PARSE_TORRENT":
+					if b, err := strconv.ParseBool(envPair[1]); err == nil {
+						c.Config.ParseTorrent = b
+					}
 				case prefix + "API_TOKEN":
 					c.Config.APIToken = envPair[1]
 				}
