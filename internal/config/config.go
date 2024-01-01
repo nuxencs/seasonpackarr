@@ -121,6 +121,13 @@ logLevel: "DEBUG"
 #
 # logMaxBackups: 3
 
+# Parse Torrent File
+# Decide if torrent file should be parsed to get correct folder name
+#
+# Default: false
+#
+# parseTorrent: false
+
 # API Token
 # If not defined, removes api authentication
 #
@@ -260,6 +267,7 @@ func (c *AppConfig) defaults() {
 		LogPath:       "",
 		LogMaxSize:    50,
 		LogMaxBackups: 3,
+		ParseTorrent:  false,
 		APIToken:      "",
 	}
 }

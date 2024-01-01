@@ -22,5 +22,6 @@ type Config struct {
 	LogLevel      string             `yaml:"logLevel"`
 	LogMaxSize    int                `yaml:"logMaxSize"`
 	LogMaxBackups int                `yaml:"logMaxBackups"`
+	ParseTorrent  bool               `yaml:"parseTorrent"`
 	APIToken      string             `yaml:"apiToken"`
 }

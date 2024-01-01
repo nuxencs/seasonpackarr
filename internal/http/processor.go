@@ -30,10 +30,10 @@ type entry struct {
 }
 
 type request struct {
-	Name       string
-	Torrent    json.RawMessage
-	Client     *qbittorrent.Client
-	ClientName string
+	Name        string
+	TorrentPath string
+	Client      *qbittorrent.Client
+	ClientName  string
 }
 
 type entryTime struct {
@@ -247,6 +247,12 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 	}
 
 	if matchesSlice, ok := matchesMap.Load(p.req.Name); ok {
+		if p.cfg.Config.ParseTorrent {
+			p.log.Log().Msgf("found matching episodes for season pack: %q", p.req.Name)
+			netHTTP.Error(w, fmt.Sprintf("found matching episodes for season pack: %q", p.req.Name), 250)
+			return
+		}
+
 		matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
 
 		for _, match := range matches {
@@ -258,6 +264,53 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 			p.log.Log().Msgf("created hardlink of %q into %q", match.episodePath, match.packPath)
 			netHTTP.Error(w, fmt.Sprintf("created hardlink of %q into %q", match.episodePath, match.packPath), 250)
 		}
+	}
+}
+
+func (p processor) ParseTorrent(w netHTTP.ResponseWriter, r *netHTTP.Request) {
+	if err := json.NewDecoder(r.Body).Decode(&p.req); err != nil {
+		p.log.Error().Err(err).Msgf("error decoding request")
+		netHTTP.Error(w, err.Error(), 470)
+		return
+	}
+
+	if len(p.req.Name) == 0 {
+		p.log.Error().Msgf("error getting announce name")
+		netHTTP.Error(w, fmt.Sprintf("error getting announce name"), 469)
+		return
+	}
+
+	if len(p.req.TorrentPath) == 0 {
+		p.log.Error().Msgf("error getting torrent path")
+		netHTTP.Error(w, fmt.Sprintf("error getting torrent path"), 468)
+		return
+	}
+
+	folderName, err := utils.ParseFolderNameFromTorrentFile(p.req.TorrentPath)
+	if err != nil {
+		p.log.Error().Err(err).Msgf("error parsing folder name")
+		netHTTP.Error(w, fmt.Sprintf("error parsing folder name: %q", err), 467)
+		return
+	}
+
+	matchesSlice, ok := matchesMap.Load(p.req.Name)
+	if !ok {
+		p.log.Info().Msgf("no matching releases in client: %q", p.req.Name)
+		netHTTP.Error(w, fmt.Sprintf("no matching releases in client: %q", p.req.Name), 200)
+		return
+	}
+
+	matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
+
+	for _, match := range matches {
+		match.packPath = utils.ReplaceParentFolder(match.packPath, folderName)
+		if err := utils.CreateHardlink(match.episodePath, match.packPath); err != nil {
+			p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.episodePath)
+			netHTTP.Error(w, fmt.Sprintf("error creating hardlink for: %q", match.episodePath), 250)
+			continue
+		}
+		p.log.Log().Msgf("created hardlink of %q into %q", match.episodePath, match.packPath)
+		netHTTP.Error(w, fmt.Sprintf("created hardlink of %q into %q", match.episodePath, match.packPath), 250)
 	}
 }
 
