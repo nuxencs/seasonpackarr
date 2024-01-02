@@ -14,6 +14,7 @@ services:
       - SEASONPACKARR__LOG_PATH=
       - SEASONPACKARR__LOG_MAX_SIZE=
       - SEASONPACKARR__LOG_MAX_BACKUPS=
+      - SEASONPACKARR__PARSE_TORRENT_FILE=
       - SEASONPACKARR__API_TOKEN=
     volumes:
       - ${DOCKERCONFDIR}/seasonpackarr:/config # location of the config file

@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -65,4 +66,14 @@ func FormatSeasonPackTitle(packName string) string {
 		packName = reDots.ReplaceAllString(packName, ".")
 	}
 	return packName
+}
+
+func ReplaceParentFolder(path, newFolder string) string {
+	path = filepath.Clean(path)
+	if filepath.Dir(path) == string(filepath.Separator) ||
+		filepath.Dir(path) == "." {
+		return path
+	}
+	newPath := filepath.Join(filepath.Dir(filepath.Dir(path)), newFolder, filepath.Base(path))
+	return newPath
 }

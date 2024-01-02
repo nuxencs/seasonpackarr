@@ -170,3 +170,60 @@ func Test_FormatSeasonPackTitle(t *testing.T) {
 		})
 	}
 }
+
+func Test_ReplaceParentFolder(t *testing.T) {
+	tests := []struct {
+		name            string
+		directory       string
+		newParentFolder string
+		want            string
+	}{
+		{
+			name:            "directory_file",
+			directory:       "/data/torrents/tv-hd/Series.S01.1080p.iP.WEB-DL.AAC2.0.H.264-RlsGrp/Series.S01E03.1080p.iP.WEB-DL.AAC2.0.H.264-RlsGrp.mkv",
+			newParentFolder: "Series.S01.1080p.AMZN.WEB-DL.AAC2.0.H.264-RlsGrp",
+			want:            "/data/torrents/tv-hd/Series.S01.1080p.AMZN.WEB-DL.AAC2.0.H.264-RlsGrp/Series.S01E03.1080p.iP.WEB-DL.AAC2.0.H.264-RlsGrp.mkv",
+		},
+		{
+			name:            "directory_folder",
+			directory:       "/data/torrents/tv-hd/Series.S01.1080p.iP.WEB-DL.AAC2.0.H.264-RlsGrp",
+			newParentFolder: "test",
+			want:            "/data/torrents/test/Series.S01.1080p.iP.WEB-DL.AAC2.0.H.264-RlsGrp",
+		},
+		{
+			name:            "directory_one_parent",
+			directory:       "/data/torrents",
+			newParentFolder: "test",
+			want:            "/test/torrents",
+		},
+		{
+			name:            "directory_parent",
+			directory:       "/data",
+			newParentFolder: "test",
+			want:            "/data",
+		},
+		{
+			name:            "directory_top_level",
+			directory:       "/",
+			newParentFolder: "test",
+			want:            "/",
+		},
+		{
+			name:            "directory_working",
+			directory:       ".",
+			newParentFolder: "test",
+			want:            ".",
+		},
+		{
+			name:            "file",
+			directory:       "test.mkv",
+			newParentFolder: "test",
+			want:            "test.mkv",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equalf(t, tt.want, ReplaceParentFolder(tt.directory, tt.newParentFolder), "ReplaceParentFolder(%s, %s)", tt.directory, tt.newParentFolder)
+		})
+	}
+}

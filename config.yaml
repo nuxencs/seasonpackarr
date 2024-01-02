@@ -94,6 +94,13 @@ logLevel: "DEBUG"
 #
 # logMaxBackups: 3
 
+# Parse Torrent File
+# Decide if torrent file should be parsed to get correct folder name
+#
+# Default: false
+#
+# parseTorrentFile: false
+
 # API Token
 # If not defined, removes api authentication
 #
