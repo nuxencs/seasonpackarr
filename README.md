@@ -141,7 +141,7 @@ to look like this:
 
 ```json
 {
-  "name": "{{ .TorrentName | js }}",
+  "name": "{{ .TorrentName }}",
   "clientname": "default"
 }
 ```
