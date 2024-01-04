@@ -175,8 +175,42 @@ headers to pass the API token, but I'll explain both options here.
 
 ### Actions
 
-Next, navigate to the Actions tab and choose qBittorrent as the Client. Depending on whether you intend to only send to
-qBittorrent or also integrate with Sonarr, you'll need to fill out different fields.
+Now, you need to decide whether you want to enable torrent parsing. By activating this feature, seasonpackarr will parse
+the torrent file for the season pack folder name to ensure the creation of the correct folder. You can enable this
+functionality by setting `parseTorrentFile` to `true` in your config file.
+
+If you choose to enable it, continue with the [Webhook](#webhook) section. If not, skip this step and proceed to [qBittorrent](#qbittorrent).
+
+> [!WARNING]
+> If you enable that option you need to make sure that the Webhook action is above the qBittorrent action, otherwise the
+> feature won't work correctly.
+
+#### Webhook
+
+Navigate to the `Actions` tab, click on `Add new` and change the `Action type` of the newly added action to `Webhook`.
+The `Endpoint` field should look like this, with `host`, `port` and `api_token` taken from your config:
+
+```
+http://host:port/api/parse?apikey=api_token
+```
+
+Append the API query parameter `?apikey=api_token` only if you have enabled API authentication by providing an API token
+in your config.
+
+Finally, complete the `Payload (JSON)` field as shown below. Ensure that the value of `clientname` is the same as in the `External Filter`:
+
+```json
+{
+  "name":"{{ .TorrentName }}", 
+  "torrent":"{{ .TorrentDataRawBytes | js }}",
+  "clientname": "default"
+}
+```
+
+#### qBittorrent
+
+Navigate to the `Actions` tab, click on `Add new` and change the `Action type` of the newly added action to `qBittorrent`.
+Depending on whether you intend to only send to qBittorrent or also integrate with Sonarr, you'll need to fill out different fields.
 
 1. **Only qBittorrent**: Fill in the `Save Path` field with the directory where your torrent data resides, for instance
    `/data/torrents`, or the `Category` field with a qBittorrent category that saves to your desired location. 
