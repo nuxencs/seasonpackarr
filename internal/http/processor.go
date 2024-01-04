@@ -30,10 +30,10 @@ type entry struct {
 }
 
 type request struct {
-	Name        string
-	TorrentPath string
-	Client      *qbittorrent.Client
-	ClientName  string
+	Name       string
+	Torrent    json.RawMessage
+	Client     *qbittorrent.Client
+	ClientName string
 }
 
 type entryTime struct {
@@ -280,16 +280,24 @@ func (p processor) ParseTorrent(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 		return
 	}
 
-	if len(p.req.TorrentPath) == 0 {
-		p.log.Error().Msgf("error getting torrent path")
-		netHTTP.Error(w, fmt.Sprintf("error getting torrent path"), 468)
+	if len(p.req.Torrent) == 0 {
+		p.log.Error().Msgf("error getting torrent bytes")
+		netHTTP.Error(w, fmt.Sprintf("error getting torrent bytes"), 468)
 		return
 	}
 
-	folderName, err := utils.ParseFolderNameFromTorrentFile(p.req.TorrentPath)
+	torrentBytes, err := utils.DecodeTorrentDataRawBytes(p.req.Torrent)
+	if err != nil {
+		p.log.Error().Err(err).Msgf("error decoding torrent bytes")
+		netHTTP.Error(w, fmt.Sprintf("error decoding torrent bytes: %q", err), 467)
+		return
+	}
+	p.req.Torrent = torrentBytes
+
+	folderName, err := utils.ParseFolderNameFromTorrentBytes(p.req.Torrent)
 	if err != nil {
 		p.log.Error().Err(err).Msgf("error parsing folder name")
-		netHTTP.Error(w, fmt.Sprintf("error parsing folder name: %q", err), 467)
+		netHTTP.Error(w, fmt.Sprintf("error parsing folder name: %q", err), 466)
 		return
 	}
 
