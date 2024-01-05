@@ -269,8 +269,10 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 				// delete match from matchesMap if threshold is not met
 				matchesMap.Delete(p.req.Name)
 
-				p.log.Log().Msgf("amount of episodes in client under configured threshold: %q", p.req.Name)
-				netHTTP.Error(w, fmt.Sprintf("amount of episodes in client under configured threshold: %q", p.req.Name), 230)
+				p.log.Log().Msgf("found %d/%d (%.2f%%) episodes in client, below configured smart mode threshold: %q",
+					len(matchedEpisodes), totalEpisodes, percentEpisodes*100, p.req.Name)
+				netHTTP.Error(w, fmt.Sprintf("found %d/%d (%.2f%%) episodes in client, below configured smart mode threshold: %q",
+					len(matchedEpisodes), totalEpisodes, percentEpisodes*100, p.req.Name), 230)
 				return
 			}
 		}
