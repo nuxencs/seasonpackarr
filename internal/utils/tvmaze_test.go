@@ -51,7 +51,7 @@ func Test_GetEpisodesPerSeason(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		t.Run(tt.title, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			got, err := GetEpisodesPerSeason(tt.title, tt.season)
 
 			if (err != nil) != tt.wantErr {
