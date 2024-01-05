@@ -121,8 +121,24 @@ logLevel: "DEBUG"
 #
 # logMaxBackups: 3
 
+# Smart Mode
+# Toggles smart mode to only download season packs that have a certain amount of episodes from a release group
+# already in the client
+#
+# Default: false
+#
+# smartMode: false
+
+# Smart Mode Threshold
+# Sets the threshold for the percentage of episodes out of a season that must be present in the client
+# In this example 75% of the episodes in a season must be present in the client for it to be downloaded
+#
+# Default: 0.75
+#
+# smartModeThreshold: 0.75
+
 # Parse Torrent File
-# Decide if torrent file should be parsed to get correct folder name
+# Toggles torrent file parsing to get the correct folder name
 #
 # Default: false
 #
@@ -263,12 +279,14 @@ func (c *AppConfig) defaults() {
 				PreImportPath: "",
 			},
 		},
-		LogLevel:         "DEBUG",
-		LogPath:          "",
-		LogMaxSize:       50,
-		LogMaxBackups:    3,
-		ParseTorrentFile: false,
-		APIToken:         "",
+		LogLevel:           "DEBUG",
+		LogPath:            "",
+		LogMaxSize:         50,
+		LogMaxBackups:      3,
+		SmartMode:          false,
+		SmartModeThreshold: 0.75,
+		ParseTorrentFile:   false,
+		APIToken:           "",
 	}
 }
 
@@ -299,6 +317,14 @@ func (c *AppConfig) loadFromEnv() {
 				case prefix + "LOG_MAX_BACKUPS":
 					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
 						c.Config.LogMaxBackups = int(i)
+					}
+				case prefix + "SMART_MODE":
+					if b, err := strconv.ParseBool(envPair[1]); err == nil {
+						c.Config.SmartMode = b
+					}
+				case prefix + "SMART_MODE_THRESHOLD":
+					if f, _ := strconv.ParseFloat(envPair[1], 32); f > 0 {
+						c.Config.SmartModeThreshold = float32(f)
 					}
 				case prefix + "PARSE_TORRENT_FILE":
 					if b, err := strconv.ParseBool(envPair[1]); err == nil {

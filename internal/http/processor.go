@@ -200,6 +200,8 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 		}
 	}
 
+	var matchedEpisodes []int
+
 	for _, child := range v {
 		switch res := checkCandidates(&requestrls, &child); res {
 		case 210:
@@ -225,8 +227,11 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 				break
 			}
 
+			episodeRls := rls.ParseString(child.t.Name)
 			episodePath := filepath.Join(child.t.SavePath, fileName)
 			packPath := filepath.Join(client.PreImportPath, packDirName, filepath.Base(fileName))
+
+			matchedEpisodes = append(matchedEpisodes, episodeRls.Episode)
 
 			currentMatch := []matchPaths{
 				{
@@ -247,6 +252,29 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 	}
 
 	if matchesSlice, ok := matchesMap.Load(p.req.Name); ok {
+		if p.cfg.Config.SmartMode {
+			reqRls := rls.ParseString(p.req.Name)
+
+			totalEpisodes, err := utils.GetEpisodesPerSeason(reqRls.Title, reqRls.Series)
+			if err != nil {
+				p.log.Error().Err(err).Msgf("error getting episode count for season %d of %q", reqRls.Series, reqRls.Title)
+				netHTTP.Error(w, fmt.Sprintf("error getting episode count for season %d of %q", reqRls.Series, reqRls.Title), 450)
+				return
+			}
+			matchedEpisodes = utils.DedupeSlice(matchedEpisodes)
+
+			percentEpisodes := percentOfTotalEpisodes(totalEpisodes, matchedEpisodes)
+
+			if percentEpisodes < p.cfg.Config.SmartModeThreshold {
+				// delete match from matchesMap if threshold is not met
+				matchesMap.Delete(p.req.Name)
+
+				p.log.Log().Msgf("amount of episodes in client under configured threshold: %q", p.req.Name)
+				netHTTP.Error(w, fmt.Sprintf("amount of episodes in client under configured threshold: %q", p.req.Name), 230)
+				return
+			}
+		}
+
 		if p.cfg.Config.ParseTorrentFile {
 			p.log.Log().Msgf("found matching episodes for season pack: %q", p.req.Name)
 			netHTTP.Error(w, fmt.Sprintf("found matching episodes for season pack: %q", p.req.Name), 250)
@@ -341,4 +369,14 @@ func checkCandidates(requestrls, child *entry) int {
 	}
 	// not a season pack
 	return 211
+}
+
+func percentOfTotalEpisodes(totalEpisodes int, matchedEpisodes []int) float32 {
+	if totalEpisodes == 0 {
+		return 0
+	}
+	count := len(matchedEpisodes)
+	percent := float32(count) / float32(totalEpisodes)
+
+	return percent
 }

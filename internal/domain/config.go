@@ -13,15 +13,17 @@ type Client struct {
 }
 
 type Config struct {
-	Version          string
-	ConfigPath       string
-	Host             string             `yaml:"host"`
-	Port             int                `yaml:"port"`
-	Clients          map[string]*Client `yaml:"clients"`
-	LogPath          string             `yaml:"logPath"`
-	LogLevel         string             `yaml:"logLevel"`
-	LogMaxSize       int                `yaml:"logMaxSize"`
-	LogMaxBackups    int                `yaml:"logMaxBackups"`
-	ParseTorrentFile bool               `yaml:"parseTorrentFile"`
-	APIToken         string             `yaml:"apiToken"`
+	Version            string
+	ConfigPath         string
+	Host               string             `yaml:"host"`
+	Port               int                `yaml:"port"`
+	Clients            map[string]*Client `yaml:"clients"`
+	LogPath            string             `yaml:"logPath"`
+	LogLevel           string             `yaml:"logLevel"`
+	LogMaxSize         int                `yaml:"logMaxSize"`
+	LogMaxBackups      int                `yaml:"logMaxBackups"`
+	SmartMode          bool               `yaml:"smartMode"`
+	SmartModeThreshold float32            `yaml:"smartModeThreshold"`
+	ParseTorrentFile   bool               `yaml:"parseTorrentFile"`
+	APIToken           string             `yaml:"apiToken"`
 }
