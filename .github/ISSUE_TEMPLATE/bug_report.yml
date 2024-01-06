@@ -7,7 +7,7 @@ body:
     attributes:
       label: Version
       description: The seasonpackarr version you're running. If you run something other than latest, please update before reporting issues.
-      placeholder: Describe the bug...
+      placeholder: Enter your version...
     validations:
       required: true
   - type: textarea
