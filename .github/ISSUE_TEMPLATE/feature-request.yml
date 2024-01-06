@@ -1,0 +1,32 @@
+name: Feature Request
+description: Suggest an idea for this project
+title: "[Feature Request]"
+body:
+  - type: textarea
+    attributes:
+      label: Description
+      description: A clear and concise description of what you want to happen.
+      placeholder: Describe the feature...
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Alternatives
+      description: A clear and concise description of any alternative solutions or features you've considered.
+      placeholder: Describe alternative solutions...
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Screenshots
+      description: If applicable, add screenshots to help explain your requested feature. You can add image URLs or use any other method to display the screenshot (provided GitHub supports it).
+      placeholder: Add screenshot...
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Additional Context
+      description: Add any other context about the feature here.
+      placeholder: Add context...
+    validations:
+      required: false
