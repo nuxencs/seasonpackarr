@@ -1,16 +1,31 @@
 name: Bug Report
-description: Create a report to help us improve
+description: Create a report to help me improve
 title: "[Bug]"
-labels: ["Type: Bug", "Status: Needs Triage"]
+labels: [ "Type: Bug", "Status: Needs Triage" ]
 body:
-  - type: input
+  - type: dropdown
+    id: version
     attributes:
       label: Version
-      description: The seasonpackarr version you're running. If you run something other than latest, please update before reporting issues.
-      placeholder: Enter your version...
+      description: The seasonpackarr version you're running.
+      options:
+        - v0.4.0
+        - v0.3.0
+        - v0.2.6
+        - v0.2.5
+        - v0.2.4
+        - v0.2.3
+        - v0.2.2
+        - v0.2.1
+        - v0.2.0
+        - v0.1.0
+        - v0.0.2
+        - v0.0.1
+      default: 0
     validations:
       required: true
   - type: textarea
+    id: description
     attributes:
       label: Description
       description: A clear and concise description of what the bug is.
@@ -18,6 +33,7 @@ body:
     validations:
       required: true
   - type: textarea
+    id: expected-behavior
     attributes:
       label: Expected Behavior
       description: A clear and concise description of what you expected to happen.
@@ -25,6 +41,15 @@ body:
     validations:
       required: true
   - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Please copy and paste any relevant log output. This will be automatically formatted into code.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: screenshots
     attributes:
       label: Screenshots
       description: If applicable, add screenshots to help explain your problem. You can add image URLs or use any other method to display the screenshot (provided GitHub supports it).
@@ -32,6 +57,7 @@ body:
     validations:
       required: false
   - type: textarea
+    id: context
     attributes:
       label: Additional Context
       description: Add any other context about the problem here.
