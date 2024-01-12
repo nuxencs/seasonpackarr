@@ -94,8 +94,24 @@ logLevel: "DEBUG"
 #
 # logMaxBackups: 3
 
+# Smart Mode
+# Toggles smart mode to only download season packs that have a certain amount of episodes from a release group
+# already in the client
+#
+# Default: false
+#
+# smartMode: false
+
+# Smart Mode Threshold
+# Sets the threshold for the percentage of episodes out of a season that must be present in the client
+# In this example 75% of the episodes in a season must be present in the client for it to be downloaded
+#
+# Default: 0.75
+#
+# smartModeThreshold: 0.75
+
 # Parse Torrent File
-# Decide if torrent file should be parsed to get correct folder name
+# Toggles torrent file parsing to get the correct folder name
 #
 # Default: false
 #
