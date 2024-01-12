@@ -98,6 +98,35 @@ See `docker-compose.yml` for an example.
 Make sure you use the correct path you have mapped within the container in the config file. After the first start you
 will need to adjust the created config file to your needs and start the container again.
 
+## Configuration
+
+You can configure a decent part of the features seasonpackarr provides. I will explain the most important ones here in
+more detail.
+
+1. **Smart Mode**: Can be enabled in the config by setting `smartMode` to `true`. Works together with `smartModeThreshold`
+   to determine if a season pack should get grabbed or not. Here's an example that explains it pretty well:
+   
+   Let's say you have 8 episodes of a season in your client released by `RlsGrpA`. You also have 12 episodes of the same
+   season in your client released by `RlsGrpB` and there are a total of 12 episodes in that season. If you have smart
+   mode enabled with a threshold set to `0.75`, only the season pack from `RlsGrpB` will get grabbed, because
+   `8/12 = 0.67` which is below the threshold.
+   
+   Credits go to the [TVmaze API](https://www.tvmaze.com/api) for providing the total amount of episodes of a show in a
+   specific season.
+2. **Parse Torrent**: Can be enabled in the config by setting `parseTorrentFile` to `true`. This option will make sure
+   that the season pack folder that gets created by seasonpackarr will always have the correct name. One example that
+   will make the benefit of this clearer:
+
+   - Announce name: `Show.S01.1080p.WEB-DL.DDPA5.1.H.264-RlsGrp`
+   - Folder name: `Show.S01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp`
+   
+   Using the announce name for the folder name would lead to all the files in the torrent being downloaded again, because
+   the torrent client can't find the files in the incorrect folder. By using the parsed folder name the files will be
+   hardlinked into the exact folder that is being used in the torrent.
+
+   You can take a look at the [Webhook](#webhook) section to see what you would need to add in your autobrr filter to
+   make use of this feature.
+
 ## autobrr Filter setup
 
 Support for multiple Sonarr and qBittorrent instances with different pre import directories was added with v0.4.0, so
