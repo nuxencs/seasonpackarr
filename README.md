@@ -1,22 +1,17 @@
 # seasonpackarr
 
-A companion app for autobrr that will automagically hardlink already downloaded episode files into a season folder when
-a matching season pack announce hits autobrr. This way you won't have to download any episodes that you already have.
-
-Huge credit goes to [upgraderr](https://github.com/KyleSanderson/upgraderr) and
-specifically [@KyleSanderson](https://github.com/KyleSanderson), whose project provided great functions that I could
-make use of.
+A companion app for autobrr that automagically hardlinks downloaded episodes to a season folder when a season pack is
+announced, eliminating the need for re-downloading existing episodes.
 
 > [!WARNING]
-> This application is still in the very early stages of development, so expect bugs to happen, especially with weird
-> episode or season pack naming.
+> This application is in the early stages of development, so expect bugs to happen, especially with weird episode or
+> season pack naming.
 
 ## Installation
 
 ### Linux
 
-Download the latest release, or download the [source code](https://github.com/nuxencs/seasonpackarr/releases/latest) and
-build it yourself using `go build`.
+Download the latest release, or download the [source code](https://github.com/nuxencs/seasonpackarr/releases/latest) and build it yourself using `go build`.
 
 ```bash
 wget $(curl -s https://api.github.com/repos/nuxencs/seasonpackarr/releases/latest | grep download | grep linux_x86_64 | cut -d\" -f4)
@@ -103,29 +98,31 @@ will need to adjust the created config file to your needs and start the containe
 You can configure a decent part of the features seasonpackarr provides. I will explain the most important ones here in
 more detail.
 
-1. **Smart Mode**: Can be enabled in the config by setting `smartMode` to `true`. Works together with `smartModeThreshold`
-   to determine if a season pack should get grabbed or not. Here's an example that explains it pretty well:
-   
-   Let's say you have 8 episodes of a season in your client released by `RlsGrpA`. You also have 12 episodes of the same
-   season in your client released by `RlsGrpB` and there are a total of 12 episodes in that season. If you have smart
-   mode enabled with a threshold set to `0.75`, only the season pack from `RlsGrpB` will get grabbed, because
-   `8/12 = 0.67` which is below the threshold.
-   
-   Credits go to the [TVmaze API](https://www.tvmaze.com/api) for providing the total amount of episodes of a show in a
-   specific season.
-2. **Parse Torrent**: Can be enabled in the config by setting `parseTorrentFile` to `true`. This option will make sure
-   that the season pack folder that gets created by seasonpackarr will always have the correct name. One example that
-   will make the benefit of this clearer:
+### Smart Mode
 
-   - Announce name: `Show.S01.1080p.WEB-DL.DDPA5.1.H.264-RlsGrp`
-   - Folder name: `Show.S01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp`
-   
-   Using the announce name for the folder name would lead to all the files in the torrent being downloaded again, because
-   the torrent client can't find the files in the incorrect folder. By using the parsed folder name the files will be
-   hardlinked into the exact folder that is being used in the torrent.
+Can be enabled in the config by setting `smartMode` to `true`. Works together with `smartModeThreshold` to determine if
+a season pack should get grabbed or not. Here's an example that explains it pretty well:
 
-   You can take a look at the [Webhook](#webhook) section to see what you would need to add in your autobrr filter to
-   make use of this feature.
+Let's say you have 8 episodes of a season in your client released by `RlsGrpA`. You also have 12 episodes of the same
+season in your client released by `RlsGrpB` and there are a total of 12 episodes in that season. If you have smart
+mode enabled with a threshold set to `0.75`, only the season pack from `RlsGrpB` will get grabbed, because `8/12 = 0.67`
+which is below the threshold.
+
+### Parse Torrent
+
+Can be enabled in the config by setting `parseTorrentFile` to `true`. This option will make sure that the season pack
+folder that gets created by seasonpackarr will always have the correct name. One example that will make the benefit
+of this clearer:
+
+- Announce name: `Show.S01.1080p.WEB-DL.DDPA5.1.H.264-RlsGrp`
+- Folder name: `Show.S01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp`
+   
+Using the announce name would create the wrong folder and would lead to all the files in the torrent being downloaded
+again. The issue in the given example is the additional `A` after `DDP` which is not present in the folder name. By
+using the parsed folder name the files will be hardlinked into the exact folder that is being used in the torrent.
+
+You can take a look at the [Webhook](#webhook) section to see what you would need to add in your autobrr filter to
+make use of this feature.
 
 ## autobrr Filter setup
 
@@ -252,3 +249,11 @@ added by seasonpackarr from causing errors in your qBittorrent client when some 
 > [!WARNING]
 > If you enable that option regardless, you will most likely have to deal with errored torrents, which would require you
 > to manually trigger a recheck on them to fix the issue.
+
+## Credits
+
+Huge credit goes to [upgraderr](https://github.com/KyleSanderson/upgraderr) and specifically [@KyleSanderson](https://github.com/KyleSanderson), whose
+project provided great functions that I could make use of. Additionally, I would also like to mention [@zze0s](https://github.com/zze0s), who was
+really helpful regarding any question I had as well as providing me with a lot of the structure this project has now.
+Credits also go to the [TVmaze API](https://www.tvmaze.com/api) for providing comprehensive data on the total number of episodes for
+a show in a specific season.
