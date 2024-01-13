@@ -252,8 +252,8 @@ added by seasonpackarr from causing errors in your qBittorrent client when some 
 
 ## Credits
 
-Huge credit goes to [upgraderr](https://github.com/KyleSanderson/upgraderr) and specifically @KyleSanderson, whose
-project provided great functions that I could make use of. Additionally, I would also like to mention @zze0s, who was
+Huge credit goes to [upgraderr](https://github.com/KyleSanderson/upgraderr) and specifically [@KyleSanderson](https://github.com/KyleSanderson), whose
+project provided great functions that I could make use of. Additionally, I would also like to mention [@zze0s](https://github.com/zze0s), who was
 really helpful regarding any question I had as well as providing me with a lot of the structure this project has now.
 Credits also go to the [TVmaze API](https://www.tvmaze.com/api) for providing comprehensive data on the total number of episodes for
 a show in a specific season.
