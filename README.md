@@ -118,8 +118,8 @@ of this clearer:
 - Folder name: `Show.S01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp`
    
 Using the announce name would create the wrong folder and would lead to all the files in the torrent being downloaded
-again. The issue in the given example is the additional `A` after `DDP` which is missing in the folder name. By using
-the parsed folder name the files will be hardlinked into the exact folder that is being used in the torrent.
+again. The issue in the given example is the additional `A` after `DDP` which is not present in the folder name. By
+using the parsed folder name the files will be hardlinked into the exact folder that is being used in the torrent.
 
 You can take a look at the [Webhook](#webhook) section to see what you would need to add in your autobrr filter to
 make use of this feature.
