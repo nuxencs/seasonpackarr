@@ -41,7 +41,6 @@ port: 42069
 
 clients:
   # Client name used in the autobrr filter, can be customized to whatever you like
-  # If you change the name of the default client you always need to specify that name in the autobrr filter
   # Note that a client name has to be unique and can only be used once
   #
   # Default: default
@@ -267,18 +266,9 @@ func New(configPath string, version string) *AppConfig {
 
 func (c *AppConfig) defaults() {
 	c.Config = &domain.Config{
-		Version: "dev",
-		Host:    "0.0.0.0",
-		Port:    42069,
-		Clients: map[string]*domain.Client{
-			"default": {
-				Host:          "127.0.0.1",
-				Port:          8080,
-				Username:      "admin",
-				Password:      "adminadmin",
-				PreImportPath: "",
-			},
-		},
+		Version:            "dev",
+		Host:               "0.0.0.0",
+		Port:               42069,
 		LogLevel:           "DEBUG",
 		LogPath:            "",
 		LogMaxSize:         50,

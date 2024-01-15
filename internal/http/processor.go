@@ -157,14 +157,11 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 
 	client, ok := p.cfg.Config.Clients[clientName]
 	if !ok {
-		p.log.Info().Msgf("client not found in config: %q", clientName)
-
-		// use default client
-		clientName = "default"
-		client = p.cfg.Config.Clients[clientName]
-
-		p.log.Info().Msgf("using default client serving at %s:%d", client.Host, client.Port)
+		p.log.Error().Msgf("client not found in config: %q", clientName)
+		netHTTP.Error(w, fmt.Sprintf("client not found in config: %q", clientName), 472)
+		return
 	}
+	p.log.Info().Msgf("using %q client serving at %s:%d", clientName, client.Host, client.Port)
 
 	if len(p.req.Name) == 0 {
 		p.log.Error().Msgf("error getting announce name")
