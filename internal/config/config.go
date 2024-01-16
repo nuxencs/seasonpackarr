@@ -269,6 +269,7 @@ func (c *AppConfig) defaults() {
 		Version:            "dev",
 		Host:               "0.0.0.0",
 		Port:               42069,
+		Clients:            make(map[string]*domain.Client),
 		LogLevel:           "DEBUG",
 		LogPath:            "",
 		LogMaxSize:         50,
