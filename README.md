@@ -173,7 +173,8 @@ to look like this:
 ```
 
 Replace the `clientname` value, in this case `default`, with the name you gave your desired qBittorrent client in your
-config under the `clients` section. You need to specify a `clientname` in the JSON payload otherwise the request will fail.
+config under the `clients` section. If you don't specify a `clientname` in the JSON payload, the `default` client defined
+in your config will be used. If no `default` client is defined in your config, the request will fail.
 
 #### API Authentication
 
