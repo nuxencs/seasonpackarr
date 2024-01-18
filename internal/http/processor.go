@@ -196,6 +196,7 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 	}
 
 	packDirName := utils.FormatSeasonPackTitle(p.req.Name)
+	p.log.Debug().Msgf("formatted season pack name: %q", packDirName)
 
 	for _, child := range v {
 		if checkCandidates(&requestrls, &child) == 210 {
@@ -252,6 +253,7 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 
 			newMatches := append(oldMatches.([]matchPaths), currentMatch...)
 			matchesMap.Store(p.req.Name, newMatches)
+			p.log.Debug().Msgf("matched torrent from client %q: %q %q", clientName, child.t.Name, child.t.Hash)
 			continue
 		}
 	}
@@ -335,6 +337,7 @@ func (p processor) ParseTorrent(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 		netHTTP.Error(w, fmt.Sprintf("error parsing folder name: %q", err), 466)
 		return
 	}
+	p.log.Debug().Msgf("parsed season pack name: %q", folderName)
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
 	if !ok {
