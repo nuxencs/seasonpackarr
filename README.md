@@ -173,7 +173,8 @@ to look like this:
 ```
 
 Replace the `clientname` value, in this case `default`, with the name you gave your desired qBittorrent client in your
-config under the `clients` section. You need to specify a `clientname` in the JSON payload otherwise the request will fail.
+config under the `clients` section. If you don't specify a `clientname` in the JSON payload, seasonpackarr will try to
+use the `default` client; if you renamed or removed the `default` client the request will fail.
 
 #### API Authentication
 

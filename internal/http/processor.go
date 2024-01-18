@@ -155,6 +155,11 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 
 	clientName := p.req.ClientName
 
+	if len(clientName) == 0 {
+		clientName = "default"
+		p.log.Info().Msgf("no clientname defined. trying to use %q client", clientName)
+	}
+
 	client, ok := p.cfg.Config.Clients[clientName]
 	if !ok {
 		p.log.Error().Msgf("client not found in config: %q", clientName)
