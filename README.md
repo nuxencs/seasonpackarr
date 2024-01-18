@@ -142,7 +142,6 @@ option `Import filter`. Just paste the content below into the text box that appe
   "version": "1.0",
   "data": {
     "enabled": true,
-    "priority": 15,
     "seasons": "1-99",
     "episodes": "0",
     "resolutions": [
@@ -152,6 +151,11 @@ option `Import filter`. Just paste the content below into the text box that appe
   }
 }
 ```
+
+In the `General` tab you will need to adjust the value of `Priority` to be set higher than all your TV show filters. For
+instance, if your Sonarr filter is set at `10` and a TV filter that sends to qBittorrent is at `15`, then you should set
+the `seasonpackarr` filter to at least `16`. This ensures that it will execute before the others. It's perfectly fine to
+have a `cross-seed` filter positioned above the `seasonpackarr` filter.
 
 ### External Filters
 
