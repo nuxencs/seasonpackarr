@@ -101,9 +101,12 @@ jobs:
         with:
           images: ghcr.io/nuxencs/seasonpackarr
           tags: |
-            type=semver,pattern={{raw}}
+            type=semver,pattern={{version}},prefix=v
+            type=semver,pattern={{major}}.{{minor}},prefix=v
             type=ref,event=branch
             type=ref,event=pr
+          flavor: |
+            latest=auto
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -124,7 +127,10 @@ jobs:
           build-args: |
             BUILDTIME=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
             VERSION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
-            REVISION=${{ github.event.pull_request.head.sha }}
+            REVISION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.revision'] }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
 
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
