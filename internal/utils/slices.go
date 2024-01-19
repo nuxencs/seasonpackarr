@@ -3,6 +3,8 @@
 
 package utils
 
+import "golang.org/x/exp/slices"
+
 func DedupeSlice[T comparable](s []T) []T {
 	inResult := make(map[T]bool)
 	var result []T
@@ -13,4 +15,14 @@ func DedupeSlice[T comparable](s []T) []T {
 		}
 	}
 	return result
+}
+
+func CompareStringSlices(x, y []string) bool {
+	slices.Sort(x)
+	slices.Sort(y)
+
+	if slices.Equal(x, y) {
+		return true
+	}
+	return false
 }

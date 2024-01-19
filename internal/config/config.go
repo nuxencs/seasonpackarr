@@ -266,18 +266,19 @@ func New(configPath string, version string) *AppConfig {
 
 func (c *AppConfig) defaults() {
 	c.Config = &domain.Config{
-		Version:            "dev",
-		Host:               "0.0.0.0",
-		Port:               42069,
-		Clients:            make(map[string]*domain.Client),
-		LogLevel:           "DEBUG",
-		LogPath:            "",
-		LogMaxSize:         50,
-		LogMaxBackups:      3,
-		SmartMode:          false,
-		SmartModeThreshold: 0.75,
-		ParseTorrentFile:   false,
-		APIToken:           "",
+		Version:             "dev",
+		Host:                "0.0.0.0",
+		Port:                42069,
+		Clients:             make(map[string]*domain.Client),
+		LogLevel:            "DEBUG",
+		LogPath:             "",
+		LogMaxSize:          50,
+		LogMaxBackups:       3,
+		SmartMode:           false,
+		SmartModeThreshold:  0.75,
+		ParseTorrentFile:    false,
+		CompareRepackStatus: true,
+		APIToken:            "",
 	}
 }
 
@@ -320,6 +321,10 @@ func (c *AppConfig) loadFromEnv() {
 				case prefix + "PARSE_TORRENT_FILE":
 					if b, err := strconv.ParseBool(envPair[1]); err == nil {
 						c.Config.ParseTorrentFile = b
+					}
+				case prefix + "COMPARE_REPACK_STATUS":
+					if b, err := strconv.ParseBool(envPair[1]); err == nil {
+						c.Config.CompareRepackStatus = b
 					}
 				case prefix + "API_TOKEN":
 					c.Config.APIToken = envPair[1]

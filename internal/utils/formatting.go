@@ -14,7 +14,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-func GetFormattedTitle(r rls.Release) string {
+func GetFormattedTitle(r rls.Release, compareRepackStatus bool) string {
 	s := fmt.Sprintf("%s%d%d%s%s%s", rls.MustNormalize(r.Title), r.Year, r.Series,
 		rls.MustNormalize(r.Resolution), rls.MustNormalize(r.Source), rls.MustNormalize(r.Group))
 
@@ -28,9 +28,11 @@ func GetFormattedTitle(r rls.Release) string {
 		s += rls.MustNormalize(a)
 	}
 
-	slices.Sort(r.Other)
-	for _, a := range r.Other {
-		s += rls.MustNormalize(a)
+	if compareRepackStatus {
+		slices.Sort(r.Other)
+		for _, a := range r.Other {
+			s += rls.MustNormalize(a)
+		}
 	}
 
 	slices.Sort(r.HDR)
@@ -39,7 +41,7 @@ func GetFormattedTitle(r rls.Release) string {
 	}
 
 	re := regexp.MustCompile(`(?i)(?:\d{3,4}p|Repack\d?|Proper\d?|Real)[-_. ](\w+)[-_. ]WEB`)
-	service := re.FindStringSubmatch(fmt.Sprintf("%q", r))
+	service := re.FindStringSubmatch(r.String())
 	if len(service) > 1 {
 		s += rls.MustNormalize(service[1])
 	}

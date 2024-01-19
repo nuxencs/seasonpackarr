@@ -14,6 +14,7 @@ import (
 	"seasonpackarr/internal/config"
 	"seasonpackarr/internal/domain"
 	"seasonpackarr/internal/logger"
+	"seasonpackarr/internal/release"
 	"seasonpackarr/internal/utils"
 
 	"github.com/autobrr/go-qbittorrent"
@@ -27,11 +28,6 @@ type processor struct {
 	req *request
 }
 
-type entry struct {
-	t qbittorrent.Torrent
-	r rls.Release
-}
-
 type request struct {
 	Name       string
 	Torrent    json.RawMessage
@@ -40,7 +36,7 @@ type request struct {
 }
 
 type entryTime struct {
-	e   map[string][]entry
+	e   map[string][]domain.Entry
 	d   map[string]rls.Release
 	t   time.Time
 	err error
@@ -125,7 +121,7 @@ func (p processor) getAllTorrents(client *domain.Client) entryTime {
 	}
 
 	nt := time.Now()
-	res = &entryTime{e: make(map[string][]entry), t: nt.Add(nt.Sub(cur)), d: res.d}
+	res = &entryTime{e: make(map[string][]domain.Entry), t: nt.Add(nt.Sub(cur)), d: res.d}
 
 	for _, t := range torrents {
 		r, ok := res.d[t.Name]
@@ -134,8 +130,8 @@ func (p processor) getAllTorrents(client *domain.Client) entryTime {
 			res.d[t.Name] = r
 		}
 
-		s := utils.GetFormattedTitle(r)
-		res.e[s] = append(res.e[s], entry{t: t, r: r})
+		s := utils.GetFormattedTitle(r, p.cfg.Config.CompareRepackStatus)
+		res.e[s] = append(res.e[s], domain.Entry{T: t, R: r})
 	}
 
 	torrentMap.Store(set, res)
@@ -187,8 +183,8 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 		return
 	}
 
-	requestrls := entry{r: rls.ParseString(p.req.Name)}
-	v, ok := mp.e[utils.GetFormattedTitle(requestrls.r)]
+	requestrls := domain.Entry{R: rls.ParseString(p.req.Name)}
+	v, ok := mp.e[utils.GetFormattedTitle(requestrls.R, p.cfg.Config.CompareRepackStatus)]
 	if !ok {
 		p.log.Info().Msgf("no matching releases in client %q: %q", clientName, p.req.Name)
 		netHTTP.Error(w, fmt.Sprintf("no matching releases in client %q: %q", clientName, p.req.Name), 200)
@@ -199,7 +195,7 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 	p.log.Debug().Msgf("formatted season pack name: %q", packDirName)
 
 	for _, child := range v {
-		if checkCandidates(&requestrls, &child) == 210 {
+		if release.CheckCandidates(&requestrls, &child, p.cfg.Config.CompareRepackStatus) == 210 {
 			p.log.Info().Msgf("release already in client %q: %q", clientName, p.req.Name)
 			netHTTP.Error(w, fmt.Sprintf("release already in client %q: %q", clientName, p.req.Name), 210)
 			return
@@ -209,7 +205,7 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 	var matchedEpisodes []int
 
 	for _, child := range v {
-		switch res := checkCandidates(&requestrls, &child); res {
+		switch res := release.CheckCandidates(&requestrls, &child, p.cfg.Config.CompareRepackStatus); res {
 		case 210:
 			p.log.Info().Msgf("release already in client %q: %q", clientName, p.req.Name)
 			netHTTP.Error(w, fmt.Sprintf("release already in client %q: %q", clientName, p.req.Name), res)
@@ -221,9 +217,9 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 			return
 
 		case 250:
-			m, err := p.getFiles(child.t.Hash)
+			m, err := p.getFiles(child.T.Hash)
 			if err != nil {
-				p.log.Error().Err(err).Msgf("error getting files: %q", child.t.Name)
+				p.log.Error().Err(err).Msgf("error getting files: %q", child.T.Name)
 				continue
 			}
 
@@ -233,8 +229,8 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 				break
 			}
 
-			episodeRls := rls.ParseString(child.t.Name)
-			episodePath := filepath.Join(child.t.SavePath, fileName)
+			episodeRls := rls.ParseString(child.T.Name)
+			episodePath := filepath.Join(child.T.SavePath, fileName)
 			packPath := filepath.Join(client.PreImportPath, packDirName, filepath.Base(fileName))
 
 			matchedEpisodes = append(matchedEpisodes, episodeRls.Episode)
@@ -253,7 +249,7 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 
 			newMatches := append(oldMatches.([]matchPaths), currentMatch...)
 			matchesMap.Store(p.req.Name, newMatches)
-			p.log.Debug().Msgf("matched torrent from client %q: %q %q", clientName, child.t.Name, child.t.Hash)
+			p.log.Debug().Msgf("matched torrent from client %q: %q %q", clientName, child.T.Name, child.T.Hash)
 			continue
 		}
 	}
@@ -270,7 +266,7 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 			}
 			matchedEpisodes = utils.DedupeSlice(matchedEpisodes)
 
-			percentEpisodes := percentOfTotalEpisodes(totalEpisodes, matchedEpisodes)
+			percentEpisodes := release.PercentOfTotalEpisodes(totalEpisodes, matchedEpisodes)
 
 			if percentEpisodes < p.cfg.Config.SmartModeThreshold {
 				// delete match from matchesMap if threshold is not met
@@ -358,35 +354,4 @@ func (p processor) ParseTorrent(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 		p.log.Log().Msgf("created hardlink of %q into %q", match.episodePath, match.packPath)
 		netHTTP.Error(w, fmt.Sprintf("created hardlink of %q into %q", match.episodePath, match.packPath), 250)
 	}
-}
-
-func checkCandidates(requestrls, child *entry) int {
-	rlsRelease := requestrls.r
-	rlsInClient := child.r
-
-	// check if season pack and no extension
-	if fmt.Sprint(rlsRelease.Type) == "series" && rlsRelease.Ext == "" {
-		// compare formatted titles
-		if utils.GetFormattedTitle(rlsInClient) == utils.GetFormattedTitle(rlsRelease) {
-			// check if same episode
-			if rlsInClient.Episode == rlsRelease.Episode {
-				// release is already in client
-				return 210
-			}
-			// season pack with matching episodes
-			return 250
-		}
-	}
-	// not a season pack
-	return 211
-}
-
-func percentOfTotalEpisodes(totalEpisodes int, matchedEpisodes []int) float32 {
-	if totalEpisodes == 0 {
-		return 0
-	}
-	count := len(matchedEpisodes)
-	percent := float32(count) / float32(totalEpisodes)
-
-	return percent
 }
