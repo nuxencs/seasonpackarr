@@ -143,6 +143,13 @@ logLevel: "DEBUG"
 #
 # parseTorrentFile: false
 
+# Compare Repack Status
+# Toggles whether the repack status of an episode should be taken into account when comparing it to the season pack
+#
+# Default: true
+#
+# compareRepackStatus: true
+
 # API Token
 # If not defined, removes api authentication
 #
