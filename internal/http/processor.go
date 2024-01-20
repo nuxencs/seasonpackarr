@@ -209,42 +209,42 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 		case 201:
 			p.log.Info().Msgf("resolution did not match: %q vs %q", requestrls.R.Resolution, child.R.Resolution)
 			netHTTP.Error(w, fmt.Sprintf("resolution did not match: %q vs %q", requestrls.R.Resolution, child.R.Resolution), res)
-			return
+			continue
 
 		case 202:
 			p.log.Info().Msgf("source did not match: %q vs %q", requestrls.R.Source, child.R.Source)
 			netHTTP.Error(w, fmt.Sprintf("source did not match: %q vs %q", requestrls.R.Source, child.R.Source), res)
-			return
+			continue
 
 		case 203:
 			p.log.Info().Msgf("release group did not match: %q vs %q", requestrls.R.Group, child.R.Group)
 			netHTTP.Error(w, fmt.Sprintf("release group did not match: %q vs %q", requestrls.R.Group, child.R.Group), res)
-			return
+			continue
 
 		case 204:
 			p.log.Info().Msgf("cut did not match: %q vs %q", requestrls.R.Cut, child.R.Cut)
 			netHTTP.Error(w, fmt.Sprintf("cut did not match: %q vs %q", requestrls.R.Cut, child.R.Cut), res)
-			return
+			continue
 
 		case 205:
 			p.log.Info().Msgf("edition did not match: %q vs %q", requestrls.R.Edition, child.R.Edition)
 			netHTTP.Error(w, fmt.Sprintf("edition did not match: %q vs %q", requestrls.R.Edition, child.R.Edition), res)
-			return
+			continue
 
 		case 206:
 			p.log.Info().Msgf("repack status did not match: %q vs %q", requestrls.R.Other, child.R.Other)
 			netHTTP.Error(w, fmt.Sprintf("repack status did not match: %q vs %q", requestrls.R.Other, child.R.Other), res)
-			return
+			continue
 
 		case 207:
 			p.log.Info().Msgf("hdr metadata did not match: %q vs %q", requestrls.R.HDR, child.R.HDR)
 			netHTTP.Error(w, fmt.Sprintf("hdr metadata did not match: %q vs %q", requestrls.R.HDR, child.R.HDR), res)
-			return
+			continue
 
 		case 208:
 			p.log.Info().Msgf("streaming service did not match: %q vs %q", requestrls.R.Collection, child.R.Collection)
 			netHTTP.Error(w, fmt.Sprintf("streaming service did not match: %q vs %q", requestrls.R.Collection, child.R.Collection), res)
-			return
+			continue
 
 		case 210:
 			p.log.Info().Msgf("release already in client %q: %q", clientName, p.req.Name)
