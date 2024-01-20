@@ -55,7 +55,7 @@ func compareReleases(r1, r2 rls.Release, compareRepackStatus bool) int {
 		return 208
 	}
 
-	if r1.Episode == r1.Episode {
+	if r1.Episode == r2.Episode {
 		return 210
 	}
 
