@@ -207,43 +207,43 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 	for _, child := range v {
 		switch res := release.CheckCandidates(&requestrls, &child, p.cfg.Config.CompareRepackStatus); res {
 		case 201:
-			p.log.Info().Msgf("resolution did not match: %q vs %q", &requestrls.R.Resolution, &requestrls.R.Resolution)
-			netHTTP.Error(w, fmt.Sprintf("resolution did not match: %q vs %q", &requestrls.R.Resolution, &requestrls.R.Resolution), res)
+			p.log.Info().Msgf("resolution did not match: %q vs %q", requestrls.R.Resolution, child.R.Resolution)
+			netHTTP.Error(w, fmt.Sprintf("resolution did not match: %q vs %q", requestrls.R.Resolution, child.R.Resolution), res)
 			return
 
 		case 202:
-			p.log.Info().Msgf("source did not match: %q vs %q", &requestrls.R.Source, &requestrls.R.Source)
-			netHTTP.Error(w, fmt.Sprintf("source did not match: %q vs %q", &requestrls.R.Source, &requestrls.R.Source), res)
+			p.log.Info().Msgf("source did not match: %q vs %q", requestrls.R.Source, child.R.Source)
+			netHTTP.Error(w, fmt.Sprintf("source did not match: %q vs %q", requestrls.R.Source, child.R.Source), res)
 			return
 
 		case 203:
-			p.log.Info().Msgf("release group did not match: %q vs %q", &requestrls.R.Group, &requestrls.R.Group)
-			netHTTP.Error(w, fmt.Sprintf("release group did not match: %q vs %q", &requestrls.R.Group, &requestrls.R.Group), res)
+			p.log.Info().Msgf("release group did not match: %q vs %q", requestrls.R.Group, child.R.Group)
+			netHTTP.Error(w, fmt.Sprintf("release group did not match: %q vs %q", requestrls.R.Group, child.R.Group), res)
 			return
 
 		case 204:
-			p.log.Info().Msgf("cut did not match: %q vs %q", &requestrls.R.Cut, &requestrls.R.Cut)
-			netHTTP.Error(w, fmt.Sprintf("cut did not match: %q vs %q", &requestrls.R.Cut, &requestrls.R.Cut), res)
+			p.log.Info().Msgf("cut did not match: %q vs %q", requestrls.R.Cut, child.R.Cut)
+			netHTTP.Error(w, fmt.Sprintf("cut did not match: %q vs %q", requestrls.R.Cut, child.R.Cut), res)
 			return
 
 		case 205:
-			p.log.Info().Msgf("edition did not match: %q vs %q", &requestrls.R.Edition, &requestrls.R.Edition)
-			netHTTP.Error(w, fmt.Sprintf("edition did not match: %q vs %q", &requestrls.R.Edition, &requestrls.R.Edition), res)
+			p.log.Info().Msgf("edition did not match: %q vs %q", requestrls.R.Edition, child.R.Edition)
+			netHTTP.Error(w, fmt.Sprintf("edition did not match: %q vs %q", requestrls.R.Edition, child.R.Edition), res)
 			return
 
 		case 206:
-			p.log.Info().Msgf("repack status did not match: %q vs %q", &requestrls.R.Other, &requestrls.R.Other)
-			netHTTP.Error(w, fmt.Sprintf("repack status did not match: %q vs %q", &requestrls.R.Other, &requestrls.R.Other), res)
+			p.log.Info().Msgf("repack status did not match: %q vs %q", requestrls.R.Other, child.R.Other)
+			netHTTP.Error(w, fmt.Sprintf("repack status did not match: %q vs %q", requestrls.R.Other, child.R.Other), res)
 			return
 
 		case 207:
-			p.log.Info().Msgf("hdr metadata did not match: %q vs %q", &requestrls.R.HDR, &requestrls.R.HDR)
-			netHTTP.Error(w, fmt.Sprintf("hdr metadata did not match: %q vs %q", &requestrls.R.HDR, &requestrls.R.HDR), res)
+			p.log.Info().Msgf("hdr metadata did not match: %q vs %q", requestrls.R.HDR, child.R.HDR)
+			netHTTP.Error(w, fmt.Sprintf("hdr metadata did not match: %q vs %q", requestrls.R.HDR, child.R.HDR), res)
 			return
 
 		case 208:
-			p.log.Info().Msgf("streaming service did not match: %q vs %q", &requestrls.R.Collection, &requestrls.R.Collection)
-			netHTTP.Error(w, fmt.Sprintf("streaming service did not match: %q vs %q", &requestrls.R.Collection, &requestrls.R.Collection), res)
+			p.log.Info().Msgf("streaming service did not match: %q vs %q", requestrls.R.Collection, child.R.Collection)
+			netHTTP.Error(w, fmt.Sprintf("streaming service did not match: %q vs %q", requestrls.R.Collection, child.R.Collection), res)
 			return
 
 		case 210:
