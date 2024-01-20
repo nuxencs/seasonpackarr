@@ -372,6 +372,15 @@ func (c *AppConfig) DynamicReload(log logger.Logger) {
 		logPath := viper.GetString("logPath")
 		c.Config.LogPath = logPath
 
+		smartMode := viper.GetBool("smartMode")
+		c.Config.SmartMode = smartMode
+
+		smartModeThreshold := viper.GetFloat64("smartModeThreshold")
+		c.Config.SmartModeThreshold = float32(smartModeThreshold)
+
+		parseTorrentFile := viper.GetBool("parseTorrentFile")
+		c.Config.ParseTorrentFile = parseTorrentFile
+
 		log.Debug().Msg("config file reloaded!")
 
 		c.m.Unlock()
