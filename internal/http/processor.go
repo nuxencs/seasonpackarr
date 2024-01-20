@@ -210,50 +210,50 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 	for _, child := range v {
 		switch res := release.CheckCandidates(&requestrls, &child, p.cfg.Config.CompareRepackStatus); res {
 		case 201:
-			p.log.Info().Msgf("resolution did not match: request (%q) vs client (%q)",
-				requestrls.R.Resolution, child.R.Resolution)
+			p.log.Info().Msgf("resolution did not match: request(%s => %s), client(%s => %s)",
+				requestrls.R.String(), requestrls.R.Resolution, child.R.String(), child.R.Resolution)
 			responseCodes = append(responseCodes, res)
 			continue
 
 		case 202:
-			p.log.Info().Msgf("source did not match: request (%q) vs client (%q)",
-				requestrls.R.Source, child.R.Source)
+			p.log.Info().Msgf("source did not match: request(%s => %s), client(%s => %s)",
+				requestrls.R.String(), requestrls.R.Source, child.R.String(), child.R.Source)
 			responseCodes = append(responseCodes, res)
 			continue
 
 		case 203:
-			p.log.Info().Msgf("release group did not match: request (%q) vs client (%q)",
-				requestrls.R.Group, child.R.Group)
+			p.log.Info().Msgf("release group did not match: request(%s => %s), client(%s => %s)",
+				requestrls.R.String(), requestrls.R.Group, child.R.String(), child.R.Group)
 			responseCodes = append(responseCodes, res)
 			continue
 
 		case 204:
-			p.log.Info().Msgf("cut did not match: request (%q) vs client (%q)",
-				requestrls.R.Cut, child.R.Cut)
+			p.log.Info().Msgf("cut did not match: request(%s => %s), client(%s => %s)",
+				requestrls.R.String(), requestrls.R.Cut, child.R.String(), child.R.Cut)
 			responseCodes = append(responseCodes, res)
 			continue
 
 		case 205:
-			p.log.Info().Msgf("edition did not match: request (%q) vs client (%q)",
-				requestrls.R.Edition, child.R.Edition)
+			p.log.Info().Msgf("edition did not match: request(%s => %s), client(%s => %s)",
+				requestrls.R.String(), requestrls.R.Edition, child.R.String(), child.R.Edition)
 			responseCodes = append(responseCodes, res)
 			continue
 
 		case 206:
-			p.log.Info().Msgf("repack status did not match: request (%q) vs client (%q)",
-				requestrls.R.Other, child.R.Other)
+			p.log.Info().Msgf("repack status did not match: request(%s => %s), client(%s => %s)",
+				requestrls.R.String(), requestrls.R.Other, child.R.String(), child.R.Other)
 			responseCodes = append(responseCodes, res)
 			continue
 
 		case 207:
-			p.log.Info().Msgf("hdr metadata did not match: request (%q) vs client (%q)",
-				requestrls.R.HDR, child.R.HDR)
+			p.log.Info().Msgf("hdr metadata did not match: request(%s => %s), client(%s => %s)",
+				requestrls.R.String(), requestrls.R.HDR, child.R.String(), child.R.HDR)
 			responseCodes = append(responseCodes, res)
 			continue
 
 		case 208:
-			p.log.Info().Msgf("streaming service did not match: request (%q) vs client (%q)",
-				requestrls.R.Collection, child.R.Collection)
+			p.log.Info().Msgf("streaming service did not match: request(%s => %s), client(%s => %s)",
+				requestrls.R.String(), requestrls.R.Collection, child.R.String(), child.R.Collection)
 			responseCodes = append(responseCodes, res)
 			continue
 
