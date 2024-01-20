@@ -20,6 +20,8 @@ import (
 	"github.com/autobrr/go-qbittorrent"
 	"github.com/moistari/rls"
 	"github.com/rs/zerolog"
+
+	"golang.org/x/exp/slices"
 )
 
 type processor struct {
@@ -203,47 +205,56 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 	}
 
 	var matchedEpisodes []int
+	var responseCodes []int
 
 	for _, child := range v {
 		switch res := release.CheckCandidates(&requestrls, &child, p.cfg.Config.CompareRepackStatus); res {
 		case 201:
-			p.log.Info().Msgf("resolution did not match: %q vs %q", requestrls.R.Resolution, child.R.Resolution)
-			netHTTP.Error(w, fmt.Sprintf("resolution did not match: %q vs %q", requestrls.R.Resolution, child.R.Resolution), res)
+			p.log.Info().Msgf("resolution did not match: %q vs %q",
+				requestrls.R.Resolution, child.R.Resolution)
+			responseCodes = append(responseCodes, res)
 			continue
 
 		case 202:
-			p.log.Info().Msgf("source did not match: %q vs %q", requestrls.R.Source, child.R.Source)
-			netHTTP.Error(w, fmt.Sprintf("source did not match: %q vs %q", requestrls.R.Source, child.R.Source), res)
+			p.log.Info().Msgf("source did not match: %q vs %q",
+				requestrls.R.Source, child.R.Source)
+			responseCodes = append(responseCodes, res)
 			continue
 
 		case 203:
-			p.log.Info().Msgf("release group did not match: %q vs %q", requestrls.R.Group, child.R.Group)
-			netHTTP.Error(w, fmt.Sprintf("release group did not match: %q vs %q", requestrls.R.Group, child.R.Group), res)
+			p.log.Info().Msgf("release group did not match: %q vs %q",
+				requestrls.R.Group, child.R.Group)
+			responseCodes = append(responseCodes, res)
 			continue
 
 		case 204:
-			p.log.Info().Msgf("cut did not match: %q vs %q", requestrls.R.Cut, child.R.Cut)
-			netHTTP.Error(w, fmt.Sprintf("cut did not match: %q vs %q", requestrls.R.Cut, child.R.Cut), res)
+			p.log.Info().Msgf("cut did not match: %q vs %q",
+				requestrls.R.Cut, child.R.Cut)
+			responseCodes = append(responseCodes, res)
 			continue
 
 		case 205:
-			p.log.Info().Msgf("edition did not match: %q vs %q", requestrls.R.Edition, child.R.Edition)
-			netHTTP.Error(w, fmt.Sprintf("edition did not match: %q vs %q", requestrls.R.Edition, child.R.Edition), res)
+			p.log.Info().Msgf("edition did not match: %q vs %q",
+				requestrls.R.Edition, child.R.Edition)
+			responseCodes = append(responseCodes, res)
 			continue
 
 		case 206:
-			p.log.Info().Msgf("repack status did not match: %q vs %q", requestrls.R.Other, child.R.Other)
-			netHTTP.Error(w, fmt.Sprintf("repack status did not match: %q vs %q", requestrls.R.Other, child.R.Other), res)
+			p.log.Info().Msgf("repack status did not match: %q vs %q",
+				requestrls.R.Other, child.R.Other)
+			responseCodes = append(responseCodes, res)
 			continue
 
 		case 207:
-			p.log.Info().Msgf("hdr metadata did not match: %q vs %q", requestrls.R.HDR, child.R.HDR)
-			netHTTP.Error(w, fmt.Sprintf("hdr metadata did not match: %q vs %q", requestrls.R.HDR, child.R.HDR), res)
+			p.log.Info().Msgf("hdr metadata did not match: %q vs %q",
+				requestrls.R.HDR, child.R.HDR)
+			responseCodes = append(responseCodes, res)
 			continue
 
 		case 208:
-			p.log.Info().Msgf("streaming service did not match: %q vs %q", requestrls.R.Collection, child.R.Collection)
-			netHTTP.Error(w, fmt.Sprintf("streaming service did not match: %q vs %q", requestrls.R.Collection, child.R.Collection), res)
+			p.log.Info().Msgf("streaming service did not match: %q vs %q",
+				requestrls.R.Collection, child.R.Collection)
+			responseCodes = append(responseCodes, res)
 			continue
 
 		case 210:
@@ -290,8 +301,15 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 			newMatches := append(oldMatches.([]matchPaths), currentMatch...)
 			matchesMap.Store(p.req.Name, newMatches)
 			p.log.Debug().Msgf("matched torrent from client %q: %q %q", clientName, child.T.Name, child.T.Hash)
+			responseCodes = append(responseCodes, res)
 			continue
 		}
+	}
+
+	if !slices.Contains(responseCodes, 250) {
+		p.log.Info().Msgf("no matching releases in client %q: %q", clientName, p.req.Name)
+		netHTTP.Error(w, fmt.Sprintf("no matching releases in client %q: %q", clientName, p.req.Name), 200)
+		return
 	}
 
 	if matchesSlice, ok := matchesMap.Load(p.req.Name); ok {
