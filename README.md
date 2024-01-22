@@ -203,6 +203,9 @@ headers to pass the API token, but I'll explain both options here.
     http://host:port/api/pack?apikey=api_token
     ```
 
+> [!WARNING]
+> The external filter you just created will be disabled by default. To avoid unwanted downloads, make sure to enable it.
+
 ### Actions
 
 Now, you need to decide whether you want to enable torrent parsing. By activating this feature, seasonpackarr will parse
