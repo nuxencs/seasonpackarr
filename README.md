@@ -209,7 +209,9 @@ Now, you need to decide whether you want to enable torrent parsing. By activatin
 the torrent file for the season pack folder name to ensure the creation of the correct folder. You can enable this
 functionality by setting `parseTorrentFile` to `true` in your config file.
 
-If you choose to enable it, continue with the [Webhook](#webhook) section. If not, skip this step and proceed to [qBittorrent](#qbittorrent).
+If you choose to enable this feature, first follow the instructions in the [Webhook](#webhook) section, and then proceed
+to the [qBittorrent](#qbittorrent) section. If you decide not to enable this feature, skip the [Webhook](#webhook)
+section and go directly to the [qBittorrent](#qbittorrent) section.
 
 > [!WARNING]
 > If you enable that option you need to make sure that the Webhook action is above the qBittorrent action, otherwise the
