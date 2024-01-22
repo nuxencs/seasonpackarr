@@ -203,8 +203,7 @@ headers to pass the API token, but I'll explain both options here.
     http://host:port/api/pack?apikey=api_token
     ```
 
-> [!WARNING]
-> The external filter you just created will be disabled by default. To avoid unwanted downloads, make sure to enable it.
+The external filter you just created will be disabled by default. To avoid unwanted downloads, make sure to enable it!
 
 ### Actions
 
@@ -213,8 +212,8 @@ the torrent file for the season pack folder name to ensure the creation of the c
 functionality by setting `parseTorrentFile` to `true` in your config file.
 
 If you choose to enable this feature, first follow the instructions in the [Webhook](#webhook) section, and then proceed
-to the [qBittorrent](#qbittorrent) section. If you decide not to enable this feature, skip the [Webhook](#webhook)
-section and go directly to the [qBittorrent](#qbittorrent) section.
+to the [qBittorrent](#qbittorrent) section. If you leave this feature disabled, you can skip the Webhook section and go
+straight to the qBittorrent section.
 
 > [!WARNING]
 > If you enable that option you need to make sure that the Webhook action is above the qBittorrent action, otherwise the
