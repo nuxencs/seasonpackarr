@@ -203,13 +203,17 @@ headers to pass the API token, but I'll explain both options here.
     http://host:port/api/pack?apikey=api_token
     ```
 
+The external filter you just created will be disabled by default. To avoid unwanted downloads, make sure to enable it!
+
 ### Actions
 
 Now, you need to decide whether you want to enable torrent parsing. By activating this feature, seasonpackarr will parse
 the torrent file for the season pack folder name to ensure the creation of the correct folder. You can enable this
 functionality by setting `parseTorrentFile` to `true` in your config file.
 
-If you choose to enable it, continue with the [Webhook](#webhook) section. If not, skip this step and proceed to [qBittorrent](#qbittorrent).
+If you choose to enable this feature, first follow the instructions in the [Webhook](#webhook) section, and then proceed
+to the [qBittorrent](#qbittorrent) section. If you leave this feature disabled, you can skip the Webhook section and go
+straight to the qBittorrent section.
 
 > [!WARNING]
 > If you enable that option you need to make sure that the Webhook action is above the qBittorrent action, otherwise the
