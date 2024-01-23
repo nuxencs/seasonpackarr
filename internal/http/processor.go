@@ -197,7 +197,7 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 	p.log.Debug().Msgf("formatted season pack name: %q", packDirName)
 
 	for _, child := range v {
-		if release.CheckCandidates(&requestrls, &child, p.cfg.Config.CompareRepackStatus) == 210 {
+		if release.CheckCandidates(&requestrls, &child, p.cfg.Config.FuzzyMatching) == 210 {
 			p.log.Info().Msgf("release already in client %q: %q", clientName, p.req.Name)
 			netHTTP.Error(w, fmt.Sprintf("release already in client %q: %q", clientName, p.req.Name), 210)
 			return
@@ -208,7 +208,7 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 	var responseCodes []int
 
 	for _, child := range v {
-		switch res := release.CheckCandidates(&requestrls, &child, p.cfg.Config.CompareRepackStatus); res {
+		switch res := release.CheckCandidates(&requestrls, &child, p.cfg.Config.FuzzyMatching); res {
 		case 201:
 			p.log.Info().Msgf("resolution did not match: request(%s => %s), client(%s => %s)",
 				requestrls.R.String(), requestrls.R.Resolution, child.R.String(), child.R.Resolution)

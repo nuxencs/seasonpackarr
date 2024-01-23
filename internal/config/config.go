@@ -143,12 +143,19 @@ logLevel: "DEBUG"
 #
 # parseTorrentFile: false
 
-# Compare Repack Status
-# Toggles whether the repack status of an episode should be taken into account when comparing it to the season pack
+# Fuzzy Matching
+# You can decide for which criteria the matching should be less strict, e.g. repack status and HDR format
 #
-# Default: true
-#
-# compareRepackStatus: true
+fuzzyMatching:
+  # Skip Repack Compare
+  # Toggle comparing of the repack status of a release, e.g. repacked episodes will be treated the same as a non-repacked ones
+  #
+  skipRepackCompare: false
+
+  # Simplify HDR Compare
+  # Toggle simplification of HDR formats for comparing, e.g. HDR10+ will be treated the same as HDR
+  #
+  simplifyHdrCompare: false
 
 # API Token
 # If not defined, removes api authentication
@@ -273,19 +280,22 @@ func New(configPath string, version string) *AppConfig {
 
 func (c *AppConfig) defaults() {
 	c.Config = &domain.Config{
-		Version:             "dev",
-		Host:                "0.0.0.0",
-		Port:                42069,
-		Clients:             make(map[string]*domain.Client),
-		LogLevel:            "DEBUG",
-		LogPath:             "",
-		LogMaxSize:          50,
-		LogMaxBackups:       3,
-		SmartMode:           false,
-		SmartModeThreshold:  0.75,
-		ParseTorrentFile:    false,
-		CompareRepackStatus: true,
-		APIToken:            "",
+		Version:            "dev",
+		Host:               "0.0.0.0",
+		Port:               42069,
+		Clients:            make(map[string]*domain.Client),
+		LogLevel:           "DEBUG",
+		LogPath:            "",
+		LogMaxSize:         50,
+		LogMaxBackups:      3,
+		SmartMode:          false,
+		SmartModeThreshold: 0.75,
+		ParseTorrentFile:   false,
+		FuzzyMatching: domain.FuzzyMatching{
+			SkipRepackCompare:  false,
+			SimplifyHdrCompare: false,
+		},
+		APIToken: "",
 	}
 }
 
@@ -328,10 +338,6 @@ func (c *AppConfig) loadFromEnv() {
 				case prefix + "PARSE_TORRENT_FILE":
 					if b, err := strconv.ParseBool(envPair[1]); err == nil {
 						c.Config.ParseTorrentFile = b
-					}
-				case prefix + "COMPARE_REPACK_STATUS":
-					if b, err := strconv.ParseBool(envPair[1]); err == nil {
-						c.Config.CompareRepackStatus = b
 					}
 				case prefix + "API_TOKEN":
 					c.Config.APIToken = envPair[1]

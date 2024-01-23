@@ -116,12 +116,19 @@ logLevel: "DEBUG"
 #
 # parseTorrentFile: false
 
-# Compare Repack Status
-# Toggles whether the repack status of an episode should be taken into account when comparing it to the season pack
+# Fuzzy Matching
+# You can decide for which criteria the matching should be less strict, e.g. repack status and HDR format
 #
-# Default: true
-#
-# compareRepackStatus: true
+fuzzyMatching:
+  # Skip Repack Compare
+  # Toggle comparing of the repack status of a release, e.g. repacked episodes will be treated the same as a non-repacked ones
+  #
+  skipRepackCompare: false
+
+  # Simplify HDR
+  # Toggle simplification of HDR formats for comparing, e.g. HDR10+ will be treated the same as HDR
+  #
+  simplifyHdrCompare: false
 
 # API Token
 # If not defined, removes api authentication

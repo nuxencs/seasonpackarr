@@ -12,10 +12,9 @@ import (
 
 func Test_GetFormattedTitle(t *testing.T) {
 	tests := []struct {
-		name                string
-		packName            string
-		compareRepackStatus bool
-		want                string
+		name     string
+		packName string
+		want     string
 	}{
 		{
 			name:     "pack_1",
