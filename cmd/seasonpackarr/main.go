@@ -122,8 +122,6 @@ func main() {
 		log.Info().Msgf("Commit: %s", commit)
 		log.Info().Msgf("Build date: %s", date)
 		log.Info().Msgf("Log-level: %s", cfg.Config.LogLevel)
-		log.Debug().Msgf("Fuzzy Matching HDR: %t", cfg.Config.FuzzyMatching.SimplifyHdrCompare)
-		log.Debug().Msgf("Fuzzy Matching Repack: %t", cfg.Config.FuzzyMatching.SkipRepackCompare)
 
 		errorChannel := make(chan error)
 		go func() {
