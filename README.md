@@ -124,6 +124,22 @@ using the parsed folder name the files will be hardlinked into the exact folder 
 You can take a look at the [Webhook](#webhook) section to see what you would need to add in your autobrr filter to
 make use of this feature.
 
+### Fuzzy Matching
+
+In this section, you can toggle comparing rules. I will explain each of them in more detail here.
+
+1. **skipRepackCompare**: When set to `true`, the comparer skips checking the repack status of the season pack release
+   against the episodes in your client. The episode in the example will only be accepted as a match by seasonpackarr if
+   you enable this option:
+   - Announce name: `Show.S01.1080p.WEB-DL.DDPA5.1.H.264-RlsGrp`
+   - Episode name: `Show.S01E01.1080p.WEB-DL.REPACK.DDPA5.1.H.264-RlsGrp`
+
+2. **simplifyHdrCompare**: If set to `true`, this option simplifies the HDR formats `HDR10`, `HDR10+`, and `HDR+` to
+   just `HDR`. This increases the likelihood of matching renamed releases that specify a more advanced HDR format in the
+   announce name than in the episode title:
+   - Announce name: `Show.S01.2160p.WEB-DL.DDPA5.1.DV.HDR10+.H.265-RlsGrp`
+   - Episode name: `Show.S01E01.2160p.WEB-DL.DDPA5.1.DV.HDR.H.265-RlsGrp`
+
 ## autobrr Filter setup
 
 Support for multiple Sonarr and qBittorrent instances with different pre import directories was added with v0.4.0, so
