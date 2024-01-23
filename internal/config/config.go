@@ -150,10 +150,14 @@ fuzzyMatching:
   # Skip Repack Compare
   # Toggle comparing of the repack status of a release, e.g. repacked episodes will be treated the same as a non-repacked ones
   #
+  # Default: false
+  #
   skipRepackCompare: false
 
   # Simplify HDR Compare
   # Toggle simplification of HDR formats for comparing, e.g. HDR10+ will be treated the same as HDR
+  #
+  # Default: false
   #
   simplifyHdrCompare: false
 
