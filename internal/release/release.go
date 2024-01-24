@@ -46,14 +46,14 @@ func compareReleases(r1, r2 rls.Release, fuzzyMatching domain.FuzzyMatching) int
 		return 205
 	}
 
-	// skip comparing repack status when repackStatus is enabled
+	// skip comparing repack status when skipRepackCompare is enabled
 	if !fuzzyMatching.SkipRepackCompare {
 		if !utils.CompareStringSlices(r1.Other, r2.Other) {
 			return 206
 		}
 	}
 
-	// normalize any HDR format down to plain HDR when hdrFormats is enabled
+	// normalize any HDR format down to plain HDR when simplifyHdrCompare is enabled
 	if fuzzyMatching.SimplifyHdrCompare {
 		r1.HDR = replaceHDR(r1.HDR)
 		r2.HDR = replaceHDR(r2.HDR)
