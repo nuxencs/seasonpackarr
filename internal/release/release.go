@@ -4,8 +4,6 @@
 package release
 
 import (
-	"strings"
-
 	"seasonpackarr/internal/domain"
 	"seasonpackarr/internal/utils"
 
@@ -55,8 +53,8 @@ func compareReleases(r1, r2 rls.Release, fuzzyMatching domain.FuzzyMatching) int
 
 	// normalize any HDR format down to plain HDR when simplifyHdrCompare is enabled
 	if fuzzyMatching.SimplifyHdrCompare {
-		r1.HDR = replaceHDR(r1.HDR)
-		r2.HDR = replaceHDR(r2.HDR)
+		r1.HDR = utils.SimplifyHDRSlice(r1.HDR)
+		r2.HDR = utils.SimplifyHDRSlice(r2.HDR)
 	}
 
 	if !utils.CompareStringSlices(r1.HDR, r2.HDR) {
@@ -82,14 +80,4 @@ func PercentOfTotalEpisodes(totalEpisodes int, matchedEpisodes []int) float32 {
 	percent := float32(count) / float32(totalEpisodes)
 
 	return percent
-}
-
-func replaceHDR(slice []string) []string {
-	for i, v := range slice {
-		if strings.Contains(v, "HDR") {
-			slice[i] = "HDR"
-		}
-	}
-
-	return slice
 }
