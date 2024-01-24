@@ -40,6 +40,10 @@ func CompareStringSlices(x, y []string) bool {
 }
 
 func SimplifyHDRSlice(hdrSlice []string) []string {
+	if len(hdrSlice) == 0 {
+		return hdrSlice
+	}
+
 	for i, v := range hdrSlice {
 		if strings.Contains(v, "HDR") {
 			hdrSlice[i] = "HDR"
