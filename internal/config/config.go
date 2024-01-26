@@ -100,6 +100,7 @@ clients:
 # logPath: ""
 
 # Log level
+#
 # Default: "DEBUG"
 #
 # Options: "ERROR", "DEBUG", "INFO", "WARN", "TRACE"
@@ -432,22 +433,56 @@ func (c *AppConfig) UpdateConfig() error {
 func (c *AppConfig) processLines(lines []string) []string {
 	// keep track of not found values to append at bottom
 	var (
-		foundLineLogLevel = false
-		foundLineLogPath  = false
+		foundLineLogLevel           = false
+		foundLineLogPath            = false
+		foundLineSmartMode          = false
+		foundLineSmartModeThreshold = false
+		foundLineParseTorrentFile   = false
+		foundLineFuzzyMatching      = false
+		foundLineSkipRepackCompare  = false
+		foundLineSimplifyHdrCompare = false
+		foundLineApiToken           = false
 	)
 
 	for i, line := range lines {
 		if !foundLineLogLevel && strings.Contains(line, "logLevel:") {
-			lines[i] = fmt.Sprintf(`logLevel: "%s"`, c.Config.LogLevel)
+			lines[i] = fmt.Sprintf("logLevel: \"%s\"", c.Config.LogLevel)
 			foundLineLogLevel = true
 		}
 		if !foundLineLogPath && strings.Contains(line, "logPath:") {
 			if c.Config.LogPath == "" {
-				lines[i] = `#logPath: ""`
+				lines[i] = "#logPath: \"\""
 			} else {
-				lines[i] = fmt.Sprintf(`logPath: "%s"`, c.Config.LogPath)
+				lines[i] = fmt.Sprintf("logPath: \"%s\"", c.Config.LogPath)
 			}
 			foundLineLogPath = true
+		}
+		if !foundLineSmartMode && strings.Contains(line, "smartMode:") {
+			lines[i] = fmt.Sprintf("smartMode: %t", c.Config.SmartMode)
+			foundLineSmartMode = true
+		}
+		if !foundLineSmartModeThreshold && strings.Contains(line, "smartModeThreshold:") {
+			lines[i] = fmt.Sprintf("smartModeThreshold: %.2f", c.Config.SmartModeThreshold)
+			foundLineSmartModeThreshold = true
+		}
+		if !foundLineParseTorrentFile && strings.Contains(line, "parseTorrentFile:") {
+			lines[i] = fmt.Sprintf("parseTorrentFile: %t", c.Config.SmartMode)
+			foundLineParseTorrentFile = true
+		}
+		if !foundLineFuzzyMatching && strings.Contains(line, "fuzzyMatching:") {
+			foundLineFuzzyMatching = true
+		}
+		if foundLineFuzzyMatching && !foundLineSkipRepackCompare && strings.Contains(line, "skipRepackCompare:") {
+			lines[i] = fmt.Sprintf("  skipRepackCompare: %t", c.Config.FuzzyMatching.SkipRepackCompare)
+			foundLineSkipRepackCompare = true
+		}
+		if foundLineFuzzyMatching && !foundLineSimplifyHdrCompare && strings.Contains(line, "simplifyHdrCompare:") {
+			lines[i] = fmt.Sprintf("  simplifyHdrCompare: %t", c.Config.FuzzyMatching.SimplifyHdrCompare)
+			foundLineSimplifyHdrCompare = true
+		}
+		if !foundLineApiToken && strings.Contains(line, "apiToken:") {
+			lines[i] = fmt.Sprintf("apiToken: \"%s\"", c.Config.APIToken)
+			foundLineApiToken = true
 		}
 	}
 
@@ -458,7 +493,7 @@ func (c *AppConfig) processLines(lines []string) []string {
 		lines = append(lines, "#")
 		lines = append(lines, `# Options: "ERROR", "DEBUG", "INFO", "WARN", "TRACE"`)
 		lines = append(lines, "#")
-		lines = append(lines, fmt.Sprintf(`logLevel: "%s"`, c.Config.LogLevel))
+		lines = append(lines, fmt.Sprintf("logLevel: \"%s\"\n", c.Config.LogLevel))
 	}
 
 	if !foundLineLogPath {
@@ -468,8 +503,76 @@ func (c *AppConfig) processLines(lines []string) []string {
 		lines = append(lines, "#")
 		if c.Config.LogPath == "" {
 			lines = append(lines, `#logPath: ""`)
+			lines = append(lines, "")
 		} else {
-			lines = append(lines, fmt.Sprintf(`logPath: "%s"`, c.Config.LogPath))
+			lines = append(lines, fmt.Sprintf("logPath: \"%s\"\n", c.Config.LogPath))
+			lines = append(lines, "")
+		}
+	}
+
+	if !foundLineSmartMode {
+		lines = append(lines, "# Smart Mode")
+		lines = append(lines, "# Toggles smart mode to only download season packs that have a certain amount of episodes from a release group")
+		lines = append(lines, "# already in the client")
+		lines = append(lines, "#")
+		lines = append(lines, "# Default: false")
+		lines = append(lines, "#")
+		lines = append(lines, fmt.Sprintf("# smartMode: %t\n", c.Config.SmartMode))
+	}
+
+	if !foundLineSmartMode {
+		lines = append(lines, "# Smart Mode Threshold")
+		lines = append(lines, "# Sets the threshold for the percentage of episodes out of a season that must be present in the client")
+		lines = append(lines, "# In this example 75% of the episodes in a season must be present in the client for it to be downloaded")
+		lines = append(lines, "#")
+		lines = append(lines, "# Default: 0.75")
+		lines = append(lines, "#")
+		lines = append(lines, fmt.Sprintf("# smartModeThreshold: %.2f\n", c.Config.SmartModeThreshold))
+	}
+
+	if !foundLineParseTorrentFile {
+		lines = append(lines, "# Parse Torrent File")
+		lines = append(lines, "# Toggles torrent file parsing to get the correct folder name")
+		lines = append(lines, "#")
+		lines = append(lines, "# Default: false")
+		lines = append(lines, "#")
+		lines = append(lines, fmt.Sprintf("# parseTorrentFile: %t\n", c.Config.ParseTorrentFile))
+	}
+
+	if !foundLineFuzzyMatching {
+		lines = append(lines, "# Fuzzy Matching")
+		lines = append(lines, "# You can decide for which criteria the matching should be less strict, e.g. repack status and HDR format")
+		lines = append(lines, "#")
+		lines = append(lines, "fuzzyMatching:")
+		if !foundLineSkipRepackCompare {
+			lines = append(lines, "  # Skip Repack Compare")
+			lines = append(lines, "  # Toggle comparing of the repack status of a release, e.g. repacked episodes will be treated the same as a non-repacked ones")
+			lines = append(lines, "  #")
+			lines = append(lines, "  # Default: false")
+			lines = append(lines, "  #")
+			lines = append(lines, fmt.Sprintf("  skipRepackCompare: %t\n", c.Config.FuzzyMatching.SkipRepackCompare))
+		}
+		if !foundLineSimplifyHdrCompare {
+			lines = append(lines, "  # Simplify HDR Compare")
+			lines = append(lines, "  # Toggle simplification of HDR formats for comparing, e.g. HDR10+ will be treated the same as HDR")
+			lines = append(lines, "  #")
+			lines = append(lines, "  # Default: false")
+			lines = append(lines, "  #")
+			lines = append(lines, fmt.Sprintf("  simplifyHdrCompare: %t\n", c.Config.FuzzyMatching.SimplifyHdrCompare))
+		}
+	}
+
+	if !foundLineApiToken {
+		lines = append(lines, "# API Token")
+		lines = append(lines, "# If not defined, removes api authentication")
+		lines = append(lines, "#")
+		lines = append(lines, "# Optional")
+		lines = append(lines, "#")
+		if c.Config.APIToken == "" {
+			lines = append(lines, "# apiToken: \"\"\n")
+		} else {
+			lines = append(lines, fmt.Sprintf("apiToken: \"%s\"\n", c.Config.APIToken))
+			lines = append(lines, "")
 		}
 	}
 
