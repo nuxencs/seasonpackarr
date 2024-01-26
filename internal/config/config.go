@@ -502,7 +502,7 @@ func (c *AppConfig) processLines(lines []string) []string {
 		lines = append(lines, "# Optional")
 		lines = append(lines, "#")
 		if c.Config.LogPath == "" {
-			lines = append(lines, `#logPath: ""`)
+			lines = append(lines, "# logPath: \"\"")
 			lines = append(lines, "")
 		} else {
 			lines = append(lines, fmt.Sprintf("logPath: \"%s\"\n", c.Config.LogPath))
@@ -572,7 +572,6 @@ func (c *AppConfig) processLines(lines []string) []string {
 			lines = append(lines, "# apiToken: \"\"\n")
 		} else {
 			lines = append(lines, fmt.Sprintf("apiToken: \"%s\"\n", c.Config.APIToken))
-			lines = append(lines, "")
 		}
 	}
 
