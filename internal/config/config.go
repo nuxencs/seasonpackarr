@@ -451,7 +451,7 @@ func (c *AppConfig) processLines(lines []string) []string {
 		}
 		if !foundLineLogPath && strings.Contains(line, "logPath:") {
 			if c.Config.LogPath == "" {
-				lines[i] = "#logPath: \"\""
+				lines[i] = "# logPath: \"\""
 			} else {
 				lines[i] = fmt.Sprintf("logPath: \"%s\"", c.Config.LogPath)
 			}
