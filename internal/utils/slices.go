@@ -3,6 +3,12 @@
 
 package utils
 
+import (
+	"strings"
+
+	"golang.org/x/exp/slices"
+)
+
 func DedupeSlice[T comparable](s []T) []T {
 	inResult := make(map[T]bool)
 	var result []T
@@ -13,4 +19,36 @@ func DedupeSlice[T comparable](s []T) []T {
 		}
 	}
 	return result
+}
+
+func CompareStringSlices(x, y []string) bool {
+	if len(x) != len(y) {
+		return false
+	}
+
+	sortedX := slices.Clone(x)
+	sortedY := slices.Clone(y)
+
+	slices.Sort(sortedX)
+	slices.Sort(sortedY)
+
+	if slices.Equal(sortedX, sortedY) {
+		return true
+	}
+
+	return false
+}
+
+func SimplifyHDRSlice(hdrSlice []string) []string {
+	if len(hdrSlice) == 0 {
+		return hdrSlice
+	}
+
+	for i, v := range hdrSlice {
+		if strings.Contains(v, "HDR") {
+			hdrSlice[i] = "HDR"
+		}
+	}
+
+	return hdrSlice
 }

@@ -12,6 +12,11 @@ type Client struct {
 	PreImportPath string `yaml:"preImportPath"`
 }
 
+type FuzzyMatching struct {
+	SkipRepackCompare  bool `yaml:"skipRepackCompare"`
+	SimplifyHdrCompare bool `yaml:"simplifyHdrCompare"`
+}
+
 type Config struct {
 	Version            string
 	ConfigPath         string
@@ -25,5 +30,6 @@ type Config struct {
 	SmartMode          bool               `yaml:"smartMode"`
 	SmartModeThreshold float32            `yaml:"smartModeThreshold"`
 	ParseTorrentFile   bool               `yaml:"parseTorrentFile"`
+	FuzzyMatching      FuzzyMatching      `yaml:"fuzzyMatching"`
 	APIToken           string             `yaml:"apiToken"`
 }

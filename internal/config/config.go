@@ -143,6 +143,24 @@ logLevel: "DEBUG"
 #
 # parseTorrentFile: false
 
+# Fuzzy Matching
+# You can decide for which criteria the matching should be less strict, e.g. repack status and HDR format
+#
+fuzzyMatching:
+  # Skip Repack Compare
+  # Toggle comparing of the repack status of a release, e.g. repacked episodes will be treated the same as a non-repacked ones
+  #
+  # Default: false
+  #
+  skipRepackCompare: false
+
+  # Simplify HDR Compare
+  # Toggle simplification of HDR formats for comparing, e.g. HDR10+ will be treated the same as HDR
+  #
+  # Default: false
+  #
+  simplifyHdrCompare: false
+
 # API Token
 # If not defined, removes api authentication
 #
@@ -277,7 +295,11 @@ func (c *AppConfig) defaults() {
 		SmartMode:          false,
 		SmartModeThreshold: 0.75,
 		ParseTorrentFile:   false,
-		APIToken:           "",
+		FuzzyMatching: domain.FuzzyMatching{
+			SkipRepackCompare:  false,
+			SimplifyHdrCompare: false,
+		},
+		APIToken: "",
 	}
 }
 
