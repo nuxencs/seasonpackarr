@@ -3,12 +3,12 @@ module seasonpackarr
 go 1.20
 
 require (
-	github.com/anacrolix/torrent v1.53.2
+	github.com/anacrolix/torrent v1.53.3
 	github.com/autobrr/go-qbittorrent v1.8.1
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/go-chi/chi/v5 v5.0.11
 	github.com/go-chi/render v1.0.3
-	github.com/google/uuid v1.5.0
+	github.com/google/uuid v1.6.0
 	github.com/moistari/rls v0.5.10
 	github.com/mrobinsn/go-tvmaze v1.2.1
 	github.com/pkg/errors v0.9.1
