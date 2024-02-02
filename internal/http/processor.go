@@ -274,6 +274,11 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 				continue
 			}
 
+			if child.T.Progress < 1.0 {
+				p.log.Error().Msgf("download incomplete, skipping match: %q", child.T.Name)
+				continue
+			}
+
 			fileName := ""
 			for _, v := range *m {
 				fileName = v.Name
