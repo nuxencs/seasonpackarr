@@ -7,18 +7,36 @@ package http
 import (
 	"net/http"
 
-	"github.com/go-chi/render"
+	"github.com/go-chi/chi/v5"
 )
 
-func (s Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+type healthHandler struct{}
+
+func newHealthHandler() *healthHandler {
+	return &healthHandler{}
+}
+
+func (h healthHandler) Routes(r chi.Router) {
+	r.Get("/liveness", h.handleLiveness)
+	r.Get("/readiness", h.handleReadiness)
+}
+
+func (h healthHandler) handleLiveness(w http.ResponseWriter, r *http.Request) {
+	writeHealthy(w, r)
+}
+
+func (h healthHandler) handleReadiness(w http.ResponseWriter, r *http.Request) {
 	writeHealthy(w, r)
 }
 
 func writeHealthy(w http.ResponseWriter, r *http.Request) {
-	render.PlainText(w, r, "OK")
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
 }
 
 func writeUnhealthy(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusInternalServerError)
-	render.PlainText(w, r, "Unhealthy")
+	w.Write([]byte("Unhealthy"))
 }
