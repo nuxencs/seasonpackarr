@@ -1,5 +1,5 @@
 # build base
-FROM --platform=$BUILDPLATFORM golang:1.20-alpine3.19 AS app-base
+FROM --platform=$BUILDPLATFORM golang:1.22-alpine3.19 AS app-base
 
 ENV SERVICE=seasonpackarr
 WORKDIR /src
