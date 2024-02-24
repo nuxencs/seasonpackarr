@@ -8,6 +8,7 @@ import (
 	"fmt"
 	netHTTP "net/http"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -20,8 +21,6 @@ import (
 	"github.com/autobrr/go-qbittorrent"
 	"github.com/moistari/rls"
 	"github.com/rs/zerolog"
-
-	"golang.org/x/exp/slices"
 )
 
 type processor struct {

@@ -1,5 +1,5 @@
 # build app
-FROM golang:1.20-alpine3.19 AS app-builder
+FROM golang:1.22-alpine3.19 AS app-builder
 
 ARG VERSION=dev
 ARG REVISION=dev

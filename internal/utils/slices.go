@@ -4,9 +4,8 @@
 package utils
 
 import (
+	"slices"
 	"strings"
-
-	"golang.org/x/exp/slices"
 )
 
 func DedupeSlice[T comparable](s []T) []T {
