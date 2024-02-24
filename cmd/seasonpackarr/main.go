@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	netHTTP "net/http"
@@ -125,16 +126,31 @@ func main() {
 
 		errorChannel := make(chan error)
 		go func() {
-			errorChannel <- srv.Open()
+			err := srv.Open()
+			if err != nil {
+				if !errors.Is(err, http.ErrServerClosed) {
+					errorChannel <- err
+				}
+			}
 		}()
 
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
 
-		for sig := range sigCh {
-			log.Info().Msgf("received signal: %v, shutting down server.", sig)
+		select {
+		case sig := <-sigCh:
+			log.Info().Msgf("received signal: %q, shutting down server.", sig.String())
 			os.Exit(0)
+
+		case err := <-errorChannel:
+			log.Error().Err(err).Msg("unexpected error from server")
 		}
+		if err := srv.Shutdown(context.Background()); err != nil {
+			log.Error().Err(err).Msg("error during http shutdown")
+			os.Exit(1)
+		}
+
+		os.Exit(0)
 
 	default:
 		pflag.Usage()

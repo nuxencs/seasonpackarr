@@ -6,7 +6,7 @@ package http
 
 import "net/http"
 
-func (s Server) isAuthenticated(next http.Handler) http.Handler {
+func (s *Server) isAuthenticated(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// allow access if apiToken value is set to an empty string
 		if s.cfg.Config.APIToken == "" {

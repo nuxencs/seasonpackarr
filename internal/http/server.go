@@ -5,6 +5,7 @@
 package http
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -17,9 +18,13 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
+var ErrServerClosed = http.ErrServerClosed
+
 type Server struct {
 	log logger.Logger
 	cfg *config.AppConfig
+
+	httpServer http.Server
 }
 
 func NewServer(log logger.Logger, config *config.AppConfig) *Server {
@@ -29,7 +34,7 @@ func NewServer(log logger.Logger, config *config.AppConfig) *Server {
 	}
 }
 
-func (s Server) Open() error {
+func (s *Server) Open() error {
 	addr := fmt.Sprintf("%v:%v", s.cfg.Config.Host, s.cfg.Config.Port)
 
 	var err error
@@ -44,7 +49,7 @@ func (s Server) Open() error {
 	return err
 }
 
-func (s Server) tryToServe(addr, proto string) error {
+func (s *Server) tryToServe(addr, proto string) error {
 	listener, err := net.Listen(proto, addr)
 	if err != nil {
 		return err
@@ -52,15 +57,20 @@ func (s Server) tryToServe(addr, proto string) error {
 
 	s.log.Info().Msgf("Starting %s server. Listening on %s", proto, listener.Addr().String())
 
-	server := http.Server{
+	s.httpServer = http.Server{
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: time.Second * 15,
 	}
 
-	return server.Serve(listener)
+	return s.httpServer.Serve(listener)
 }
 
-func (s Server) Handler() http.Handler {
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.log.Info().Msgf("shutting down http server gracefully...")
+	return s.httpServer.Shutdown(ctx)
+}
+
+func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
