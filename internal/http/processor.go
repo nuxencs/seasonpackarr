@@ -45,8 +45,8 @@ type entryTime struct {
 }
 
 type matchPaths struct {
-	episodePath string
-	packPath    string
+	episodeInClientPath string
+	announcedPackPath   string
 }
 
 var (
@@ -192,8 +192,8 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 		return
 	}
 
-	packDirName := utils.FormatSeasonPackTitle(p.req.Name)
-	p.log.Debug().Msgf("formatted season pack name: %q", packDirName)
+	announcedPackDirName := utils.FormatSeasonPackTitle(p.req.Name)
+	p.log.Debug().Msgf("formatted season pack name: %q", announcedPackDirName)
 
 	for _, child := range v {
 		if release.CheckCandidates(&requestrls, &child, p.cfg.Config.FuzzyMatching) == 210 {
@@ -280,15 +280,15 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 			}
 
 			episodeRls := rls.ParseString(child.T.Name)
-			episodePath := filepath.Join(child.T.SavePath, fileName)
-			packPath := filepath.Join(client.PreImportPath, packDirName, filepath.Base(fileName))
+			episodeInClientPath := filepath.Join(child.T.SavePath, fileName)
+			announcedPackPath := filepath.Join(client.PreImportPath, announcedPackDirName, filepath.Base(fileName))
 
 			matchedEpisodes = append(matchedEpisodes, episodeRls.Episode)
 
 			currentMatch := []matchPaths{
 				{
-					episodePath: episodePath,
-					packPath:    packPath,
+					episodeInClientPath: episodeInClientPath,
+					announcedPackPath:   announcedPackPath,
 				},
 			}
 
@@ -346,13 +346,13 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 		matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
 
 		for _, match := range matches {
-			if err := utils.CreateHardlink(match.episodePath, match.packPath); err != nil {
-				p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.episodePath)
-				netHTTP.Error(w, fmt.Sprintf("error creating hardlink for: %q", match.episodePath), 250)
+			if err := utils.CreateHardlink(match.episodeInClientPath, match.announcedPackPath); err != nil {
+				p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.episodeInClientPath)
+				netHTTP.Error(w, fmt.Sprintf("error creating hardlink for: %q", match.episodeInClientPath), 250)
 				continue
 			}
-			p.log.Log().Msgf("created hardlink of %q into %q", match.episodePath, match.packPath)
-			netHTTP.Error(w, fmt.Sprintf("created hardlink of %q into %q", match.episodePath, match.packPath), 250)
+			p.log.Log().Msgf("created hardlink of %q into %q", match.episodeInClientPath, match.announcedPackPath)
+			netHTTP.Error(w, fmt.Sprintf("created hardlink of %q into %q", match.episodeInClientPath, match.announcedPackPath), 250)
 		}
 	}
 }
@@ -384,13 +384,21 @@ func (p processor) ParseTorrent(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 	}
 	p.req.Torrent = torrentBytes
 
-	folderName, err := utils.ParseFolderNameFromTorrentBytes(p.req.Torrent)
+	torrentInfo, err := utils.ParseTorrentInfoFromTorrentBytes(p.req.Torrent)
 	if err != nil {
-		p.log.Error().Err(err).Msgf("error parsing folder name")
-		netHTTP.Error(w, fmt.Sprintf("error parsing folder name: %q", err), 466)
+		p.log.Error().Err(err).Msgf("error parsing torrent info")
+		netHTTP.Error(w, fmt.Sprintf("error parsing torrent info: %q", err), 466)
 		return
 	}
-	p.log.Debug().Msgf("parsed season pack name: %q", folderName)
+	parsedFolderName := torrentInfo.BestName()
+	p.log.Debug().Msgf("parsed season pack name: %q", parsedFolderName)
+
+	torrentEpisodeNames, err := utils.GetEpisodeNamesFromTorrentInfo(torrentInfo)
+	if err != nil {
+		p.log.Error().Err(err).Msgf("error getting episode files")
+		netHTTP.Error(w, fmt.Sprintf("error getting episode files: %q", err), 465)
+		return
+	}
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
 	if !ok {
@@ -402,13 +410,18 @@ func (p processor) ParseTorrent(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 	matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
 
 	for _, match := range matches {
-		match.packPath = utils.ReplaceParentFolder(match.packPath, folderName)
-		if err := utils.CreateHardlink(match.episodePath, match.packPath); err != nil {
-			p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.episodePath)
-			netHTTP.Error(w, fmt.Sprintf("error creating hardlink for: %q", match.episodePath), 250)
+		match.announcedPackPath = utils.ReplaceParentFolder(match.announcedPackPath, parsedFolderName)
+		match.announcedPackPath, err = utils.MatchFileNameToSeasonPackNaming(match.episodeInClientPath, torrentEpisodeNames)
+		if err != nil {
+			p.log.Error().Err(err).Msgf("error matching episode to file in season pack: %q", match.episodeInClientPath)
+		}
+
+		if err = utils.CreateHardlink(match.episodeInClientPath, match.announcedPackPath); err != nil {
+			p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.episodeInClientPath)
+			netHTTP.Error(w, fmt.Sprintf("error creating hardlink for: %q", match.episodeInClientPath), 250)
 			continue
 		}
-		p.log.Log().Msgf("created hardlink of %q into %q", match.episodePath, match.packPath)
-		netHTTP.Error(w, fmt.Sprintf("created hardlink of %q into %q", match.episodePath, match.packPath), 250)
+		p.log.Log().Msgf("created hardlink of %q into %q", match.episodeInClientPath, match.announcedPackPath)
+		netHTTP.Error(w, fmt.Sprintf("created hardlink of %q into %q", match.episodeInClientPath, match.announcedPackPath), 250)
 	}
 }

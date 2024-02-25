@@ -6,26 +6,49 @@ package utils
 import (
 	"bytes"
 	"encoding/base64"
+	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
+
+	"seasonpackarr/pkg/errors"
 
 	"github.com/anacrolix/torrent/metainfo"
 )
 
-func ParseFolderNameFromTorrentBytes(torrentBytes []byte) (string, error) {
+func ParseTorrentInfoFromTorrentBytes(torrentBytes []byte) (metainfo.Info, error) {
 	r := bytes.NewReader(torrentBytes)
 
 	metaInfo, err := metainfo.Load(r)
 	if err != nil {
-		return "", err
+		return metainfo.Info{}, err
 	}
 
 	info, err := metaInfo.UnmarshalInfo()
 	if err != nil {
-		return "", err
+		return metainfo.Info{}, err
 	}
 
-	return info.BestName(), nil
+	return info, nil
+}
+
+func GetEpisodeNamesFromTorrentInfo(info metainfo.Info) ([]string, error) {
+	var fileNames []string
+
+	if info.IsDir() {
+		for _, file := range info.Files {
+			if filepath.Ext(file.BestPath()[0]) == ".mkv" {
+				fileNames = append(fileNames, file.BestPath()...)
+			}
+		}
+		if len(fileNames) == 0 {
+			return []string{}, errors.New("no .mkv files found")
+		}
+		slices.Sort(fileNames)
+		return fileNames, nil
+	}
+
+	return []string{}, errors.New("not a directory")
 }
 
 func DecodeTorrentDataRawBytes(torrentBytes []byte) ([]byte, error) {
@@ -39,7 +62,7 @@ func DecodeTorrentDataRawBytes(torrentBytes []byte) ([]byte, error) {
 		b := make([]byte, 0, len(ts)/3)
 
 		for {
-			r, valid, z := Atoi(ts)
+			r, valid, z := atoi(ts)
 			if !valid {
 				break
 			}
@@ -56,7 +79,7 @@ func DecodeTorrentDataRawBytes(torrentBytes []byte) ([]byte, error) {
 	return []byte{}, err
 }
 
-func Atoi(buf string) (ret int, valid bool, pos string) {
+func atoi(buf string) (ret int, valid bool, pos string) {
 	if len(buf) == 0 {
 		return ret, false, buf
 	}
