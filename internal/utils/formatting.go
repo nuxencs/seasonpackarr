@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
-	"seasonpackarr/pkg/errors"
 	"strings"
+
+	"seasonpackarr/pkg/errors"
 
 	"github.com/moistari/rls"
 )
