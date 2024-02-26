@@ -66,5 +66,5 @@ func MatchFileNameToSeasonPackNaming(episodeInClientPath string, torrentEpisodeN
 		}
 	}
 
-	return episodeInClientPath, errors.New("couldn't find matching episode in season pack")
+	return episodeInClientPath, errors.New("couldn't find matching episode in season pack, using existing file name")
 }
