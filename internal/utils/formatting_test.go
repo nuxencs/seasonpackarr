@@ -230,3 +230,59 @@ func Test_ReplaceParentFolder(t *testing.T) {
 		})
 	}
 }
+
+func TestMatchFileNameToSeasonPackNaming(t *testing.T) {
+	tests := []struct {
+		name                string
+		episodeInClientPath string
+		torrentEpisodeNames []string
+		want                string
+		wantErr             bool
+	}{
+		{
+			name:                "found_match",
+			episodeInClientPath: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			torrentEpisodeNames: []string{
+				"Series Title 2022 S02E01 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			},
+			want:    "Series Title 2022 S02E01 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			wantErr: false,
+		},
+		{
+			name:                "found_no_match",
+			episodeInClientPath: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			torrentEpisodeNames: []string{},
+			want:                "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			wantErr:             true,
+		},
+		{
+			name:                "wrong_episode",
+			episodeInClientPath: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			torrentEpisodeNames: []string{
+				"Series Title 2022 S02E02 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			},
+			want:    "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			wantErr: true,
+		},
+		{
+			name:                "wrong_season",
+			episodeInClientPath: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			torrentEpisodeNames: []string{
+				"Series Title 2022 S03E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			},
+			want:    "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := MatchFileNameToSeasonPackNaming(tt.episodeInClientPath, tt.torrentEpisodeNames)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Parse() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			assert.Equalf(t, tt.want, got, "MatchFileNameToSeasonPackNaming(%v, %v)", tt.episodeInClientPath, tt.torrentEpisodeNames)
+		})
+	}
+}
