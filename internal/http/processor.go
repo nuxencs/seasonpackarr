@@ -399,7 +399,9 @@ func (p processor) ParseTorrent(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 		netHTTP.Error(w, fmt.Sprintf("error getting episodes: %q", err), 465)
 		return
 	}
-	p.log.Debug().Msgf("parsed episodes: %v", torrentEps)
+	for _, torrentEp := range torrentEps {
+		p.log.Debug().Msgf("parsed episodes: %q", torrentEp)
+	}
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
 	if !ok {
