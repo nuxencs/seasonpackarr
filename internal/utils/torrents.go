@@ -32,7 +32,7 @@ func ParseTorrentInfoFromTorrentBytes(torrentBytes []byte) (metainfo.Info, error
 	return info, nil
 }
 
-func GetEpisodeNamesFromTorrentInfo(info metainfo.Info) ([]string, error) {
+func GetEpisodesFromTorrentInfo(info metainfo.Info) ([]string, error) {
 	var fileNames []string
 
 	if info.IsDir() {
