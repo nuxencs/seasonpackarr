@@ -35,20 +35,22 @@ func ParseTorrentInfoFromTorrentBytes(torrentBytes []byte) (metainfo.Info, error
 func GetEpisodesFromTorrentInfo(info metainfo.Info) ([]string, error) {
 	var fileNames []string
 
-	if info.IsDir() {
-		for _, file := range info.Files {
-			if filepath.Ext(file.BestPath()[0]) == ".mkv" {
-				fileNames = append(fileNames, file.BestPath()...)
-			}
-		}
-		if len(fileNames) == 0 {
-			return []string{}, errors.New("no .mkv files found")
-		}
-		slices.Sort(fileNames)
-		return fileNames, nil
+	if !info.IsDir() {
+		return []string{}, errors.New("not a directory")
 	}
 
-	return []string{}, errors.New("not a directory")
+	for _, file := range info.Files {
+		if filepath.Ext(file.BestPath()[0]) == ".mkv" {
+			fileNames = append(fileNames, file.BestPath()...)
+		}
+	}
+
+	if len(fileNames) == 0 {
+		return []string{}, errors.New("no .mkv files found")
+	}
+
+	slices.Sort(fileNames)
+	return fileNames, nil
 }
 
 func DecodeTorrentDataRawBytes(torrentBytes []byte) ([]byte, error) {
