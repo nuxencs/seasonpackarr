@@ -400,7 +400,7 @@ func (p processor) ParseTorrent(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 		return
 	}
 	for _, torrentEp := range torrentEps {
-		p.log.Debug().Msgf("parsed episodes: %q", torrentEp)
+		p.log.Debug().Msgf("found episode: %q", torrentEp)
 	}
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
