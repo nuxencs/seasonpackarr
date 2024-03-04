@@ -72,7 +72,7 @@ func New(cfg *domain.Config) Logger {
 	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
 
 	// init new logger
-	l.log = zerolog.New(io.MultiWriter(l.writers...)).With().Stack().Logger()
+	l.log = zerolog.New(zerolog.MultiLevelWriter(l.writers...)).With().Stack().Logger()
 
 	return l
 }

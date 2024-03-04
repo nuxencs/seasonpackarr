@@ -9,8 +9,6 @@ import (
 	"regexp"
 	"strings"
 
-	"seasonpackarr/pkg/errors"
-
 	"github.com/moistari/rls"
 )
 
@@ -66,5 +64,5 @@ func MatchFileNameToSeasonPackNaming(episodeInClientPath string, torrentEpisodeN
 		}
 	}
 
-	return episodeInClientPath, errors.New("couldn't find matching episode in season pack, using existing file name")
+	return episodeInClientPath, fmt.Errorf("couldn't find matching episode in season pack, using existing file name")
 }
