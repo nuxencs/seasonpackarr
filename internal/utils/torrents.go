@@ -6,12 +6,11 @@ package utils
 import (
 	"bytes"
 	"encoding/base64"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
 	"unicode"
-
-	"seasonpackarr/pkg/errors"
 
 	"github.com/anacrolix/torrent/metainfo"
 )
@@ -36,7 +35,7 @@ func GetEpisodesFromTorrentInfo(info metainfo.Info) ([]string, error) {
 	var fileNames []string
 
 	if !info.IsDir() {
-		return []string{}, errors.New("not a directory")
+		return []string{}, fmt.Errorf("not a directory")
 	}
 
 	for _, file := range info.Files {
@@ -46,7 +45,7 @@ func GetEpisodesFromTorrentInfo(info metainfo.Info) ([]string, error) {
 	}
 
 	if len(fileNames) == 0 {
-		return []string{}, errors.New("no .mkv files found")
+		return []string{}, fmt.Errorf("no .mkv files found")
 	}
 
 	slices.Sort(fileNames)

@@ -4,8 +4,7 @@
 package utils
 
 import (
-	"seasonpackarr/pkg/errors"
-
+	"fmt"
 	"github.com/mrobinsn/go-tvmaze/tvmaze"
 )
 
@@ -29,7 +28,7 @@ func GetEpisodesPerSeason(title string, season int) (int, error) {
 	}
 
 	if totalEpisodes == 0 {
-		return 0, errors.New("no episodes in specified season")
+		return 0, fmt.Errorf("no episodes in specified season")
 	}
 
 	return totalEpisodes, nil
