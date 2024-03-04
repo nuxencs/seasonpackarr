@@ -45,8 +45,8 @@ type entryTime struct {
 }
 
 type matchPaths struct {
-	episodePath string
-	packPath    string
+	epPathClient     string
+	packPathAnnounce string
 }
 
 var (
@@ -192,8 +192,8 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 		return
 	}
 
-	packDirName := utils.FormatSeasonPackTitle(p.req.Name)
-	p.log.Debug().Msgf("formatted season pack name: %q", packDirName)
+	packNameAnnounce := utils.FormatSeasonPackTitle(p.req.Name)
+	p.log.Debug().Msgf("formatted season pack name: %q", packNameAnnounce)
 
 	for _, child := range v {
 		if release.CheckCandidates(&requestrls, &child, p.cfg.Config.FuzzyMatching) == 210 {
@@ -203,57 +203,57 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 		}
 	}
 
-	var matchedEpisodes []int
-	var responseCodes []int
+	var matchedEps []int
+	var respCodes []int
 
 	for _, child := range v {
 		switch res := release.CheckCandidates(&requestrls, &child, p.cfg.Config.FuzzyMatching); res {
 		case 201:
 			p.log.Info().Msgf("resolution did not match: request(%s => %s), client(%s => %s)",
 				requestrls.R.String(), requestrls.R.Resolution, child.R.String(), child.R.Resolution)
-			responseCodes = append(responseCodes, res)
+			respCodes = append(respCodes, res)
 			continue
 
 		case 202:
 			p.log.Info().Msgf("source did not match: request(%s => %s), client(%s => %s)",
 				requestrls.R.String(), requestrls.R.Source, child.R.String(), child.R.Source)
-			responseCodes = append(responseCodes, res)
+			respCodes = append(respCodes, res)
 			continue
 
 		case 203:
 			p.log.Info().Msgf("release group did not match: request(%s => %s), client(%s => %s)",
 				requestrls.R.String(), requestrls.R.Group, child.R.String(), child.R.Group)
-			responseCodes = append(responseCodes, res)
+			respCodes = append(respCodes, res)
 			continue
 
 		case 204:
 			p.log.Info().Msgf("cut did not match: request(%s => %s), client(%s => %s)",
 				requestrls.R.String(), requestrls.R.Cut, child.R.String(), child.R.Cut)
-			responseCodes = append(responseCodes, res)
+			respCodes = append(respCodes, res)
 			continue
 
 		case 205:
 			p.log.Info().Msgf("edition did not match: request(%s => %s), client(%s => %s)",
 				requestrls.R.String(), requestrls.R.Edition, child.R.String(), child.R.Edition)
-			responseCodes = append(responseCodes, res)
+			respCodes = append(respCodes, res)
 			continue
 
 		case 206:
 			p.log.Info().Msgf("repack status did not match: request(%s => %s), client(%s => %s)",
 				requestrls.R.String(), requestrls.R.Other, child.R.String(), child.R.Other)
-			responseCodes = append(responseCodes, res)
+			respCodes = append(respCodes, res)
 			continue
 
 		case 207:
 			p.log.Info().Msgf("hdr metadata did not match: request(%s => %s), client(%s => %s)",
 				requestrls.R.String(), requestrls.R.HDR, child.R.String(), child.R.HDR)
-			responseCodes = append(responseCodes, res)
+			respCodes = append(respCodes, res)
 			continue
 
 		case 208:
 			p.log.Info().Msgf("streaming service did not match: request(%s => %s), client(%s => %s)",
 				requestrls.R.String(), requestrls.R.Collection, child.R.String(), child.R.Collection)
-			responseCodes = append(responseCodes, res)
+			respCodes = append(respCodes, res)
 			continue
 
 		case 210:
@@ -279,16 +279,16 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 				break
 			}
 
-			episodeRls := rls.ParseString(child.T.Name)
-			episodePath := filepath.Join(child.T.SavePath, fileName)
-			packPath := filepath.Join(client.PreImportPath, packDirName, filepath.Base(fileName))
+			epRls := rls.ParseString(child.T.Name)
+			epPathClient := filepath.Join(child.T.SavePath, fileName)
+			packPathAnnounce := filepath.Join(client.PreImportPath, packNameAnnounce, filepath.Base(fileName))
 
-			matchedEpisodes = append(matchedEpisodes, episodeRls.Episode)
+			matchedEps = append(matchedEps, epRls.Episode)
 
 			currentMatch := []matchPaths{
 				{
-					episodePath: episodePath,
-					packPath:    packPath,
+					epPathClient:     epPathClient,
+					packPathAnnounce: packPathAnnounce,
 				},
 			}
 
@@ -300,12 +300,12 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 			newMatches := append(oldMatches.([]matchPaths), currentMatch...)
 			matchesMap.Store(p.req.Name, newMatches)
 			p.log.Debug().Msgf("matched torrent from client %q: %q %q", clientName, child.T.Name, child.T.Hash)
-			responseCodes = append(responseCodes, res)
+			respCodes = append(respCodes, res)
 			continue
 		}
 	}
 
-	if !slices.Contains(responseCodes, 250) {
+	if !slices.Contains(respCodes, 250) {
 		p.log.Info().Msgf("no matching releases in client %q: %q", clientName, p.req.Name)
 		netHTTP.Error(w, fmt.Sprintf("no matching releases in client %q: %q", clientName, p.req.Name), 200)
 		return
@@ -315,24 +315,24 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 		if p.cfg.Config.SmartMode {
 			reqRls := rls.ParseString(p.req.Name)
 
-			totalEpisodes, err := utils.GetEpisodesPerSeason(reqRls.Title, reqRls.Series)
+			totalEps, err := utils.GetEpisodesPerSeason(reqRls.Title, reqRls.Series)
 			if err != nil {
 				p.log.Error().Err(err).Msgf("error getting episode count for season %d of %q", reqRls.Series, reqRls.Title)
 				netHTTP.Error(w, fmt.Sprintf("error getting episode count for season %d of %q", reqRls.Series, reqRls.Title), 450)
 				return
 			}
-			matchedEpisodes = utils.DedupeSlice(matchedEpisodes)
+			matchedEps = utils.DedupeSlice(matchedEps)
 
-			percentEpisodes := release.PercentOfTotalEpisodes(totalEpisodes, matchedEpisodes)
+			percentEps := release.PercentOfTotalEpisodes(totalEps, matchedEps)
 
-			if percentEpisodes < p.cfg.Config.SmartModeThreshold {
+			if percentEps < p.cfg.Config.SmartModeThreshold {
 				// delete match from matchesMap if threshold is not met
 				matchesMap.Delete(p.req.Name)
 
 				p.log.Log().Msgf("found %d/%d (%.2f%%) episodes in client, below configured smart mode threshold: %q",
-					len(matchedEpisodes), totalEpisodes, percentEpisodes*100, p.req.Name)
+					len(matchedEps), totalEps, percentEps*100, p.req.Name)
 				netHTTP.Error(w, fmt.Sprintf("found %d/%d (%.2f%%) episodes in client, below configured smart mode threshold: %q",
-					len(matchedEpisodes), totalEpisodes, percentEpisodes*100, p.req.Name), 230)
+					len(matchedEps), totalEps, percentEps*100, p.req.Name), 230)
 				return
 			}
 		}
@@ -346,13 +346,13 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 		matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
 
 		for _, match := range matches {
-			if err := utils.CreateHardlink(match.episodePath, match.packPath); err != nil {
-				p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.episodePath)
-				netHTTP.Error(w, fmt.Sprintf("error creating hardlink for: %q", match.episodePath), 250)
+			if err := utils.CreateHardlink(match.epPathClient, match.packPathAnnounce); err != nil {
+				p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.epPathClient)
+				netHTTP.Error(w, fmt.Sprintf("error creating hardlink for: %q", match.epPathClient), 250)
 				continue
 			}
-			p.log.Log().Msgf("created hardlink of %q into %q", match.episodePath, match.packPath)
-			netHTTP.Error(w, fmt.Sprintf("created hardlink of %q into %q", match.episodePath, match.packPath), 250)
+			p.log.Log().Msgf("created hardlink of %q into %q", match.epPathClient, match.packPathAnnounce)
+			netHTTP.Error(w, fmt.Sprintf("created hardlink of %q into %q", match.epPathClient, match.packPathAnnounce), 250)
 		}
 	}
 }
@@ -384,13 +384,24 @@ func (p processor) ParseTorrent(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 	}
 	p.req.Torrent = torrentBytes
 
-	folderName, err := utils.ParseFolderNameFromTorrentBytes(p.req.Torrent)
+	torrentInfo, err := utils.ParseTorrentInfoFromTorrentBytes(p.req.Torrent)
 	if err != nil {
-		p.log.Error().Err(err).Msgf("error parsing folder name")
-		netHTTP.Error(w, fmt.Sprintf("error parsing folder name: %q", err), 466)
+		p.log.Error().Err(err).Msgf("error parsing torrent info")
+		netHTTP.Error(w, fmt.Sprintf("error parsing torrent info: %q", err), 466)
 		return
 	}
-	p.log.Debug().Msgf("parsed season pack name: %q", folderName)
+	packNameParsed := torrentInfo.BestName()
+	p.log.Debug().Msgf("parsed season pack name: %q", packNameParsed)
+
+	torrentEps, err := utils.GetEpisodesFromTorrentInfo(torrentInfo)
+	if err != nil {
+		p.log.Error().Err(err).Msgf("error getting episodes")
+		netHTTP.Error(w, fmt.Sprintf("error getting episodes: %q", err), 465)
+		return
+	}
+	for _, torrentEp := range torrentEps {
+		p.log.Debug().Msgf("found episode: %q", torrentEp)
+	}
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
 	if !ok {
@@ -402,13 +413,18 @@ func (p processor) ParseTorrent(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 	matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
 
 	for _, match := range matches {
-		match.packPath = utils.ReplaceParentFolder(match.packPath, folderName)
-		if err := utils.CreateHardlink(match.episodePath, match.packPath); err != nil {
-			p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.episodePath)
-			netHTTP.Error(w, fmt.Sprintf("error creating hardlink for: %q", match.episodePath), 250)
+		newPackPath := utils.ReplaceParentFolder(match.packPathAnnounce, packNameParsed)
+		newPackPath, err = utils.MatchFileNameToSeasonPackNaming(newPackPath, torrentEps)
+		if err != nil {
+			p.log.Error().Err(err).Msgf("error matching episode to file in season pack: %q", match.epPathClient)
+		}
+
+		if err = utils.CreateHardlink(match.epPathClient, newPackPath); err != nil {
+			p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.epPathClient)
+			netHTTP.Error(w, fmt.Sprintf("error creating hardlink for: %q", match.epPathClient), 250)
 			continue
 		}
-		p.log.Log().Msgf("created hardlink of %q into %q", match.episodePath, match.packPath)
-		netHTTP.Error(w, fmt.Sprintf("created hardlink of %q into %q", match.episodePath, match.packPath), 250)
+		p.log.Log().Msgf("created hardlink of %q into %q", match.epPathClient, newPackPath)
+		netHTTP.Error(w, fmt.Sprintf("created hardlink of %q into %q", match.epPathClient, newPackPath), 250)
 	}
 }

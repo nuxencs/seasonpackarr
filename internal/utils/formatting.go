@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 
+	"seasonpackarr/pkg/errors"
+
 	"github.com/moistari/rls"
 )
 
@@ -50,4 +52,19 @@ func ReplaceParentFolder(path, newFolder string) string {
 	}
 	newPath := filepath.Join(filepath.Dir(filepath.Dir(path)), newFolder, filepath.Base(path))
 	return newPath
+}
+
+func MatchFileNameToSeasonPackNaming(episodeInClientPath string, torrentEpisodeNames []string) (string, error) {
+	episodeRls := rls.ParseString(filepath.Base(episodeInClientPath))
+
+	for _, packPath := range torrentEpisodeNames {
+		packRls := rls.ParseString(filepath.Base(packPath))
+
+		if (episodeRls.Series == packRls.Series) &&
+			(episodeRls.Episode == packRls.Episode) {
+			return filepath.Join(filepath.Dir(episodeInClientPath), filepath.Base(packPath)), nil
+		}
+	}
+
+	return episodeInClientPath, errors.New("couldn't find matching episode in season pack, using existing file name")
 }
