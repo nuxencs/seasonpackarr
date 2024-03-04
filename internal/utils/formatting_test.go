@@ -253,8 +253,8 @@ func TestMatchFileNameToSeasonPackNaming(t *testing.T) {
 			name:         "wrong_episode",
 			epPathClient: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
 			torrentEps: []string{
-				"Series Title 2022 S02E02 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				"Series Title 2022 S02E03 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+				"Series Title 2022 S02E02 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+				"Series Title 2022 S02E03 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
 			},
 			want:    "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
 			wantErr: true,
@@ -270,8 +270,28 @@ func TestMatchFileNameToSeasonPackNaming(t *testing.T) {
 			name:         "wrong_season",
 			epPathClient: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
 			torrentEps: []string{
-				"Series Title 2022 S03E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				"Series Title 2022 S03E02 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+				"Series Title 2022 S03E01 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+				"Series Title 2022 S03E02 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			},
+			want:    "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			wantErr: true,
+		},
+		{
+			name:         "wrong_resolution",
+			epPathClient: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			torrentEps: []string{
+				"Series Title 2022 S02E01 720p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+				"Series Title 2022 S02E02 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			},
+			want:    "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			wantErr: true,
+		},
+		{
+			name:         "wrong_rlsgrp",
+			epPathClient: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			torrentEps: []string{
+				"Series Title 2022 S02E01 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp2.mkv",
+				"Series Title 2022 S02E02 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
 			},
 			want:    "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
 			wantErr: true,

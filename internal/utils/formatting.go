@@ -59,7 +59,9 @@ func MatchFileNameToSeasonPackNaming(episodeInClientPath string, torrentEpisodeN
 		packRls := rls.ParseString(filepath.Base(packPath))
 
 		if (episodeRls.Series == packRls.Series) &&
-			(episodeRls.Episode == packRls.Episode) {
+			(episodeRls.Episode == packRls.Episode) &&
+			(episodeRls.Resolution == packRls.Resolution) &&
+			(episodeRls.Group == packRls.Group) {
 			return filepath.Join(filepath.Dir(episodeInClientPath), filepath.Base(packPath)), nil
 		}
 	}
