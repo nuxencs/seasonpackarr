@@ -3,7 +3,7 @@ module seasonpackarr
 go 1.22
 
 require (
-	github.com/anacrolix/torrent v1.54.1
+	github.com/anacrolix/torrent v1.55.0
 	github.com/autobrr/go-qbittorrent v1.8.1
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/go-chi/chi/v5 v5.0.12
