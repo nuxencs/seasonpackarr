@@ -466,7 +466,7 @@ func (c *AppConfig) processLines(lines []string) []string {
 			foundLineSmartModeThreshold = true
 		}
 		if !foundLineParseTorrentFile && strings.Contains(line, "parseTorrentFile:") {
-			lines[i] = fmt.Sprintf("parseTorrentFile: %t", c.Config.SmartMode)
+			lines[i] = fmt.Sprintf("parseTorrentFile: %t", c.Config.ParseTorrentFile)
 			foundLineParseTorrentFile = true
 		}
 		if !foundLineFuzzyMatching && strings.Contains(line, "fuzzyMatching:") {
