@@ -344,16 +344,23 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 		}
 
 		matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
+		var hardlinkRespCodes []int
 
 		for _, match := range matches {
 			if err := utils.CreateHardlink(match.epPathClient, match.packPathAnnounce); err != nil {
 				p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.epPathClient)
-				netHTTP.Error(w, fmt.Sprintf("error creating hardlink for: %q", match.epPathClient), 250)
+				hardlinkRespCodes = append(hardlinkRespCodes, 440)
 				continue
 			}
 			p.log.Log().Msgf("created hardlink of %q into %q", match.epPathClient, match.packPathAnnounce)
-			netHTTP.Error(w, fmt.Sprintf("created hardlink of %q into %q", match.epPathClient, match.packPathAnnounce), 250)
+			hardlinkRespCodes = append(hardlinkRespCodes, 250)
 		}
+
+		if !slices.Contains(hardlinkRespCodes, 250) {
+			netHTTP.Error(w, fmt.Sprintf("error creating hardlinks for: %q", p.req.Name), 440)
+			return
+		}
+		netHTTP.Error(w, fmt.Sprintf("created hardlinks for: %q", p.req.Name), 250)
 	}
 }
 
@@ -411,6 +418,7 @@ func (p processor) ParseTorrent(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 	}
 
 	matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
+	var hardlinkRespCodes []int
 
 	for _, match := range matches {
 		newPackPath := utils.ReplaceParentFolder(match.packPathAnnounce, packNameParsed)
@@ -421,10 +429,16 @@ func (p processor) ParseTorrent(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 
 		if err = utils.CreateHardlink(match.epPathClient, newPackPath); err != nil {
 			p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.epPathClient)
-			netHTTP.Error(w, fmt.Sprintf("error creating hardlink for: %q", match.epPathClient), 250)
+			hardlinkRespCodes = append(hardlinkRespCodes, 440)
 			continue
 		}
 		p.log.Log().Msgf("created hardlink of %q into %q", match.epPathClient, newPackPath)
-		netHTTP.Error(w, fmt.Sprintf("created hardlink of %q into %q", match.epPathClient, newPackPath), 250)
+		hardlinkRespCodes = append(hardlinkRespCodes, 250)
 	}
+
+	if !slices.Contains(hardlinkRespCodes, 250) {
+		netHTTP.Error(w, fmt.Sprintf("error creating hardlinks for: %q", p.req.Name), 440)
+		return
+	}
+	netHTTP.Error(w, fmt.Sprintf("created hardlinks for: %q", p.req.Name), 250)
 }
