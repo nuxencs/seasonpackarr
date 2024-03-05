@@ -77,7 +77,7 @@ func DecodeTorrentDataRawBytes(torrentBytes []byte) ([]byte, error) {
 		}
 	}
 
-	return []byte{}, err
+	return []byte{}, fmt.Errorf("couldn't decode torrent bytes")
 }
 
 func atoi(buf string) (ret int, valid bool, pos string) {

@@ -28,7 +28,7 @@ func GetEpisodesPerSeason(title string, season int) (int, error) {
 	}
 
 	if totalEpisodes == 0 {
-		return 0, fmt.Errorf("no episodes in specified season")
+		return 0, fmt.Errorf("couldn't find episodes in season %d of %q", season, title)
 	}
 
 	return totalEpisodes, nil

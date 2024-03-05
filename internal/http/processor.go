@@ -206,18 +206,18 @@ func (p processor) processSeasonPack() (int, error) {
 	}
 
 	if err := p.getClient(client); err != nil {
-		return StatusGetClientError, fmt.Errorf("couldn't get client: %q", err)
+		return StatusGetClientError, err
 	}
 
 	mp := p.getAllTorrents(client)
 	if mp.err != nil {
-		return StatusGetTorrentsError, fmt.Errorf("couldn't get torrents: %q", mp.err)
+		return StatusGetTorrentsError, mp.err
 	}
 
 	requestrls := domain.Entry{R: rls.ParseString(p.req.Name)}
 	v, ok := mp.e[utils.GetFormattedTitle(requestrls.R)]
 	if !ok {
-		return StatusNoMatches, fmt.Errorf("no matching releases in client %q: %q", clientName, p.req.Name)
+		return StatusNoMatches, fmt.Errorf("no matching releases in client %q", clientName)
 	}
 
 	packNameAnnounce := utils.FormatSeasonPackTitle(p.req.Name)
@@ -225,7 +225,7 @@ func (p processor) processSeasonPack() (int, error) {
 
 	for _, child := range v {
 		if release.CheckCandidates(&requestrls, &child, p.cfg.Config.FuzzyMatching) == StatusAlreadyInClient {
-			return StatusAlreadyInClient, fmt.Errorf("release already in client %q: %q", clientName, p.req.Name)
+			return StatusAlreadyInClient, fmt.Errorf("release already in client %q", clientName)
 		}
 	}
 
@@ -283,15 +283,15 @@ func (p processor) processSeasonPack() (int, error) {
 			continue
 
 		case StatusAlreadyInClient:
-			return StatusAlreadyInClient, fmt.Errorf("release already in client %q: %q", clientName, p.req.Name)
+			return StatusAlreadyInClient, fmt.Errorf("release already in client %q", clientName)
 
 		case StatusNotASeasonPack:
-			return StatusNotASeasonPack, fmt.Errorf("release is not a season pack: %q", p.req.Name)
+			return StatusNotASeasonPack, fmt.Errorf("release is not a season pack")
 
 		case StatusSuccessfulMatch:
 			m, err := p.getFiles(child.T.Hash)
 			if err != nil {
-				p.log.Error().Err(err).Msgf("couldn't get files: %q", child.T.Name)
+				p.log.Error().Err(err).Msgf("error getting files: %q", child.T.Name)
 				continue
 			}
 
@@ -329,7 +329,7 @@ func (p processor) processSeasonPack() (int, error) {
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
 	if !slices.Contains(respCodes, StatusSuccessfulMatch) || !ok {
-		return StatusNoMatches, fmt.Errorf("no matching releases in client %q: %q", clientName, p.req.Name)
+		return StatusNoMatches, fmt.Errorf("no matching releases in client %q", clientName)
 	}
 
 	if p.cfg.Config.SmartMode {
@@ -337,7 +337,7 @@ func (p processor) processSeasonPack() (int, error) {
 
 		totalEps, err := utils.GetEpisodesPerSeason(reqRls.Title, reqRls.Series)
 		if err != nil {
-			return StatusEpisodeCountError, fmt.Errorf("couldn't get episode count for season %d of %q", reqRls.Series, reqRls.Title)
+			return StatusEpisodeCountError, err
 		}
 		matchedEps = utils.DedupeSlice(matchedEps)
 
@@ -347,8 +347,8 @@ func (p processor) processSeasonPack() (int, error) {
 			// delete match from matchesMap if threshold is not met
 			matchesMap.Delete(p.req.Name)
 
-			return StatusBelowThreshold, fmt.Errorf("found %d/%d (%.2f%%) episodes in client, below configured smart mode threshold: %q",
-				len(matchedEps), totalEps, percentEps*100, p.req.Name)
+			return StatusBelowThreshold, fmt.Errorf("found %d/%d (%.2f%%) episodes in client, below configured smart mode threshold",
+				len(matchedEps), totalEps, percentEps*100)
 		}
 	}
 
@@ -361,7 +361,7 @@ func (p processor) processSeasonPack() (int, error) {
 
 	for _, match := range matches {
 		if err := utils.CreateHardlink(match.epPathClient, match.packPathAnnounce); err != nil {
-			p.log.Error().Err(err).Msgf("couldn't create hardlink for: %q", match.epPathClient)
+			p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.epPathClient)
 			hardlinkRespCodes = append(hardlinkRespCodes, StatusFailedHardlink)
 			continue
 		}
@@ -370,7 +370,7 @@ func (p processor) processSeasonPack() (int, error) {
 	}
 
 	if !slices.Contains(hardlinkRespCodes, StatusSuccessfulHardlink) {
-		return StatusFailedHardlink, fmt.Errorf("couldn't create hardlinks for: %q", p.req.Name)
+		return StatusFailedHardlink, fmt.Errorf("couldn't create hardlinks")
 	}
 	return StatusSuccessfulHardlink, nil
 }
@@ -394,29 +394,29 @@ func (p processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Requ
 
 func (p processor) parseTorrent() (int, error) {
 	if len(p.req.Name) == 0 {
-		return StatusAnnounceNameError, fmt.Errorf("error getting announce name")
+		return StatusAnnounceNameError, fmt.Errorf("couldn't get announce name")
 	}
 
 	if len(p.req.Torrent) == 0 {
-		return StatusTorrentBytesError, fmt.Errorf("error getting torrent bytes")
+		return StatusTorrentBytesError, fmt.Errorf("couldn't get torrent bytes")
 	}
 
 	torrentBytes, err := utils.DecodeTorrentDataRawBytes(p.req.Torrent)
 	if err != nil {
-		return StatusDecodeTorrentBytesError, fmt.Errorf("error decoding torrent bytes: %q", err)
+		return StatusDecodeTorrentBytesError, err
 	}
 	p.req.Torrent = torrentBytes
 
 	torrentInfo, err := utils.ParseTorrentInfoFromTorrentBytes(p.req.Torrent)
 	if err != nil {
-		return StatusParseTorrentInfoError, fmt.Errorf("error parsing torrent info: %q", err)
+		return StatusParseTorrentInfoError, err
 	}
 	packNameParsed := torrentInfo.BestName()
 	p.log.Debug().Msgf("parsed season pack name: %q", packNameParsed)
 
 	torrentEps, err := utils.GetEpisodesFromTorrentInfo(torrentInfo)
 	if err != nil {
-		return StatusGetEpisodesError, fmt.Errorf("error getting episodes: %q", err)
+		return StatusGetEpisodesError, err
 	}
 	for _, torrentEp := range torrentEps {
 		p.log.Debug().Msgf("found episode: %q", torrentEp)
@@ -424,7 +424,7 @@ func (p processor) parseTorrent() (int, error) {
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
 	if !ok {
-		return StatusNoMatches, fmt.Errorf("no matching releases in client: %q", p.req.Name)
+		return StatusNoMatches, fmt.Errorf("no matching releases in client")
 	}
 
 	matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
@@ -447,7 +447,7 @@ func (p processor) parseTorrent() (int, error) {
 	}
 
 	if !slices.Contains(hardlinkRespCodes, StatusSuccessfulHardlink) {
-		return StatusFailedHardlink, fmt.Errorf("error creating hardlinks for: %q", p.req.Name)
+		return StatusFailedHardlink, fmt.Errorf("couldn't create hardlinks")
 	}
 	return StatusSuccessfulHardlink, nil
 }
