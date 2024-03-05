@@ -170,14 +170,24 @@ func (p processor) getAllTorrents(client *domain.Client) entryTime {
 func (p processor) getFiles(hash string) (*qbittorrent.TorrentFiles, error) {
 	return p.req.Client.GetFilesInformation(hash)
 }
-
-func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Request) {
+func (p processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&p.req); err != nil {
 		p.log.Error().Err(err).Msgf("error decoding request")
 		netHTTP.Error(w, err.Error(), StatusDecodingError)
 		return
 	}
 
+	code, err := p.processSeasonPack()
+	if err != nil {
+		p.log.Error().Err(err).Msgf("error processing season pack: %q", p.req.Name)
+		netHTTP.Error(w, err.Error(), code)
+		return
+	}
+
+	w.WriteHeader(code)
+}
+
+func (p processor) processSeasonPack() (int, error) {
 	clientName := p.req.ClientName
 
 	if len(clientName) == 0 {
@@ -187,37 +197,27 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 
 	client, ok := p.cfg.Config.Clients[clientName]
 	if !ok {
-		p.log.Error().Msgf("client not found in config: %q", clientName)
-		netHTTP.Error(w, fmt.Sprintf("client not found in config: %q", clientName), StatusClientNotFound)
-		return
+		return StatusClientNotFound, fmt.Errorf("client not found in config: %q", clientName)
 	}
 	p.log.Info().Msgf("using %q client serving at %s:%d", clientName, client.Host, client.Port)
 
 	if len(p.req.Name) == 0 {
-		p.log.Error().Msgf("error getting announce name")
-		netHTTP.Error(w, fmt.Sprintf("error getting announce name"), StatusAnnounceNameError)
-		return
+		return StatusAnnounceNameError, fmt.Errorf("couldn't get announce name")
 	}
 
 	if err := p.getClient(client); err != nil {
-		p.log.Error().Err(err).Msgf("error getting client")
-		netHTTP.Error(w, fmt.Sprintf("error getting client: %q", err), StatusGetClientError)
-		return
+		return StatusGetClientError, fmt.Errorf("couldn't get client: %q", err)
 	}
 
 	mp := p.getAllTorrents(client)
 	if mp.err != nil {
-		p.log.Error().Err(mp.err).Msgf("error getting torrents")
-		netHTTP.Error(w, fmt.Sprintf("error getting torrents: %q", mp.err), StatusGetTorrentsError)
-		return
+		return StatusGetTorrentsError, fmt.Errorf("couldn't get torrents: %q", mp.err)
 	}
 
 	requestrls := domain.Entry{R: rls.ParseString(p.req.Name)}
 	v, ok := mp.e[utils.GetFormattedTitle(requestrls.R)]
 	if !ok {
-		p.log.Info().Msgf("no matching releases in client %q: %q", clientName, p.req.Name)
-		netHTTP.Error(w, fmt.Sprintf("no matching releases in client %q: %q", clientName, p.req.Name), StatusNoMatches)
-		return
+		return StatusNoMatches, fmt.Errorf("no matching releases in client %q: %q", clientName, p.req.Name)
 	}
 
 	packNameAnnounce := utils.FormatSeasonPackTitle(p.req.Name)
@@ -225,9 +225,7 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 
 	for _, child := range v {
 		if release.CheckCandidates(&requestrls, &child, p.cfg.Config.FuzzyMatching) == StatusAlreadyInClient {
-			p.log.Info().Msgf("release already in client %q: %q", clientName, p.req.Name)
-			netHTTP.Error(w, fmt.Sprintf("release already in client %q: %q", clientName, p.req.Name), StatusAlreadyInClient)
-			return
+			return StatusAlreadyInClient, fmt.Errorf("release already in client %q: %q", clientName, p.req.Name)
 		}
 	}
 
@@ -285,19 +283,15 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 			continue
 
 		case StatusAlreadyInClient:
-			p.log.Info().Msgf("release already in client %q: %q", clientName, p.req.Name)
-			netHTTP.Error(w, fmt.Sprintf("release already in client %q: %q", clientName, p.req.Name), res)
-			return
+			return StatusAlreadyInClient, fmt.Errorf("release already in client %q: %q", clientName, p.req.Name)
 
 		case StatusNotASeasonPack:
-			p.log.Info().Msgf("release is not a season pack: %q", p.req.Name)
-			netHTTP.Error(w, fmt.Sprintf("release is not a season pack: %q", p.req.Name), res)
-			return
+			return StatusNotASeasonPack, fmt.Errorf("release is not a season pack: %q", p.req.Name)
 
 		case StatusSuccessfulMatch:
 			m, err := p.getFiles(child.T.Hash)
 			if err != nil {
-				p.log.Error().Err(err).Msgf("error getting files: %q", child.T.Name)
+				p.log.Error().Err(err).Msgf("couldn't get files: %q", child.T.Name)
 				continue
 			}
 
@@ -333,106 +327,95 @@ func (p processor) ProcessSeasonPack(w netHTTP.ResponseWriter, r *netHTTP.Reques
 		}
 	}
 
-	if !slices.Contains(respCodes, StatusSuccessfulMatch) {
-		p.log.Info().Msgf("no matching releases in client %q: %q", clientName, p.req.Name)
-		netHTTP.Error(w, fmt.Sprintf("no matching releases in client %q: %q", clientName, p.req.Name), StatusNoMatches)
-		return
+	matchesSlice, ok := matchesMap.Load(p.req.Name)
+	if !slices.Contains(respCodes, StatusSuccessfulMatch) || !ok {
+		return StatusNoMatches, fmt.Errorf("no matching releases in client %q: %q", clientName, p.req.Name)
 	}
 
-	if matchesSlice, ok := matchesMap.Load(p.req.Name); ok {
-		if p.cfg.Config.SmartMode {
-			reqRls := rls.ParseString(p.req.Name)
+	if p.cfg.Config.SmartMode {
+		reqRls := rls.ParseString(p.req.Name)
 
-			totalEps, err := utils.GetEpisodesPerSeason(reqRls.Title, reqRls.Series)
-			if err != nil {
-				p.log.Error().Err(err).Msgf("error getting episode count for season %d of %q", reqRls.Series, reqRls.Title)
-				netHTTP.Error(w, fmt.Sprintf("error getting episode count for season %d of %q", reqRls.Series, reqRls.Title), StatusEpisodeCountError)
-				return
-			}
-			matchedEps = utils.DedupeSlice(matchedEps)
-
-			percentEps := release.PercentOfTotalEpisodes(totalEps, matchedEps)
-
-			if percentEps < p.cfg.Config.SmartModeThreshold {
-				// delete match from matchesMap if threshold is not met
-				matchesMap.Delete(p.req.Name)
-
-				p.log.Log().Msgf("found %d/%d (%.2f%%) episodes in client, below configured smart mode threshold: %q",
-					len(matchedEps), totalEps, percentEps*100, p.req.Name)
-				netHTTP.Error(w, fmt.Sprintf("found %d/%d (%.2f%%) episodes in client, below configured smart mode threshold: %q",
-					len(matchedEps), totalEps, percentEps*100, p.req.Name), StatusBelowThreshold)
-				return
-			}
+		totalEps, err := utils.GetEpisodesPerSeason(reqRls.Title, reqRls.Series)
+		if err != nil {
+			return StatusEpisodeCountError, fmt.Errorf("couldn't get episode count for season %d of %q", reqRls.Series, reqRls.Title)
 		}
+		matchedEps = utils.DedupeSlice(matchedEps)
 
-		if p.cfg.Config.ParseTorrentFile {
-			p.log.Log().Msgf("found matching episodes for season pack: %q", p.req.Name)
-			netHTTP.Error(w, fmt.Sprintf("found matching episodes for season pack: %q", p.req.Name), StatusSuccessfulMatch)
-			return
+		percentEps := release.PercentOfTotalEpisodes(totalEps, matchedEps)
+
+		if percentEps < p.cfg.Config.SmartModeThreshold {
+			// delete match from matchesMap if threshold is not met
+			matchesMap.Delete(p.req.Name)
+
+			return StatusBelowThreshold, fmt.Errorf("found %d/%d (%.2f%%) episodes in client, below configured smart mode threshold: %q",
+				len(matchedEps), totalEps, percentEps*100, p.req.Name)
 		}
-
-		matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
-		var hardlinkRespCodes []int
-
-		for _, match := range matches {
-			if err := utils.CreateHardlink(match.epPathClient, match.packPathAnnounce); err != nil {
-				p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.epPathClient)
-				hardlinkRespCodes = append(hardlinkRespCodes, StatusFailedHardlink)
-				continue
-			}
-			p.log.Log().Msgf("created hardlink of %q into %q", match.epPathClient, match.packPathAnnounce)
-			hardlinkRespCodes = append(hardlinkRespCodes, StatusSuccessfulHardlink)
-		}
-
-		if !slices.Contains(hardlinkRespCodes, StatusSuccessfulHardlink) {
-			netHTTP.Error(w, fmt.Sprintf("error creating hardlinks for: %q", p.req.Name), StatusFailedHardlink)
-			return
-		}
-		netHTTP.Error(w, fmt.Sprintf("created hardlinks for: %q", p.req.Name), StatusSuccessfulHardlink)
 	}
+
+	if p.cfg.Config.ParseTorrentFile {
+		return StatusSuccessfulMatch, nil
+	}
+
+	matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
+	var hardlinkRespCodes []int
+
+	for _, match := range matches {
+		if err := utils.CreateHardlink(match.epPathClient, match.packPathAnnounce); err != nil {
+			p.log.Error().Err(err).Msgf("couldn't create hardlink for: %q", match.epPathClient)
+			hardlinkRespCodes = append(hardlinkRespCodes, StatusFailedHardlink)
+			continue
+		}
+		p.log.Log().Msgf("created hardlink of %q into %q", match.epPathClient, match.packPathAnnounce)
+		hardlinkRespCodes = append(hardlinkRespCodes, StatusSuccessfulHardlink)
+	}
+
+	if !slices.Contains(hardlinkRespCodes, StatusSuccessfulHardlink) {
+		return StatusFailedHardlink, fmt.Errorf("couldn't create hardlinks for: %q", p.req.Name)
+	}
+	return StatusSuccessfulHardlink, nil
 }
 
-func (p processor) ParseTorrent(w netHTTP.ResponseWriter, r *netHTTP.Request) {
+func (p processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&p.req); err != nil {
 		p.log.Error().Err(err).Msgf("error decoding request")
 		netHTTP.Error(w, err.Error(), StatusDecodingError)
 		return
 	}
 
-	if len(p.req.Name) == 0 {
-		p.log.Error().Msgf("error getting announce name")
-		netHTTP.Error(w, fmt.Sprintf("error getting announce name"), StatusAnnounceNameError)
+	if code, err := p.parseTorrent(); err != nil {
+		p.log.Error().Err(err).Msgf("error processing season pack: %q", p.req.Name)
+		netHTTP.Error(w, err.Error(), code)
 		return
 	}
 
+	w.WriteHeader(netHTTP.StatusOK)
+}
+
+func (p processor) parseTorrent() (int, error) {
+	if len(p.req.Name) == 0 {
+		return StatusAnnounceNameError, fmt.Errorf("error getting announce name")
+	}
+
 	if len(p.req.Torrent) == 0 {
-		p.log.Error().Msgf("error getting torrent bytes")
-		netHTTP.Error(w, fmt.Sprintf("error getting torrent bytes"), StatusTorrentBytesError)
-		return
+		return StatusTorrentBytesError, fmt.Errorf("error getting torrent bytes")
 	}
 
 	torrentBytes, err := utils.DecodeTorrentDataRawBytes(p.req.Torrent)
 	if err != nil {
-		p.log.Error().Err(err).Msgf("error decoding torrent bytes")
-		netHTTP.Error(w, fmt.Sprintf("error decoding torrent bytes: %q", err), StatusDecodeTorrentBytesError)
-		return
+		return StatusDecodeTorrentBytesError, fmt.Errorf("error decoding torrent bytes: %q", err)
 	}
 	p.req.Torrent = torrentBytes
 
 	torrentInfo, err := utils.ParseTorrentInfoFromTorrentBytes(p.req.Torrent)
 	if err != nil {
-		p.log.Error().Err(err).Msgf("error parsing torrent info")
-		netHTTP.Error(w, fmt.Sprintf("error parsing torrent info: %q", err), StatusParseTorrentInfoError)
-		return
+		return StatusParseTorrentInfoError, fmt.Errorf("error parsing torrent info: %q", err)
 	}
 	packNameParsed := torrentInfo.BestName()
 	p.log.Debug().Msgf("parsed season pack name: %q", packNameParsed)
 
 	torrentEps, err := utils.GetEpisodesFromTorrentInfo(torrentInfo)
 	if err != nil {
-		p.log.Error().Err(err).Msgf("error getting episodes")
-		netHTTP.Error(w, fmt.Sprintf("error getting episodes: %q", err), StatusGetEpisodesError)
-		return
+		return StatusGetEpisodesError, fmt.Errorf("error getting episodes: %q", err)
 	}
 	for _, torrentEp := range torrentEps {
 		p.log.Debug().Msgf("found episode: %q", torrentEp)
@@ -440,9 +423,7 @@ func (p processor) ParseTorrent(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
 	if !ok {
-		p.log.Info().Msgf("no matching releases in client: %q", p.req.Name)
-		netHTTP.Error(w, fmt.Sprintf("no matching releases in client: %q", p.req.Name), StatusNoMatches)
-		return
+		return StatusNoMatches, fmt.Errorf("no matching releases in client: %q", p.req.Name)
 	}
 
 	matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
@@ -465,8 +446,7 @@ func (p processor) ParseTorrent(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 	}
 
 	if !slices.Contains(hardlinkRespCodes, StatusSuccessfulHardlink) {
-		netHTTP.Error(w, fmt.Sprintf("error creating hardlinks for: %q", p.req.Name), StatusFailedHardlink)
-		return
+		return StatusFailedHardlink, fmt.Errorf("error creating hardlinks for: %q", p.req.Name)
 	}
-	netHTTP.Error(w, fmt.Sprintf("created hardlinks for: %q", p.req.Name), StatusSuccessfulHardlink)
+	return StatusSuccessfulHardlink, nil
 }
