@@ -382,13 +382,14 @@ func (p processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Requ
 		return
 	}
 
-	if code, err := p.parseTorrent(); err != nil {
-		p.log.Error().Err(err).Msgf("error processing season pack: %q", p.req.Name)
+	code, err := p.parseTorrent()
+	if err != nil {
+		p.log.Error().Err(err).Msgf("error parsing torrent: %q", p.req.Name)
 		netHTTP.Error(w, err.Error(), code)
 		return
 	}
 
-	w.WriteHeader(netHTTP.StatusOK)
+	w.WriteHeader(code)
 }
 
 func (p processor) parseTorrent() (int, error) {
