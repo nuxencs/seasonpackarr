@@ -31,11 +31,11 @@ func (h webhookHandler) Routes(r chi.Router) {
 }
 
 func (h webhookHandler) pack(w http.ResponseWriter, r *http.Request) {
-	newProcessor(h.log, h.cfg).ProcessSeasonPack(w, r)
+	newProcessor(h.log, h.cfg).ProcessSeasonPackHandler(w, r)
 	render.Status(r, http.StatusOK)
 }
 
 func (h webhookHandler) parse(w http.ResponseWriter, r *http.Request) {
-	newProcessor(h.log, h.cfg).ParseTorrent(w, r)
+	newProcessor(h.log, h.cfg).ParseTorrentHandler(w, r)
 	render.Status(r, http.StatusOK)
 }
