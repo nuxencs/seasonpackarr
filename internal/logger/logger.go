@@ -61,15 +61,16 @@ func New(cfg *domain.Config) Logger {
 
 	// setup logging to syslog
 	if cfg.LogSyslog {
-		if runtime.GOOS == "linux" {
+		if !(runtime.GOOS == "linux" || runtime.GOOS == "darwin") {
+			l.Error().Msgf("you are not running a system that is supported by syslog")
+		} else {
 			writer, err := syslog.New(syslog.LOG_INFO|syslog.LOG_LOCAL0, "seasonpackarr")
 			if err != nil {
-				l.Err(err).Msgf("error creating syslog writer")
+				l.Error().Err(err).Msgf("error creating syslog writer")
 				return nil
 			}
-			l.writers = append(l.writers, zerolog.SyslogLevelWriter(writer))
+			l.writers = append(l.writers, zerolog.SyslogCEEWriter(writer))
 		}
-
 	}
 
 	if cfg.LogPath != "" {
