@@ -27,6 +27,7 @@ type Config struct {
 	LogLevel           string             `yaml:"logLevel"`
 	LogMaxSize         int                `yaml:"logMaxSize"`
 	LogMaxBackups      int                `yaml:"logMaxBackups"`
+	LogSyslog          bool               `yaml:"logSyslog"`
 	SmartMode          bool               `yaml:"smartMode"`
 	SmartModeThreshold float32            `yaml:"smartModeThreshold"`
 	ParseTorrentFile   bool               `yaml:"parseTorrentFile"`

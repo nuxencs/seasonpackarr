@@ -6,7 +6,9 @@ package logger
 
 import (
 	"io"
+	"log/syslog"
 	"os"
+	"runtime"
 	"time"
 
 	"seasonpackarr/internal/domain"
@@ -55,6 +57,19 @@ func New(cfg *domain.Config) Logger {
 	} else {
 		// default to stderr
 		l.writers = append(l.writers, os.Stderr)
+	}
+
+	// setup logging to syslog
+	if cfg.LogSyslog {
+		if runtime.GOOS == "linux" {
+			writer, err := syslog.New(syslog.LOG_INFO|syslog.LOG_LOCAL0, "seasonpackarr")
+			if err != nil {
+				l.Err(err).Msgf("error creating syslog writer")
+				return nil
+			}
+			l.writers = append(l.writers, zerolog.SyslogLevelWriter(writer))
+		}
+
 	}
 
 	if cfg.LogPath != "" {

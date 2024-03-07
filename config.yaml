@@ -94,6 +94,13 @@ logLevel: "DEBUG"
 #
 # logMaxBackups: 3
 
+# Syslog
+# Log to syslog in addition to stdout or a log file
+#
+# Default: false
+#
+# logSyslog: false
+
 # Smart Mode
 # Toggles smart mode to only download season packs that have a certain amount of episodes from a release group
 # already in the client
