@@ -8,6 +8,7 @@ import (
 	"fmt"
 	netHTTP "net/http"
 	"path/filepath"
+	"seasonpackarr/internal/torrents"
 	"slices"
 	"sync"
 	"time"
@@ -407,20 +408,20 @@ func (p processor) parseTorrent() (int, error) {
 		return StatusTorrentBytesError, fmt.Errorf("couldn't get torrent bytes")
 	}
 
-	torrentBytes, err := utils.DecodeTorrentDataRawBytes(p.req.Torrent)
+	torrentBytes, err := torrents.DecodeTorrentDataRawBytes(p.req.Torrent)
 	if err != nil {
 		return StatusDecodeTorrentBytesError, err
 	}
 	p.req.Torrent = torrentBytes
 
-	torrentInfo, err := utils.ParseTorrentInfoFromTorrentBytes(p.req.Torrent)
+	torrentInfo, err := torrents.ParseTorrentInfoFromTorrentBytes(p.req.Torrent)
 	if err != nil {
 		return StatusParseTorrentInfoError, err
 	}
 	packNameParsed := torrentInfo.BestName()
 	p.log.Debug().Msgf("parsed season pack name: %q", packNameParsed)
 
-	torrentEps, err := utils.GetEpisodesFromTorrentInfo(torrentInfo)
+	torrentEps, err := torrents.GetEpisodesFromTorrentInfo(torrentInfo)
 	if err != nil {
 		return StatusGetEpisodesError, err
 	}
