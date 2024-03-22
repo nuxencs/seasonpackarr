@@ -394,7 +394,7 @@ func (p processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Requ
 		return
 	}
 
-	p.log.Info().Msg("successfully parsed torrent")
+	p.log.Info().Msg("successfully parsed torrent and hardlinked episodes")
 	w.WriteHeader(code)
 }
 
