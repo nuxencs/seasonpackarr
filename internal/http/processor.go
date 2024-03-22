@@ -8,7 +8,6 @@ import (
 	"fmt"
 	netHTTP "net/http"
 	"path/filepath"
-	"seasonpackarr/internal/torrents"
 	"slices"
 	"sync"
 	"time"
@@ -17,6 +16,7 @@ import (
 	"seasonpackarr/internal/domain"
 	"seasonpackarr/internal/logger"
 	"seasonpackarr/internal/release"
+	"seasonpackarr/internal/torrents"
 	"seasonpackarr/internal/utils"
 
 	"github.com/autobrr/go-qbittorrent"
