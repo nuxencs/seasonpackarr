@@ -171,6 +171,8 @@ func (p processor) getFiles(hash string) (*qbittorrent.TorrentFiles, error) {
 	return p.req.Client.GetFilesInformation(hash)
 }
 func (p processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTTP.Request) {
+	p.log.Info().Msg("starting to process season pack request")
+
 	if err := json.NewDecoder(r.Body).Decode(&p.req); err != nil {
 		p.log.Error().Err(err).Msgf("error decoding request")
 		netHTTP.Error(w, err.Error(), StatusDecodingError)
@@ -179,11 +181,12 @@ func (p processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTTP
 
 	code, err := p.processSeasonPack()
 	if err != nil {
-		p.log.Error().Err(err).Msgf("error processing season pack: %q", p.req.Name)
+		p.log.Error().Err(err).Msgf("error processing season pack: %q; code: %d", p.req.Name, code)
 		netHTTP.Error(w, err.Error(), code)
 		return
 	}
 
+	p.log.Info().Msgf("successfully matched season pack to episodes in client: %q", p.req.ClientName)
 	w.WriteHeader(code)
 }
 
@@ -376,6 +379,8 @@ func (p processor) processSeasonPack() (int, error) {
 }
 
 func (p processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Request) {
+	p.log.Info().Msg("starting to parse season pack torrent")
+
 	if err := json.NewDecoder(r.Body).Decode(&p.req); err != nil {
 		p.log.Error().Err(err).Msgf("error decoding request")
 		netHTTP.Error(w, err.Error(), StatusDecodingError)
@@ -384,11 +389,12 @@ func (p processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Requ
 
 	code, err := p.parseTorrent()
 	if err != nil {
-		p.log.Error().Err(err).Msgf("error parsing torrent: %q", p.req.Name)
+		p.log.Error().Err(err).Msgf("error parsing torrent: %q; code: %d", p.req.Name, code)
 		netHTTP.Error(w, err.Error(), code)
 		return
 	}
 
+	p.log.Info().Msg("successfully parsed torrent")
 	w.WriteHeader(code)
 }
 
