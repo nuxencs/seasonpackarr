@@ -28,8 +28,10 @@ builds:
         goarch: arm
       - goos: freebsd
         goarch: arm64
-    main: ./cmd/seasonpackarr/main.go
+    main: main.go
     binary: seasonpackarr
+    ldflags:
+      - -s -w -X github.com/nuxencs/seasonpackarr/internal/buildinfo.Version=v{{.Version}} -X github.com/nuxencs/seasonpackarr/internal/buildinfo.Commit={{.Commit}} -X github.com/nuxencs/seasonpackarr/internal/buildinfo.Date={{.Date}}
 
 archives:
   - id: seasonpackarr
