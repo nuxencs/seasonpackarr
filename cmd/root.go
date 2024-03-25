@@ -25,6 +25,14 @@ Provide a configuration file using one of the following methods:
 For more information and examples, visit https://github.com/nuxencs/seasonpackarr`,
 }
 
+func init() {
+	startCmd.Flags().StringVarP(&configPath, "config", "c", "", "path to configuration directory")
+
+	rootCmd.AddCommand(genTokenCmd)
+	rootCmd.AddCommand(startCmd)
+	rootCmd.AddCommand(versionCmd)
+}
+
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {

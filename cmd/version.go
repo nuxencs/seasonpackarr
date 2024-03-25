@@ -55,7 +55,3 @@ var versionCmd = &cobra.Command{
 		fmt.Printf("Latest release: %v\n", rel.TagName)
 	},
 }
-
-func init() {
-	rootCmd.AddCommand(versionCmd)
-}

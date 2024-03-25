@@ -73,8 +73,3 @@ var startCmd = &cobra.Command{
 		os.Exit(0)
 	},
 }
-
-func init() {
-	rootCmd.AddCommand(startCmd)
-	startCmd.Flags().StringVarP(&configPath, "config", "c", "", "path to configuration directory")
-}

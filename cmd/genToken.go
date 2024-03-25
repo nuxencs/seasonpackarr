@@ -20,7 +20,3 @@ var genTokenCmd = &cobra.Command{
 		fmt.Printf("API Token: %v\nJust copy and paste it into your config file!\n", key)
 	},
 }
-
-func init() {
-	rootCmd.AddCommand(genTokenCmd)
-}
