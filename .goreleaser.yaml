@@ -28,8 +28,10 @@ builds:
         goarch: arm
       - goos: freebsd
         goarch: arm64
-    main: ./cmd/seasonpackarr/main.go
+    main: main.go
     binary: seasonpackarr
+    ldflags:
+      - -s -w -X seasonpackarr/internal/buildinfo.Version=v{{.Version}} -X seasonpackarr/internal/buildinfo.Commit={{.Commit}} -X seasonpackarr/internal/buildinfo.Date={{.Date}}
 
 archives:
   - id: seasonpackarr
