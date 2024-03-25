@@ -121,6 +121,13 @@ logLevel: "DEBUG"
 #
 # logMaxBackups: 3
 
+# Syslog
+# Log to syslog in addition to stdout or a log file
+#
+# Default: false
+#
+# logSyslog: false
+
 # Smart Mode
 # Toggles smart mode to only download season packs that have a certain amount of episodes from a release group
 # already in the client
@@ -289,10 +296,11 @@ func (c *AppConfig) defaults() {
 		Host:               "0.0.0.0",
 		Port:               42069,
 		Clients:            make(map[string]*domain.Client),
-		LogLevel:           "DEBUG",
 		LogPath:            "",
+		LogLevel:           "DEBUG",
 		LogMaxSize:         50,
 		LogMaxBackups:      3,
+		LogSyslog:          false,
 		SmartMode:          false,
 		SmartModeThreshold: 0.75,
 		ParseTorrentFile:   false,
@@ -320,10 +328,10 @@ func (c *AppConfig) loadFromEnv() {
 					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
 						c.Config.Port = int(i)
 					}
-				case prefix + "LOG_LEVEL":
-					c.Config.LogLevel = envPair[1]
 				case prefix + "LOG_PATH":
 					c.Config.LogPath = envPair[1]
+				case prefix + "LOG_LEVEL":
+					c.Config.LogLevel = envPair[1]
 				case prefix + "LOG_MAX_SIZE":
 					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
 						c.Config.LogMaxSize = int(i)
@@ -331,6 +339,10 @@ func (c *AppConfig) loadFromEnv() {
 				case prefix + "LOG_MAX_BACKUPS":
 					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
 						c.Config.LogMaxBackups = int(i)
+					}
+				case prefix + "LOG_SYSLOG":
+					if b, err := strconv.ParseBool(envPair[1]); err == nil {
+						c.Config.LogSyslog = b
 					}
 				case prefix + "SMART_MODE":
 					if b, err := strconv.ParseBool(envPair[1]); err == nil {
@@ -433,8 +445,9 @@ func (c *AppConfig) UpdateConfig() error {
 func (c *AppConfig) processLines(lines []string) []string {
 	// keep track of not found values to append at bottom
 	var (
-		foundLineLogLevel           = false
 		foundLineLogPath            = false
+		foundLineLogLevel           = false
+		foundLineLogSyslog          = false
 		foundLineSmartMode          = false
 		foundLineSmartModeThreshold = false
 		foundLineParseTorrentFile   = false
@@ -445,10 +458,6 @@ func (c *AppConfig) processLines(lines []string) []string {
 	)
 
 	for i, line := range lines {
-		if !foundLineLogLevel && strings.Contains(line, "logLevel:") {
-			lines[i] = fmt.Sprintf("logLevel: \"%s\"", c.Config.LogLevel)
-			foundLineLogLevel = true
-		}
 		if !foundLineLogPath && strings.Contains(line, "logPath:") {
 			if c.Config.LogPath == "" {
 				lines[i] = "# logPath: \"\""
@@ -456,6 +465,14 @@ func (c *AppConfig) processLines(lines []string) []string {
 				lines[i] = fmt.Sprintf("logPath: \"%s\"", c.Config.LogPath)
 			}
 			foundLineLogPath = true
+		}
+		if !foundLineLogLevel && strings.Contains(line, "logLevel:") {
+			lines[i] = fmt.Sprintf("logLevel: \"%s\"", c.Config.LogLevel)
+			foundLineLogLevel = true
+		}
+		if !foundLineLogSyslog && strings.Contains(line, "logSyslog:") {
+			lines[i] = fmt.Sprintf("logSyslog: %t", c.Config.LogSyslog)
+			foundLineLogSyslog = true
 		}
 		if !foundLineSmartMode && strings.Contains(line, "smartMode:") {
 			lines[i] = fmt.Sprintf("smartMode: %t", c.Config.SmartMode)
@@ -486,16 +503,6 @@ func (c *AppConfig) processLines(lines []string) []string {
 		}
 	}
 
-	if !foundLineLogLevel {
-		lines = append(lines, "# Log level")
-		lines = append(lines, "#")
-		lines = append(lines, `# Default: "DEBUG"`)
-		lines = append(lines, "#")
-		lines = append(lines, `# Options: "ERROR", "DEBUG", "INFO", "WARN", "TRACE"`)
-		lines = append(lines, "#")
-		lines = append(lines, fmt.Sprintf("logLevel: \"%s\"\n", c.Config.LogLevel))
-	}
-
 	if !foundLineLogPath {
 		lines = append(lines, "# Log Path")
 		lines = append(lines, "#")
@@ -508,6 +515,25 @@ func (c *AppConfig) processLines(lines []string) []string {
 			lines = append(lines, fmt.Sprintf("logPath: \"%s\"\n", c.Config.LogPath))
 			lines = append(lines, "")
 		}
+	}
+
+	if !foundLineLogLevel {
+		lines = append(lines, "# Log level")
+		lines = append(lines, "#")
+		lines = append(lines, `# Default: "DEBUG"`)
+		lines = append(lines, "#")
+		lines = append(lines, `# Options: "ERROR", "DEBUG", "INFO", "WARN", "TRACE"`)
+		lines = append(lines, "#")
+		lines = append(lines, fmt.Sprintf("logLevel: \"%s\"\n", c.Config.LogLevel))
+	}
+
+	if !foundLineLogSyslog {
+		lines = append(lines, "# Syslog")
+		lines = append(lines, "# Log to syslog in addition to stdout or a log file")
+		lines = append(lines, "#")
+		lines = append(lines, `# Default: false"`)
+		lines = append(lines, "#")
+		lines = append(lines, fmt.Sprintf("logSyslog: %t\n", c.Config.LogSyslog))
 	}
 
 	if !foundLineSmartMode {
