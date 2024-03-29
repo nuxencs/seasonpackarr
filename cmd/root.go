@@ -9,7 +9,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var configPath string
+var (
+	configPath string
+	rlsName    string
+	clientName string
+	host       string
+	port       int
+	apiKey     string
+)
 
 var rootCmd = &cobra.Command{
 	Use:   "seasonpackarr",
@@ -28,14 +35,28 @@ For more information and examples, visit https://github.com/nuxencs/seasonpackar
 func init() {
 	startCmd.Flags().StringVarP(&configPath, "config", "c", "", "path to configuration directory")
 
-	rootCmd.AddCommand(genTokenCmd)
-	rootCmd.AddCommand(startCmd)
-	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(genTokenCmd, startCmd, testCmd, versionCmd)
+
+	addTestFlags(packCmd, parseCmd)
+
+	testCmd.AddCommand(packCmd, parseCmd)
 }
 
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
 		os.Exit(1)
+	}
+}
+
+func addTestFlags(cmds ...*cobra.Command) {
+	for _, cmd := range cmds {
+		cmd.Flags().StringVarP(&rlsName, "rls", "r", "", "name of the release you want to test")
+		cmd.Flags().StringVarP(&clientName, "client", "n", "", "name of the client you want to test")
+		cmd.Flags().StringVarP(&host, "host", "i", "127.0.0.1", "host used by seasonpackarr")
+		cmd.Flags().IntVarP(&port, "port", "p", 42069, "port used by seasonpackarr")
+		cmd.Flags().StringVarP(&apiKey, "api", "a", "", "api key used by seasonpackarr")
+
+		_ = cmd.MarkFlagRequired("rls")
 	}
 }
