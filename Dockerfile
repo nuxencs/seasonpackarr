@@ -20,7 +20,7 @@ COPY . ./
 #ENV GOOS=linux
 ENV CGO_ENABLED=0
 
-RUN go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION} -X main.date=${BUILDTIME}" -o bin/seasonpackarr cmd/seasonpackarr/main.go
+RUN go build -ldflags "-s -w -X seasonpackarr/internal/buildinfo.Version=${VERSION} -X seasonpackarr/internal/buildinfo.Commit=${REVISION} -X seasonpackarr/internal/buildinfo.Date=${BUILDTIME}" -o bin/seasonpackarr main.go
 
 # build runner
 FROM alpine:latest
