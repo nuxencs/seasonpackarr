@@ -13,7 +13,7 @@ import (
 
 // packCmd represents the test command
 var packCmd = &cobra.Command{
-	Use:   "test",
+	Use:   "pack",
 	Short: "Test the pack api endpoint for a specified release",
 	Run: func(cmd *cobra.Command, args []string) {
 		body, err := payload.CompileParsePayload(rlsName, nil, clientName)
