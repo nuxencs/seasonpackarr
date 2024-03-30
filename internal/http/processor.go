@@ -91,7 +91,7 @@ func newProcessor(log logger.Logger, config *config.AppConfig) *processor {
 	}
 }
 
-func (p processor) getClient(client *domain.Client) error {
+func (p *processor) getClient(client *domain.Client) error {
 	s := qbittorrent.Config{
 		Host:     fmt.Sprintf("http://%s:%d", client.Host, client.Port),
 		Username: client.Username,
@@ -113,7 +113,7 @@ func (p processor) getClient(client *domain.Client) error {
 	return nil
 }
 
-func (p processor) getAllTorrents(client *domain.Client) entryTime {
+func (p *processor) getAllTorrents(client *domain.Client) entryTime {
 	set := qbittorrent.Config{
 		Host:     fmt.Sprintf("http://%s:%d", client.Host, client.Port),
 		Username: client.Username,
@@ -168,10 +168,11 @@ func (p processor) getAllTorrents(client *domain.Client) entryTime {
 	return *res
 }
 
-func (p processor) getFiles(hash string) (*qbittorrent.TorrentFiles, error) {
+func (p *processor) getFiles(hash string) (*qbittorrent.TorrentFiles, error) {
 	return p.req.Client.GetFilesInformation(hash)
 }
-func (p processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTTP.Request) {
+
+func (p *processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 	p.log.Info().Msg("starting to process season pack request")
 
 	if err := json.NewDecoder(r.Body).Decode(&p.req); err != nil {
@@ -180,30 +181,33 @@ func (p processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTTP
 		return
 	}
 
-	code, logMsg, err := p.processSeasonPack()
+	rlsLogger := p.log.With().Str("release", p.req.Name).Logger()
+
+	code, logMsg, err := p.processSeasonPack(rlsLogger)
 	if err != nil {
-		p.log.Error().Err(err).Msgf("error processing season pack: %q; code: %d", p.req.Name, code)
+		rlsLogger.Error().Err(err).Msgf("error processing season pack: %d", code)
 		netHTTP.Error(w, err.Error(), code)
 		return
 	}
 
-	p.log.Info().Msg(logMsg)
+	rlsLogger.Info().Msg(logMsg)
 	w.WriteHeader(code)
 }
 
-func (p processor) processSeasonPack() (int, string, error) {
+func (p *processor) processSeasonPack(logger zerolog.Logger) (int, string, error) {
 	clientName := p.req.ClientName
 
 	if len(clientName) == 0 {
 		clientName = "default"
-		p.log.Info().Msgf("no clientname defined. trying to use %q client", clientName)
+		p.req.ClientName = clientName
+		logger.Info().Msgf("no clientname defined. trying to use %q client", clientName)
 	}
 
 	client, ok := p.cfg.Config.Clients[clientName]
 	if !ok {
 		return StatusClientNotFound, "", fmt.Errorf("client not found in config: %q", clientName)
 	}
-	p.log.Info().Msgf("using %q client serving at %s:%d", clientName, client.Host, client.Port)
+	logger.Info().Msgf("using %q client serving at %s:%d", clientName, client.Host, client.Port)
 
 	if len(p.req.Name) == 0 {
 		return StatusAnnounceNameError, "", fmt.Errorf("couldn't get announce name")
@@ -225,7 +229,7 @@ func (p processor) processSeasonPack() (int, string, error) {
 	}
 
 	packNameAnnounce := utils.FormatSeasonPackTitle(p.req.Name)
-	p.log.Debug().Msgf("formatted season pack name: %q", packNameAnnounce)
+	logger.Debug().Msgf("formatted season pack name: %q", packNameAnnounce)
 
 	for _, child := range v {
 		if release.CheckCandidates(&requestrls, &child, p.cfg.Config.FuzzyMatching) == StatusAlreadyInClient {
@@ -239,49 +243,49 @@ func (p processor) processSeasonPack() (int, string, error) {
 	for _, child := range v {
 		switch res := release.CheckCandidates(&requestrls, &child, p.cfg.Config.FuzzyMatching); res {
 		case StatusResolutionMismatch:
-			p.log.Info().Msgf("resolution did not match: request(%s => %s), client(%s => %s)",
+			logger.Info().Msgf("resolution did not match: request(%s => %s), client(%s => %s)",
 				requestrls.R.String(), requestrls.R.Resolution, child.R.String(), child.R.Resolution)
 			respCodes = append(respCodes, res)
 			continue
 
 		case StatusSourceMismatch:
-			p.log.Info().Msgf("source did not match: request(%s => %s), client(%s => %s)",
+			logger.Info().Msgf("source did not match: request(%s => %s), client(%s => %s)",
 				requestrls.R.String(), requestrls.R.Source, child.R.String(), child.R.Source)
 			respCodes = append(respCodes, res)
 			continue
 
 		case StatusRlsGrpMismatch:
-			p.log.Info().Msgf("release group did not match: request(%s => %s), client(%s => %s)",
+			logger.Info().Msgf("release group did not match: request(%s => %s), client(%s => %s)",
 				requestrls.R.String(), requestrls.R.Group, child.R.String(), child.R.Group)
 			respCodes = append(respCodes, res)
 			continue
 
 		case StatusCutMismatch:
-			p.log.Info().Msgf("cut did not match: request(%s => %s), client(%s => %s)",
+			logger.Info().Msgf("cut did not match: request(%s => %s), client(%s => %s)",
 				requestrls.R.String(), requestrls.R.Cut, child.R.String(), child.R.Cut)
 			respCodes = append(respCodes, res)
 			continue
 
 		case StatusEditionMismatch:
-			p.log.Info().Msgf("edition did not match: request(%s => %s), client(%s => %s)",
+			logger.Info().Msgf("edition did not match: request(%s => %s), client(%s => %s)",
 				requestrls.R.String(), requestrls.R.Edition, child.R.String(), child.R.Edition)
 			respCodes = append(respCodes, res)
 			continue
 
 		case StatusRepackStatusMismatch:
-			p.log.Info().Msgf("repack status did not match: request(%s => %s), client(%s => %s)",
+			logger.Info().Msgf("repack status did not match: request(%s => %s), client(%s => %s)",
 				requestrls.R.String(), requestrls.R.Other, child.R.String(), child.R.Other)
 			respCodes = append(respCodes, res)
 			continue
 
 		case StatusHdrMismatch:
-			p.log.Info().Msgf("hdr metadata did not match: request(%s => %s), client(%s => %s)",
+			logger.Info().Msgf("hdr metadata did not match: request(%s => %s), client(%s => %s)",
 				requestrls.R.String(), requestrls.R.HDR, child.R.String(), child.R.HDR)
 			respCodes = append(respCodes, res)
 			continue
 
 		case StatusStreamingServiceMismatch:
-			p.log.Info().Msgf("streaming service did not match: request(%s => %s), client(%s => %s)",
+			logger.Info().Msgf("streaming service did not match: request(%s => %s), client(%s => %s)",
 				requestrls.R.String(), requestrls.R.Collection, child.R.String(), child.R.Collection)
 			respCodes = append(respCodes, res)
 			continue
@@ -295,7 +299,7 @@ func (p processor) processSeasonPack() (int, string, error) {
 		case StatusSuccessfulMatch:
 			m, err := p.getFiles(child.T.Hash)
 			if err != nil {
-				p.log.Error().Err(err).Msgf("error getting files: %q", child.T.Name)
+				logger.Error().Err(err).Msgf("error getting files: %q", child.T.Name)
 				continue
 			}
 
@@ -325,7 +329,7 @@ func (p processor) processSeasonPack() (int, string, error) {
 
 			newMatches := append(oldMatches.([]matchPaths), currentMatch...)
 			matchesMap.Store(p.req.Name, newMatches)
-			p.log.Debug().Msgf("matched torrent from client %q: %q %q", clientName, child.T.Name, child.T.Hash)
+			logger.Debug().Msgf("matched torrent from client %q: %q %q", clientName, child.T.Name, child.T.Hash)
 			respCodes = append(respCodes, res)
 			continue
 		}
@@ -365,11 +369,11 @@ func (p processor) processSeasonPack() (int, string, error) {
 
 	for _, match := range matches {
 		if err := utils.CreateHardlink(match.epPathClient, match.packPathAnnounce); err != nil {
-			p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.epPathClient)
+			logger.Error().Err(err).Msgf("error creating hardlink for: %q", match.epPathClient)
 			hardlinkRespCodes = append(hardlinkRespCodes, StatusFailedHardlink)
 			continue
 		}
-		p.log.Log().Msgf("created hardlink of %q into %q", match.epPathClient, match.packPathAnnounce)
+		logger.Log().Msgf("created hardlink of %q into %q", match.epPathClient, match.packPathAnnounce)
 		hardlinkRespCodes = append(hardlinkRespCodes, StatusSuccessfulHardlink)
 	}
 
@@ -379,7 +383,7 @@ func (p processor) processSeasonPack() (int, string, error) {
 	return StatusSuccessfulHardlink, fmt.Sprintf("successfully created hardlinks for matched episodes in client: %q", clientName), nil
 }
 
-func (p processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Request) {
+func (p *processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 	p.log.Info().Msg("starting to parse season pack torrent")
 
 	if err := json.NewDecoder(r.Body).Decode(&p.req); err != nil {
@@ -388,18 +392,20 @@ func (p processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Requ
 		return
 	}
 
-	code, logMsg, err := p.parseTorrent()
+	rlsLogger := p.log.With().Str("release", p.req.Name).Logger()
+
+	code, logMsg, err := p.parseTorrent(rlsLogger)
 	if err != nil {
-		p.log.Error().Err(err).Msgf("error parsing torrent: %q; code: %d", p.req.Name, code)
+		rlsLogger.Error().Err(err).Msgf("error parsing torrent: %d", code)
 		netHTTP.Error(w, err.Error(), code)
 		return
 	}
 
-	p.log.Info().Msg(logMsg)
+	rlsLogger.Info().Msg(logMsg)
 	w.WriteHeader(code)
 }
 
-func (p processor) parseTorrent() (int, string, error) {
+func (p *processor) parseTorrent(logger zerolog.Logger) (int, string, error) {
 	if len(p.req.Name) == 0 {
 		return StatusAnnounceNameError, "", fmt.Errorf("couldn't get announce name")
 	}
@@ -419,14 +425,14 @@ func (p processor) parseTorrent() (int, string, error) {
 		return StatusParseTorrentInfoError, "", err
 	}
 	packNameParsed := torrentInfo.BestName()
-	p.log.Debug().Msgf("parsed season pack name: %q", packNameParsed)
+	logger.Debug().Msgf("parsed season pack name: %q", packNameParsed)
 
 	torrentEps, err := torrents.GetEpisodesFromTorrentInfo(torrentInfo)
 	if err != nil {
 		return StatusGetEpisodesError, "", err
 	}
 	for _, torrentEp := range torrentEps {
-		p.log.Debug().Msgf("found episode: %q", torrentEp)
+		logger.Debug().Msgf("found episode: %q", torrentEp)
 	}
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
@@ -441,15 +447,15 @@ func (p processor) parseTorrent() (int, string, error) {
 		newPackPath := utils.ReplaceParentFolder(match.packPathAnnounce, packNameParsed)
 		newPackPath, err = utils.MatchFileNameToSeasonPackNaming(newPackPath, torrentEps)
 		if err != nil {
-			p.log.Error().Err(err).Msgf("error matching episode to file in season pack: %q", match.epPathClient)
+			logger.Error().Err(err).Msgf("error matching episode to file in season pack: %q", match.epPathClient)
 		}
 
 		if err = utils.CreateHardlink(match.epPathClient, newPackPath); err != nil {
-			p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.epPathClient)
+			logger.Error().Err(err).Msgf("error creating hardlink for: %q", match.epPathClient)
 			hardlinkRespCodes = append(hardlinkRespCodes, StatusFailedHardlink)
 			continue
 		}
-		p.log.Log().Msgf("created hardlink of %q into %q", match.epPathClient, newPackPath)
+		logger.Log().Msgf("created hardlink of %q into %q", match.epPathClient, newPackPath)
 		hardlinkRespCodes = append(hardlinkRespCodes, StatusSuccessfulHardlink)
 	}
 
