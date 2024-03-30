@@ -180,18 +180,18 @@ func (p processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTTP
 		return
 	}
 
-	code, err := p.processSeasonPack()
+	code, logMsg, err := p.processSeasonPack()
 	if err != nil {
 		p.log.Error().Err(err).Msgf("error processing season pack: %q; code: %d", p.req.Name, code)
 		netHTTP.Error(w, err.Error(), code)
 		return
 	}
 
-	p.log.Info().Msgf("successfully matched season pack to episodes in client: %q", p.req.ClientName)
+	p.log.Info().Msg(logMsg)
 	w.WriteHeader(code)
 }
 
-func (p processor) processSeasonPack() (int, error) {
+func (p processor) processSeasonPack() (int, string, error) {
 	clientName := p.req.ClientName
 
 	if len(clientName) == 0 {
@@ -201,27 +201,27 @@ func (p processor) processSeasonPack() (int, error) {
 
 	client, ok := p.cfg.Config.Clients[clientName]
 	if !ok {
-		return StatusClientNotFound, fmt.Errorf("client not found in config: %q", clientName)
+		return StatusClientNotFound, "", fmt.Errorf("client not found in config: %q", clientName)
 	}
 	p.log.Info().Msgf("using %q client serving at %s:%d", clientName, client.Host, client.Port)
 
 	if len(p.req.Name) == 0 {
-		return StatusAnnounceNameError, fmt.Errorf("couldn't get announce name")
+		return StatusAnnounceNameError, "", fmt.Errorf("couldn't get announce name")
 	}
 
 	if err := p.getClient(client); err != nil {
-		return StatusGetClientError, err
+		return StatusGetClientError, "", err
 	}
 
 	mp := p.getAllTorrents(client)
 	if mp.err != nil {
-		return StatusGetTorrentsError, mp.err
+		return StatusGetTorrentsError, "", mp.err
 	}
 
 	requestrls := domain.Entry{R: rls.ParseString(p.req.Name)}
 	v, ok := mp.e[utils.GetFormattedTitle(requestrls.R)]
 	if !ok {
-		return StatusNoMatches, fmt.Errorf("no matching releases in client %q", clientName)
+		return StatusNoMatches, fmt.Sprintf("no matching releases in client %q", clientName), nil
 	}
 
 	packNameAnnounce := utils.FormatSeasonPackTitle(p.req.Name)
@@ -229,7 +229,7 @@ func (p processor) processSeasonPack() (int, error) {
 
 	for _, child := range v {
 		if release.CheckCandidates(&requestrls, &child, p.cfg.Config.FuzzyMatching) == StatusAlreadyInClient {
-			return StatusAlreadyInClient, fmt.Errorf("release already in client %q", clientName)
+			return StatusAlreadyInClient, fmt.Sprintf("release already in client %q", clientName), nil
 		}
 	}
 
@@ -287,10 +287,10 @@ func (p processor) processSeasonPack() (int, error) {
 			continue
 
 		case StatusAlreadyInClient:
-			return StatusAlreadyInClient, fmt.Errorf("release already in client %q", clientName)
+			return StatusAlreadyInClient, fmt.Sprintf("release already in client %q", clientName), nil
 
 		case StatusNotASeasonPack:
-			return StatusNotASeasonPack, fmt.Errorf("release is not a season pack")
+			return StatusNotASeasonPack, fmt.Sprintf("release is not a season pack"), nil
 
 		case StatusSuccessfulMatch:
 			m, err := p.getFiles(child.T.Hash)
@@ -333,7 +333,7 @@ func (p processor) processSeasonPack() (int, error) {
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
 	if !slices.Contains(respCodes, StatusSuccessfulMatch) || !ok {
-		return StatusNoMatches, fmt.Errorf("no matching releases in client %q", clientName)
+		return StatusNoMatches, fmt.Sprintf("no matching releases in client %q", clientName), nil
 	}
 
 	if p.cfg.Config.SmartMode {
@@ -341,7 +341,7 @@ func (p processor) processSeasonPack() (int, error) {
 
 		totalEps, err := utils.GetEpisodesPerSeason(reqRls.Title, reqRls.Series)
 		if err != nil {
-			return StatusEpisodeCountError, err
+			return StatusEpisodeCountError, "", err
 		}
 		matchedEps = utils.DedupeSlice(matchedEps)
 
@@ -351,13 +351,13 @@ func (p processor) processSeasonPack() (int, error) {
 			// delete match from matchesMap if threshold is not met
 			matchesMap.Delete(p.req.Name)
 
-			return StatusBelowThreshold, fmt.Errorf("found %d/%d (%.2f%%) episodes in client, below configured smart mode threshold",
-				len(matchedEps), totalEps, percentEps*100)
+			return StatusBelowThreshold, fmt.Sprintf("found %d/%d (%.2f%%) episodes in client, below configured smart mode threshold",
+				len(matchedEps), totalEps, percentEps*100), nil
 		}
 	}
 
 	if p.cfg.Config.ParseTorrentFile {
-		return StatusSuccessfulMatch, nil
+		return StatusSuccessfulMatch, fmt.Sprintf("successfully matched season pack to episodes in client: %q", clientName), nil
 	}
 
 	matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
@@ -374,9 +374,9 @@ func (p processor) processSeasonPack() (int, error) {
 	}
 
 	if !slices.Contains(hardlinkRespCodes, StatusSuccessfulHardlink) {
-		return StatusFailedHardlink, fmt.Errorf("couldn't create hardlinks")
+		return StatusFailedHardlink, "", fmt.Errorf("couldn't create hardlinks")
 	}
-	return StatusSuccessfulHardlink, nil
+	return StatusSuccessfulHardlink, fmt.Sprintf("successfully created hardlinks for matched episodes in client: %q", clientName), nil
 }
 
 func (p processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Request) {
@@ -388,42 +388,42 @@ func (p processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Requ
 		return
 	}
 
-	code, err := p.parseTorrent()
+	code, logMsg, err := p.parseTorrent()
 	if err != nil {
 		p.log.Error().Err(err).Msgf("error parsing torrent: %q; code: %d", p.req.Name, code)
 		netHTTP.Error(w, err.Error(), code)
 		return
 	}
 
-	p.log.Info().Msg("successfully parsed torrent and hardlinked episodes")
+	p.log.Info().Msg(logMsg)
 	w.WriteHeader(code)
 }
 
-func (p processor) parseTorrent() (int, error) {
+func (p processor) parseTorrent() (int, string, error) {
 	if len(p.req.Name) == 0 {
-		return StatusAnnounceNameError, fmt.Errorf("couldn't get announce name")
+		return StatusAnnounceNameError, "", fmt.Errorf("couldn't get announce name")
 	}
 
 	if len(p.req.Torrent) == 0 {
-		return StatusTorrentBytesError, fmt.Errorf("couldn't get torrent bytes")
+		return StatusTorrentBytesError, "", fmt.Errorf("couldn't get torrent bytes")
 	}
 
 	torrentBytes, err := torrents.DecodeTorrentDataRawBytes(p.req.Torrent)
 	if err != nil {
-		return StatusDecodeTorrentBytesError, err
+		return StatusDecodeTorrentBytesError, "", err
 	}
 	p.req.Torrent = torrentBytes
 
 	torrentInfo, err := torrents.ParseTorrentInfoFromTorrentBytes(p.req.Torrent)
 	if err != nil {
-		return StatusParseTorrentInfoError, err
+		return StatusParseTorrentInfoError, "", err
 	}
 	packNameParsed := torrentInfo.BestName()
 	p.log.Debug().Msgf("parsed season pack name: %q", packNameParsed)
 
 	torrentEps, err := torrents.GetEpisodesFromTorrentInfo(torrentInfo)
 	if err != nil {
-		return StatusGetEpisodesError, err
+		return StatusGetEpisodesError, "", err
 	}
 	for _, torrentEp := range torrentEps {
 		p.log.Debug().Msgf("found episode: %q", torrentEp)
@@ -431,7 +431,7 @@ func (p processor) parseTorrent() (int, error) {
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
 	if !ok {
-		return StatusNoMatches, fmt.Errorf("no matching releases in client")
+		return StatusNoMatches, fmt.Sprintf("no matching releases in client"), nil
 	}
 
 	matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
@@ -454,7 +454,7 @@ func (p processor) parseTorrent() (int, error) {
 	}
 
 	if !slices.Contains(hardlinkRespCodes, StatusSuccessfulHardlink) {
-		return StatusFailedHardlink, fmt.Errorf("couldn't create hardlinks")
+		return StatusFailedHardlink, "", fmt.Errorf("couldn't create hardlinks")
 	}
-	return StatusSuccessfulHardlink, nil
+	return StatusSuccessfulHardlink, "successfully parsed torrent and hardlinked episodes", nil
 }
