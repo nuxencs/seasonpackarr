@@ -145,7 +145,7 @@ func (p *processor) getAllTorrents(client *domain.Client) entryTime {
 		return *res
 	}
 
-	torrents, err := p.req.Client.GetTorrents(qbittorrent.TorrentFilterOptions{})
+	ts, err := p.req.Client.GetTorrents(qbittorrent.TorrentFilterOptions{})
 	if err != nil {
 		return entryTime{err: err}
 	}
@@ -153,7 +153,7 @@ func (p *processor) getAllTorrents(client *domain.Client) entryTime {
 	nt := time.Now()
 	res = &entryTime{e: make(map[string][]domain.Entry), t: nt.Add(nt.Sub(cur)), d: res.d}
 
-	for _, t := range torrents {
+	for _, t := range ts {
 		r, ok := res.d[t.Name]
 		if !ok {
 			r = rls.ParseString(t.Name)
