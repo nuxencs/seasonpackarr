@@ -432,7 +432,7 @@ func (p *processor) parseTorrent() (int, string, error) {
 		return StatusGetEpisodesError, "", err
 	}
 	for _, torrentEp := range torrentEps {
-		p.log.Debug().Msgf("found episode: %q", torrentEp)
+		p.log.Debug().Msgf("found episode in pack: %q", torrentEp)
 	}
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
