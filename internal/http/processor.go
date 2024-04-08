@@ -361,7 +361,7 @@ func (p *processor) processSeasonPack() (int, error) {
 	}
 
 	if p.cfg.Config.ParseTorrentFile {
-		return StatusSuccessfulMatch, fmt.Errorf("successfully matched season pack to episodes in client: %q", clientName)
+		return StatusSuccessfulMatch, nil
 	}
 
 	matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
@@ -381,7 +381,7 @@ func (p *processor) processSeasonPack() (int, error) {
 		return StatusFailedHardlink, fmt.Errorf("couldn't create hardlinks")
 	}
 
-	return StatusSuccessfulHardlink, fmt.Errorf("successfully created hardlinks for matched episodes in client: %q", clientName)
+	return StatusSuccessfulHardlink, nil
 }
 
 func (p *processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Request) {
