@@ -172,6 +172,17 @@ func (p *processor) getFiles(hash string) (*qbittorrent.TorrentFiles, error) {
 	return p.req.Client.GetFilesInformation(hash)
 }
 
+func (p *processor) getClientName() string {
+	if len(p.req.ClientName) == 0 {
+		p.req.ClientName = "default"
+		p.log.Info().Msg("no clientname defined. trying to use default client")
+
+		return "default"
+	}
+
+	return p.req.ClientName
+}
+
 func (p *processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 	p.log.Info().Msg("starting to process season pack request")
 
@@ -195,13 +206,7 @@ func (p *processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTT
 }
 
 func (p *processor) processSeasonPack() (int, error) {
-	clientName := p.req.ClientName
-
-	if len(clientName) == 0 {
-		clientName = "default"
-		p.req.ClientName = clientName
-		p.log.Info().Msgf("no clientname defined. trying to use %q client", clientName)
-	}
+	clientName := p.getClientName()
 
 	client, ok := p.cfg.Config.Clients[clientName]
 	if !ok {
