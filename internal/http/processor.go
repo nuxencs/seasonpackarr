@@ -192,7 +192,7 @@ func (p *processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTT
 		return
 	}
 
-	p.log = p.log.With().Str("release", p.req.Name).Logger()
+	//p.log = p.log.With().Str("release", p.req.Name).Logger()
 
 	code, err := p.processSeasonPack()
 	if err != nil {
@@ -207,6 +207,10 @@ func (p *processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTT
 
 func (p *processor) processSeasonPack() (int, error) {
 	clientName := p.getClientName()
+
+	p.log.UpdateContext(func(c zerolog.Context) zerolog.Context {
+		return c.Str("release", p.req.Name).Str("clientname", clientName)
+	})
 
 	client, ok := p.cfg.Config.Clients[clientName]
 	if !ok {
@@ -398,8 +402,6 @@ func (p *processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Req
 		return
 	}
 
-	p.log = p.log.With().Str("release", p.req.Name).Logger()
-
 	code, err := p.parseTorrent()
 	if err != nil {
 		p.log.Error().Err(err).Msgf("error parsing torrent: %d", code)
@@ -412,6 +414,10 @@ func (p *processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Req
 }
 
 func (p *processor) parseTorrent() (int, error) {
+	p.log.UpdateContext(func(c zerolog.Context) zerolog.Context {
+		return c.Str("release", p.req.Name)
+	})
+
 	if len(p.req.Name) == 0 {
 		return StatusAnnounceNameError, fmt.Errorf("couldn't get announce name")
 	}
