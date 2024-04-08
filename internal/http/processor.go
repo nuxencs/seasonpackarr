@@ -212,7 +212,7 @@ func (p *processor) processSeasonPack() (int, error) {
 
 	client, ok := p.cfg.Config.Clients[clientName]
 	if !ok {
-		return StatusClientNotFound, fmt.Errorf("client not found in config: %q", clientName)
+		return StatusClientNotFound, fmt.Errorf("client not found in config")
 	}
 	p.log.Info().Msgf("using %q client serving at %s:%d", clientName, client.Host, client.Port)
 
@@ -232,7 +232,7 @@ func (p *processor) processSeasonPack() (int, error) {
 	requestrls := domain.Entry{R: rls.ParseString(p.req.Name)}
 	v, ok := mp.e[utils.GetFormattedTitle(requestrls.R)]
 	if !ok {
-		return StatusNoMatches, fmt.Errorf("no matching releases in client %q", clientName)
+		return StatusNoMatches, fmt.Errorf("no matching releases in client")
 	}
 
 	packNameAnnounce := utils.FormatSeasonPackTitle(p.req.Name)
@@ -240,7 +240,7 @@ func (p *processor) processSeasonPack() (int, error) {
 
 	for _, child := range v {
 		if release.CheckCandidates(&requestrls, &child, p.cfg.Config.FuzzyMatching) == StatusAlreadyInClient {
-			return StatusAlreadyInClient, fmt.Errorf("release already in client %q", clientName)
+			return StatusAlreadyInClient, fmt.Errorf("release already in client")
 		}
 	}
 
@@ -298,7 +298,7 @@ func (p *processor) processSeasonPack() (int, error) {
 			continue
 
 		case StatusAlreadyInClient:
-			return StatusAlreadyInClient, fmt.Errorf("release already in client %q", clientName)
+			return StatusAlreadyInClient, fmt.Errorf("release already in client")
 
 		case StatusNotASeasonPack:
 			return StatusNotASeasonPack, fmt.Errorf("release is not a season pack")
@@ -344,7 +344,7 @@ func (p *processor) processSeasonPack() (int, error) {
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
 	if !slices.Contains(respCodes, StatusSuccessfulMatch) || !ok {
-		return StatusNoMatches, fmt.Errorf("no matching releases in client %q", clientName)
+		return StatusNoMatches, fmt.Errorf("no matching releases in client")
 	}
 
 	if p.cfg.Config.SmartMode {
