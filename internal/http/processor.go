@@ -192,8 +192,6 @@ func (p *processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTT
 		return
 	}
 
-	//p.log = p.log.With().Str("release", p.req.Name).Logger()
-
 	code, err := p.processSeasonPack()
 	if err != nil {
 		p.log.Error().Err(err).Msgf("error processing season pack: %d", code)
