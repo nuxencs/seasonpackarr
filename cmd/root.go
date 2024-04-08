@@ -35,9 +35,14 @@ For more information and examples, visit https://github.com/nuxencs/seasonpackar
 func init() {
 	startCmd.Flags().StringVarP(&configPath, "config", "c", "", "path to configuration directory")
 
-	rootCmd.AddCommand(genTokenCmd, startCmd, testCmd, versionCmd)
+	testCmd.PersistentFlags().StringVarP(&rlsName, "rls", "r", "", "name of the release you want to test")
+	testCmd.PersistentFlags().StringVarP(&clientName, "client", "n", "", "name of the client you want to test")
+	testCmd.PersistentFlags().StringVarP(&host, "host", "i", "127.0.0.1", "host used by seasonpackarr")
+	testCmd.PersistentFlags().IntVarP(&port, "port", "p", 42069, "port used by seasonpackarr")
+	testCmd.PersistentFlags().StringVarP(&apiKey, "api", "a", "", "api key used by seasonpackarr")
+	_ = testCmd.MarkPersistentFlagRequired("rls")
 
-	addTestFlags(packCmd, parseCmd)
+	rootCmd.AddCommand(genTokenCmd, startCmd, testCmd, versionCmd)
 
 	testCmd.AddCommand(packCmd, parseCmd)
 }
@@ -46,17 +51,5 @@ func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
 		os.Exit(1)
-	}
-}
-
-func addTestFlags(cmds ...*cobra.Command) {
-	for _, cmd := range cmds {
-		cmd.Flags().StringVarP(&rlsName, "rls", "r", "", "name of the release you want to test")
-		cmd.Flags().StringVarP(&clientName, "client", "n", "", "name of the client you want to test")
-		cmd.Flags().StringVarP(&host, "host", "i", "127.0.0.1", "host used by seasonpackarr")
-		cmd.Flags().IntVarP(&port, "port", "p", 42069, "port used by seasonpackarr")
-		cmd.Flags().StringVarP(&apiKey, "api", "a", "", "api key used by seasonpackarr")
-
-		_ = cmd.MarkFlagRequired("rls")
 	}
 }
