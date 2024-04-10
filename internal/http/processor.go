@@ -91,7 +91,7 @@ func newProcessor(log logger.Logger, config *config.AppConfig) *processor {
 	}
 }
 
-func (p processor) getClient(client *domain.Client) error {
+func (p *processor) getClient(client *domain.Client) error {
 	s := qbittorrent.Config{
 		Host:     fmt.Sprintf("http://%s:%d", client.Host, client.Port),
 		Username: client.Username,
@@ -113,7 +113,7 @@ func (p processor) getClient(client *domain.Client) error {
 	return nil
 }
 
-func (p processor) getAllTorrents(client *domain.Client) entryTime {
+func (p *processor) getAllTorrents(client *domain.Client) entryTime {
 	set := qbittorrent.Config{
 		Host:     fmt.Sprintf("http://%s:%d", client.Host, client.Port),
 		Username: client.Username,
@@ -145,7 +145,7 @@ func (p processor) getAllTorrents(client *domain.Client) entryTime {
 		return *res
 	}
 
-	torrents, err := p.req.Client.GetTorrents(qbittorrent.TorrentFilterOptions{})
+	ts, err := p.req.Client.GetTorrents(qbittorrent.TorrentFilterOptions{})
 	if err != nil {
 		return entryTime{err: err}
 	}
@@ -153,7 +153,7 @@ func (p processor) getAllTorrents(client *domain.Client) entryTime {
 	nt := time.Now()
 	res = &entryTime{e: make(map[string][]domain.Entry), t: nt.Add(nt.Sub(cur)), d: res.d}
 
-	for _, t := range torrents {
+	for _, t := range ts {
 		r, ok := res.d[t.Name]
 		if !ok {
 			r = rls.ParseString(t.Name)
@@ -168,10 +168,22 @@ func (p processor) getAllTorrents(client *domain.Client) entryTime {
 	return *res
 }
 
-func (p processor) getFiles(hash string) (*qbittorrent.TorrentFiles, error) {
+func (p *processor) getFiles(hash string) (*qbittorrent.TorrentFiles, error) {
 	return p.req.Client.GetFilesInformation(hash)
 }
-func (p processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTTP.Request) {
+
+func (p *processor) getClientName() string {
+	if len(p.req.ClientName) == 0 {
+		p.req.ClientName = "default"
+		p.log.Info().Msg("no clientname defined. trying to use default client")
+
+		return "default"
+	}
+
+	return p.req.ClientName
+}
+
+func (p *processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 	p.log.Info().Msg("starting to process season pack request")
 
 	if err := json.NewDecoder(r.Body).Decode(&p.req); err != nil {
@@ -182,26 +194,25 @@ func (p processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTTP
 
 	code, err := p.processSeasonPack()
 	if err != nil {
-		p.log.Error().Err(err).Msgf("error processing season pack: %q; code: %d", p.req.Name, code)
+		p.log.Error().Err(err).Msgf("error processing season pack: %d", code)
 		netHTTP.Error(w, err.Error(), code)
 		return
 	}
 
-	p.log.Info().Msgf("successfully matched season pack to episodes in client: %q", p.req.ClientName)
+	p.log.Info().Msg("successfully matched season pack to episodes in client")
 	w.WriteHeader(code)
 }
 
-func (p processor) processSeasonPack() (int, error) {
-	clientName := p.req.ClientName
+func (p *processor) processSeasonPack() (int, error) {
+	clientName := p.getClientName()
 
-	if len(clientName) == 0 {
-		clientName = "default"
-		p.log.Info().Msgf("no clientname defined. trying to use %q client", clientName)
-	}
+	p.log.UpdateContext(func(c zerolog.Context) zerolog.Context {
+		return c.Str("release", p.req.Name).Str("clientname", clientName)
+	})
 
 	client, ok := p.cfg.Config.Clients[clientName]
 	if !ok {
-		return StatusClientNotFound, fmt.Errorf("client not found in config: %q", clientName)
+		return StatusClientNotFound, fmt.Errorf("client not found in config")
 	}
 	p.log.Info().Msgf("using %q client serving at %s:%d", clientName, client.Host, client.Port)
 
@@ -221,7 +232,7 @@ func (p processor) processSeasonPack() (int, error) {
 	requestrls := domain.Entry{R: rls.ParseString(p.req.Name)}
 	v, ok := mp.e[utils.GetFormattedTitle(requestrls.R)]
 	if !ok {
-		return StatusNoMatches, fmt.Errorf("no matching releases in client %q", clientName)
+		return StatusNoMatches, fmt.Errorf("no matching releases in client")
 	}
 
 	packNameAnnounce := utils.FormatSeasonPackTitle(p.req.Name)
@@ -229,7 +240,7 @@ func (p processor) processSeasonPack() (int, error) {
 
 	for _, child := range v {
 		if release.CheckCandidates(&requestrls, &child, p.cfg.Config.FuzzyMatching) == StatusAlreadyInClient {
-			return StatusAlreadyInClient, fmt.Errorf("release already in client %q", clientName)
+			return StatusAlreadyInClient, fmt.Errorf("release already in client")
 		}
 	}
 
@@ -287,7 +298,7 @@ func (p processor) processSeasonPack() (int, error) {
 			continue
 
 		case StatusAlreadyInClient:
-			return StatusAlreadyInClient, fmt.Errorf("release already in client %q", clientName)
+			return StatusAlreadyInClient, fmt.Errorf("release already in client")
 
 		case StatusNotASeasonPack:
 			return StatusNotASeasonPack, fmt.Errorf("release is not a season pack")
@@ -333,7 +344,7 @@ func (p processor) processSeasonPack() (int, error) {
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
 	if !slices.Contains(respCodes, StatusSuccessfulMatch) || !ok {
-		return StatusNoMatches, fmt.Errorf("no matching releases in client %q", clientName)
+		return StatusNoMatches, fmt.Errorf("no matching releases in client")
 	}
 
 	if p.cfg.Config.SmartMode {
@@ -376,10 +387,11 @@ func (p processor) processSeasonPack() (int, error) {
 	if !slices.Contains(hardlinkRespCodes, StatusSuccessfulHardlink) {
 		return StatusFailedHardlink, fmt.Errorf("couldn't create hardlinks")
 	}
+
 	return StatusSuccessfulHardlink, nil
 }
 
-func (p processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Request) {
+func (p *processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Request) {
 	p.log.Info().Msg("starting to parse season pack torrent")
 
 	if err := json.NewDecoder(r.Body).Decode(&p.req); err != nil {
@@ -390,7 +402,7 @@ func (p processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Requ
 
 	code, err := p.parseTorrent()
 	if err != nil {
-		p.log.Error().Err(err).Msgf("error parsing torrent: %q; code: %d", p.req.Name, code)
+		p.log.Error().Err(err).Msgf("error parsing torrent: %d", code)
 		netHTTP.Error(w, err.Error(), code)
 		return
 	}
@@ -399,7 +411,11 @@ func (p processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Requ
 	w.WriteHeader(code)
 }
 
-func (p processor) parseTorrent() (int, error) {
+func (p *processor) parseTorrent() (int, error) {
+	p.log.UpdateContext(func(c zerolog.Context) zerolog.Context {
+		return c.Str("release", p.req.Name)
+	})
+
 	if len(p.req.Name) == 0 {
 		return StatusAnnounceNameError, fmt.Errorf("couldn't get announce name")
 	}
@@ -426,7 +442,7 @@ func (p processor) parseTorrent() (int, error) {
 		return StatusGetEpisodesError, err
 	}
 	for _, torrentEp := range torrentEps {
-		p.log.Debug().Msgf("found episode: %q", torrentEp)
+		p.log.Debug().Msgf("found episode in pack: %q", torrentEp)
 	}
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
@@ -456,5 +472,6 @@ func (p processor) parseTorrent() (int, error) {
 	if !slices.Contains(hardlinkRespCodes, StatusSuccessfulHardlink) {
 		return StatusFailedHardlink, fmt.Errorf("couldn't create hardlinks")
 	}
+
 	return StatusSuccessfulHardlink, nil
 }
