@@ -140,6 +140,22 @@ In this section, you can toggle comparing rules. I will explain each of them in 
    - Announce name: `Show.S01.2160p.WEB-DL.DDPA5.1.DV.HDR10+.H.265-RlsGrp`
    - Episode name: `Show.S01E01.2160p.WEB-DL.DDPA5.1.DV.HDR.H.265-RlsGrp`
 
+### Recommended options
+
+Keep in mind, these settings are suggestions based on my own use case so feel free to adjust them according to your
+specific needs.
+
+```yaml
+smartMode: true
+smartModeThreshold: 0.75
+parseTorrentFile: true
+skipRepackCompare: true
+simplifyHdrCompare: false
+```
+
+These will filter out most unwanted season packs and prevent mismatches, while still making sure that
+renamed season packs and episodes can get matched.
+
 ## autobrr Filter setup
 
 Support for multiple Sonarr and qBittorrent instances with different pre import directories was added with v0.4.0, so
