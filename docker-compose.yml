@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   seasonpackarr:
     container_name: seasonpackarr
