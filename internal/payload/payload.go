@@ -94,8 +94,8 @@ func ExecRequest(url string, body io.Reader, apiToken string) error {
 	}
 	defer resp.Body.Close()
 
-	fmt.Printf("Completed the request with the following response: %s\n"+
-		"For more details take a look at the logs!", resp.Status)
+	fmt.Printf("Completed the request with the following response: %d\n"+
+		"For more details take a look at the logs!", resp.StatusCode)
 
 	return nil
 }
