@@ -78,23 +78,12 @@ func New(cfg *domain.Config) Logger {
 }
 
 func (l *DefaultLogger) SetLogLevel(level string) {
-	switch level {
-	case "INFO":
-		l.level = zerolog.InfoLevel
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	case "DEBUG":
-		l.level = zerolog.DebugLevel
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	case "ERROR":
-		l.level = zerolog.ErrorLevel
-	case "WARN":
-		l.level = zerolog.WarnLevel
-	case "TRACE":
-		l.level = zerolog.TraceLevel
-		zerolog.SetGlobalLevel(zerolog.TraceLevel)
-	default:
-		l.level = zerolog.Disabled
+	lvl, err := zerolog.ParseLevel(level)
+	if err != nil {
+		lvl = zerolog.DebugLevel
 	}
+
+	zerolog.SetGlobalLevel(lvl)
 }
 
 // Log log something at fatal level.
