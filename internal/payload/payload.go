@@ -84,7 +84,9 @@ func ExecRequest(url string, body io.Reader, apiToken string) error {
 	}
 	req.Header.Set("X-API-Token", apiToken)
 
-	c := &http.Client{Timeout: 30 * time.Second}
+	c := &http.Client{
+		Timeout: 30 * time.Second,
+	}
 
 	resp, err := c.Do(req)
 	if err != nil {
@@ -92,12 +94,8 @@ func ExecRequest(url string, body io.Reader, apiToken string) error {
 	}
 	defer resp.Body.Close()
 
-	respData, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("%v", string(respData))
+	fmt.Printf("Completed the request with the following response: %s\n"+
+		"For more details take a look at the logs!", resp.Status)
 
 	return nil
 }
