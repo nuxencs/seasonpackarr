@@ -16,7 +16,8 @@ RUN --network=none \
     go build -ldflags "-s -w -X seasonpackarr/internal/buildinfo.Version=${VERSION} -X seasonpackarr/internal/buildinfo.Commit=${REVISION} -X seasonpackarr/internal/buildinfo.Date=${BUILDTIME}" -o bin/seasonpackarr main.go
 
 # build runner
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM alpine:latest
+RUN apk add --no-cache ca-certificates curl tzdata jq
 
 LABEL org.opencontainers.image.source = "https://github.com/nuxencs/seasonpackarr" \
       org.opencontainers.image.licenses = "GPL-2.0-or-later" \
