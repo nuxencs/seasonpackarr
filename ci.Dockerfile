@@ -1,8 +1,9 @@
 # build base
 FROM --platform=$BUILDPLATFORM golang:1.22-alpine3.19 AS app-base
 
-ENV SERVICE=seasonpackarr
 WORKDIR /src
+
+ENV SERVICE=seasonpackarr
 ARG VERSION=dev \
     REVISION=dev \
     BUILDTIME \
@@ -15,13 +16,13 @@ COPY . ./
 # build seasonpackarr
 FROM --platform=$BUILDPLATFORM app-base AS seasonpackarr
 RUN --network=none --mount=target=. \
-export GOOS=$TARGETOS; \
-export GOARCH=$TARGETARCH; \
-[[ "$GOARCH" == "amd64" ]] && export GOAMD64=$TARGETVARIANT; \
-[[ "$GOARCH" == "arm" ]] && [[ "$TARGETVARIANT" == "v6" ]] && export GOARM=6; \
-[[ "$GOARCH" == "arm" ]] && [[ "$TARGETVARIANT" == "v7" ]] && export GOARM=7; \
-echo $GOARCH $GOOS $GOARM$GOAMD64; \
-go build -ldflags "-s -w -X seasonpackarr/internal/buildinfo.Version=${VERSION} -X seasonpackarr/internal/buildinfo.Commit=${REVISION} -X seasonpackarr/internal/buildinfo.Date=${BUILDTIME}" -o /out/bin/seasonpackarr main.go
+    export GOOS=$TARGETOS; \
+    export GOARCH=$TARGETARCH; \
+    [[ "$GOARCH" == "amd64" ]] && export GOAMD64=$TARGETVARIANT; \
+    [[ "$GOARCH" == "arm" ]] && [[ "$TARGETVARIANT" == "v6" ]] && export GOARM=6; \
+    [[ "$GOARCH" == "arm" ]] && [[ "$TARGETVARIANT" == "v7" ]] && export GOARM=7; \
+    echo $GOARCH $GOOS $GOARM$GOAMD64; \
+    go build -ldflags "-s -w -X seasonpackarr/internal/buildinfo.Version=${VERSION} -X seasonpackarr/internal/buildinfo.Commit=${REVISION} -X seasonpackarr/internal/buildinfo.Date=${BUILDTIME}" -o /out/bin/seasonpackarr main.go
 
 # build runner
 FROM alpine:latest as RUNNER
@@ -38,6 +39,7 @@ ENV HOME="/config" \
 WORKDIR /app
 VOLUME /config
 EXPOSE 42069
-ENTRYPOINT ["/usr/bin/seasonpackarr", "start", "--config", "/config"]
 
 COPY --link --from=seasonpackarr /out/bin/seasonpackarr /usr/bin/
+
+ENTRYPOINT ["/usr/bin/seasonpackarr", "start", "--config", "/config"]
