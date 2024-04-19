@@ -296,4 +296,5 @@ Huge credit goes to [upgraderr](https://github.com/KyleSanderson/upgraderr) and 
 project provided great functions that I could make use of. Additionally, I would also like to mention [@zze0s](https://github.com/zze0s), who was
 really helpful regarding any question I had as well as providing me with a lot of the structure this project has now.
 Credits also go to the [TVmaze API](https://www.tvmaze.com/api) for providing comprehensive data on the total number of episodes for
-a show in a specific season.
+a show in a specific season. Last but not least, a big thank you to [JetBrains](http://www.jetbrains.com/) for providing me with free licenses to their great tools,
+in this case [GoLand](https://www.jetbrains.com/go/).
