@@ -455,10 +455,14 @@ func (p *processor) parseTorrent() (int, error) {
 
 	for _, match := range matches {
 		newPackPath := utils.ReplaceParentFolder(match.packPathAnnounce, packNameParsed)
-		newPackPath, err = utils.MatchFileNameToSeasonPackNaming(newPackPath, torrentEps)
-		if err != nil {
-			p.log.Error().Err(err).Msgf("error matching episode to file in season pack: %q", match.epPathClient)
-		}
+
+		// TODO: rework this functionality as it currently leads to overwritten hardlinks
+		/*
+			newPackPath, err = utils.MatchFileNameToSeasonPackNaming(newPackPath, torrentEps)
+			if err != nil {
+				p.log.Error().Err(err).Msgf("error matching episode to file in season pack: %q", match.epPathClient)
+			}
+		*/
 
 		if err = utils.CreateHardlink(match.epPathClient, newPackPath); err != nil {
 			p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.epPathClient)
