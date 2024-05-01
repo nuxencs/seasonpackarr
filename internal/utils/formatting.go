@@ -54,25 +54,20 @@ func ReplaceParentFolder(path, newFolder string) string {
 	return newPath
 }
 
-func MatchEpToSeasonPackEp(epInClientPath string, epInClientSize int64, torrentEps []torrents.Episode) (string, error) {
+func MatchEpToSeasonPackEp(epInClientPath string, epInClientSize int64, torrentEp torrents.Episode) (string, error) {
 	episodeRls := rls.ParseString(filepath.Base(epInClientPath))
+	torrentEpRls := rls.ParseString(filepath.Base(torrentEp.Name))
 
-	for _, torrentEp := range torrentEps {
-		torrentEpRls := rls.ParseString(filepath.Base(torrentEp.Name))
-
-		err := compareEpisodes(episodeRls, torrentEpRls)
-		if err != nil {
-			continue
-		}
-
-		if epInClientSize != torrentEp.Size {
-			continue
-		}
-
-		return filepath.Join(filepath.Dir(epInClientPath), filepath.Base(torrentEp.Name)), nil
+	err := compareEpisodes(episodeRls, torrentEpRls)
+	if err != nil {
+		return epInClientPath, err
 	}
 
-	return epInClientPath, fmt.Errorf("no matching episode in season pack")
+	if epInClientSize != torrentEp.Size {
+		return epInClientPath, fmt.Errorf("size mismatch")
+	}
+
+	return filepath.Join(filepath.Dir(epInClientPath), filepath.Base(torrentEp.Name)), nil
 }
 
 func compareEpisodes(episodeRls, torrentEpRls rls.Release) error {

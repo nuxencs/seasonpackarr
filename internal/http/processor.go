@@ -456,17 +456,27 @@ func (p *processor) parseTorrent() (int, error) {
 
 	matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
 	var hardlinkRespCodes []int
+	var matchedPath string
+	var matchErr error
 
 	for _, match := range matches {
 		newPackPath := utils.ReplaceParentFolder(match.packPathAnnounce, packNameParsed)
 
 		// TODO: rework this functionality as it currently leads to overwritten hardlinks
-		newPackPath, err = utils.MatchEpToSeasonPackEp(newPackPath, match.epSizeClient, torrentEps)
-		if err != nil {
+		for _, torrentEp := range torrentEps {
+			matchedPath, matchErr = utils.MatchEpToSeasonPackEp(newPackPath, match.epSizeClient, torrentEp)
+			if err != nil {
+				p.log.Debug().Err(err).Msgf("episode did not match: client(%s), torrent(%s)", match.epPathClient, torrentEp.Name)
+				continue
+			}
+			break
+		}
+		if matchErr != nil {
 			p.log.Error().Err(err).Msgf("error matching episode to file in season pack, skipping hardlink: %q", match.epPathClient)
 			hardlinkRespCodes = append(hardlinkRespCodes, StatusFailedHardlink)
 			continue
 		}
+		newPackPath = matchedPath
 
 		if err = utils.CreateHardlink(match.epPathClient, newPackPath); err != nil {
 			p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.epPathClient)
