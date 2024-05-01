@@ -318,7 +318,6 @@ func (p *processor) processSeasonPack() (int, error) {
 				size = f.Size
 				break
 			}
-			p.log.Debug().Msgf("size of episode in client: %d", size)
 
 			epRls := rls.ParseString(child.T.Name)
 			epPathClient := filepath.Join(child.T.SavePath, fileName)
@@ -341,7 +340,7 @@ func (p *processor) processSeasonPack() (int, error) {
 
 			newMatches := append(oldMatches.([]matchPaths), currentMatch...)
 			matchesMap.Store(p.req.Name, newMatches)
-			p.log.Debug().Msgf("matched torrent from client %q: %q %q", clientName, child.T.Name, child.T.Hash)
+			p.log.Debug().Msgf("matched torrent from client: name(%s), size(%d), hash(%s)", child.T.Name, size, child.T.Hash)
 			respCodes = append(respCodes, res)
 			continue
 		}
