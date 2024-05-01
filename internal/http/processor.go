@@ -465,14 +465,14 @@ func (p *processor) parseTorrent() (int, error) {
 		// TODO: rework this functionality as it currently leads to overwritten hardlinks
 		for _, torrentEp := range torrentEps {
 			matchedPath, matchErr = utils.MatchEpToSeasonPackEp(newPackPath, match.epSizeClient, torrentEp)
-			if err != nil {
-				p.log.Debug().Err(err).Msgf("episode did not match: client(%s), torrent(%s)", match.epPathClient, torrentEp.Name)
+			if matchErr != nil {
+				p.log.Debug().Err(matchErr).Msgf("episode did not match: client(%s), torrent(%s)", match.epPathClient, torrentEp.Name)
 				continue
 			}
 			break
 		}
 		if matchErr != nil {
-			p.log.Error().Err(err).Msgf("error matching episode to file in season pack, skipping hardlink: %q", match.epPathClient)
+			p.log.Error().Err(matchErr).Msgf("error matching episode to file in pack, skipping hardlink: %q", match.epPathClient)
 			hardlinkRespCodes = append(hardlinkRespCodes, StatusFailedHardlink)
 			continue
 		}
