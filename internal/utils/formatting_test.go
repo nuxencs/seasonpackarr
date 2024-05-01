@@ -234,7 +234,7 @@ func Test_ReplaceParentFolder(t *testing.T) {
 	}
 }
 
-func TestMatchFileNameToSeasonPackNaming1(t *testing.T) {
+func Test_MatchEpToSeasonPackEp(t *testing.T) {
 	type args struct {
 		epInClientPath string
 		epInClientSize int64
@@ -373,11 +373,11 @@ func TestMatchFileNameToSeasonPackNaming1(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := MatchFileNameToSeasonPackNaming(tt.args.epInClientPath, tt.args.epInClientSize, tt.args.torrentEps)
-			if !tt.wantErr(t, err, fmt.Sprintf("MatchFileNameToSeasonPackNaming(%v, %v, %v)", tt.args.epInClientPath, tt.args.epInClientSize, tt.args.torrentEps)) {
+			got, err := MatchEpToSeasonPackEp(tt.args.epInClientPath, tt.args.epInClientSize, tt.args.torrentEps)
+			if !tt.wantErr(t, err, fmt.Sprintf("MatchEpToSeasonPackEp(%v, %v, %v)", tt.args.epInClientPath, tt.args.epInClientSize, tt.args.torrentEps)) {
 				return
 			}
-			assert.Equalf(t, tt.want, got, "MatchFileNameToSeasonPackNaming(%v, %v, %v)", tt.args.epInClientPath, tt.args.epInClientSize, tt.args.torrentEps)
+			assert.Equalf(t, tt.want, got, "MatchEpToSeasonPackEp(%v, %v, %v)", tt.args.epInClientPath, tt.args.epInClientSize, tt.args.torrentEps)
 		})
 	}
 }

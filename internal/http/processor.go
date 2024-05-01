@@ -75,7 +75,7 @@ type entryTime struct {
 
 type matchPaths struct {
 	epPathClient     string
-	epSize           int64
+	epSizeClient     int64
 	packPathAnnounce string
 }
 
@@ -328,7 +328,7 @@ func (p *processor) processSeasonPack() (int, error) {
 			currentMatch := []matchPaths{
 				{
 					epPathClient:     epPathClient,
-					epSize:           size,
+					epSizeClient:     size,
 					packPathAnnounce: packPathAnnounce,
 				},
 			}
@@ -461,7 +461,7 @@ func (p *processor) parseTorrent() (int, error) {
 		newPackPath := utils.ReplaceParentFolder(match.packPathAnnounce, packNameParsed)
 
 		// TODO: rework this functionality as it currently leads to overwritten hardlinks
-		newPackPath, err = utils.MatchFileNameToSeasonPackNaming(newPackPath, match.epSize, torrentEps)
+		newPackPath, err = utils.MatchEpToSeasonPackEp(newPackPath, match.epSizeClient, torrentEps)
 		if err != nil {
 			p.log.Error().Err(err).Msgf("error matching episode to file in season pack, skipping hardlink: %q", match.epPathClient)
 			hardlinkRespCodes = append(hardlinkRespCodes, StatusFailedHardlink)
