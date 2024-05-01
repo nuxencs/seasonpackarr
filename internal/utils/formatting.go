@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
-	"seasonpackarr/internal/torrents"
 	"strings"
+
+	"seasonpackarr/internal/torrents"
 
 	"github.com/moistari/rls"
 )
