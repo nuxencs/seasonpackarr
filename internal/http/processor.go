@@ -215,7 +215,7 @@ func (p *processor) processSeasonPack() (int, error) {
 	if !ok {
 		return StatusClientNotFound, fmt.Errorf("client not found in config")
 	}
-	p.log.Info().Msgf("using %q client serving at %s:%d", clientName, client.Host, client.Port)
+	p.log.Info().Msgf("using %s client serving at %s:%d", clientName, client.Host, client.Port)
 
 	if len(p.req.Name) == 0 {
 		return StatusAnnounceNameError, fmt.Errorf("couldn't get announce name")
@@ -237,7 +237,7 @@ func (p *processor) processSeasonPack() (int, error) {
 	}
 
 	packNameAnnounce := utils.FormatSeasonPackTitle(p.req.Name)
-	p.log.Debug().Msgf("formatted season pack name: %q", packNameAnnounce)
+	p.log.Debug().Msgf("formatted season pack name: %s", packNameAnnounce)
 
 	for _, child := range v {
 		if release.CheckCandidates(&requestrls, &child, p.cfg.Config.FuzzyMatching) == StatusAlreadyInClient {
@@ -307,7 +307,7 @@ func (p *processor) processSeasonPack() (int, error) {
 		case StatusSuccessfulMatch:
 			m, err := p.getFiles(child.T.Hash)
 			if err != nil {
-				p.log.Error().Err(err).Msgf("error getting files: %q", child.T.Name)
+				p.log.Error().Err(err).Msgf("error getting files: %s", child.T.Name)
 				continue
 			}
 
@@ -440,7 +440,7 @@ func (p *processor) parseTorrent() (int, error) {
 		return StatusParseTorrentInfoError, err
 	}
 	packNameParsed := torrentInfo.BestName()
-	p.log.Debug().Msgf("parsed season pack name: %q", packNameParsed)
+	p.log.Debug().Msgf("parsed season pack name: %s", packNameParsed)
 
 	torrentEps, err := torrents.GetEpisodesFromTorrentInfo(torrentInfo)
 	if err != nil {
