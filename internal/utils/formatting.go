@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"seasonpackarr/internal/torrents"
 	"strings"
 
 	"github.com/moistari/rls"
@@ -52,19 +53,20 @@ func ReplaceParentFolder(path, newFolder string) string {
 	return newPath
 }
 
-func MatchFileNameToSeasonPackNaming(episodeInClientPath string, torrentEpisodeNames []string) (string, error) {
-	episodeRls := rls.ParseString(filepath.Base(episodeInClientPath))
+func MatchFileNameToSeasonPackNaming(epInClientPath string, epInClientSize int64, torrentEps []torrents.Episode) (string, error) {
+	episodeRls := rls.ParseString(filepath.Base(epInClientPath))
 
-	for _, packPath := range torrentEpisodeNames {
-		packRls := rls.ParseString(filepath.Base(packPath))
+	for _, torrentEp := range torrentEps {
+		torrentEpRls := rls.ParseString(filepath.Base(torrentEp.Name))
 
-		if (episodeRls.Series == packRls.Series) &&
-			(episodeRls.Episode == packRls.Episode) &&
-			(episodeRls.Resolution == packRls.Resolution) &&
-			(episodeRls.Group == packRls.Group) {
-			return filepath.Join(filepath.Dir(episodeInClientPath), filepath.Base(packPath)), nil
+		if (episodeRls.Series == torrentEpRls.Series) &&
+			(episodeRls.Episode == torrentEpRls.Episode) &&
+			(episodeRls.Resolution == torrentEpRls.Resolution) &&
+			(episodeRls.Group == torrentEpRls.Group) &&
+			(epInClientSize == torrentEp.Size) {
+			return filepath.Join(filepath.Dir(epInClientPath), filepath.Base(torrentEp.Name)), nil
 		}
 	}
 
-	return episodeInClientPath, fmt.Errorf("couldn't find matching episode in season pack, using existing file name")
+	return epInClientPath, fmt.Errorf("couldn't find matching episode in season pack, using existing file name")
 }

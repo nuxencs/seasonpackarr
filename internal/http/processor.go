@@ -75,6 +75,7 @@ type entryTime struct {
 
 type matchPaths struct {
 	epPathClient     string
+	epSize           int64
 	packPathAnnounce string
 }
 
@@ -311,10 +312,13 @@ func (p *processor) processSeasonPack() (int, error) {
 			}
 
 			fileName := ""
-			for _, v := range *m {
-				fileName = v.Name
+			var size int64 = 0
+			for _, f := range *m {
+				fileName = f.Name
+				size = f.Size
 				break
 			}
+			p.log.Debug().Msgf("size of episode in client: %d", size)
 
 			epRls := rls.ParseString(child.T.Name)
 			epPathClient := filepath.Join(child.T.SavePath, fileName)
@@ -325,6 +329,7 @@ func (p *processor) processSeasonPack() (int, error) {
 			currentMatch := []matchPaths{
 				{
 					epPathClient:     epPathClient,
+					epSize:           size,
 					packPathAnnounce: packPathAnnounce,
 				},
 			}
@@ -442,7 +447,7 @@ func (p *processor) parseTorrent() (int, error) {
 		return StatusGetEpisodesError, err
 	}
 	for _, torrentEp := range torrentEps {
-		p.log.Debug().Msgf("found episode in pack: %q", torrentEp)
+		p.log.Debug().Msgf("found episode in pack: name(%s), size(%d)", torrentEp.Name, torrentEp.Size)
 	}
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
@@ -457,12 +462,10 @@ func (p *processor) parseTorrent() (int, error) {
 		newPackPath := utils.ReplaceParentFolder(match.packPathAnnounce, packNameParsed)
 
 		// TODO: rework this functionality as it currently leads to overwritten hardlinks
-		/*
-			newPackPath, err = utils.MatchFileNameToSeasonPackNaming(newPackPath, torrentEps)
-			if err != nil {
-				p.log.Error().Err(err).Msgf("error matching episode to file in season pack: %q", match.epPathClient)
-			}
-		*/
+		newPackPath, err = utils.MatchFileNameToSeasonPackNaming(newPackPath, match.epSize, torrentEps)
+		if err != nil {
+			p.log.Error().Err(err).Msgf("error matching episode to file in season pack: %q", match.epPathClient)
+		}
 
 		if err = utils.CreateHardlink(match.epPathClient, newPackPath); err != nil {
 			p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.epPathClient)
