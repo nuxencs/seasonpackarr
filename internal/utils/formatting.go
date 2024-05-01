@@ -69,5 +69,5 @@ func MatchFileNameToSeasonPackNaming(epInClientPath string, epInClientSize int64
 		}
 	}
 
-	return epInClientPath, fmt.Errorf("couldn't find matching episode in season pack, using existing file name")
+	return epInClientPath, fmt.Errorf("couldn't find matching episode in season pack")
 }
