@@ -463,7 +463,6 @@ func (p *processor) parseTorrent() (int, error) {
 	for _, match := range matches {
 		newPackPath := utils.ReplaceParentFolder(match.packPathAnnounce, packNameParsed)
 
-		// TODO: rework this functionality as it currently leads to overwritten hardlinks
 		for _, torrentEp := range torrentEps {
 			matchedPath, matchErr = utils.MatchEpToSeasonPackEp(newPackPath, match.epSizeClient, torrentEp)
 			if matchErr != nil {
