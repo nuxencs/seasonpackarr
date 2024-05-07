@@ -4,7 +4,10 @@
 package utils
 
 import (
+	"fmt"
 	"testing"
+
+	"seasonpackarr/internal/torrents"
 
 	"github.com/moistari/rls"
 	"github.com/stretchr/testify/assert"
@@ -231,81 +234,114 @@ func Test_ReplaceParentFolder(t *testing.T) {
 	}
 }
 
-func TestMatchFileNameToSeasonPackNaming(t *testing.T) {
+func Test_MatchEpToSeasonPackEp(t *testing.T) {
+	type args struct {
+		epInClientPath string
+		epInClientSize int64
+		torrentEp      torrents.Episode
+	}
 	tests := []struct {
-		name         string
-		epPathClient string
-		torrentEps   []string
-		want         string
-		wantErr      bool
+		name    string
+		args    args
+		want    string
+		wantErr assert.ErrorAssertionFunc
 	}{
 		{
-			name:         "found_match",
-			epPathClient: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-			torrentEps: []string{
-				"Series Title 2022 S02E01 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				"Series Title 2022 S02E02 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			name: "found_match",
+			args: args{
+				epInClientPath: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+				epInClientSize: 2316560346,
+				torrentEp: torrents.Episode{
+					Name: "Series Title 2022 S02E01 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+					Size: 2316560346,
+				},
 			},
 			want:    "Series Title 2022 S02E01 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-			wantErr: false,
+			wantErr: assert.NoError,
 		},
 		{
-			name:         "wrong_episode",
-			epPathClient: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-			torrentEps: []string{
-				"Series Title 2022 S02E02 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				"Series Title 2022 S02E03 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			name: "wrong_episode",
+			args: args{
+				epInClientPath: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+				epInClientSize: 2316560346,
+				torrentEp: torrents.Episode{
+					Name: "Series Title 2022 S02E02 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+					Size: 2316560346,
+				},
 			},
 			want:    "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-			wantErr: true,
+			wantErr: assert.Error,
 		},
 		{
-			name:         "found_no_match",
-			epPathClient: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-			torrentEps:   []string{},
-			want:         "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-			wantErr:      true,
-		},
-		{
-			name:         "wrong_season",
-			epPathClient: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-			torrentEps: []string{
-				"Series Title 2022 S03E01 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				"Series Title 2022 S03E02 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			name: "wrong_season",
+			args: args{
+				epInClientPath: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+				epInClientSize: 2316560346,
+				torrentEp: torrents.Episode{
+					Name: "Series Title 2022 S03E01 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+					Size: 2316560346,
+				},
 			},
 			want:    "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-			wantErr: true,
+			wantErr: assert.Error,
 		},
 		{
-			name:         "wrong_resolution",
-			epPathClient: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-			torrentEps: []string{
-				"Series Title 2022 S02E01 720p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				"Series Title 2022 S02E02 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			name: "wrong_resolution",
+			args: args{
+				epInClientPath: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+				epInClientSize: 2316560346,
+				torrentEp: torrents.Episode{
+					Name: "Series Title 2022 S02E01 2160p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+					Size: 2316560346,
+				},
 			},
 			want:    "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-			wantErr: true,
+			wantErr: assert.Error,
 		},
 		{
-			name:         "wrong_rlsgrp",
-			epPathClient: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-			torrentEps: []string{
-				"Series Title 2022 S02E01 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp2.mkv",
-				"Series Title 2022 S02E02 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			name: "wrong_rlsgrp",
+			args: args{
+				epInClientPath: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+				epInClientSize: 2316560346,
+				torrentEp: torrents.Episode{
+					Name: "Series Title 2022 S02E01 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-OtherRlsGrp.mkv",
+					Size: 2316560346,
+				},
 			},
 			want:    "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-			wantErr: true,
+			wantErr: assert.Error,
+		},
+		{
+			name: "wrong_size",
+			args: args{
+				epInClientPath: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+				epInClientSize: 2316560346,
+				torrentEp: torrents.Episode{
+					Name: "Series Title 2022 S02E01 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+					Size: 2278773077,
+				},
+			},
+			want:    "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			wantErr: assert.Error,
+		},
+		{
+			name: "found_no_match",
+			args: args{
+				epInClientPath: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+				epInClientSize: 2316560346,
+				torrentEp:      torrents.Episode{},
+			},
+			want:    "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+			wantErr: assert.Error,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := MatchFileNameToSeasonPackNaming(tt.epPathClient, tt.torrentEps)
-
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Parse() error = %v, wantErr %v", err, tt.wantErr)
+			got, err := MatchEpToSeasonPackEp(tt.args.epInClientPath, tt.args.epInClientSize, tt.args.torrentEp)
+			if !tt.wantErr(t, err, fmt.Sprintf("MatchEpToSeasonPackEp(%v, %v, %v)", tt.args.epInClientPath, tt.args.epInClientSize, tt.args.torrentEp)) {
 				return
 			}
-			assert.Equalf(t, tt.want, got, "MatchFileNameToSeasonPackNaming(%v, %v)", tt.epPathClient, tt.torrentEps)
+			assert.Equalf(t, tt.want, got, "MatchEpToSeasonPackEp(%v, %v, %v)", tt.args.epInClientPath, tt.args.epInClientSize, tt.args.torrentEp)
 		})
 	}
 }

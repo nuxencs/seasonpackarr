@@ -75,6 +75,7 @@ type entryTime struct {
 
 type matchPaths struct {
 	epPathClient     string
+	epSizeClient     int64
 	packPathAnnounce string
 }
 
@@ -214,7 +215,7 @@ func (p *processor) processSeasonPack() (int, error) {
 	if !ok {
 		return StatusClientNotFound, fmt.Errorf("client not found in config")
 	}
-	p.log.Info().Msgf("using %q client serving at %s:%d", clientName, client.Host, client.Port)
+	p.log.Info().Msgf("using %s client serving at %s:%d", clientName, client.Host, client.Port)
 
 	if len(p.req.Name) == 0 {
 		return StatusAnnounceNameError, fmt.Errorf("couldn't get announce name")
@@ -236,7 +237,7 @@ func (p *processor) processSeasonPack() (int, error) {
 	}
 
 	packNameAnnounce := utils.FormatSeasonPackTitle(p.req.Name)
-	p.log.Debug().Msgf("formatted season pack name: %q", packNameAnnounce)
+	p.log.Debug().Msgf("formatted season pack name: %s", packNameAnnounce)
 
 	for _, child := range v {
 		if release.CheckCandidates(&requestrls, &child, p.cfg.Config.FuzzyMatching) == StatusAlreadyInClient {
@@ -306,13 +307,15 @@ func (p *processor) processSeasonPack() (int, error) {
 		case StatusSuccessfulMatch:
 			m, err := p.getFiles(child.T.Hash)
 			if err != nil {
-				p.log.Error().Err(err).Msgf("error getting files: %q", child.T.Name)
+				p.log.Error().Err(err).Msgf("error getting files: %s", child.T.Name)
 				continue
 			}
 
 			fileName := ""
-			for _, v := range *m {
-				fileName = v.Name
+			var size int64 = 0
+			for _, f := range *m {
+				fileName = f.Name
+				size = f.Size
 				break
 			}
 
@@ -325,6 +328,7 @@ func (p *processor) processSeasonPack() (int, error) {
 			currentMatch := []matchPaths{
 				{
 					epPathClient:     epPathClient,
+					epSizeClient:     size,
 					packPathAnnounce: packPathAnnounce,
 				},
 			}
@@ -336,7 +340,8 @@ func (p *processor) processSeasonPack() (int, error) {
 
 			newMatches := append(oldMatches.([]matchPaths), currentMatch...)
 			matchesMap.Store(p.req.Name, newMatches)
-			p.log.Debug().Msgf("matched torrent from client %q: %q %q", clientName, child.T.Name, child.T.Hash)
+			p.log.Debug().Msgf("matched torrent from client: name(%s), size(%d), hash(%s)",
+				child.T.Name, size, child.T.Hash)
 			respCodes = append(respCodes, res)
 			continue
 		}
@@ -376,11 +381,11 @@ func (p *processor) processSeasonPack() (int, error) {
 
 	for _, match := range matches {
 		if err := utils.CreateHardlink(match.epPathClient, match.packPathAnnounce); err != nil {
-			p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.epPathClient)
+			p.log.Error().Err(err).Msgf("error creating hardlink: %s", match.epPathClient)
 			hardlinkRespCodes = append(hardlinkRespCodes, StatusFailedHardlink)
 			continue
 		}
-		p.log.Log().Msgf("created hardlink of %q into %q", match.epPathClient, match.packPathAnnounce)
+		p.log.Log().Msgf("created hardlink: source(%s), target(%s)", match.epPathClient, match.packPathAnnounce)
 		hardlinkRespCodes = append(hardlinkRespCodes, StatusSuccessfulHardlink)
 	}
 
@@ -435,14 +440,14 @@ func (p *processor) parseTorrent() (int, error) {
 		return StatusParseTorrentInfoError, err
 	}
 	packNameParsed := torrentInfo.BestName()
-	p.log.Debug().Msgf("parsed season pack name: %q", packNameParsed)
+	p.log.Debug().Msgf("parsed season pack name: %s", packNameParsed)
 
 	torrentEps, err := torrents.GetEpisodesFromTorrentInfo(torrentInfo)
 	if err != nil {
 		return StatusGetEpisodesError, err
 	}
 	for _, torrentEp := range torrentEps {
-		p.log.Debug().Msgf("found episode in pack: %q", torrentEp)
+		p.log.Debug().Msgf("found episode in pack: name(%s), size(%d)", torrentEp.Name, torrentEp.Size)
 	}
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
@@ -452,24 +457,35 @@ func (p *processor) parseTorrent() (int, error) {
 
 	matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
 	var hardlinkRespCodes []int
+	var matchedPath string
+	var matchErr error
 
 	for _, match := range matches {
 		newPackPath := utils.ReplaceParentFolder(match.packPathAnnounce, packNameParsed)
 
-		// TODO: rework this functionality as it currently leads to overwritten hardlinks
-		/*
-			newPackPath, err = utils.MatchFileNameToSeasonPackNaming(newPackPath, torrentEps)
-			if err != nil {
-				p.log.Error().Err(err).Msgf("error matching episode to file in season pack: %q", match.epPathClient)
+		for _, torrentEp := range torrentEps {
+			matchedPath, matchErr = utils.MatchEpToSeasonPackEp(newPackPath, match.epSizeClient, torrentEp)
+			if matchErr != nil {
+				p.log.Debug().Err(matchErr).Msgf("episode did not match: client(%s), torrent(%s)",
+					filepath.Base(match.epPathClient), torrentEp.Name)
+				continue
 			}
-		*/
-
-		if err = utils.CreateHardlink(match.epPathClient, newPackPath); err != nil {
-			p.log.Error().Err(err).Msgf("error creating hardlink for: %q", match.epPathClient)
+			break
+		}
+		if matchErr != nil {
+			p.log.Error().Err(matchErr).Msgf("error matching episode to file in pack, skipping hardlink: %s",
+				filepath.Base(match.epPathClient))
 			hardlinkRespCodes = append(hardlinkRespCodes, StatusFailedHardlink)
 			continue
 		}
-		p.log.Log().Msgf("created hardlink of %q into %q", match.epPathClient, newPackPath)
+		newPackPath = matchedPath
+
+		if err = utils.CreateHardlink(match.epPathClient, newPackPath); err != nil {
+			p.log.Error().Err(err).Msgf("error creating hardlink: %s", match.epPathClient)
+			hardlinkRespCodes = append(hardlinkRespCodes, StatusFailedHardlink)
+			continue
+		}
+		p.log.Log().Msgf("created hardlink: source(%s), target(%s)", match.epPathClient, newPackPath)
 		hardlinkRespCodes = append(hardlinkRespCodes, StatusSuccessfulHardlink)
 	}
 
