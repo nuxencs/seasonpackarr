@@ -2,6 +2,7 @@ services:
   seasonpackarr:
     container_name: seasonpackarr
     image: ghcr.io/nuxencs/seasonpackarr
+    restart: unless-stopped
     user: ${PUID}:${PGID} #UID and GID
     ports:
       - "127.0.0.1:42069:42069"
