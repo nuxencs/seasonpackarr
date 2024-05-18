@@ -31,11 +31,7 @@ func CompareStringSlices(x, y []string) bool {
 	slices.Sort(sortedX)
 	slices.Sort(sortedY)
 
-	if slices.Equal(sortedX, sortedY) {
-		return true
-	}
-
-	return false
+	return slices.Equal(sortedX, sortedY)
 }
 
 func SimplifyHDRSlice(hdrSlice []string) []string {
