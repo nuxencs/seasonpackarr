@@ -13,6 +13,7 @@ import (
 
 	"seasonpackarr/internal/config"
 	"seasonpackarr/internal/logger"
+	"seasonpackarr/internal/notification"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -21,16 +22,18 @@ import (
 var ErrServerClosed = http.ErrServerClosed
 
 type Server struct {
-	log logger.Logger
-	cfg *config.AppConfig
+	log  logger.Logger
+	cfg  *config.AppConfig
+	noti notification.Sender
 
 	httpServer http.Server
 }
 
-func NewServer(log logger.Logger, config *config.AppConfig) *Server {
+func NewServer(log logger.Logger, config *config.AppConfig, notification notification.Sender) *Server {
 	return &Server{
-		log: log,
-		cfg: config,
+		log:  log,
+		cfg:  config,
+		noti: notification,
 	}
 }
 
@@ -86,7 +89,7 @@ func (s *Server) Handler() http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(s.isAuthenticated)
 
-			r.Route("/", newWebhookHandler(s.log, s.cfg).Routes)
+			r.Route("/", newWebhookHandler(s.log, s.cfg, s.noti).Routes)
 		})
 	})
 

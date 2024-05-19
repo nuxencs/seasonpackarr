@@ -169,6 +169,14 @@ fuzzyMatching:
 # Optional
 #
 # apiToken: ""
+
+# Notification Host
+# If not defined, disables notifications
+# Uses shoutrrr to send notifications
+#
+# Optional
+#
+# notificationHost: ""
 `
 
 func (c *AppConfig) writeConfig(configPath string, configFile string) error {
@@ -301,7 +309,8 @@ func (c *AppConfig) defaults() {
 			SkipRepackCompare:  false,
 			SimplifyHdrCompare: false,
 		},
-		APIToken: "",
+		APIToken:         "",
+		NotificationHost: "",
 	}
 }
 
@@ -347,6 +356,8 @@ func (c *AppConfig) loadFromEnv() {
 					}
 				case prefix + "API_TOKEN":
 					c.Config.APIToken = envPair[1]
+				case prefix + "NOTIFICATION_HOST":
+					c.Config.NotificationHost = envPair[1]
 				}
 			}
 		}
@@ -443,6 +454,7 @@ func (c *AppConfig) processLines(lines []string) []string {
 		foundLineSkipRepackCompare  = false
 		foundLineSimplifyHdrCompare = false
 		foundLineApiToken           = false
+		foundLineNotificationHost   = false
 	)
 
 	for i, line := range lines {
@@ -482,8 +494,20 @@ func (c *AppConfig) processLines(lines []string) []string {
 			foundLineSimplifyHdrCompare = true
 		}
 		if !foundLineApiToken && strings.Contains(line, "apiToken:") {
-			lines[i] = fmt.Sprintf("apiToken: \"%s\"", c.Config.APIToken)
+			if c.Config.APIToken == "" {
+				lines[i] = "# apiToken: \"\""
+			} else {
+				lines[i] = fmt.Sprintf("apiToken: \"%s\"", c.Config.APIToken)
+			}
 			foundLineApiToken = true
+		}
+		if !foundLineNotificationHost && strings.Contains(line, "notificationHost:") {
+			if c.Config.NotificationHost == "" {
+				lines[i] = "# notificationHost: \"\""
+			} else {
+				lines[i] = fmt.Sprintf("notificationHost: \"%s\"", c.Config.NotificationHost)
+			}
+			foundLineNotificationHost = true
 		}
 	}
 
@@ -573,6 +597,20 @@ func (c *AppConfig) processLines(lines []string) []string {
 			lines = append(lines, "# apiToken: \"\"\n")
 		} else {
 			lines = append(lines, fmt.Sprintf("apiToken: \"%s\"\n", c.Config.APIToken))
+		}
+	}
+
+	if !foundLineNotificationHost {
+		lines = append(lines, "# Notification Host")
+		lines = append(lines, "# If not defined, disables notifications")
+		lines = append(lines, "# Uses shoutrrr to send notifications")
+		lines = append(lines, "#")
+		lines = append(lines, "# Optional")
+		lines = append(lines, "#")
+		if c.Config.NotificationHost == "" {
+			lines = append(lines, "# notificationHost: \"\"\n")
+		} else {
+			lines = append(lines, fmt.Sprintf("notificationHost: \"%s\"\n", c.Config.NotificationHost))
 		}
 	}
 

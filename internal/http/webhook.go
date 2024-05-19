@@ -8,20 +8,23 @@ import (
 
 	"seasonpackarr/internal/config"
 	"seasonpackarr/internal/logger"
+	"seasonpackarr/internal/notification"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
 )
 
 type webhookHandler struct {
-	log logger.Logger
-	cfg *config.AppConfig
+	log  logger.Logger
+	cfg  *config.AppConfig
+	noti notification.Sender
 }
 
-func newWebhookHandler(log logger.Logger, cfg *config.AppConfig) *webhookHandler {
+func newWebhookHandler(log logger.Logger, cfg *config.AppConfig, notification notification.Sender) *webhookHandler {
 	return &webhookHandler{
-		log: log,
-		cfg: cfg,
+		log:  log,
+		cfg:  cfg,
+		noti: notification,
 	}
 }
 
@@ -31,11 +34,11 @@ func (h webhookHandler) Routes(r chi.Router) {
 }
 
 func (h webhookHandler) pack(w http.ResponseWriter, r *http.Request) {
-	newProcessor(h.log, h.cfg).ProcessSeasonPackHandler(w, r)
+	newProcessor(h.log, h.cfg, h.noti).ProcessSeasonPackHandler(w, r)
 	render.Status(r, http.StatusOK)
 }
 
 func (h webhookHandler) parse(w http.ResponseWriter, r *http.Request) {
-	newProcessor(h.log, h.cfg).ParseTorrentHandler(w, r)
+	newProcessor(h.log, h.cfg, h.noti).ParseTorrentHandler(w, r)
 	render.Status(r, http.StatusOK)
 }

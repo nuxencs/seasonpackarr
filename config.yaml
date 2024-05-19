@@ -142,3 +142,11 @@ fuzzyMatching:
 # Optional
 #
 # apiToken: ""
+
+# Notification Host
+# If not defined, disables notifications
+# Uses shoutrrr to send notifications
+#
+# Optional
+#
+# notificationHost: ""

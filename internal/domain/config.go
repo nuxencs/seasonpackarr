@@ -32,4 +32,5 @@ type Config struct {
 	ParseTorrentFile   bool               `yaml:"parseTorrentFile"`
 	FuzzyMatching      FuzzyMatching      `yaml:"fuzzyMatching"`
 	APIToken           string             `yaml:"apiToken"`
+	NotificationHost   string             `yaml:"notificationHost"`
 }

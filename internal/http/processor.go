@@ -15,6 +15,7 @@ import (
 	"seasonpackarr/internal/config"
 	"seasonpackarr/internal/domain"
 	"seasonpackarr/internal/logger"
+	"seasonpackarr/internal/notification"
 	"seasonpackarr/internal/release"
 	"seasonpackarr/internal/torrents"
 	"seasonpackarr/internal/utils"
@@ -53,9 +54,10 @@ const (
 )
 
 type processor struct {
-	log zerolog.Logger
-	cfg *config.AppConfig
-	req *request
+	log  zerolog.Logger
+	cfg  *config.AppConfig
+	noti notification.Sender
+	req  *request
 }
 
 type request struct {
@@ -85,10 +87,11 @@ var (
 	torrentMap sync.Map
 )
 
-func newProcessor(log logger.Logger, config *config.AppConfig) *processor {
+func newProcessor(log logger.Logger, config *config.AppConfig, notification notification.Sender) *processor {
 	return &processor{
-		log: log.With().Str("module", "processor").Logger(),
-		cfg: config,
+		log:  log.With().Str("module", "processor").Logger(),
+		cfg:  config,
+		noti: notification,
 	}
 }
 
@@ -104,7 +107,7 @@ func (p *processor) getClient(client *domain.Client) error {
 		c = qbittorrent.NewClient(s)
 
 		if err := c.(*qbittorrent.Client).Login(); err != nil {
-			p.log.Fatal().Err(err).Msg("error logging into qBittorrent")
+			return err
 		}
 
 		clientMap.Store(s, c)
@@ -357,6 +360,13 @@ func (p *processor) processSeasonPack() (int, error) {
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
 	if !slices.Contains(respCodes, StatusSuccessfulMatch) || !ok {
+		if sendErr := p.noti.Send(domain.NotificationEventNoMatch, domain.NotificationPayload{
+			Message:     "Found no matching episodes in client for season pack",
+			ReleaseName: p.req.Name,
+		}); sendErr != nil {
+			p.log.Error().Err(sendErr).Msg("error sending notification")
+		}
+
 		return StatusNoMatches, fmt.Errorf("no matching releases in client")
 	}
 
@@ -381,6 +391,13 @@ func (p *processor) processSeasonPack() (int, error) {
 	}
 
 	if p.cfg.Config.ParseTorrentFile {
+		if sendErr := p.noti.Send(domain.NotificationEventSuccessfulMatch, domain.NotificationPayload{
+			Message:     "Successfully matched season pack to episodes in client",
+			ReleaseName: p.req.Name,
+		}); sendErr != nil {
+			p.log.Error().Err(sendErr).Msg("error sending notification")
+		}
+
 		return StatusSuccessfulMatch, nil
 	}
 
@@ -398,7 +415,21 @@ func (p *processor) processSeasonPack() (int, error) {
 	}
 
 	if !slices.Contains(hardlinkRespCodes, StatusSuccessfulHardlink) {
+		if sendErr := p.noti.Send(domain.NotificationEventFailedHardlink, domain.NotificationPayload{
+			Message:     "Failed to hardlink episodes into season pack folder",
+			ReleaseName: p.req.Name,
+		}); sendErr != nil {
+			p.log.Error().Err(sendErr).Msg("error sending notification")
+		}
+
 		return StatusFailedHardlink, fmt.Errorf("couldn't create hardlinks")
+	}
+
+	if sendErr := p.noti.Send(domain.NotificationEventSuccessfulHardlink, domain.NotificationPayload{
+		Message:     "Successfully hardlinked episodes into season pack folder",
+		ReleaseName: p.req.Name,
+	}); sendErr != nil {
+		p.log.Error().Err(sendErr).Msg("error sending notification")
 	}
 
 	return StatusSuccessfulHardlink, nil
@@ -467,6 +498,13 @@ func (p *processor) parseTorrent() (int, error) {
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
 	if !ok {
+		if sendErr := p.noti.Send(domain.NotificationEventNoMatch, domain.NotificationPayload{
+			Message:     "Found no matching episodes in client for season pack",
+			ReleaseName: p.req.Name,
+		}); sendErr != nil {
+			p.log.Error().Err(sendErr).Msg("error sending notification")
+		}
+
 		return StatusNoMatches, fmt.Errorf("no matching releases in client")
 	}
 
@@ -510,7 +548,21 @@ func (p *processor) parseTorrent() (int, error) {
 	}
 
 	if !slices.Contains(hardlinkRespCodes, StatusSuccessfulHardlink) {
+		if sendErr := p.noti.Send(domain.NotificationEventFailedHardlink, domain.NotificationPayload{
+			Message:     "Failed to hardlink episodes into season pack folder",
+			ReleaseName: p.req.Name,
+		}); sendErr != nil {
+			p.log.Error().Err(sendErr).Msg("error sending notification")
+		}
+
 		return StatusFailedHardlink, fmt.Errorf("couldn't create hardlinks")
+	}
+
+	if sendErr := p.noti.Send(domain.NotificationEventSuccessfulHardlink, domain.NotificationPayload{
+		Message:     "Successfully hardlinked episodes into season pack folder",
+		ReleaseName: p.req.Name,
+	}); sendErr != nil {
+		p.log.Error().Err(sendErr).Msg("error sending notification")
 	}
 
 	return StatusSuccessfulHardlink, nil
