@@ -329,7 +329,6 @@ func (p *processor) processSeasonPack() (int, error) {
 
 			epRls := rls.ParseString(child.T.Name)
 			epPathClient := filepath.Join(child.T.SavePath, fileName)
-			// TODO handle target location differently
 			announcedEpPath := filepath.Join(client.PreImportPath, announcedPackName, filepath.Base(fileName))
 
 			matchedEps = append(matchedEps, epRls.Episode)
@@ -476,7 +475,7 @@ func (p *processor) parseTorrent() (int, error) {
 	var matchedEpPath string
 	var matchErr error
 	var targetEpPath string
-	// /data/torrents/tv-hd/Halo.S02.1080p.AMZN.WEB-DL.DDP5.1.Atmos.H.264-FLUX
+
 	targetPackDir := filepath.Join(client.PreImportPath, parsedPackName)
 
 	for _, match := range matches {
@@ -491,7 +490,6 @@ func (p *processor) parseTorrent() (int, error) {
 					filepath.Base(match.clientEpPath), torrentEp.Path)
 				continue
 			}
-			// /data/torrents/tv-hd/Halo.S02.1080p.AMZN.WEB-DL.DDP5.1.Atmos.H.264-FLUX/Halo.S02E01.Aleria.1080p.AMZN.WEB-DL.DDP5.1.Atmos.H.264-FLUX/Halo.S02E01.Aleria.1080p.AMZN.WEB-DL.DDP5.1.Atmos.H.264-FLUX.mkv
 			targetEpPath = filepath.Join(targetPackDir, matchedEpPath)
 			break
 		}
