@@ -299,7 +299,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
-			name: "multi_subfolder_in_both",
+			name: "multi_subfolder",
 			args: args{
 				epInClientPath: "/data/torrents/tv/Test/Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
 				epInClientSize: 2316560346,
