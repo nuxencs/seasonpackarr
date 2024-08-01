@@ -14,7 +14,7 @@ import (
 )
 
 type Episode struct {
-	Name string
+	Path string
 	Size int64
 }
 
@@ -41,18 +41,17 @@ func GetEpisodesFromTorrentInfo(info metainfo.Info) ([]Episode, error) {
 		return []Episode{}, fmt.Errorf("not a directory")
 	}
 
-	for _, file := range info.Files {
-		for _, path := range file.BestPath() {
-			if filepath.Ext(path) != ".mkv" {
-				continue
-			}
+	for _, file := range info.UpvertedFiles() {
+		path := file.DisplayPath(&info)
 
-			episodes = append(episodes, Episode{
-				Name: path,
-				Size: file.Length,
-			})
-			break
+		if filepath.Ext(path) != ".mkv" {
+			continue
 		}
+
+		episodes = append(episodes, Episode{
+			Path: path,
+			Size: file.Length,
+		})
 	}
 
 	if len(episodes) == 0 {
@@ -60,7 +59,7 @@ func GetEpisodesFromTorrentInfo(info metainfo.Info) ([]Episode, error) {
 	}
 
 	slices.SortStableFunc(episodes, func(a, b Episode) int {
-		return cmp.Compare(a.Name, b.Name)
+		return cmp.Compare(a.Path, b.Path)
 	})
 	return episodes, nil
 }

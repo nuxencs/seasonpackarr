@@ -9,8 +9,6 @@ import (
 	"regexp"
 	"strings"
 
-	"seasonpackarr/internal/torrents"
-
 	"github.com/moistari/rls"
 )
 
@@ -44,30 +42,20 @@ func FormatSeasonPackTitle(packName string) string {
 	return packName
 }
 
-func ReplaceParentFolder(path, newFolder string) string {
-	path = filepath.Clean(path)
-	if filepath.Dir(path) == string(filepath.Separator) ||
-		filepath.Dir(path) == "." {
-		return path
-	}
-	newPath := filepath.Join(filepath.Dir(filepath.Dir(path)), newFolder, filepath.Base(path))
-	return newPath
-}
+func MatchEpToSeasonPackEp(clientEpPath string, clientEpSize int64, torrentEpPath string, torrentEpSize int64) (string, error) {
+	epInClientRls := rls.ParseString(filepath.Base(clientEpPath))
+	epInTorrentRls := rls.ParseString(filepath.Base(torrentEpPath))
 
-func MatchEpToSeasonPackEp(epInClientPath string, epInClientSize int64, torrentEp torrents.Episode) (string, error) {
-	episodeRls := rls.ParseString(filepath.Base(epInClientPath))
-	torrentEpRls := rls.ParseString(filepath.Base(torrentEp.Name))
-
-	err := compareEpisodes(episodeRls, torrentEpRls)
+	err := compareEpisodes(epInClientRls, epInTorrentRls)
 	if err != nil {
-		return epInClientPath, err
+		return "", err
 	}
 
-	if epInClientSize != torrentEp.Size {
-		return epInClientPath, fmt.Errorf("size mismatch")
+	if clientEpSize != torrentEpSize {
+		return "", fmt.Errorf("size mismatch")
 	}
 
-	return filepath.Join(filepath.Dir(epInClientPath), filepath.Base(torrentEp.Name)), nil
+	return torrentEpPath, nil
 }
 
 func compareEpisodes(episodeRls, torrentEpRls rls.Release) error {
