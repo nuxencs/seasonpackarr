@@ -10,12 +10,13 @@ import (
 )
 
 var (
-	configPath string
-	rlsName    string
-	clientName string
-	host       string
-	port       int
-	apiKey     string
+	configPath  string
+	rlsName     string
+	torrentFile string
+	clientName  string
+	host        string
+	port        int
+	apiKey      string
 )
 
 var rootCmd = &cobra.Command{
@@ -33,17 +34,21 @@ For more information and examples, visit https://github.com/nuxencs/seasonpackar
 }
 
 func init() {
-	startCmd.Flags().StringVarP(&configPath, "config", "c", "", "path to configuration directory")
+	startCmd.Flags().StringVarP(&configPath, "config", "c", "", "path to the configuration directory")
 
-	testCmd.PersistentFlags().StringVarP(&rlsName, "rls", "r", "", "name of the release you want to test")
 	testCmd.PersistentFlags().StringVarP(&clientName, "client", "n", "", "name of the client you want to test")
 	testCmd.PersistentFlags().StringVarP(&host, "host", "i", "127.0.0.1", "host used by seasonpackarr")
 	testCmd.PersistentFlags().IntVarP(&port, "port", "p", 42069, "port used by seasonpackarr")
 	testCmd.PersistentFlags().StringVarP(&apiKey, "api", "a", "", "api key used by seasonpackarr")
+
+	testCmd.PersistentFlags().StringVarP(&rlsName, "rls", "r", "", "name of the release you want to test")
+	parseCmd.Flags().StringVarP(&torrentFile, "torrent", "t", "", "path to the torrent file you want to test")
+
 	_ = testCmd.MarkPersistentFlagRequired("rls")
 
-	rootCmd.AddCommand(genTokenCmd, startCmd, testCmd, versionCmd)
+	_ = parseCmd.MarkFlagFilename("torrent", ".torrent")
 
+	rootCmd.AddCommand(genTokenCmd, startCmd, testCmd, versionCmd)
 	testCmd.AddCommand(packCmd, parseCmd)
 }
 
