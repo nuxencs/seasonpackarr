@@ -17,10 +17,12 @@ var packCmd = &cobra.Command{
 	Short:   "Test the pack api endpoint for a specified release",
 	Example: `  seasonpackarr test pack --rls “Series.S01.1080p.WEB-DL.H.264-RlsGrp” --client "default" --host "127.0.0.1" --port 42069 --api "your-api-key"`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if len(rlsName) == 0 {
-			fmt.Println("The release name can't be empty")
+		if len(args) == 0 {
+			fmt.Println("Please provide a release name")
 			return
 		}
+
+		rlsName = args[0]
 
 		body, err := payload.CompilePackPayload(rlsName, clientName)
 		if err != nil {

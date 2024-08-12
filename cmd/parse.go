@@ -8,6 +8,8 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"seasonpackarr/internal/payload"
 	"seasonpackarr/internal/torrents"
@@ -20,19 +22,23 @@ import (
 var parseCmd = &cobra.Command{
 	Use:   "parse",
 	Short: "Test the parse api endpoint for a specified release",
-	Example: `  seasonpackarr test parse --rls “Series.S01.1080p.WEB-DL.H.264-RlsGrp” --client "default" --host "127.0.0.1" --port 42069 --api "your-api-key"
-  seasonpackarr test parse --rls “Series.S01.1080p.WEB-DL.H.264-RlsGrp” --torrent “Series.S01.1080p.WEB-DL.H.264-RlsGrp.torrent” --client "default" --host "127.0.0.1" --port 42069 --api "your-api-key"`,
+	Example: `  seasonpackarr test parse “Series.S01.1080p.WEB-DL.H.264-RlsGrp” --client "default" --host "127.0.0.1" --port 42069 --api "your-api-key"
+  seasonpackarr test parse “/path/to/Series.S01.1080p.WEB-DL.H.264-RlsGrp.torrent” --client "default" --host "127.0.0.1" --port 42069 --api "your-api-key"`,
 	Run: func(cmd *cobra.Command, args []string) {
 		var torrentBytes []byte
 		var body io.Reader
 		var err error
 
-		if len(rlsName) == 0 {
-			fmt.Println("The release name can't be empty")
+		if len(args) == 0 {
+			fmt.Println("Please provide either a release name or a .torrent file to parse")
 			return
 		}
 
-		if !cmd.Flags().Changed("torrent") {
+		torrentFile = args[0]
+		// trim .torrent extension and remove full path for rlsName
+		rlsName = strings.TrimSuffix(filepath.Base(torrentFile), ".torrent")
+
+		if filepath.Ext(torrentFile) != ".torrent" {
 			torrentBytes, err = torrents.TorrentFromRls(rlsName, 5)
 			if err != nil {
 				fmt.Println(err.Error())

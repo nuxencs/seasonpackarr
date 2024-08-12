@@ -41,13 +41,6 @@ func init() {
 	testCmd.PersistentFlags().IntVarP(&port, "port", "p", 42069, "port used by seasonpackarr")
 	testCmd.PersistentFlags().StringVarP(&apiKey, "api", "a", "", "api key used by seasonpackarr")
 
-	testCmd.PersistentFlags().StringVarP(&rlsName, "rls", "r", "", "name of the release you want to test")
-	parseCmd.Flags().StringVarP(&torrentFile, "torrent", "t", "", "path to the torrent file you want to test")
-
-	_ = testCmd.MarkPersistentFlagRequired("rls")
-
-	_ = parseCmd.MarkFlagFilename("torrent", ".torrent")
-
 	rootCmd.AddCommand(genTokenCmd, startCmd, testCmd, versionCmd)
 	testCmd.AddCommand(packCmd, parseCmd)
 }
