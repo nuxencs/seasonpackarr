@@ -25,7 +25,8 @@ import (
 	"github.com/spf13/viper"
 )
 
-var configTemplate = `# config.yaml
+var configTemplate = `# yaml-language-server: $schema=https://raw.githubusercontent.com/nuxencs/seasonpackarr/develop/schemas/config-schema.json
+# config.yaml
 
 # Hostname / IP
 #
