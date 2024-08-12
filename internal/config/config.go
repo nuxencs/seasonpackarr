@@ -180,20 +180,6 @@ notifications:
   # Optional
   #
   discord: ""
-
-  # Notifiarr
-  # Uses the given Notifiarr webhook to send notifications for various events
-  #
-  # Optional
-  #
-  notifiarr: ""
-
-  # Shoutrrr
-  # Uses the given Shoutrrr webhook to send notifications for various events
-  #
-  # Optional
-  #
-  shoutrrr: ""
 `
 
 func (c *AppConfig) writeConfig(configPath string, configFile string) error {
@@ -328,9 +314,9 @@ func (c *AppConfig) defaults() {
 		},
 		APIToken: "",
 		Notifications: domain.Notifications{
-			Discord:   "",
-			Notifiarr: "",
-			Shoutrrr:  "",
+			Discord: "",
+			// Notifiarr: "",
+			// Shoutrrr:  "",
 		},
 	}
 }
