@@ -17,10 +17,10 @@ import (
 type webhookHandler struct {
 	log  logger.Logger
 	cfg  *config.AppConfig
-	noti notification.Sender
+	noti notification.DiscordSender
 }
 
-func newWebhookHandler(log logger.Logger, cfg *config.AppConfig, notification notification.Sender) *webhookHandler {
+func newWebhookHandler(log logger.Logger, cfg *config.AppConfig, notification notification.DiscordSender) *webhookHandler {
 	return &webhookHandler{
 		log:  log,
 		cfg:  cfg,

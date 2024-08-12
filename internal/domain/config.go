@@ -17,6 +17,12 @@ type FuzzyMatching struct {
 	SimplifyHdrCompare bool `yaml:"simplifyHdrCompare"`
 }
 
+type Notifications struct {
+	Discord   string `yaml:"discord"`
+	Notifiarr string `yaml:"notifiarr"`
+	Shoutrrr  string `yaml:"shoutrrr"`
+}
+
 type Config struct {
 	Version            string
 	ConfigPath         string
@@ -32,5 +38,5 @@ type Config struct {
 	ParseTorrentFile   bool               `yaml:"parseTorrentFile"`
 	FuzzyMatching      FuzzyMatching      `yaml:"fuzzyMatching"`
 	APIToken           string             `yaml:"apiToken"`
-	NotificationHost   string             `yaml:"notificationHost"`
+	Notifications      Notifications      `yaml:"notifications"`
 }

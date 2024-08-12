@@ -5,17 +5,10 @@
 package domain
 
 type NotificationPayload struct {
+	Subject     string
 	Message     string
-	Event       NotificationEvent
 	ReleaseName string
+	Client      string
+	Action      string
+	Error       error
 }
-
-type NotificationEvent string
-
-const (
-	NotificationEventAppUpdateAvailable NotificationEvent = "APP_UPDATE_AVAILABLE"
-	NotificationEventSuccessfulMatch    NotificationEvent = "SUCCESSFUL_MATCH"
-	NotificationEventNoMatch            NotificationEvent = "NO_MATCH"
-	NotificationEventSuccessfulHardlink NotificationEvent = "SUCCESSFUL_HARDLINK"
-	NotificationEventFailedHardlink     NotificationEvent = "FAILED_HARDLINK"
-)

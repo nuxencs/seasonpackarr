@@ -38,9 +38,9 @@ var startCmd = &cobra.Command{
 		cfg.DynamicReload(log)
 
 		// init notification sender
-		noti := notification.NewSender(log, cfg)
+		noti := notification.NewDiscordSender(log, cfg)
 
-		srv := http.NewServer(log, cfg, noti)
+		srv := http.NewServer(log, cfg, *noti)
 
 		log.Info().Msgf("Starting seasonpackarr")
 		log.Info().Msgf("Version: %s", buildinfo.Version)

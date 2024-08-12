@@ -143,10 +143,27 @@ fuzzyMatching:
 #
 # apiToken: ""
 
-# Notification Host
-# If not defined, disables notifications
-# Uses shoutrrr to send notifications
+# Notifications
+# You can decide which notifications you want to receive
 #
-# Optional
-#
-# notificationHost: ""
+notifications:
+  # Discord
+  # Uses the given Discord webhook to send notifications for various events
+  #
+  # Optional
+  #
+  discord: ""
+
+  # Notifiarr
+  # Uses the given Notifiarr webhook to send notifications for various events
+  #
+  # Optional
+  #
+  notifiarr: ""
+
+  # Shoutrrr
+  # Uses the given Shoutrrr webhook to send notifications for various events
+  #
+  # Optional
+  #
+  shoutrrr: ""

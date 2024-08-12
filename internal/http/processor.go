@@ -25,38 +25,10 @@ import (
 	"github.com/rs/zerolog"
 )
 
-const (
-	StatusNoMatches                = 200
-	StatusResolutionMismatch       = 201
-	StatusSourceMismatch           = 202
-	StatusRlsGrpMismatch           = 203
-	StatusCutMismatch              = 204
-	StatusEditionMismatch          = 205
-	StatusRepackStatusMismatch     = 206
-	StatusHdrMismatch              = 207
-	StatusStreamingServiceMismatch = 208
-	StatusAlreadyInClient          = 210
-	StatusNotASeasonPack           = 211
-	StatusBelowThreshold           = 230
-	StatusSuccessfulMatch          = 250
-	StatusSuccessfulHardlink       = 250
-	StatusFailedHardlink           = 440
-	StatusClientNotFound           = 472
-	StatusGetClientError           = 471
-	StatusDecodingError            = 470
-	StatusAnnounceNameError        = 469
-	StatusGetTorrentsError         = 468
-	StatusTorrentBytesError        = 467
-	StatusDecodeTorrentBytesError  = 466
-	StatusParseTorrentInfoError    = 465
-	StatusGetEpisodesError         = 464
-	StatusEpisodeCountError        = 450
-)
-
 type processor struct {
 	log  zerolog.Logger
 	cfg  *config.AppConfig
-	noti notification.Sender
+	noti notification.DiscordSender
 	req  *request
 }
 
@@ -87,7 +59,7 @@ var (
 	torrentMap sync.Map
 )
 
-func newProcessor(log logger.Logger, config *config.AppConfig, notification notification.Sender) *processor {
+func newProcessor(log logger.Logger, config *config.AppConfig, notification notification.DiscordSender) *processor {
 	return &processor{
 		log:  log.With().Str("module", "processor").Logger(),
 		cfg:  config,
@@ -192,15 +164,33 @@ func (p *processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTT
 
 	if err := json.NewDecoder(r.Body).Decode(&p.req); err != nil {
 		p.log.Error().Err(err).Msgf("error decoding request")
-		netHTTP.Error(w, err.Error(), StatusDecodingError)
+		netHTTP.Error(w, err.Error(), domain.StatusDecodingError)
 		return
 	}
 
 	code, err := p.processSeasonPack()
 	if err != nil {
+		if sendErr := p.noti.Send(code, domain.NotificationPayload{
+			ReleaseName: p.req.Name,
+			Client:      p.req.ClientName,
+			Action:      "Pack",
+			Error:       err,
+		}); sendErr != nil {
+			p.log.Error().Err(sendErr).Msg("error sending notification")
+		}
+
 		p.log.Error().Err(err).Msgf("error processing season pack: %d", code)
 		netHTTP.Error(w, err.Error(), code)
 		return
+	}
+
+	if sendErr := p.noti.Send(code, domain.NotificationPayload{
+		ReleaseName: p.req.Name,
+		Client:      p.req.ClientName,
+		Action:      "Pack",
+		Error:       err,
+	}); sendErr != nil {
+		p.log.Error().Err(sendErr).Msg("error sending notification")
 	}
 
 	p.log.Info().Msg("successfully matched season pack to episodes in client")
@@ -216,35 +206,35 @@ func (p *processor) processSeasonPack() (int, error) {
 
 	client, ok := p.cfg.Config.Clients[clientName]
 	if !ok {
-		return StatusClientNotFound, fmt.Errorf("client not found in config")
+		return domain.StatusClientNotFound, fmt.Errorf("client not found in config")
 	}
 	p.log.Info().Msgf("using %s client serving at %s:%d", clientName, client.Host, client.Port)
 
 	if len(p.req.Name) == 0 {
-		return StatusAnnounceNameError, fmt.Errorf("couldn't get announce name")
+		return domain.StatusAnnounceNameError, fmt.Errorf("couldn't get announce name")
 	}
 
 	if err := p.getClient(client); err != nil {
-		return StatusGetClientError, err
+		return domain.StatusGetClientError, err
 	}
 
 	mp := p.getAllTorrents(client)
 	if mp.err != nil {
-		return StatusGetTorrentsError, mp.err
+		return domain.StatusGetTorrentsError, mp.err
 	}
 
 	requestRls := domain.Entry{R: rls.ParseString(p.req.Name)}
 	v, ok := mp.e[utils.GetFormattedTitle(requestRls.R)]
 	if !ok {
-		return StatusNoMatches, fmt.Errorf("no matching releases in client")
+		return domain.StatusNoMatches, fmt.Errorf("no matching releases in client")
 	}
 
 	announcedPackName := utils.FormatSeasonPackTitle(p.req.Name)
 	p.log.Debug().Msgf("formatted season pack name: %s", announcedPackName)
 
 	for _, child := range v {
-		if release.CheckCandidates(&requestRls, &child, p.cfg.Config.FuzzyMatching) == StatusAlreadyInClient {
-			return StatusAlreadyInClient, fmt.Errorf("release already in client")
+		if release.CheckCandidates(&requestRls, &child, p.cfg.Config.FuzzyMatching) == domain.StatusAlreadyInClient {
+			return domain.StatusAlreadyInClient, fmt.Errorf("release already in client")
 		}
 	}
 
@@ -253,61 +243,61 @@ func (p *processor) processSeasonPack() (int, error) {
 
 	for _, child := range v {
 		switch res := release.CheckCandidates(&requestRls, &child, p.cfg.Config.FuzzyMatching); res {
-		case StatusResolutionMismatch:
+		case domain.StatusResolutionMismatch:
 			p.log.Info().Msgf("resolution did not match: request(%s => %s), client(%s => %s)",
 				requestRls.R.String(), requestRls.R.Resolution, child.R.String(), child.R.Resolution)
 			respCodes = append(respCodes, res)
 			continue
 
-		case StatusSourceMismatch:
+		case domain.StatusSourceMismatch:
 			p.log.Info().Msgf("source did not match: request(%s => %s), client(%s => %s)",
 				requestRls.R.String(), requestRls.R.Source, child.R.String(), child.R.Source)
 			respCodes = append(respCodes, res)
 			continue
 
-		case StatusRlsGrpMismatch:
+		case domain.StatusRlsGrpMismatch:
 			p.log.Info().Msgf("release group did not match: request(%s => %s), client(%s => %s)",
 				requestRls.R.String(), requestRls.R.Group, child.R.String(), child.R.Group)
 			respCodes = append(respCodes, res)
 			continue
 
-		case StatusCutMismatch:
+		case domain.StatusCutMismatch:
 			p.log.Info().Msgf("cut did not match: request(%s => %s), client(%s => %s)",
 				requestRls.R.String(), requestRls.R.Cut, child.R.String(), child.R.Cut)
 			respCodes = append(respCodes, res)
 			continue
 
-		case StatusEditionMismatch:
+		case domain.StatusEditionMismatch:
 			p.log.Info().Msgf("edition did not match: request(%s => %s), client(%s => %s)",
 				requestRls.R.String(), requestRls.R.Edition, child.R.String(), child.R.Edition)
 			respCodes = append(respCodes, res)
 			continue
 
-		case StatusRepackStatusMismatch:
+		case domain.StatusRepackStatusMismatch:
 			p.log.Info().Msgf("repack status did not match: request(%s => %s), client(%s => %s)",
 				requestRls.R.String(), requestRls.R.Other, child.R.String(), child.R.Other)
 			respCodes = append(respCodes, res)
 			continue
 
-		case StatusHdrMismatch:
+		case domain.StatusHdrMismatch:
 			p.log.Info().Msgf("hdr metadata did not match: request(%s => %s), client(%s => %s)",
 				requestRls.R.String(), requestRls.R.HDR, child.R.String(), child.R.HDR)
 			respCodes = append(respCodes, res)
 			continue
 
-		case StatusStreamingServiceMismatch:
+		case domain.StatusStreamingServiceMismatch:
 			p.log.Info().Msgf("streaming service did not match: request(%s => %s), client(%s => %s)",
 				requestRls.R.String(), requestRls.R.Collection, child.R.String(), child.R.Collection)
 			respCodes = append(respCodes, res)
 			continue
 
-		case StatusAlreadyInClient:
-			return StatusAlreadyInClient, fmt.Errorf("release already in client")
+		case domain.StatusAlreadyInClient:
+			return domain.StatusAlreadyInClient, fmt.Errorf("release already in client")
 
-		case StatusNotASeasonPack:
-			return StatusNotASeasonPack, fmt.Errorf("release is not a season pack")
+		case domain.StatusNotASeasonPack:
+			return domain.StatusNotASeasonPack, fmt.Errorf("release is not a season pack")
 
-		case StatusSuccessfulMatch:
+		case domain.StatusSuccessfulMatch:
 			torrentFiles, err := p.getFiles(child.T.Hash)
 			if err != nil {
 				p.log.Error().Err(err).Msgf("error getting files: %s", child.T.Name)
@@ -359,15 +349,8 @@ func (p *processor) processSeasonPack() (int, error) {
 	}
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
-	if !slices.Contains(respCodes, StatusSuccessfulMatch) || !ok {
-		if sendErr := p.noti.Send(domain.NotificationEventNoMatch, domain.NotificationPayload{
-			Message:     "Found no matching episodes in client for season pack",
-			ReleaseName: p.req.Name,
-		}); sendErr != nil {
-			p.log.Error().Err(sendErr).Msg("error sending notification")
-		}
-
-		return StatusNoMatches, fmt.Errorf("no matching releases in client")
+	if !slices.Contains(respCodes, domain.StatusSuccessfulMatch) || !ok {
+		return domain.StatusNoMatches, fmt.Errorf("no matching releases in client")
 	}
 
 	if p.cfg.Config.SmartMode {
@@ -375,7 +358,7 @@ func (p *processor) processSeasonPack() (int, error) {
 
 		totalEps, err := utils.GetEpisodesPerSeason(reqRls.Title, reqRls.Series)
 		if err != nil {
-			return StatusEpisodeCountError, err
+			return domain.StatusEpisodeCountError, err
 		}
 		matchedEps = utils.DedupeSlice(matchedEps)
 
@@ -385,20 +368,13 @@ func (p *processor) processSeasonPack() (int, error) {
 			// delete match from matchesMap if threshold is not met
 			matchesMap.Delete(p.req.Name)
 
-			return StatusBelowThreshold, fmt.Errorf("found %d/%d (%.2f%%) episodes in client, below configured smart mode threshold",
+			return domain.StatusBelowThreshold, fmt.Errorf("found %d/%d (%.2f%%) episodes in client, below configured smart mode threshold",
 				len(matchedEps), totalEps, percentEps*100)
 		}
 	}
 
 	if p.cfg.Config.ParseTorrentFile {
-		if sendErr := p.noti.Send(domain.NotificationEventSuccessfulMatch, domain.NotificationPayload{
-			Message:     "Successfully matched season pack to episodes in client",
-			ReleaseName: p.req.Name,
-		}); sendErr != nil {
-			p.log.Error().Err(sendErr).Msg("error sending notification")
-		}
-
-		return StatusSuccessfulMatch, nil
+		return domain.StatusSuccessfulMatch, nil
 	}
 
 	matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
@@ -407,32 +383,18 @@ func (p *processor) processSeasonPack() (int, error) {
 	for _, match := range matches {
 		if err := utils.CreateHardlink(match.clientEpPath, match.announcedEpPath); err != nil {
 			p.log.Error().Err(err).Msgf("error creating hardlink: %s", match.clientEpPath)
-			hardlinkRespCodes = append(hardlinkRespCodes, StatusFailedHardlink)
+			hardlinkRespCodes = append(hardlinkRespCodes, domain.StatusFailedHardlink)
 			continue
 		}
 		p.log.Log().Msgf("created hardlink: source(%s), target(%s)", match.clientEpPath, match.announcedEpPath)
-		hardlinkRespCodes = append(hardlinkRespCodes, StatusSuccessfulHardlink)
+		hardlinkRespCodes = append(hardlinkRespCodes, domain.StatusSuccessfulHardlink)
 	}
 
-	if !slices.Contains(hardlinkRespCodes, StatusSuccessfulHardlink) {
-		if sendErr := p.noti.Send(domain.NotificationEventFailedHardlink, domain.NotificationPayload{
-			Message:     "Failed to hardlink episodes into season pack folder",
-			ReleaseName: p.req.Name,
-		}); sendErr != nil {
-			p.log.Error().Err(sendErr).Msg("error sending notification")
-		}
-
-		return StatusFailedHardlink, fmt.Errorf("couldn't create hardlinks")
+	if !slices.Contains(hardlinkRespCodes, domain.StatusSuccessfulHardlink) {
+		return domain.StatusFailedHardlink, fmt.Errorf("couldn't create hardlinks")
 	}
 
-	if sendErr := p.noti.Send(domain.NotificationEventSuccessfulHardlink, domain.NotificationPayload{
-		Message:     "Successfully hardlinked episodes into season pack folder",
-		ReleaseName: p.req.Name,
-	}); sendErr != nil {
-		p.log.Error().Err(sendErr).Msg("error sending notification")
-	}
-
-	return StatusSuccessfulHardlink, nil
+	return domain.StatusSuccessfulHardlink, nil
 }
 
 func (p *processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Request) {
@@ -440,15 +402,33 @@ func (p *processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Req
 
 	if err := json.NewDecoder(r.Body).Decode(&p.req); err != nil {
 		p.log.Error().Err(err).Msgf("error decoding request")
-		netHTTP.Error(w, err.Error(), StatusDecodingError)
+		netHTTP.Error(w, err.Error(), domain.StatusDecodingError)
 		return
 	}
 
 	code, err := p.parseTorrent()
 	if err != nil {
+		if sendErr := p.noti.Send(code, domain.NotificationPayload{
+			ReleaseName: p.req.Name,
+			Client:      p.req.ClientName,
+			Action:      "Parse",
+			Error:       err,
+		}); sendErr != nil {
+			p.log.Error().Err(sendErr).Msg("error sending notification")
+		}
+
 		p.log.Error().Err(err).Msgf("error parsing torrent: %d", code)
 		netHTTP.Error(w, err.Error(), code)
 		return
+	}
+
+	if sendErr := p.noti.Send(code, domain.NotificationPayload{
+		ReleaseName: p.req.Name,
+		Client:      p.req.ClientName,
+		Action:      "Parse",
+		Error:       err,
+	}); sendErr != nil {
+		p.log.Error().Err(sendErr).Msg("error sending notification")
 	}
 
 	p.log.Info().Msg("successfully parsed torrent and hardlinked episodes")
@@ -464,33 +444,33 @@ func (p *processor) parseTorrent() (int, error) {
 
 	client, ok := p.cfg.Config.Clients[clientName]
 	if !ok {
-		return StatusClientNotFound, fmt.Errorf("client not found in config")
+		return domain.StatusClientNotFound, fmt.Errorf("client not found in config")
 	}
 
 	if len(p.req.Name) == 0 {
-		return StatusAnnounceNameError, fmt.Errorf("couldn't get announce name")
+		return domain.StatusAnnounceNameError, fmt.Errorf("couldn't get announce name")
 	}
 
 	if len(p.req.Torrent) == 0 {
-		return StatusTorrentBytesError, fmt.Errorf("couldn't get torrent bytes")
+		return domain.StatusTorrentBytesError, fmt.Errorf("couldn't get torrent bytes")
 	}
 
 	torrentBytes, err := torrents.DecodeTorrentDataRawBytes(p.req.Torrent)
 	if err != nil {
-		return StatusDecodeTorrentBytesError, err
+		return domain.StatusDecodeTorrentBytesError, err
 	}
 	p.req.Torrent = torrentBytes
 
 	torrentInfo, err := torrents.ParseTorrentInfoFromTorrentBytes(p.req.Torrent)
 	if err != nil {
-		return StatusParseTorrentInfoError, err
+		return domain.StatusParseTorrentInfoError, err
 	}
 	parsedPackName := torrentInfo.BestName()
 	p.log.Debug().Msgf("parsed season pack name: %s", parsedPackName)
 
 	torrentEps, err := torrents.GetEpisodesFromTorrentInfo(torrentInfo)
 	if err != nil {
-		return StatusGetEpisodesError, err
+		return domain.StatusGetEpisodesError, err
 	}
 	for _, torrentEp := range torrentEps {
 		p.log.Debug().Msgf("found episode in pack: name(%s), size(%d)", torrentEp.Path, torrentEp.Size)
@@ -498,14 +478,7 @@ func (p *processor) parseTorrent() (int, error) {
 
 	matchesSlice, ok := matchesMap.Load(p.req.Name)
 	if !ok {
-		if sendErr := p.noti.Send(domain.NotificationEventNoMatch, domain.NotificationPayload{
-			Message:     "Found no matching episodes in client for season pack",
-			ReleaseName: p.req.Name,
-		}); sendErr != nil {
-			p.log.Error().Err(sendErr).Msg("error sending notification")
-		}
-
-		return StatusNoMatches, fmt.Errorf("no matching releases in client")
+		return domain.StatusNoMatches, fmt.Errorf("no matching releases in client")
 	}
 
 	matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
@@ -534,36 +507,22 @@ func (p *processor) parseTorrent() (int, error) {
 		if matchErr != nil {
 			p.log.Error().Err(matchErr).Msgf("error matching episode to file in pack, skipping hardlink: %s",
 				filepath.Base(match.clientEpPath))
-			hardlinkRespCodes = append(hardlinkRespCodes, StatusFailedHardlink)
+			hardlinkRespCodes = append(hardlinkRespCodes, domain.StatusFailedHardlink)
 			continue
 		}
 
 		if err = utils.CreateHardlink(match.clientEpPath, targetEpPath); err != nil {
 			p.log.Error().Err(err).Msgf("error creating hardlink: %s", match.clientEpPath)
-			hardlinkRespCodes = append(hardlinkRespCodes, StatusFailedHardlink)
+			hardlinkRespCodes = append(hardlinkRespCodes, domain.StatusFailedHardlink)
 			continue
 		}
 		p.log.Log().Msgf("created hardlink: source(%s), target(%s)", match.clientEpPath, targetEpPath)
-		hardlinkRespCodes = append(hardlinkRespCodes, StatusSuccessfulHardlink)
+		hardlinkRespCodes = append(hardlinkRespCodes, domain.StatusSuccessfulHardlink)
 	}
 
-	if !slices.Contains(hardlinkRespCodes, StatusSuccessfulHardlink) {
-		if sendErr := p.noti.Send(domain.NotificationEventFailedHardlink, domain.NotificationPayload{
-			Message:     "Failed to hardlink episodes into season pack folder",
-			ReleaseName: p.req.Name,
-		}); sendErr != nil {
-			p.log.Error().Err(sendErr).Msg("error sending notification")
-		}
-
-		return StatusFailedHardlink, fmt.Errorf("couldn't create hardlinks")
+	if !slices.Contains(hardlinkRespCodes, domain.StatusSuccessfulHardlink) {
+		return domain.StatusFailedHardlink, fmt.Errorf("couldn't create hardlinks")
 	}
 
-	if sendErr := p.noti.Send(domain.NotificationEventSuccessfulHardlink, domain.NotificationPayload{
-		Message:     "Successfully hardlinked episodes into season pack folder",
-		ReleaseName: p.req.Name,
-	}); sendErr != nil {
-		p.log.Error().Err(sendErr).Msg("error sending notification")
-	}
-
-	return StatusSuccessfulHardlink, nil
+	return domain.StatusSuccessfulHardlink, nil
 }

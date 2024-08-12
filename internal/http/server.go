@@ -24,12 +24,12 @@ var ErrServerClosed = http.ErrServerClosed
 type Server struct {
 	log  logger.Logger
 	cfg  *config.AppConfig
-	noti notification.Sender
+	noti notification.DiscordSender
 
 	httpServer http.Server
 }
 
-func NewServer(log logger.Logger, config *config.AppConfig, notification notification.Sender) *Server {
+func NewServer(log logger.Logger, config *config.AppConfig, notification notification.DiscordSender) *Server {
 	return &Server{
 		log:  log,
 		cfg:  config,
