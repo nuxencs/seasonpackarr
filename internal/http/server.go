@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"seasonpackarr/internal/config"
+	"seasonpackarr/internal/domain"
 	"seasonpackarr/internal/logger"
-	"seasonpackarr/internal/notification"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -24,12 +24,12 @@ var ErrServerClosed = http.ErrServerClosed
 type Server struct {
 	log  logger.Logger
 	cfg  *config.AppConfig
-	noti notification.DiscordSender
+	noti domain.Sender
 
 	httpServer http.Server
 }
 
-func NewServer(log logger.Logger, config *config.AppConfig, notification notification.DiscordSender) *Server {
+func NewServer(log logger.Logger, config *config.AppConfig, notification domain.Sender) *Server {
 	return &Server{
 		log:  log,
 		cfg:  config,

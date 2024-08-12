@@ -15,10 +15,10 @@ import (
 	"seasonpackarr/internal/config"
 	"seasonpackarr/internal/domain"
 	"seasonpackarr/internal/logger"
-	"seasonpackarr/internal/notification"
 	"seasonpackarr/internal/release"
 	"seasonpackarr/internal/torrents"
 	"seasonpackarr/internal/utils"
+	"seasonpackarr/pkg/errors"
 
 	"github.com/autobrr/go-qbittorrent"
 	"github.com/moistari/rls"
@@ -28,7 +28,7 @@ import (
 type processor struct {
 	log  zerolog.Logger
 	cfg  *config.AppConfig
-	noti notification.DiscordSender
+	noti domain.Sender
 	req  *request
 }
 
@@ -59,7 +59,7 @@ var (
 	torrentMap sync.Map
 )
 
-func newProcessor(log logger.Logger, config *config.AppConfig, notification notification.DiscordSender) *processor {
+func newProcessor(log logger.Logger, config *config.AppConfig, notification domain.Sender) *processor {
 	return &processor{
 		log:  log.With().Str("module", "processor").Logger(),
 		cfg:  config,
@@ -79,7 +79,7 @@ func (p *processor) getClient(client *domain.Client) error {
 		c = qbittorrent.NewClient(s)
 
 		if err := c.(*qbittorrent.Client).Login(); err != nil {
-			return err
+			return errors.Wrap(err, "failed to login to qbittorrent")
 		}
 
 		clientMap.Store(s, c)
@@ -188,7 +188,6 @@ func (p *processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTT
 		ReleaseName: p.req.Name,
 		Client:      p.req.ClientName,
 		Action:      "Pack",
-		Error:       err,
 	}); sendErr != nil {
 		p.log.Error().Err(sendErr).Msg("error sending notification")
 	}
@@ -426,7 +425,6 @@ func (p *processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Req
 		ReleaseName: p.req.Name,
 		Client:      p.req.ClientName,
 		Action:      "Parse",
-		Error:       err,
 	}); sendErr != nil {
 		p.log.Error().Err(sendErr).Msg("error sending notification")
 	}

@@ -40,7 +40,7 @@ var startCmd = &cobra.Command{
 		// init notification sender
 		noti := notification.NewDiscordSender(log, cfg)
 
-		srv := http.NewServer(log, cfg, *noti)
+		srv := http.NewServer(log, cfg, noti)
 
 		log.Info().Msgf("Starting seasonpackarr")
 		log.Info().Msgf("Version: %s", buildinfo.Version)

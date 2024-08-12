@@ -4,6 +4,10 @@
 
 package domain
 
+type Sender interface {
+	Send(statusCode int, payload NotificationPayload) error
+}
+
 type NotificationPayload struct {
 	Subject     string
 	Message     string

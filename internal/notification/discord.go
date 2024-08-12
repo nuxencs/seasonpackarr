@@ -49,15 +49,15 @@ const (
 	GRAY       EmbedColors = 10070709 // 99aab5
 )
 
-type DiscordSender struct {
+type discordSender struct {
 	log zerolog.Logger
 	cfg *config.AppConfig
 
 	httpClient *http.Client
 }
 
-func NewDiscordSender(log logger.Logger, config *config.AppConfig) *DiscordSender {
-	return &DiscordSender{
+func NewDiscordSender(log logger.Logger, config *config.AppConfig) domain.Sender {
+	return &discordSender{
 		log: log.With().Str("sender", "discord").Logger(),
 		cfg: config,
 		httpClient: &http.Client{
@@ -66,7 +66,7 @@ func NewDiscordSender(log logger.Logger, config *config.AppConfig) *DiscordSende
 	}
 }
 
-func (s *DiscordSender) Send(statusCode int, payload domain.NotificationPayload) error {
+func (s *discordSender) Send(statusCode int, payload domain.NotificationPayload) error {
 	if !s.isEnabled() {
 		return nil
 	}
@@ -78,14 +78,12 @@ func (s *DiscordSender) Send(statusCode int, payload domain.NotificationPayload)
 
 	jsonData, err := json.Marshal(m)
 	if err != nil {
-		s.log.Error().Err(err).Msgf("discord client could not marshal data: %v", m)
-		return errors.Wrap(err, "could not marshal data: %+v", m)
+		return errors.Wrap(err, "discord client could not marshal data: %+v", m)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, s.cfg.Config.Notifications.Discord, bytes.NewBuffer(jsonData))
 	if err != nil {
-		s.log.Error().Err(err).Msgf("discord client request error: %v", statusCode)
-		return errors.Wrap(err, "could not create request")
+		return errors.Wrap(err, "discord client could not create request")
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -93,24 +91,21 @@ func (s *DiscordSender) Send(statusCode int, payload domain.NotificationPayload)
 
 	res, err := s.httpClient.Do(req)
 	if err != nil {
-		s.log.Error().Err(err).Msgf("discord client request error: %v", statusCode)
-		return errors.Wrap(err, "could not make request: %+v", req)
+		return errors.Wrap(err, "discord client could not make request: %+v", req)
 	}
 
 	defer res.Body.Close()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		s.log.Error().Err(err).Msgf("discord client request error: %v", statusCode)
-		return errors.Wrap(err, "could not read data")
+		return errors.Wrap(err, "discord client could not read data")
 	}
 
 	s.log.Trace().Msgf("discord status: %v response: %v", res.StatusCode, string(body))
 
 	// discord responds with 204, Notifiarr with 204 so lets take all 200 as ok
 	if res.StatusCode >= 300 {
-		s.log.Error().Err(err).Msgf("discord client request error: %v", string(body))
-		return errors.New("bad status: %v body: %v", res.StatusCode, string(body))
+		return errors.New("bad discord client status: %v body: %v", res.StatusCode, string(body))
 	}
 
 	s.log.Debug().Msg("notification successfully sent to discord")
@@ -118,7 +113,7 @@ func (s *DiscordSender) Send(statusCode int, payload domain.NotificationPayload)
 	return nil
 }
 
-func (s *DiscordSender) isEnabled() bool {
+func (s *discordSender) isEnabled() bool {
 	if s.cfg.Config.Notifications.Discord == "" {
 		s.log.Warn().Msg("no webhook defined, skipping notification")
 		return false
@@ -127,7 +122,7 @@ func (s *DiscordSender) isEnabled() bool {
 	return true
 }
 
-func (s *DiscordSender) buildEmbed(statusCode int, payload domain.NotificationPayload) DiscordEmbeds {
+func (s *discordSender) buildEmbed(statusCode int, payload domain.NotificationPayload) DiscordEmbeds {
 	color := LIGHT_BLUE
 
 	if (statusCode >= 200) && (statusCode < 250) { // not matching

@@ -5,7 +5,6 @@ go 1.22.0
 require (
 	github.com/anacrolix/torrent v1.55.0
 	github.com/autobrr/go-qbittorrent v1.9.0
-	github.com/containrrr/shoutrrr v0.8.0
 	github.com/dlclark/regexp2 v1.11.0
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/go-chi/chi/v5 v5.0.12
@@ -28,7 +27,6 @@ require (
 	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/bradfitz/iter v0.0.0-20191230175014-e8f45d346db8 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
-	github.com/fatih/color v1.15.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/huandu/xstrings v1.4.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

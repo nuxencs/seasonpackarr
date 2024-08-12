@@ -7,8 +7,8 @@ import (
 	"net/http"
 
 	"seasonpackarr/internal/config"
+	"seasonpackarr/internal/domain"
 	"seasonpackarr/internal/logger"
-	"seasonpackarr/internal/notification"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
@@ -17,10 +17,10 @@ import (
 type webhookHandler struct {
 	log  logger.Logger
 	cfg  *config.AppConfig
-	noti notification.DiscordSender
+	noti domain.Sender
 }
 
-func newWebhookHandler(log logger.Logger, cfg *config.AppConfig, notification notification.DiscordSender) *webhookHandler {
+func newWebhookHandler(log logger.Logger, cfg *config.AppConfig, notification domain.Sender) *webhookHandler {
 	return &webhookHandler{
 		log:  log,
 		cfg:  cfg,
