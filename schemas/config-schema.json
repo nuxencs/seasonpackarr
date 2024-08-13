@@ -1,0 +1,120 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "host": {
+      "type": "string",
+      "default": "0.0.0.0"
+    },
+    "port": {
+      "type": "integer",
+      "default": 42069
+    },
+    "clients": {
+      "$ref": "#/$defs/clients"
+    },
+    "logPath": {
+      "type": "string",
+      "default": ""
+    },
+    "logLevel": {
+      "type": "string",
+      "enum": ["ERROR", "DEBUG", "INFO", "WARN", "TRACE"],
+      "default": "INFO"
+    },
+    "logMaxSize": {
+      "type": "integer",
+      "default": 50
+    },
+    "logMaxBackups": {
+      "type": "integer",
+      "default": 3
+    },
+    "smartMode": {
+      "type": "boolean",
+      "default": false
+    },
+    "smartModeThreshold": {
+      "type": "number",
+      "default": 0.75
+    },
+    "parseTorrentFile": {
+      "type": "boolean",
+      "default": false
+    },
+    "fuzzyMatching": {
+      "$ref": "#/$defs/fuzzyMatching"
+    },
+    "notifications": {
+      "$ref": "#/$defs/notifications"
+    },
+    "apiToken": {
+      "type": "string",
+      "default": ""
+    }
+  },
+  "required": ["host", "port", "clients", "logLevel"],
+  "$defs": {
+    "clients": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[a-z0-9]+$": {
+          "$ref": "#/$defs/client"
+        }
+      }
+    },
+    "client": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "type": "string",
+          "default": "127.0.0.1"
+        },
+        "port": {
+          "type": "integer",
+          "default": 8080
+        },
+        "username": {
+          "type": "string",
+          "default": "admin"
+        },
+        "password": {
+          "type": "string",
+          "default": "adminadmin"
+        },
+        "preImportPath": {
+          "type": "string",
+          "default": ""
+        }
+      },
+      "required": ["host", "port", "username", "password", "preImportPath"]
+    },
+    "fuzzyMatching": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "skipRepackCompare": {
+          "type": "boolean",
+          "default": false
+        },
+        "simplifyHdrCompare": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "notifications": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "discord": {
+          "type": "string",
+          "default": ""
+        }
+      }
+    }
+  }
+}
