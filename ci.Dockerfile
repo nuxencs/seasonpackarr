@@ -25,12 +25,12 @@ RUN --network=none --mount=target=. \
     go build -ldflags "-s -w -X seasonpackarr/internal/buildinfo.Version=${VERSION} -X seasonpackarr/internal/buildinfo.Commit=${REVISION} -X seasonpackarr/internal/buildinfo.Date=${BUILDTIME}" -o /out/bin/seasonpackarr main.go
 
 # build runner
-FROM alpine:latest as RUNNER
+FROM alpine:latest AS runner
 RUN apk add --no-cache ca-certificates curl tzdata jq
 
-LABEL org.opencontainers.image.source = "https://github.com/nuxencs/seasonpackarr" \
-      org.opencontainers.image.licenses = "GPL-2.0-or-later" \
-      org.opencontainers.image.base.name = "alpine:latest"
+LABEL org.opencontainers.image.source="https://github.com/nuxencs/seasonpackarr" \
+      org.opencontainers.image.licenses="GPL-2.0-or-later" \
+      org.opencontainers.image.base.name="alpine:latest"
 
 ENV HOME="/config" \
     XDG_CONFIG_HOME="/config" \
