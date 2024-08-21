@@ -142,3 +142,14 @@ fuzzyMatching:
 # Optional
 #
 # apiToken: ""
+
+# Notifications
+# You can decide which notifications you want to receive
+#
+notifications:
+  # Discord
+  # Uses the given Discord webhook to send notifications for various events
+  #
+  # Optional
+  #
+  discord: ""

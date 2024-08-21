@@ -169,6 +169,17 @@ fuzzyMatching:
 # Optional
 #
 # apiToken: ""
+
+# Notifications
+# You can decide which notifications you want to receive
+#
+notifications:
+  # Discord
+  # Uses the given Discord webhook to send notifications for various events
+  #
+  # Optional
+  #
+  discord: ""
 `
 
 func (c *AppConfig) writeConfig(configPath string, configFile string) error {
@@ -302,6 +313,11 @@ func (c *AppConfig) defaults() {
 			SimplifyHdrCompare: false,
 		},
 		APIToken: "",
+		Notifications: domain.Notifications{
+			Discord: "",
+			// Notifiarr: "",
+			// Shoutrrr:  "",
+		},
 	}
 }
 
@@ -482,7 +498,11 @@ func (c *AppConfig) processLines(lines []string) []string {
 			foundLineSimplifyHdrCompare = true
 		}
 		if !foundLineApiToken && strings.Contains(line, "apiToken:") {
-			lines[i] = fmt.Sprintf("apiToken: \"%s\"", c.Config.APIToken)
+			if c.Config.APIToken == "" {
+				lines[i] = "# apiToken: \"\""
+			} else {
+				lines[i] = fmt.Sprintf("apiToken: \"%s\"", c.Config.APIToken)
+			}
 			foundLineApiToken = true
 		}
 	}

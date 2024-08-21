@@ -13,6 +13,7 @@ import (
 	"seasonpackarr/internal/config"
 	"seasonpackarr/internal/http"
 	"seasonpackarr/internal/logger"
+	"seasonpackarr/internal/notification"
 	"seasonpackarr/pkg/errors"
 
 	"github.com/spf13/cobra"
@@ -36,7 +37,10 @@ var startCmd = &cobra.Command{
 		// init dynamic config
 		cfg.DynamicReload(log)
 
-		srv := http.NewServer(log, cfg)
+		// init notification sender
+		noti := notification.NewDiscordSender(log, cfg)
+
+		srv := http.NewServer(log, cfg, noti)
 
 		log.Info().Msgf("Starting seasonpackarr")
 		log.Info().Msgf("Version: %s", buildinfo.Version)
