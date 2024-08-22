@@ -174,6 +174,13 @@ fuzzyMatching:
 # You can decide which notifications you want to receive
 #
 notifications:
+  # Notification Level
+  # Decides what notifications you want to receive
+  #
+  # Options: "MATCH", "INFO", "ERROR"
+  #
+  notificationLevel: [ "MATCH", "ERROR" ]
+
   # Discord
   # Uses the given Discord webhook to send notifications for various events
   #
@@ -314,7 +321,7 @@ func (c *AppConfig) defaults() {
 		},
 		APIToken: "",
 		Notifications: domain.Notifications{
-			NotificationLevel: []string{"MATCH", "ERROR"},
+			NotificationLevel: []string{},
 			Discord:           "",
 			// Notifiarr: "",
 			// Shoutrrr:  "",
