@@ -18,7 +18,8 @@ type FuzzyMatching struct {
 }
 
 type Notifications struct {
-	Discord string `yaml:"discord"`
+	NotificationLevel []string `yaml:"notificationLevel"`
+	Discord           string   `yaml:"discord"`
 	// Notifiarr string `yaml:"notifiarr"`
 	// Shoutrrr  string `yaml:"shoutrrr"`
 }

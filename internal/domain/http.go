@@ -30,3 +30,42 @@ const (
 	StatusGetEpisodesError         = 464
 	StatusEpisodeCountError        = 450
 )
+
+func GetInfoStatusCodes() []int {
+	return []int{
+		StatusNoMatches,
+		StatusResolutionMismatch,
+		StatusSourceMismatch,
+		StatusRlsGrpMismatch,
+		StatusCutMismatch,
+		StatusEditionMismatch,
+		StatusRepackStatusMismatch,
+		StatusHdrMismatch,
+		StatusStreamingServiceMismatch,
+		StatusAlreadyInClient,
+		StatusNotASeasonPack,
+		StatusBelowThreshold,
+	}
+}
+
+func GetMatchStatusCodes() []int {
+	return []int{
+		StatusSuccessfulMatch,
+	}
+}
+
+func GetErrorStatusCodes() []int {
+	return []int{
+		StatusFailedHardlink,
+		StatusClientNotFound,
+		StatusGetClientError,
+		StatusDecodingError,
+		StatusAnnounceNameError,
+		StatusGetTorrentsError,
+		StatusTorrentBytesError,
+		StatusDecodeTorrentBytesError,
+		StatusParseTorrentInfoError,
+		StatusGetEpisodesError,
+		StatusEpisodeCountError,
+	}
+}

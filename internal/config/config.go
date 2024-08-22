@@ -314,7 +314,8 @@ func (c *AppConfig) defaults() {
 		},
 		APIToken: "",
 		Notifications: domain.Notifications{
-			Discord: "",
+			NotificationLevel: []string{"MATCH", "ERROR"},
+			Discord:           "",
 			// Notifiarr: "",
 			// Shoutrrr:  "",
 		},
@@ -420,6 +421,9 @@ func (c *AppConfig) DynamicReload(log logger.Logger) {
 
 		parseTorrentFile := viper.GetBool("parseTorrentFile")
 		c.Config.ParseTorrentFile = parseTorrentFile
+
+		notificationLevel := viper.GetStringSlice("notificationLevel")
+		c.Config.Notifications.NotificationLevel = notificationLevel
 
 		log.Debug().Msg("config file reloaded!")
 

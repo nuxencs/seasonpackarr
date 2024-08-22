@@ -8,6 +8,12 @@ type Sender interface {
 	Send(statusCode int, payload NotificationPayload) error
 }
 
+const (
+	NotificationLevelInfo  = "INFO"
+	NotificationLevelError = "ERROR"
+	NotificationLevelMatch = "MATCH"
+)
+
 type NotificationPayload struct {
 	Subject     string
 	Message     string

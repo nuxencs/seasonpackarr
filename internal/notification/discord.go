@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -68,6 +69,12 @@ func NewDiscordSender(log logger.Logger, config *config.AppConfig) domain.Sender
 
 func (s *discordSender) Send(statusCode int, payload domain.NotificationPayload) error {
 	if !s.isEnabled() {
+		s.log.Warn().Msg("no webhook defined, skipping notification")
+		return nil
+	}
+
+	if !s.shouldSend(statusCode) {
+		s.log.Warn().Msg("no notification wanted for this status code, skipping notification")
 		return nil
 	}
 
@@ -114,20 +121,38 @@ func (s *discordSender) Send(statusCode int, payload domain.NotificationPayload)
 }
 
 func (s *discordSender) isEnabled() bool {
-	if s.cfg.Config.Notifications.Discord == "" {
-		s.log.Warn().Msg("no webhook defined, skipping notification")
+	return s.cfg.Config.Notifications.Discord != ""
+}
+
+func (s *discordSender) shouldSend(statusCode int) bool {
+	var statusCodes []int
+
+	if len(s.cfg.Config.Notifications.NotificationLevel) == 0 {
 		return false
 	}
 
-	return true
+	for _, level := range s.cfg.Config.Notifications.NotificationLevel {
+		if level == domain.NotificationLevelMatch {
+			statusCodes = append(statusCodes, domain.GetMatchStatusCodes()...)
+		}
+		if level == domain.NotificationLevelInfo {
+			statusCodes = append(statusCodes, domain.GetInfoStatusCodes()...)
+		}
+		if level == domain.NotificationLevelError {
+			statusCodes = append(statusCodes, domain.GetErrorStatusCodes()...)
+		}
+	}
+	fmt.Println(s.cfg.Config.Notifications.NotificationLevel, statusCodes)
+
+	return slices.Contains(statusCodes, statusCode)
 }
 
 func (s *discordSender) buildEmbed(statusCode int, payload domain.NotificationPayload) DiscordEmbeds {
 	color := LIGHT_BLUE
 
-	if (statusCode >= 200) && (statusCode < 250) { // not matching
+	if slices.Contains(domain.GetInfoStatusCodes(), statusCode) { // not matching
 		color = GRAY
-	} else if (statusCode >= 400) && (statusCode < 500) { // error processing
+	} else if slices.Contains(domain.GetErrorStatusCodes(), statusCode) { // error processing
 		color = RED
 	} else { // success
 		color = GREEN
