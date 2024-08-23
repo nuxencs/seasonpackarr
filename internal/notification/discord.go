@@ -69,12 +69,12 @@ func NewDiscordSender(log logger.Logger, config *config.AppConfig) domain.Sender
 
 func (s *discordSender) Send(statusCode int, payload domain.NotificationPayload) error {
 	if !s.isEnabled() {
-		s.log.Warn().Msg("no webhook defined, skipping notification")
+		s.log.Debug().Msg("no webhook defined, skipping notification")
 		return nil
 	}
 
 	if !s.shouldSend(statusCode) {
-		s.log.Warn().Msg("no notification wanted for this status code, skipping notification")
+		s.log.Debug().Msg("no notification wanted for this status code, skipping notification")
 		return nil
 	}
 
@@ -94,7 +94,7 @@ func (s *discordSender) Send(statusCode int, payload domain.NotificationPayload)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	//req.Header.Set("User-Agent", "seasonpackarr")
+	// req.Header.Set("User-Agent", "seasonpackarr")
 
 	res, err := s.httpClient.Do(req)
 	if err != nil {
@@ -121,7 +121,7 @@ func (s *discordSender) Send(statusCode int, payload domain.NotificationPayload)
 }
 
 func (s *discordSender) isEnabled() bool {
-	return s.cfg.Config.Notifications.Discord != ""
+	return len(s.cfg.Config.Notifications.Discord) != 0
 }
 
 func (s *discordSender) shouldSend(statusCode int) bool {
