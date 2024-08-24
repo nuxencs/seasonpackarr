@@ -5,6 +5,7 @@ package utils
 
 import (
 	"fmt"
+
 	"github.com/mrobinsn/go-tvmaze/tvmaze"
 )
 

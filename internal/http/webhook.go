@@ -28,17 +28,17 @@ func newWebhookHandler(log logger.Logger, cfg *config.AppConfig, notification do
 	}
 }
 
-func (h webhookHandler) Routes(r chi.Router) {
+func (h *webhookHandler) Routes(r chi.Router) {
 	r.Post("/pack", h.pack)
 	r.Post("/parse", h.parse)
 }
 
-func (h webhookHandler) pack(w http.ResponseWriter, r *http.Request) {
+func (h *webhookHandler) pack(w http.ResponseWriter, r *http.Request) {
 	newProcessor(h.log, h.cfg, h.noti).ProcessSeasonPackHandler(w, r)
 	render.Status(r, http.StatusOK)
 }
 
-func (h webhookHandler) parse(w http.ResponseWriter, r *http.Request) {
+func (h *webhookHandler) parse(w http.ResponseWriter, r *http.Request) {
 	newProcessor(h.log, h.cfg, h.noti).ParseTorrentHandler(w, r)
 	render.Status(r, http.StatusOK)
 }
