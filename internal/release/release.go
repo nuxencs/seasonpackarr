@@ -10,14 +10,14 @@ import (
 	"github.com/moistari/rls"
 )
 
-func CheckCandidates(requestrls, child *domain.Entry, fuzzyMatching domain.FuzzyMatching) int {
-	rlsRelease := requestrls.R
-	rlsInClient := child.R
+func CheckCandidates(requestEntry, clientEntry *domain.Entry, fuzzyMatching domain.FuzzyMatching) int {
+	requestRls := requestEntry.R
+	clientRls := clientEntry.R
 
 	// check if season pack and no extension
-	if rlsRelease.Type.Is(rls.Series) && rlsRelease.Ext == "" {
+	if requestRls.Type.Is(rls.Series) && requestRls.Ext == "" {
 		// compare releases
-		return compareReleases(rlsInClient, rlsRelease, fuzzyMatching)
+		return compareReleases(clientRls, requestRls, fuzzyMatching)
 	}
 	// not a season pack
 	return 211
