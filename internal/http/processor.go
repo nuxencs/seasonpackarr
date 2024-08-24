@@ -39,11 +39,11 @@ type request struct {
 	ClientName string
 }
 
-type entryTime struct {
-	e   map[string][]domain.Entry
-	d   map[string]rls.Release
-	t   time.Time
-	err error
+type torrentRlsEntries struct {
+	entriesMap  map[string][]domain.Entry
+	rlsMap      map[string]rls.Release
+	lastUpdated time.Time
+	err         error
 	sync.Mutex
 }
 
@@ -68,80 +68,80 @@ func newProcessor(log logger.Logger, config *config.AppConfig, notification doma
 }
 
 func (p *processor) getClient(client *domain.Client) error {
-	s := qbittorrent.Config{
+	clientCfg := qbittorrent.Config{
 		Host:     fmt.Sprintf("http://%s:%d", client.Host, client.Port),
 		Username: client.Username,
 		Password: client.Password,
 	}
 
-	c, ok := clientMap.Load(s)
+	c, ok := clientMap.Load(clientCfg)
 	if !ok {
-		c = qbittorrent.NewClient(s)
+		c = qbittorrent.NewClient(clientCfg)
 
 		if err := c.(*qbittorrent.Client).Login(); err != nil {
 			return errors.Wrap(err, "failed to login to qbittorrent")
 		}
 
-		clientMap.Store(s, c)
+		clientMap.Store(clientCfg, c)
 	}
 
 	p.req.Client = c.(*qbittorrent.Client)
 	return nil
 }
 
-func (p *processor) getAllTorrents(client *domain.Client) entryTime {
-	set := qbittorrent.Config{
+func (p *processor) getAllTorrents(client *domain.Client) torrentRlsEntries {
+	clientCfg := qbittorrent.Config{
 		Host:     fmt.Sprintf("http://%s:%d", client.Host, client.Port),
 		Username: client.Username,
 		Password: client.Password,
 	}
 
-	f := func() *entryTime {
-		te, ok := torrentMap.Load(set)
+	f := func() *torrentRlsEntries {
+		tre, ok := torrentMap.Load(clientCfg)
 		if ok {
-			return te.(*entryTime)
+			return tre.(*torrentRlsEntries)
 		}
 
-		res := &entryTime{d: make(map[string]rls.Release)}
-		torrentMap.Store(set, res)
-		return res
+		entries := &torrentRlsEntries{rlsMap: make(map[string]rls.Release)}
+		torrentMap.Store(clientCfg, entries)
+		return entries
 	}
 
-	res := f()
+	entries := f()
 	cur := time.Now()
-	if res.t.After(cur) {
-		return *res
+	if entries.lastUpdated.After(cur) {
+		return *entries
 	}
 
-	res.Lock()
-	defer res.Unlock()
+	entries.Lock()
+	defer entries.Unlock()
 
-	res = f()
-	if res.t.After(cur) {
-		return *res
+	entries = f()
+	if entries.lastUpdated.After(cur) {
+		return *entries
 	}
 
 	ts, err := p.req.Client.GetTorrents(qbittorrent.TorrentFilterOptions{})
 	if err != nil {
-		return entryTime{err: err}
+		return torrentRlsEntries{err: err}
 	}
 
-	nt := time.Now()
-	res = &entryTime{e: make(map[string][]domain.Entry), t: nt.Add(nt.Sub(cur)), d: res.d}
+	after := time.Now()
+	entries = &torrentRlsEntries{entriesMap: make(map[string][]domain.Entry), lastUpdated: after.Add(after.Sub(cur)), rlsMap: entries.rlsMap}
 
 	for _, t := range ts {
-		r, ok := res.d[t.Name]
+		r, ok := entries.rlsMap[t.Name]
 		if !ok {
 			r = rls.ParseString(t.Name)
-			res.d[t.Name] = r
+			entries.rlsMap[t.Name] = r
 		}
 
-		s := utils.GetFormattedTitle(r)
-		res.e[s] = append(res.e[s], domain.Entry{T: t, R: r})
+		fmtTitle := utils.GetFormattedTitle(r)
+		entries.entriesMap[fmtTitle] = append(entries.entriesMap[fmtTitle], domain.Entry{T: t, R: r})
 	}
 
-	torrentMap.Store(set, res)
-	return *res
+	torrentMap.Store(clientCfg, entries)
+	return *entries
 }
 
 func (p *processor) getFiles(hash string) (*qbittorrent.TorrentFiles, error) {
@@ -217,13 +217,13 @@ func (p *processor) processSeasonPack() (int, error) {
 		return domain.StatusGetClientError, err
 	}
 
-	mp := p.getAllTorrents(client)
-	if mp.err != nil {
-		return domain.StatusGetTorrentsError, mp.err
+	tre := p.getAllTorrents(client)
+	if tre.err != nil {
+		return domain.StatusGetTorrentsError, tre.err
 	}
 
-	requestRls := domain.Entry{R: rls.ParseString(p.req.Name)}
-	v, ok := mp.e[utils.GetFormattedTitle(requestRls.R)]
+	requestEntry := domain.Entry{R: rls.ParseString(p.req.Name)}
+	matchingEntries, ok := tre.entriesMap[utils.GetFormattedTitle(requestEntry.R)]
 	if !ok {
 		return domain.StatusNoMatches, fmt.Errorf("no matching releases in client")
 	}
@@ -231,8 +231,8 @@ func (p *processor) processSeasonPack() (int, error) {
 	announcedPackName := utils.FormatSeasonPackTitle(p.req.Name)
 	p.log.Debug().Msgf("formatted season pack name: %s", announcedPackName)
 
-	for _, child := range v {
-		if release.CheckCandidates(&requestRls, &child, p.cfg.Config.FuzzyMatching) == domain.StatusAlreadyInClient {
+	for _, entry := range matchingEntries {
+		if release.CheckCandidates(&requestEntry, &entry, p.cfg.Config.FuzzyMatching) == domain.StatusAlreadyInClient {
 			return domain.StatusAlreadyInClient, fmt.Errorf("release already in client")
 		}
 	}
@@ -240,53 +240,53 @@ func (p *processor) processSeasonPack() (int, error) {
 	var matchedEps []int
 	var respCodes []int
 
-	for _, child := range v {
-		switch res := release.CheckCandidates(&requestRls, &child, p.cfg.Config.FuzzyMatching); res {
+	for _, entry := range matchingEntries {
+		switch res := release.CheckCandidates(&requestEntry, &entry, p.cfg.Config.FuzzyMatching); res {
 		case domain.StatusResolutionMismatch:
 			p.log.Info().Msgf("resolution did not match: request(%s => %s), client(%s => %s)",
-				requestRls.R.String(), requestRls.R.Resolution, child.R.String(), child.R.Resolution)
+				requestEntry.R.String(), requestEntry.R.Resolution, entry.R.String(), entry.R.Resolution)
 			respCodes = append(respCodes, res)
 			continue
 
 		case domain.StatusSourceMismatch:
 			p.log.Info().Msgf("source did not match: request(%s => %s), client(%s => %s)",
-				requestRls.R.String(), requestRls.R.Source, child.R.String(), child.R.Source)
+				requestEntry.R.String(), requestEntry.R.Source, entry.R.String(), entry.R.Source)
 			respCodes = append(respCodes, res)
 			continue
 
 		case domain.StatusRlsGrpMismatch:
 			p.log.Info().Msgf("release group did not match: request(%s => %s), client(%s => %s)",
-				requestRls.R.String(), requestRls.R.Group, child.R.String(), child.R.Group)
+				requestEntry.R.String(), requestEntry.R.Group, entry.R.String(), entry.R.Group)
 			respCodes = append(respCodes, res)
 			continue
 
 		case domain.StatusCutMismatch:
 			p.log.Info().Msgf("cut did not match: request(%s => %s), client(%s => %s)",
-				requestRls.R.String(), requestRls.R.Cut, child.R.String(), child.R.Cut)
+				requestEntry.R.String(), requestEntry.R.Cut, entry.R.String(), entry.R.Cut)
 			respCodes = append(respCodes, res)
 			continue
 
 		case domain.StatusEditionMismatch:
 			p.log.Info().Msgf("edition did not match: request(%s => %s), client(%s => %s)",
-				requestRls.R.String(), requestRls.R.Edition, child.R.String(), child.R.Edition)
+				requestEntry.R.String(), requestEntry.R.Edition, entry.R.String(), entry.R.Edition)
 			respCodes = append(respCodes, res)
 			continue
 
 		case domain.StatusRepackStatusMismatch:
 			p.log.Info().Msgf("repack status did not match: request(%s => %s), client(%s => %s)",
-				requestRls.R.String(), requestRls.R.Other, child.R.String(), child.R.Other)
+				requestEntry.R.String(), requestEntry.R.Other, entry.R.String(), entry.R.Other)
 			respCodes = append(respCodes, res)
 			continue
 
 		case domain.StatusHdrMismatch:
 			p.log.Info().Msgf("hdr metadata did not match: request(%s => %s), client(%s => %s)",
-				requestRls.R.String(), requestRls.R.HDR, child.R.String(), child.R.HDR)
+				requestEntry.R.String(), requestEntry.R.HDR, entry.R.String(), entry.R.HDR)
 			respCodes = append(respCodes, res)
 			continue
 
 		case domain.StatusStreamingServiceMismatch:
 			p.log.Info().Msgf("streaming service did not match: request(%s => %s), client(%s => %s)",
-				requestRls.R.String(), requestRls.R.Collection, child.R.String(), child.R.Collection)
+				requestEntry.R.String(), requestEntry.R.Collection, entry.R.String(), entry.R.Collection)
 			respCodes = append(respCodes, res)
 			continue
 
@@ -297,9 +297,9 @@ func (p *processor) processSeasonPack() (int, error) {
 			return domain.StatusNotASeasonPack, fmt.Errorf("release is not a season pack")
 
 		case domain.StatusSuccessfulMatch:
-			torrentFiles, err := p.getFiles(child.T.Hash)
+			torrentFiles, err := p.getFiles(entry.T.Hash)
 			if err != nil {
-				p.log.Error().Err(err).Msgf("error getting files: %s", child.T.Name)
+				p.log.Error().Err(err).Msgf("error getting files: %s", entry.T.Name)
 				continue
 			}
 
@@ -315,12 +315,12 @@ func (p *processor) processSeasonPack() (int, error) {
 				break
 			}
 			if len(fileName) == 0 || size == 0 {
-				p.log.Error().Err(err).Msgf("error getting filename or size: %s", child.T.Name)
+				p.log.Error().Err(err).Msgf("error getting filename or size: %s", entry.T.Name)
 				continue
 			}
 
-			epRls := rls.ParseString(child.T.Name)
-			epPathClient := filepath.Join(child.T.SavePath, fileName)
+			epRls := rls.ParseString(entry.T.Name)
+			epPathClient := filepath.Join(entry.T.SavePath, fileName)
 			announcedEpPath := filepath.Join(client.PreImportPath, announcedPackName, filepath.Base(fileName))
 
 			matchedEps = append(matchedEps, epRls.Episode)
@@ -341,7 +341,7 @@ func (p *processor) processSeasonPack() (int, error) {
 			newMatches := append(oldMatches.([]matchPaths), currentMatch...)
 			matchesMap.Store(p.req.Name, newMatches)
 			p.log.Debug().Msgf("matched torrent from client: name(%s), size(%d), hash(%s)",
-				child.T.Name, size, child.T.Hash)
+				entry.T.Name, size, entry.T.Hash)
 			respCodes = append(respCodes, res)
 			continue
 		}
