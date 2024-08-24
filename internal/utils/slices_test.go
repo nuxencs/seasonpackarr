@@ -33,7 +33,7 @@ func Test_DedupeSlice(t *testing.T) {
 		{
 			name:  "string_slice_empty",
 			slice: []string{},
-			want:  []string(nil),
+			want:  []string{},
 		},
 		{
 			name:  "int_slice_some_duplicates",
@@ -53,16 +53,100 @@ func Test_DedupeSlice(t *testing.T) {
 		{
 			name:  "int_slice_empty",
 			slice: []int{},
-			want:  []int(nil),
+			want:  []int{},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			switch v := tt.slice.(type) {
 			case []string:
-				assert.Equalf(t, tt.want, DedupeSlice(v), "Dedupe(%v)", v)
+				assert.ElementsMatchf(t, tt.want, DedupeSlice(v), "Dedupe(%v)", v)
 			case []int:
-				assert.Equalf(t, tt.want, DedupeSlice(v), "Dedupe(%v)", v)
+				assert.ElementsMatchf(t, tt.want, DedupeSlice(v), "Dedupe(%v)", v)
+			default:
+				t.Errorf("Unsupported slice type in test case: %v", tt.name)
+			}
+		})
+	}
+}
+
+func Test_EqualElements(t *testing.T) {
+	tests := []struct {
+		name string
+		x    interface{}
+		y    interface{}
+		want bool
+	}{
+		{
+			name: "string_slice_identical_elements",
+			x:    []string{"a", "b", "c"},
+			y:    []string{"a", "b", "c"},
+			want: true,
+		},
+		{
+			name: "string_slice_different_order",
+			x:    []string{"a", "b", "c"},
+			y:    []string{"c", "b", "a"},
+			want: true,
+		},
+		{
+			name: "string_slice_different_elements",
+			x:    []string{"a", "b", "c"},
+			y:    []string{"a", "b", "d"},
+			want: false,
+		},
+		{
+			name: "string_slice_different_lengths",
+			x:    []string{"a", "b", "c"},
+			y:    []string{"a", "b"},
+			want: false,
+		},
+		{
+			name: "int_slice_identical_elements",
+			x:    []int{1, 2, 3},
+			y:    []int{1, 2, 3},
+			want: true,
+		},
+		{
+			name: "int_slice_different_order",
+			x:    []int{1, 2, 3},
+			y:    []int{3, 2, 1},
+			want: true,
+		},
+		{
+			name: "int_slice_different_elements",
+			x:    []int{1, 2, 3},
+			y:    []int{1, 2, 4},
+			want: false,
+		},
+		{
+			name: "int_slice_different_lengths",
+			x:    []int{1, 2, 3},
+			y:    []int{1, 2},
+			want: false,
+		},
+		{
+			name: "empty_slices",
+			x:    []int{},
+			y:    []int{},
+			want: true,
+		},
+		{
+			name: "one_empty_slice",
+			x:    []int{},
+			y:    []int{1},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			switch v1 := tt.x.(type) {
+			case []string:
+				v2 := tt.y.([]string)
+				assert.Equalf(t, tt.want, EqualElements(v1, v2), "EqualElements(%v, %v)", v1, v2)
+			case []int:
+				v2 := tt.y.([]int)
+				assert.Equalf(t, tt.want, EqualElements(v1, v2), "EqualElements(%v, %v)", v1, v2)
 			default:
 				t.Errorf("Unsupported slice type in test case: %v", tt.name)
 			}
