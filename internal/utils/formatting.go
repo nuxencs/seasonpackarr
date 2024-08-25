@@ -77,3 +77,13 @@ func compareEpisodes(episodeRls, torrentEpRls rls.Release) error {
 
 	return nil
 }
+
+func normalizeTitle(title string) string {
+	punctuationRegex := regexp.MustCompile(`[^\w\s]`)
+	duplicateSpacesRegex := regexp.MustCompile(`\s{2,}`)
+
+	title = punctuationRegex.ReplaceAllString(title, "")
+	title = duplicateSpacesRegex.ReplaceAllString(title, " ")
+
+	return title
+}
