@@ -36,17 +36,17 @@ func compareReleases(r1, r2 rls.Release, fuzzyMatching domain.FuzzyMatching) int
 		return 203
 	}
 
-	if !utils.CompareStringSlices(r1.Cut, r2.Cut) {
+	if !utils.EqualElements(r1.Cut, r2.Cut) {
 		return 204
 	}
 
-	if !utils.CompareStringSlices(r1.Edition, r2.Edition) {
+	if !utils.EqualElements(r1.Edition, r2.Edition) {
 		return 205
 	}
 
 	// skip comparing repack status when skipRepackCompare is enabled
 	if !fuzzyMatching.SkipRepackCompare {
-		if !utils.CompareStringSlices(r1.Other, r2.Other) {
+		if !utils.EqualElements(r1.Other, r2.Other) {
 			return 206
 		}
 	}
@@ -57,7 +57,7 @@ func compareReleases(r1, r2 rls.Release, fuzzyMatching domain.FuzzyMatching) int
 		r2.HDR = utils.SimplifyHDRSlice(r2.HDR)
 	}
 
-	if !utils.CompareStringSlices(r1.HDR, r2.HDR) {
+	if !utils.EqualElements(r1.HDR, r2.HDR) {
 		return 207
 	}
 
