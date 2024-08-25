@@ -4,43 +4,46 @@
 package utils
 
 import (
-	"slices"
 	"strings"
 )
 
 func DedupeSlice[T comparable](s []T) []T {
-	inResult := make(map[T]bool)
-	var result []T
-	for _, str := range s {
-		if _, ok := inResult[str]; !ok {
-			inResult[str] = true
-			result = append(result, str)
-		}
+	resultSet := make(map[T]struct{})
+	for _, i := range s {
+		resultSet[i] = struct{}{}
 	}
+
+	result := make([]T, 0, len(resultSet))
+	for str := range resultSet {
+		result = append(result, str)
+	}
+
 	return result
 }
 
-func CompareStringSlices(x, y []string) bool {
+func EqualElements[T comparable](x, y []T) bool {
 	if len(x) != len(y) {
 		return false
 	}
 
-	sortedX := slices.Clone(x)
-	sortedY := slices.Clone(y)
+	freqMap := make(map[T]int)
+	for _, i := range x {
+		freqMap[i]++
+	}
 
-	slices.Sort(sortedX)
-	slices.Sort(sortedY)
+	for _, i := range y {
+		if freqMap[i] == 0 {
+			return false
+		}
+		freqMap[i]--
+	}
 
-	return slices.Equal(sortedX, sortedY)
+	return true
 }
 
 func SimplifyHDRSlice(hdrSlice []string) []string {
-	if len(hdrSlice) == 0 {
-		return hdrSlice
-	}
-
-	for i, v := range hdrSlice {
-		if strings.Contains(v, "HDR") {
+	for i := range hdrSlice {
+		if strings.Contains(hdrSlice[i], "HDR") {
 			hdrSlice[i] = "HDR"
 		}
 	}
