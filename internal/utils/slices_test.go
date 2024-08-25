@@ -153,3 +153,37 @@ func Test_EqualElements(t *testing.T) {
 		})
 	}
 }
+
+func Test_SimplifyHDRSlice(t *testing.T) {
+	tests := []struct {
+		name  string
+		input []string
+		want  []string
+	}{
+		{
+			name:  "contains_HDR",
+			input: []string{"HDR10", "HDR10+", "HDR"},
+			want:  []string{"HDR", "HDR", "HDR"},
+		},
+		{
+			name:  "no_HDR",
+			input: []string{"SDR", "DV"},
+			want:  []string{"SDR", "DV"},
+		},
+		{
+			name:  "empty_slice",
+			input: []string{},
+			want:  []string{},
+		},
+		{
+			name:  "mixed_HDR_and_others",
+			input: []string{"HDR10", "DV", "SDR", "HDR10+"},
+			want:  []string{"HDR", "DV", "SDR", "HDR"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equalf(t, tt.want, SimplifyHDRSlice(tt.input), "SimplifyHDRSlice(%v)", tt.input)
+		})
+	}
+}
