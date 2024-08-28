@@ -18,12 +18,12 @@ func GetEpisodesPerSeason(title string, season int) (int, error) {
 
 	show, err := tvmaze.DefaultClient.GetShow(normalizedTitle)
 	if err != nil {
-		return 0, errors.Wrap(err, "could not find show on tvmaze")
+		return 0, errors.Wrap(err, "failed to find show on tvmaze")
 	}
 
 	episodes, err := show.GetEpisodes()
 	if err != nil {
-		return 0, errors.Wrap(err, "could not get episodes from tvmaze")
+		return 0, errors.Wrap(err, "failed to get episodes from tvmaze")
 	}
 
 	for _, episode := range episodes {
@@ -33,7 +33,7 @@ func GetEpisodesPerSeason(title string, season int) (int, error) {
 	}
 
 	if totalEpisodes == 0 {
-		return 0, fmt.Errorf("couldn't find episodes in season %d of %q", season, title)
+		return 0, fmt.Errorf("failed to find episodes in season %d of %q", season, title)
 	}
 
 	return totalEpisodes, nil
