@@ -14,9 +14,7 @@ import (
 func GetEpisodesPerSeason(title string, season int) (int, error) {
 	totalEpisodes := 0
 
-	normalizedTitle := normalizeTitle(title)
-
-	show, err := tvmaze.DefaultClient.GetShow(normalizedTitle)
+	show, err := tvmaze.DefaultClient.GetShow(normalizeTitle(title))
 	if err != nil {
 		return 0, errors.Wrap(err, "failed to find show on tvmaze")
 	}
