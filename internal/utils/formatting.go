@@ -77,3 +77,7 @@ func compareEpisodes(episodeRls, torrentEpRls rls.Release) error {
 
 	return nil
 }
+
+func normalizeTitle(title string) string {
+	return rls.MustNormalize(title)
+}

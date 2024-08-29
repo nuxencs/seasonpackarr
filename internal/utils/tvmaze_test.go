@@ -52,6 +52,13 @@ func Test_GetEpisodesPerSeason(t *testing.T) {
 			want:    5,
 			wantErr: false,
 		},
+		{
+			name:    "show_with_punctuation",
+			title:   "Orphan Black - Echoes",
+			season:  1,
+			want:    10,
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

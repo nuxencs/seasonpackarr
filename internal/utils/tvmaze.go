@@ -6,20 +6,22 @@ package utils
 import (
 	"fmt"
 
+	"seasonpackarr/pkg/errors"
+
 	"github.com/mrobinsn/go-tvmaze/tvmaze"
 )
 
 func GetEpisodesPerSeason(title string, season int) (int, error) {
 	totalEpisodes := 0
 
-	show, err := tvmaze.DefaultClient.GetShow(title)
+	show, err := tvmaze.DefaultClient.GetShow(normalizeTitle(title))
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "failed to find show on tvmaze")
 	}
 
 	episodes, err := show.GetEpisodes()
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "failed to get episodes from tvmaze")
 	}
 
 	for _, episode := range episodes {
@@ -29,7 +31,7 @@ func GetEpisodesPerSeason(title string, season int) (int, error) {
 	}
 
 	if totalEpisodes == 0 {
-		return 0, fmt.Errorf("couldn't find episodes in season %d of %q", season, title)
+		return 0, fmt.Errorf("failed to find episodes in season %d of %q", season, title)
 	}
 
 	return totalEpisodes, nil
