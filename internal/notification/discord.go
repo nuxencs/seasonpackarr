@@ -5,6 +5,7 @@
 package notification
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -67,6 +68,10 @@ func NewDiscordSender(log logger.Logger, config *config.AppConfig) domain.Sender
 	}
 }
 
+func (s *discordSender) Name() string {
+	return "discord"
+}
+
 func (s *discordSender) Send(statusCode int, payload domain.NotificationPayload) error {
 	if !s.isEnabled() {
 		s.log.Debug().Msg("no webhook defined, skipping notification")
@@ -74,7 +79,7 @@ func (s *discordSender) Send(statusCode int, payload domain.NotificationPayload)
 	}
 
 	if !s.shouldSend(statusCode) {
-		s.log.Debug().Msg("no notification wanted for this status code, skipping notification")
+		s.log.Debug().Msg("no notification wanted for this status, skipping notification")
 		return nil
 	}
 
@@ -85,12 +90,12 @@ func (s *discordSender) Send(statusCode int, payload domain.NotificationPayload)
 
 	jsonData, err := json.Marshal(m)
 	if err != nil {
-		return errors.Wrap(err, "discord client could not marshal data: %+v", m)
+		return errors.Wrap(err, "could not marshal json request for status: %v payload: %v", statusCode, payload)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, s.cfg.Config.Notifications.Discord, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return errors.Wrap(err, "discord client could not create request")
+		return errors.Wrap(err, "could not create request for status: %v payload: %v", statusCode, payload)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -98,21 +103,21 @@ func (s *discordSender) Send(statusCode int, payload domain.NotificationPayload)
 
 	res, err := s.httpClient.Do(req)
 	if err != nil {
-		return errors.Wrap(err, "discord client could not make request: %+v", req)
+		return errors.Wrap(err, "client request error for status: %v payload: %v", statusCode, payload)
 	}
 
 	defer res.Body.Close()
 
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		return errors.Wrap(err, "discord client could not read data")
-	}
-
-	s.log.Trace().Msgf("discord status: %v response: %v", res.StatusCode, string(body))
+	s.log.Trace().Msgf("discord response status: %d", res.StatusCode)
 
 	// discord responds with 204, Notifiarr with 204 so lets take all 200 as ok
-	if res.StatusCode >= 300 {
-		return errors.New("bad discord client status: %v body: %v", res.StatusCode, string(body))
+	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
+		body, err := io.ReadAll(bufio.NewReader(res.Body))
+		if err != nil {
+			return errors.Wrap(err, "could not read body for status: %v payload: %v", statusCode, payload)
+		}
+
+		return errors.New("unexpected status: %v body: %v", res.StatusCode, string(body))
 	}
 
 	s.log.Debug().Msg("notification successfully sent to discord")
@@ -125,34 +130,30 @@ func (s *discordSender) isEnabled() bool {
 }
 
 func (s *discordSender) shouldSend(statusCode int) bool {
-	var statusCodes []int
-
 	if len(s.cfg.Config.Notifications.NotificationLevel) == 0 {
 		return false
 	}
 
+	statusCodes := make(map[int]struct{})
+
 	for _, level := range s.cfg.Config.Notifications.NotificationLevel {
-		if level == domain.NotificationLevelMatch {
-			statusCodes = append(statusCodes, domain.GetMatchStatusCodes()...)
-		}
-		if level == domain.NotificationLevelInfo {
-			statusCodes = append(statusCodes, domain.GetInfoStatusCodes()...)
-		}
-		if level == domain.NotificationLevelError {
-			statusCodes = append(statusCodes, domain.GetErrorStatusCodes()...)
+		if codes, ok := domain.StatusMap[level]; ok {
+			for _, code := range codes {
+				statusCodes[code] = struct{}{}
+			}
 		}
 	}
-	fmt.Println(s.cfg.Config.Notifications.NotificationLevel, statusCodes)
 
-	return slices.Contains(statusCodes, statusCode)
+	_, shouldSend := statusCodes[statusCode]
+	return shouldSend
 }
 
 func (s *discordSender) buildEmbed(statusCode int, payload domain.NotificationPayload) DiscordEmbeds {
 	color := LIGHT_BLUE
 
-	if slices.Contains(domain.GetInfoStatusCodes(), statusCode) { // not matching
+	if slices.Contains(domain.StatusMap[domain.NotificationLevelInfo], statusCode) { // not matching
 		color = GRAY
-	} else if slices.Contains(domain.GetErrorStatusCodes(), statusCode) { // error processing
+	} else if slices.Contains(domain.StatusMap[domain.NotificationLevelError], statusCode) { // error processing
 		color = RED
 	} else { // success
 		color = GREEN
@@ -189,7 +190,7 @@ func (s *discordSender) buildEmbed(statusCode int, payload domain.NotificationPa
 
 	if payload.Error != nil {
 		// actual error?
-		if statusCode >= 400 {
+		if slices.Contains(domain.StatusMap[domain.NotificationLevelError], statusCode) {
 			f := DiscordEmbedsFields{
 				Name:   "Error",
 				Value:  fmt.Sprintf("```%s```", payload.Error.Error()),

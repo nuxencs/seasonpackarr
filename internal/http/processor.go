@@ -176,7 +176,7 @@ func (p *processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTT
 			Action:      "Pack",
 			Error:       err,
 		}); sendErr != nil {
-			p.log.Error().Err(sendErr).Msg("error sending notification")
+			p.log.Error().Err(sendErr).Msgf("could not send %s notification for %d", p.noti.Name(), code)
 		}
 
 		p.log.Error().Err(err).Msgf("error processing season pack: %d", code)
@@ -189,7 +189,7 @@ func (p *processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTT
 		Client:      p.req.ClientName,
 		Action:      "Pack",
 	}); sendErr != nil {
-		p.log.Error().Err(sendErr).Msg("error sending notification")
+		p.log.Error().Err(sendErr).Msgf("could not send %s notification for %d", p.noti.Name(), code)
 	}
 
 	p.log.Info().Msg("successfully matched season pack to episodes in client")
@@ -413,7 +413,7 @@ func (p *processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Req
 			Action:      "Parse",
 			Error:       err,
 		}); sendErr != nil {
-			p.log.Error().Err(sendErr).Msg("error sending notification")
+			p.log.Error().Err(sendErr).Msgf("could not send %s notification for %d", p.noti.Name(), code)
 		}
 
 		p.log.Error().Err(err).Msgf("error parsing torrent: %d", code)
@@ -426,7 +426,7 @@ func (p *processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Req
 		Client:      p.req.ClientName,
 		Action:      "Parse",
 	}); sendErr != nil {
-		p.log.Error().Err(sendErr).Msg("error sending notification")
+		p.log.Error().Err(sendErr).Msgf("could not send %s notification for %d", p.noti.Name(), code)
 	}
 
 	p.log.Info().Msg("successfully parsed torrent and hardlinked episodes")

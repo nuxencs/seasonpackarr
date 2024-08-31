@@ -5,6 +5,7 @@
 package domain
 
 type Sender interface {
+	Name() string
 	Send(statusCode int, payload NotificationPayload) error
 }
 

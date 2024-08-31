@@ -177,9 +177,17 @@ notifications:
   # Notification Level
   # Decides what notifications you want to receive
   #
+  # Default: [ "MATCH" ]
+  # 
   # Options: "MATCH", "INFO", "ERROR"
   #
-  notificationLevel: [ "MATCH", "ERROR" ]
+  # Examples:
+  # [ "MATCH", "INFO", "ERROR" ] would send everything
+  # [ "MATCH", "INFO" ] would send all matches and rejection infos
+  # [ "MATCH", "ERROR" ] would send all matches and errors
+  # [ "ERROR" ] would only send all errors
+  #
+  notificationLevel: [ "MATCH" ]
 
   # Discord
   # Uses the given Discord webhook to send notifications for various events
@@ -321,7 +329,7 @@ func (c *AppConfig) defaults() {
 		},
 		APIToken: "",
 		Notifications: domain.Notifications{
-			NotificationLevel: []string{},
+			NotificationLevel: []string{"MATCH"},
 			Discord:           "",
 			// Notifiarr: "",
 			// Shoutrrr:  "",
@@ -429,7 +437,7 @@ func (c *AppConfig) DynamicReload(log logger.Logger) {
 		parseTorrentFile := viper.GetBool("parseTorrentFile")
 		c.Config.ParseTorrentFile = parseTorrentFile
 
-		notificationLevel := viper.GetStringSlice("notificationLevel")
+		notificationLevel := viper.GetStringSlice("notifications.notificationLevel")
 		c.Config.Notifications.NotificationLevel = notificationLevel
 
 		log.Debug().Msg("config file reloaded!")

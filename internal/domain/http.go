@@ -31,8 +31,11 @@ const (
 	StatusEpisodeCountError        = 450
 )
 
-func GetInfoStatusCodes() []int {
-	return []int{
+var StatusMap = map[string][]int{
+	NotificationLevelMatch: {
+		StatusSuccessfulMatch,
+	},
+	NotificationLevelInfo: {
 		StatusNoMatches,
 		StatusResolutionMismatch,
 		StatusSourceMismatch,
@@ -45,17 +48,8 @@ func GetInfoStatusCodes() []int {
 		StatusAlreadyInClient,
 		StatusNotASeasonPack,
 		StatusBelowThreshold,
-	}
-}
-
-func GetMatchStatusCodes() []int {
-	return []int{
-		StatusSuccessfulMatch,
-	}
-}
-
-func GetErrorStatusCodes() []int {
-	return []int{
+	},
+	NotificationLevelError: {
 		StatusFailedHardlink,
 		StatusClientNotFound,
 		StatusGetClientError,
@@ -67,5 +61,5 @@ func GetErrorStatusCodes() []int {
 		StatusParseTorrentInfoError,
 		StatusGetEpisodesError,
 		StatusEpisodeCountError,
-	}
+	},
 }
