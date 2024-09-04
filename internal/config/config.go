@@ -174,6 +174,21 @@ fuzzyMatching:
 # You can decide which notifications you want to receive
 #
 notifications:
+  # Notification Level
+  # Decides what notifications you want to receive
+  #
+  # Default: [ "MATCH", "ERROR" ]
+  # 
+  # Options: "MATCH", "INFO", "ERROR"
+  #
+  # Examples:
+  # [ "MATCH", "INFO", "ERROR" ] would send everything
+  # [ "MATCH", "INFO" ] would send all matches and rejection infos
+  # [ "MATCH", "ERROR" ] would send all matches and errors
+  # [ "ERROR" ] would only send all errors
+  #
+  notificationLevel: [ "MATCH", "ERROR" ]
+
   # Discord
   # Uses the given Discord webhook to send notifications for various events
   #
@@ -314,7 +329,8 @@ func (c *AppConfig) defaults() {
 		},
 		APIToken: "",
 		Notifications: domain.Notifications{
-			Discord: "",
+			NotificationLevel: []string{"MATCH", "ERROR"},
+			Discord:           "",
 			// Notifiarr: "",
 			// Shoutrrr:  "",
 		},
@@ -399,6 +415,11 @@ func (c *AppConfig) load(configPath string) {
 	if err := viper.Unmarshal(c.Config); err != nil {
 		log.Fatalf("Could not unmarshal config file: %v: err %q", viper.ConfigFileUsed(), err)
 	}
+
+	// workaround for notificationLevel default slice not being overwritten properly by viper
+	if levels := viper.GetStringSlice("notifications.notificationLevel"); len(levels) != 0 {
+		c.Config.Notifications.NotificationLevel = levels
+	}
 }
 
 func (c *AppConfig) DynamicReload(log logger.Logger) {
@@ -420,6 +441,9 @@ func (c *AppConfig) DynamicReload(log logger.Logger) {
 
 		parseTorrentFile := viper.GetBool("parseTorrentFile")
 		c.Config.ParseTorrentFile = parseTorrentFile
+
+		notificationLevel := viper.GetStringSlice("notifications.notificationLevel")
+		c.Config.Notifications.NotificationLevel = notificationLevel
 
 		log.Debug().Msg("config file reloaded!")
 

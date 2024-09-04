@@ -30,3 +30,36 @@ const (
 	StatusGetEpisodesError         = 464
 	StatusEpisodeCountError        = 450
 )
+
+var StatusMap = map[string][]int{
+	NotificationLevelMatch: {
+		StatusSuccessfulMatch,
+	},
+	NotificationLevelInfo: {
+		StatusNoMatches,
+		StatusResolutionMismatch,
+		StatusSourceMismatch,
+		StatusRlsGrpMismatch,
+		StatusCutMismatch,
+		StatusEditionMismatch,
+		StatusRepackStatusMismatch,
+		StatusHdrMismatch,
+		StatusStreamingServiceMismatch,
+		StatusAlreadyInClient,
+		StatusNotASeasonPack,
+		StatusBelowThreshold,
+	},
+	NotificationLevelError: {
+		StatusFailedHardlink,
+		StatusClientNotFound,
+		StatusGetClientError,
+		StatusDecodingError,
+		StatusAnnounceNameError,
+		StatusGetTorrentsError,
+		StatusTorrentBytesError,
+		StatusDecodeTorrentBytesError,
+		StatusParseTorrentInfoError,
+		StatusGetEpisodesError,
+		StatusEpisodeCountError,
+	},
+}

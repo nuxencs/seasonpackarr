@@ -110,6 +110,15 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "notificationLevel": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["MATCH", "INFO", "ERROR"]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
         "discord": {
           "type": "string",
           "default": ""

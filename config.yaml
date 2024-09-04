@@ -147,6 +147,21 @@ fuzzyMatching:
 # You can decide which notifications you want to receive
 #
 notifications:
+  # Notification Level
+  # Decides what notifications you want to receive
+  #
+  # Default: [ "MATCH", "ERROR" ]
+  #
+  # Options: "MATCH", "INFO", "ERROR"
+  #
+  # Examples:
+  # [ "MATCH", "INFO", "ERROR" ] would send everything
+  # [ "MATCH", "INFO" ] would send all matches and rejection infos
+  # [ "MATCH", "ERROR" ] would send all matches and errors
+  # [ "ERROR" ] would only send all errors
+  #
+  notificationLevel: [ "MATCH", "ERROR" ]
+
   # Discord
   # Uses the given Discord webhook to send notifications for various events
   #
