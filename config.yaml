@@ -150,7 +150,7 @@ notifications:
   # Notification Level
   # Decides what notifications you want to receive
   #
-  # Default: [ "MATCH" ]
+  # Default: [ "MATCH", "ERROR" ]
   #
   # Options: "MATCH", "INFO", "ERROR"
   #
@@ -160,7 +160,7 @@ notifications:
   # [ "MATCH", "ERROR" ] would send all matches and errors
   # [ "ERROR" ] would only send all errors
   #
-  notificationLevel: [ "MATCH" ]
+  notificationLevel: [ "MATCH", "ERROR" ]
 
   # Discord
   # Uses the given Discord webhook to send notifications for various events

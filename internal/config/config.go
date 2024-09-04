@@ -177,7 +177,7 @@ notifications:
   # Notification Level
   # Decides what notifications you want to receive
   #
-  # Default: [ "MATCH" ]
+  # Default: [ "MATCH", "ERROR" ]
   # 
   # Options: "MATCH", "INFO", "ERROR"
   #
@@ -187,7 +187,7 @@ notifications:
   # [ "MATCH", "ERROR" ] would send all matches and errors
   # [ "ERROR" ] would only send all errors
   #
-  notificationLevel: [ "MATCH" ]
+  notificationLevel: [ "MATCH", "ERROR" ]
 
   # Discord
   # Uses the given Discord webhook to send notifications for various events
@@ -329,7 +329,7 @@ func (c *AppConfig) defaults() {
 		},
 		APIToken: "",
 		Notifications: domain.Notifications{
-			NotificationLevel: []string{"MATCH"},
+			NotificationLevel: []string{"MATCH", "ERROR"},
 			Discord:           "",
 			// Notifiarr: "",
 			// Shoutrrr:  "",
@@ -414,6 +414,11 @@ func (c *AppConfig) load(configPath string) {
 
 	if err := viper.Unmarshal(c.Config); err != nil {
 		log.Fatalf("Could not unmarshal config file: %v: err %q", viper.ConfigFileUsed(), err)
+	}
+
+	// workaround for notificationLevel default slice not being overwritten properly by viper
+	if levels := viper.GetStringSlice("notifications.notificationLevel"); len(levels) != 0 {
+		c.Config.Notifications.NotificationLevel = levels
 	}
 }
 
