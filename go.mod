@@ -1,6 +1,6 @@
 module seasonpackarr
 
-go 1.22.0
+go 1.23.0
 
 require (
 	github.com/anacrolix/torrent v1.56.1
