@@ -435,7 +435,7 @@ func (p *processor) parseTorrent() (int, error) {
 		return c.Str("release", p.req.Name).Str("clientname", clientName)
 	})
 
-	client, ok := p.cfg.Config.Clients[clientName]
+	clientCfg, ok := p.cfg.Config.Clients[clientName]
 	if !ok {
 		return domain.StatusClientNotFound, fmt.Errorf("client not found in config")
 	}
@@ -480,7 +480,7 @@ func (p *processor) parseTorrent() (int, error) {
 	var matchErr error
 	var targetEpPath string
 
-	targetPackDir := filepath.Join(client.PreImportPath, parsedPackName)
+	targetPackDir := filepath.Join(clientCfg.PreImportPath, parsedPackName)
 
 	for _, match := range matches {
 		for _, torrentEp := range torrentEps {
