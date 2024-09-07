@@ -291,8 +291,10 @@ func New(configPath string, version string) *AppConfig {
 		m: new(sync.Mutex),
 	}
 	c.defaults()
-	c.Config.Version = version
-	c.Config.ConfigPath = configPath
+	c.Config = &domain.Config{
+		Version:    version,
+		ConfigPath: configPath,
+	}
 
 	c.load(configPath)
 	c.loadFromEnv()
@@ -311,30 +313,22 @@ func New(configPath string, version string) *AppConfig {
 }
 
 func (c *AppConfig) defaults() {
-	c.Config = &domain.Config{
-		Version:            "dev",
-		Host:               "0.0.0.0",
-		Port:               42069,
-		Clients:            make(map[string]*domain.Client),
-		LogLevel:           "DEBUG",
-		LogPath:            "",
-		LogMaxSize:         50,
-		LogMaxBackups:      3,
-		SmartMode:          false,
-		SmartModeThreshold: 0.75,
-		ParseTorrentFile:   false,
-		FuzzyMatching: domain.FuzzyMatching{
-			SkipRepackCompare:  false,
-			SimplifyHdrCompare: false,
-		},
-		APIToken: "",
-		Notifications: domain.Notifications{
-			NotificationLevel: []string{"MATCH", "ERROR"},
-			Discord:           "",
-			// Notifiarr: "",
-			// Shoutrrr:  "",
-		},
-	}
+	viper.SetDefault("version", "dev")
+	viper.SetDefault("host", "0.0.0.0")
+	viper.SetDefault("port", 42069)
+	viper.SetDefault("clients", make(map[string]*domain.Client))
+	viper.SetDefault("logPath", "")
+	viper.SetDefault("logLevel", "DEBUG")
+	viper.SetDefault("logMaxSize", 50)
+	viper.SetDefault("logMaxBackups", 3)
+	viper.SetDefault("smartMode", false)
+	viper.SetDefault("smartModeThreshold", 0.75)
+	viper.SetDefault("parseTorrentFile", false)
+	viper.SetDefault("fuzzyMatching.skipRepackCompare", false)
+	viper.SetDefault("fuzzyMatching.simplifyHdrCompare", false)
+	viper.SetDefault("apiToken", "")
+	viper.SetDefault("notifications.notificationLevel", []string{"MATCH", "ERROR"})
+	viper.SetDefault("notifications.discord", "")
 }
 
 func (c *AppConfig) loadFromEnv() {
@@ -415,11 +409,6 @@ func (c *AppConfig) load(configPath string) {
 	if err := viper.Unmarshal(c.Config); err != nil {
 		log.Fatalf("Could not unmarshal config file: %v: err %q", viper.ConfigFileUsed(), err)
 	}
-
-	// workaround for notificationLevel default slice not being overwritten properly by viper
-	if levels := viper.GetStringSlice("notifications.notificationLevel"); len(levels) != 0 {
-		c.Config.Notifications.NotificationLevel = levels
-	}
 }
 
 func (c *AppConfig) DynamicReload(log logger.Logger) {
@@ -442,8 +431,17 @@ func (c *AppConfig) DynamicReload(log logger.Logger) {
 		parseTorrentFile := viper.GetBool("parseTorrentFile")
 		c.Config.ParseTorrentFile = parseTorrentFile
 
+		skipRepackCompare := viper.GetBool("fuzzyMatching.skipRepackCompare")
+		c.Config.FuzzyMatching.SkipRepackCompare = skipRepackCompare
+
+		simplifyHdrCompare := viper.GetBool("fuzzyMatching.simplifyHdrCompare")
+		c.Config.FuzzyMatching.SimplifyHdrCompare = simplifyHdrCompare
+
 		notificationLevel := viper.GetStringSlice("notifications.notificationLevel")
 		c.Config.Notifications.NotificationLevel = notificationLevel
+
+		discordWebhook := viper.GetString("notifications.discord")
+		c.Config.Notifications.Discord = discordWebhook
 
 		log.Debug().Msg("config file reloaded!")
 
