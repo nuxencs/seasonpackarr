@@ -409,7 +409,7 @@ func (c *AppConfig) load(configPath string) {
 
 	// read config
 	if err := viper.ReadInConfig(); err != nil {
-		log.Printf("config read error: %q", err)
+		log.Fatalf("config read error: %q", err)
 	}
 
 	if err := viper.Unmarshal(c.Config); err != nil {

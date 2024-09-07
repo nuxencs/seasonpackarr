@@ -22,6 +22,7 @@ import (
 
 	"github.com/autobrr/go-qbittorrent"
 	"github.com/moistari/rls"
+	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/rs/zerolog"
 )
 
@@ -54,9 +55,9 @@ type matchPaths struct {
 }
 
 var (
-	clientMap  sync.Map
-	matchesMap sync.Map
-	torrentMap sync.Map
+	clientMap  = xsync.NewMapOf[string, *qbittorrent.Client]()
+	matchesMap = xsync.NewMapOf[string, []matchPaths]()
+	torrentMap = xsync.NewMapOf[string, *torrentRlsEntries]()
 )
 
 func newProcessor(log logger.Logger, config *config.AppConfig, notification domain.Sender) *processor {
@@ -67,43 +68,37 @@ func newProcessor(log logger.Logger, config *config.AppConfig, notification doma
 	}
 }
 
-func (p *processor) getClient(client *domain.Client) error {
-	clientCfg := qbittorrent.Config{
-		Host:     fmt.Sprintf("http://%s:%d", client.Host, client.Port),
-		Username: client.Username,
-		Password: client.Password,
-	}
-
-	c, ok := clientMap.Load(clientCfg)
+func (p *processor) getClient(client *domain.Client, clientName string) error {
+	c, ok := clientMap.Load(clientName)
 	if !ok {
+		clientCfg := qbittorrent.Config{
+			Host:     fmt.Sprintf("http://%s:%d", client.Host, client.Port),
+			Username: client.Username,
+			Password: client.Password,
+		}
+
 		c = qbittorrent.NewClient(clientCfg)
 
-		if err := c.(*qbittorrent.Client).Login(); err != nil {
+		if err := c.Login(); err != nil {
 			return errors.Wrap(err, "failed to login to qbittorrent")
 		}
 
-		clientMap.Store(clientCfg, c)
+		clientMap.Store(clientName, c)
 	}
 
-	p.req.Client = c.(*qbittorrent.Client)
+	p.req.Client = c
 	return nil
 }
 
-func (p *processor) getAllTorrents(client *domain.Client) torrentRlsEntries {
-	clientCfg := qbittorrent.Config{
-		Host:     fmt.Sprintf("http://%s:%d", client.Host, client.Port),
-		Username: client.Username,
-		Password: client.Password,
-	}
-
+func (p *processor) getAllTorrents(clientName string) torrentRlsEntries {
 	f := func() *torrentRlsEntries {
-		tre, ok := torrentMap.Load(clientCfg)
+		tre, ok := torrentMap.Load(clientName)
 		if ok {
-			return tre.(*torrentRlsEntries)
+			return tre
 		}
 
 		entries := &torrentRlsEntries{rlsMap: make(map[string]rls.Release)}
-		torrentMap.Store(clientCfg, entries)
+		torrentMap.Store(clientName, entries)
 		return entries
 	}
 
@@ -140,7 +135,7 @@ func (p *processor) getAllTorrents(client *domain.Client) torrentRlsEntries {
 		entries.entriesMap[fmtTitle] = append(entries.entriesMap[fmtTitle], domain.Entry{T: t, R: r})
 	}
 
-	torrentMap.Store(clientCfg, entries)
+	torrentMap.Store(clientName, entries)
 	return *entries
 }
 
@@ -203,21 +198,21 @@ func (p *processor) processSeasonPack() (int, error) {
 		return c.Str("release", p.req.Name).Str("clientname", clientName)
 	})
 
-	client, ok := p.cfg.Config.Clients[clientName]
+	clientCfg, ok := p.cfg.Config.Clients[clientName]
 	if !ok {
 		return domain.StatusClientNotFound, fmt.Errorf("client not found in config")
 	}
-	p.log.Info().Msgf("using %s client serving at %s:%d", clientName, client.Host, client.Port)
+	p.log.Info().Msgf("using %s client serving at %s:%d", clientName, clientCfg.Host, clientCfg.Port)
 
 	if len(p.req.Name) == 0 {
 		return domain.StatusAnnounceNameError, fmt.Errorf("couldn't get announce name")
 	}
 
-	if err := p.getClient(client); err != nil {
+	if err := p.getClient(clientCfg, clientName); err != nil {
 		return domain.StatusGetClientError, err
 	}
 
-	tre := p.getAllTorrents(client)
+	tre := p.getAllTorrents(clientName)
 	if tre.err != nil {
 		return domain.StatusGetTorrentsError, tre.err
 	}
@@ -321,7 +316,7 @@ func (p *processor) processSeasonPack() (int, error) {
 
 			epRls := rls.ParseString(entry.T.Name)
 			epPathClient := filepath.Join(entry.T.SavePath, fileName)
-			announcedEpPath := filepath.Join(client.PreImportPath, announcedPackName, filepath.Base(fileName))
+			announcedEpPath := filepath.Join(clientCfg.PreImportPath, announcedPackName, filepath.Base(fileName))
 
 			matchedEps = append(matchedEps, epRls.Episode)
 
@@ -338,7 +333,7 @@ func (p *processor) processSeasonPack() (int, error) {
 				oldMatches = currentMatch
 			}
 
-			newMatches := append(oldMatches.([]matchPaths), currentMatch...)
+			newMatches := append(oldMatches, currentMatch...)
 			matchesMap.Store(p.req.Name, newMatches)
 			p.log.Debug().Msgf("matched torrent from client: name(%s), size(%d), hash(%s)",
 				entry.T.Name, size, entry.T.Hash)
@@ -376,7 +371,7 @@ func (p *processor) processSeasonPack() (int, error) {
 		return domain.StatusSuccessfulMatch, nil
 	}
 
-	matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
+	matches := utils.DedupeSlice(matchesSlice)
 	var hardlinkRespCodes []int
 
 	for _, match := range matches {
@@ -479,7 +474,7 @@ func (p *processor) parseTorrent() (int, error) {
 		return domain.StatusNoMatches, fmt.Errorf("no matching releases in client")
 	}
 
-	matches := utils.DedupeSlice(matchesSlice.([]matchPaths))
+	matches := utils.DedupeSlice(matchesSlice)
 	var hardlinkRespCodes []int
 	var matchedEpPath string
 	var matchErr error
