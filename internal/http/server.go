@@ -14,9 +14,10 @@ import (
 	"seasonpackarr/internal/config"
 	"seasonpackarr/internal/domain"
 	"seasonpackarr/internal/logger"
+	"seasonpackarr/pkg/errors"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	"github.com/gin-contrib/requestid"
+	"github.com/gin-gonic/gin"
 )
 
 var ErrServerClosed = http.ErrServerClosed
@@ -38,18 +39,17 @@ func NewServer(log logger.Logger, config *config.AppConfig, notification domain.
 }
 
 func (s *Server) Open() error {
-	addr := fmt.Sprintf("%v:%v", s.cfg.Config.Host, s.cfg.Config.Port)
-
 	var err error
+	addr := fmt.Sprintf("%s:%d", s.cfg.Config.Host, s.cfg.Config.Port)
+
 	for _, proto := range []string{"tcp", "tcp4", "tcp6"} {
 		if err = s.tryToServe(addr, proto); err == nil {
-			break
+			return nil
 		}
-
-		s.log.Error().Err(err).Msgf("Failed to start %s server. Attempted to listen on %s", proto, addr)
+		s.log.Error().Err(err).Msgf("Failed to start %s server on %s", proto, addr)
 	}
 
-	return err
+	return fmt.Errorf("unable to start server on any protocol")
 }
 
 func (s *Server) tryToServe(addr, proto string) error {
@@ -58,40 +58,49 @@ func (s *Server) tryToServe(addr, proto string) error {
 		return err
 	}
 
-	s.log.Info().Msgf("Starting %s server. Listening on %s", proto, listener.Addr().String())
+	s.log.Info().Msgf("Starting server on %s with %s", listener.Addr().String(), proto)
 
 	s.httpServer = http.Server{
+		Addr:              addr,
 		Handler:           s.Handler(),
-		ReadHeaderTimeout: time.Second * 15,
+		ReadHeaderTimeout: 15 * time.Second,
 	}
 
-	return s.httpServer.Serve(listener)
+	if err := s.httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+
+	return nil
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
-	s.log.Info().Msgf("shutting down http server gracefully...")
-	return s.httpServer.Shutdown(ctx)
+	s.log.Info().Msg("Shutting down the server gracefully...")
+	if err := s.httpServer.Shutdown(ctx); err != nil {
+		return fmt.Errorf("failed to shutdown server: %w", err)
+	}
+	return nil
 }
 
 func (s *Server) Handler() http.Handler {
-	r := chi.NewRouter()
+	// disable debug mode
+	gin.SetMode(gin.ReleaseMode)
 
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-	r.Use(middleware.URLFormat)
-	r.Use(middleware.Timeout(60 * time.Second))
+	g := gin.New()
 
-	r.Route("/api", func(r chi.Router) {
-		r.Route("/healthz", newHealthHandler().Routes)
+	g.Use(gin.Recovery())
+	g.Use(requestid.New())
+	g.Use(CorsMiddleware())
+	g.Use(LoggerMiddleware(s.log))
 
-		r.Group(func(r chi.Router) {
-			r.Use(s.isAuthenticated)
+	api := g.Group("/api")
+	{
+		newHealthHandler().Routes(api.Group("/healthz"))
 
-			r.Route("/", newWebhookHandler(s.log, s.cfg, s.noti).Routes)
-		})
-	})
+		api.Use(s.AuthMiddleware())
+		{
+			newWebhookHandler(s.log, s.cfg, s.noti).Routes(api.Group("/"))
+		}
+	}
 
-	return r
+	return g
 }

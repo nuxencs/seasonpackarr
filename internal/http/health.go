@@ -7,7 +7,7 @@ package http
 import (
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/gin-gonic/gin"
 )
 
 type healthHandler struct{}
@@ -16,27 +16,25 @@ func newHealthHandler() *healthHandler {
 	return &healthHandler{}
 }
 
-func (h *healthHandler) Routes(r chi.Router) {
-	r.Get("/liveness", h.handleLiveness)
-	r.Get("/readiness", h.handleReadiness)
+func (h *healthHandler) Routes(r *gin.RouterGroup) {
+	r.GET("/liveness", h.handleLiveness)
+	r.GET("/readiness", h.handleReadiness)
 }
 
-func (h *healthHandler) handleLiveness(w http.ResponseWriter, r *http.Request) {
-	writeHealthy(w, r)
+func (h *healthHandler) handleLiveness(c *gin.Context) {
+	writeHealthy(c)
 }
 
-func (h *healthHandler) handleReadiness(w http.ResponseWriter, r *http.Request) {
-	writeHealthy(w, r)
+func (h *healthHandler) handleReadiness(c *gin.Context) {
+	writeHealthy(c)
 }
 
-func writeHealthy(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("OK"))
+func writeHealthy(c *gin.Context) {
+	c.Header("Content-Type", "text/plain")
+	c.String(http.StatusOK, "OK")
 }
 
-func writeUnhealthy(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain")
-	w.WriteHeader(http.StatusInternalServerError)
-	w.Write([]byte("Unhealthy"))
+func writeUnhealthy(c *gin.Context) {
+	c.Header("Content-Type", "text/plain")
+	c.String(http.StatusInternalServerError, "Unhealthy")
 }
