@@ -10,8 +10,7 @@ import (
 	"seasonpackarr/internal/domain"
 	"seasonpackarr/internal/logger"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/render"
+	"github.com/gin-gonic/gin"
 )
 
 type webhookHandler struct {
@@ -28,17 +27,17 @@ func newWebhookHandler(log logger.Logger, cfg *config.AppConfig, notification do
 	}
 }
 
-func (h *webhookHandler) Routes(r chi.Router) {
-	r.Post("/pack", h.pack)
-	r.Post("/parse", h.parse)
+func (h *webhookHandler) Routes(r *gin.RouterGroup) {
+	r.POST("/pack", h.pack)
+	r.POST("/parse", h.parse)
 }
 
-func (h *webhookHandler) pack(w http.ResponseWriter, r *http.Request) {
-	newProcessor(h.log, h.cfg, h.noti).ProcessSeasonPackHandler(w, r)
-	render.Status(r, http.StatusOK)
+func (h *webhookHandler) pack(c *gin.Context) {
+	newProcessor(h.log, h.cfg, h.noti).ProcessSeasonPackHandler(c.Writer, c.Request)
+	c.Status(http.StatusOK)
 }
 
-func (h *webhookHandler) parse(w http.ResponseWriter, r *http.Request) {
-	newProcessor(h.log, h.cfg, h.noti).ParseTorrentHandler(w, r)
-	render.Status(r, http.StatusOK)
+func (h *webhookHandler) parse(c *gin.Context) {
+	newProcessor(h.log, h.cfg, h.noti).ParseTorrentHandler(c.Writer, c.Request)
+	c.Status(http.StatusOK)
 }
