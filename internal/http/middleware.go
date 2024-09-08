@@ -9,9 +9,10 @@ import (
 	"runtime/debug"
 	"time"
 
+	"seasonpackarr/internal/logger"
+
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"seasonpackarr/internal/logger"
 )
 
 func (s *Server) AuthMiddleware() gin.HandlerFunc {
