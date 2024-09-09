@@ -6,7 +6,7 @@ package utils
 import (
 	"fmt"
 
-	"seasonpackarr/pkg/errors"
+	"github.com/nuxencs/seasonpackarr/pkg/errors"
 
 	"github.com/mrobinsn/go-tvmaze/tvmaze"
 )

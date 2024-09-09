@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"seasonpackarr/internal/payload"
-	"seasonpackarr/internal/torrents"
-	"seasonpackarr/pkg/errors"
+	"github.com/nuxencs/seasonpackarr/internal/payload"
+	"github.com/nuxencs/seasonpackarr/internal/torrents"
+	"github.com/nuxencs/seasonpackarr/pkg/errors"
 
 	"github.com/spf13/cobra"
 )

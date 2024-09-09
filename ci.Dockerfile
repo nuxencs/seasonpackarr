@@ -22,7 +22,7 @@ RUN --network=none --mount=target=. \
     [[ "$GOARCH" == "arm" ]] && [[ "$TARGETVARIANT" == "v6" ]] && export GOARM=6; \
     [[ "$GOARCH" == "arm" ]] && [[ "$TARGETVARIANT" == "v7" ]] && export GOARM=7; \
     echo $GOARCH $GOOS $GOARM$GOAMD64; \
-    go build -ldflags "-s -w -X seasonpackarr/internal/buildinfo.Version=${VERSION} -X seasonpackarr/internal/buildinfo.Commit=${REVISION} -X seasonpackarr/internal/buildinfo.Date=${BUILDTIME}" -o /out/bin/seasonpackarr main.go
+    go build -ldflags "-s -w -X github.com/nuxencs/seasonpackarr/internal/buildinfo.Version=${VERSION} -X github.com/nuxencs/seasonpackarr/internal/buildinfo.Commit=${REVISION} -X github.com/nuxencs/seasonpackarr/internal/buildinfo.Date=${BUILDTIME}" -o /out/bin/seasonpackarr main.go
 
 # build runner
 FROM alpine:latest AS runner

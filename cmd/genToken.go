@@ -6,7 +6,7 @@ package cmd
 import (
 	"fmt"
 
-	"seasonpackarr/internal/api"
+	"github.com/nuxencs/seasonpackarr/internal/api"
 
 	"github.com/spf13/cobra"
 )

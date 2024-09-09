@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"seasonpackarr/internal/config"
-	"seasonpackarr/internal/domain"
-	"seasonpackarr/internal/logger"
-	"seasonpackarr/pkg/errors"
+	"github.com/nuxencs/seasonpackarr/internal/config"
+	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/logger"
+	"github.com/nuxencs/seasonpackarr/pkg/errors"
 
 	"github.com/rs/zerolog"
 )

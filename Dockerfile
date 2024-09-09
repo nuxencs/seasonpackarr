@@ -13,7 +13,7 @@ RUN go mod download
 COPY . ./
 
 RUN --network=none \
-    go build -ldflags "-s -w -X seasonpackarr/internal/buildinfo.Version=${VERSION} -X seasonpackarr/internal/buildinfo.Commit=${REVISION} -X seasonpackarr/internal/buildinfo.Date=${BUILDTIME}" -o bin/seasonpackarr main.go
+    go build -ldflags "-s -w -X github.com/nuxencs/seasonpackarr/internal/buildinfo.Version=${VERSION} -X github.com/nuxencs/seasonpackarr/internal/buildinfo.Commit=${REVISION} -X github.com/nuxencs/seasonpackarr/internal/buildinfo.Date=${BUILDTIME}" -o bin/seasonpackarr main.go
 
 # build runner
 FROM alpine:latest

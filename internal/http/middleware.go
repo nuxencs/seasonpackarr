@@ -9,7 +9,7 @@ import (
 	"runtime/debug"
 	"time"
 
-	"seasonpackarr/internal/logger"
+	"github.com/nuxencs/seasonpackarr/internal/logger"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"

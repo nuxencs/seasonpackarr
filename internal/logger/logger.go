@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/domain"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/pkgerrors"

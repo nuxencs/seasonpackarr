@@ -4,7 +4,7 @@
 package main
 
 import (
-	"seasonpackarr/cmd"
+	"github.com/nuxencs/seasonpackarr/cmd"
 )
 
 func main() {
