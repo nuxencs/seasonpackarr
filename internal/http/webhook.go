@@ -6,9 +6,9 @@ package http
 import (
 	"net/http"
 
-	"seasonpackarr/internal/config"
-	"seasonpackarr/internal/domain"
-	"seasonpackarr/internal/logger"
+	"github.com/nuxencs/seasonpackarr/internal/config"
+	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/logger"
 
 	"github.com/gin-gonic/gin"
 )

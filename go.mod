@@ -1,4 +1,4 @@
-module seasonpackarr
+module github.com/nuxencs/seasonpackarr
 
 go 1.23.0
 

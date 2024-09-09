@@ -10,8 +10,8 @@ import (
 	"os"
 	"time"
 
-	"seasonpackarr/internal/buildinfo"
-	"seasonpackarr/pkg/errors"
+	"github.com/nuxencs/seasonpackarr/internal/buildinfo"
+	"github.com/nuxencs/seasonpackarr/pkg/errors"
 
 	"github.com/spf13/cobra"
 )

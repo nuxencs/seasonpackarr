@@ -4,8 +4,8 @@
 package release
 
 import (
-	"seasonpackarr/internal/domain"
-	"seasonpackarr/internal/utils"
+	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/utils"
 
 	"github.com/moistari/rls"
 )

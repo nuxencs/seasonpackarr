@@ -5,7 +5,7 @@
 package notification
 
 import (
-	"seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/domain"
 )
 
 // BuildTitle constructs the title of the notification message.

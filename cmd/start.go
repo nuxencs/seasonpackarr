@@ -9,12 +9,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	"seasonpackarr/internal/buildinfo"
-	"seasonpackarr/internal/config"
-	"seasonpackarr/internal/http"
-	"seasonpackarr/internal/logger"
-	"seasonpackarr/internal/notification"
-	"seasonpackarr/pkg/errors"
+	"github.com/nuxencs/seasonpackarr/internal/buildinfo"
+	"github.com/nuxencs/seasonpackarr/internal/config"
+	"github.com/nuxencs/seasonpackarr/internal/http"
+	"github.com/nuxencs/seasonpackarr/internal/logger"
+	"github.com/nuxencs/seasonpackarr/internal/notification"
+	"github.com/nuxencs/seasonpackarr/pkg/errors"
 
 	"github.com/spf13/cobra"
 )
