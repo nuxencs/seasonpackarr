@@ -1,16 +1,17 @@
 # seasonpackarr
 
 
-[![GPL-2.0 license](https://img.shields.io/github/license/nuxencs/seasonpackarr)](https://github.com/nuxencs/seasonpackarr/blob/develop/LICENSE)
-[![Build & Test](https://img.shields.io/github/actions/workflow/status/nuxencs/seasonpackarr/release.yml?logo=github)](https://github.com/nuxencs/seasonpackarr/actions/workflows/release.yml)
-[![GitHub release](https://img.shields.io/github/v/release/nuxencs/seasonpackarr)](https://github.com/nuxencs/seasonpackarr/releases)
-[![Support Server](https://img.shields.io/discord/492590071455940612?logo=discord&label=TRaSH-Guides)](https://trash-guides.info/discord)
+[![GPL-2.0 license](https://img.shields.io/github/license/nuxencs/seasonpackarr?style=flat-square&color=00ACD7)](https://github.com/nuxencs/seasonpackarr/blob/develop/LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/nuxencs/seasonpackarr?style=flat-square)](https://goreportcard.com/report/github.com/nuxencs/seasonpackarr)
+[![Build & Test](https://img.shields.io/github/actions/workflow/status/nuxencs/seasonpackarr/release.yml?style=flat-square&logo=github)](https://github.com/nuxencs/seasonpackarr/actions)
+[![GitHub release](https://img.shields.io/github/v/release/nuxencs/seasonpackarr?style=flat-square&color=00ACD7)](https://github.com/nuxencs/seasonpackarr/releases)
+[![Support Server](https://img.shields.io/discord/492590071455940612?style=flat-square&logo=discord&logoColor=00ACD7&label=support&color=00ACD7)](https://trash-guides.info/discord)
 
 A companion app for autobrr that automagically hardlinks downloaded episodes to a season folder when a season pack is
 announced, eliminating the need for re-downloading existing episodes.
 
 > [!WARNING]
-> This application is in the early stages of development, so expect bugs to happen, especially with weird episode or
+> This application is in active development, so expect bugs to happen, especially with weird episode or
 > season pack naming.
 
 ## Installation
