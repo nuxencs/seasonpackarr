@@ -1,14 +1,26 @@
-# seasonpackarr
+<h1 align="center">seasonpackarr</h1>
+<h1 align="center">
+  <a href="https://github.com/nuxencs/seasonpackarr/blob/develop/LICENSE">
+    <img src="https://img.shields.io/github/license/nuxencs/seasonpackarr?style=flat-square&color=00ACD7" alt="License">
+  </a>
+  <a href="https://goreportcard.com/report/github.com/nuxencs/seasonpackarr">
+    <img src="https://goreportcard.com/badge/github.com/nuxencs/seasonpackarr?style=flat-square" alt="Go Report">
+  </a>
+  <a href="https://github.com/nuxencs/seasonpackarr/actions">
+    <img src="https://img.shields.io/github/actions/workflow/status/nuxencs/seasonpackarr/release.yml?style=flat-square&logo=github" alt="Build">
+  </a>
+    <a href="https://github.com/nuxencs/seasonpackarr/releases">
+    <img src="https://img.shields.io/github/v/release/nuxencs/seasonpackarr?style=flat-square&color=00ACD7" alt="Latest Release">
+  </a>
+  <a href="https://trash-guides.info/discord">
+    <img src="https://img.shields.io/discord/492590071455940612?style=flat-square&logo=discord&logoColor=00ACD7&label=support&color=00ACD7" alt="Discord">
+  </a>
+</h1>
 
-
-[![GPL-2.0 license](https://img.shields.io/github/license/nuxencs/seasonpackarr?style=flat-square&color=00ACD7)](https://github.com/nuxencs/seasonpackarr/blob/develop/LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/nuxencs/seasonpackarr?style=flat-square)](https://goreportcard.com/report/github.com/nuxencs/seasonpackarr)
-[![Build & Test](https://img.shields.io/github/actions/workflow/status/nuxencs/seasonpackarr/release.yml?style=flat-square&logo=github)](https://github.com/nuxencs/seasonpackarr/actions)
-[![GitHub release](https://img.shields.io/github/v/release/nuxencs/seasonpackarr?style=flat-square&color=00ACD7)](https://github.com/nuxencs/seasonpackarr/releases)
-[![Support Server](https://img.shields.io/discord/492590071455940612?style=flat-square&logo=discord&logoColor=00ACD7&label=support&color=00ACD7)](https://trash-guides.info/discord)
-
-A companion app for autobrr that automagically hardlinks downloaded episodes to a season folder when a season pack is
+<p align="center">
+<b>seasonpackarr</b> is a companion app for <a href="https://github.com/autobrr/autobrr">autobrr</a> that automagically <b>hardlinks</b> downloaded episodes to a season folder when a season pack is
 announced, eliminating the need for re-downloading existing episodes.
+</p>
 
 > [!WARNING]
 > This application is currently in active development. If you encounter any bugs, please report them in the Discord
