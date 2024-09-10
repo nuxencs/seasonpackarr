@@ -35,8 +35,8 @@ github.com/anacrolix/stm v0.2.0/go.mod h1:zoVQRvSiGjGoTmbM0vSLIiaKjWtNPeTvXUSdJQ
 github.com/anacrolix/tagflag v0.0.0-20180109131632-2146c8d41bf0/go.mod h1:1m2U/K6ZT+JZG0+bdMK6qauP49QT4wE5pmhJXOKKCHw=
 github.com/anacrolix/tagflag v1.0.0/go.mod h1:1m2U/K6ZT+JZG0+bdMK6qauP49QT4wE5pmhJXOKKCHw=
 github.com/anacrolix/tagflag v1.1.0/go.mod h1:Scxs9CV10NQatSmbyjqmqmeQNwGzlNe0CMUMIxqHIG8=
-github.com/anacrolix/torrent v1.56.1 h1:QeJMOP0NuhpQ5dATsOqEL0vUO85aPMNMGP2FACNt0Eg=
-github.com/anacrolix/torrent v1.56.1/go.mod h1:5DMHbeIM1TuC5wTQ99XieKKLiYZYz6iB2lyZpKZEr6w=
+github.com/anacrolix/torrent v1.57.0 h1:SSt03wiThSohEIGJzSIjYV/n0TWbJVAMmHdGOmcTzY4=
+github.com/anacrolix/torrent v1.57.0/go.mod h1:SQZfGq/OCMMyIRCNfTpv9E/go4eE9WJR/YY7eC2HYok=
 github.com/apache/thrift v0.12.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb+bacwQ=
 github.com/autobrr/go-qbittorrent v1.9.0 h1:HaLueJ99D3G1cQ2r5ADVbtfwyEhekt2eQoEZ7yhAwYs=
 github.com/autobrr/go-qbittorrent v1.9.0/go.mod h1:z88B3+O/1/3doQABErvIOOxE4hjpmIpulu6XzDG/q78=

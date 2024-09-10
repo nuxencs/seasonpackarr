@@ -3,7 +3,7 @@ module github.com/nuxencs/seasonpackarr
 go 1.23.0
 
 require (
-	github.com/anacrolix/torrent v1.56.1
+	github.com/anacrolix/torrent v1.57.0
 	github.com/autobrr/go-qbittorrent v1.9.0
 	github.com/dlclark/regexp2 v1.11.4
 	github.com/fsnotify/fsnotify v1.7.0
