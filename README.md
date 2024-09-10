@@ -11,8 +11,8 @@ A companion app for autobrr that automagically hardlinks downloaded episodes to 
 announced, eliminating the need for re-downloading existing episodes.
 
 > [!WARNING]
-> This application is in active development, so expect bugs to happen, especially with weird episode or
-> season pack naming.
+> This application is currently in active development. If you encounter any bugs, please report them in the Discord
+> server or open an issue, so I can fix it.
 
 ## Installation
 
