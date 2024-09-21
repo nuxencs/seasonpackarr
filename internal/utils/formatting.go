@@ -60,7 +60,7 @@ func MatchEpToSeasonPackEp(clientEpPath string, clientEpSize int64, torrentEpPat
 
 func compareEpisodes(episodeRls, torrentEpRls rls.Release) error {
 	if episodeRls.Series != torrentEpRls.Series {
-		return fmt.Errorf("series mismatch")
+		return fmt.Errorf("season mismatch")
 	}
 
 	if episodeRls.Episode != torrentEpRls.Episode {

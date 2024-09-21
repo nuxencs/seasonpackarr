@@ -10,44 +10,41 @@ import (
 	"github.com/moistari/rls"
 )
 
-func CheckCandidates(requestEntry, clientEntry *domain.Entry, fuzzyMatching domain.FuzzyMatching) int {
-	requestRls := requestEntry.R
-	clientRls := clientEntry.R
-
-	// check if season pack and no extension
-	if requestRls.Type.Is(rls.Series) && requestRls.Ext == "" {
-		// compare releases
-		return compareReleases(clientRls, requestRls, fuzzyMatching)
+func CheckCandidates(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatching) int {
+	// check if season pack or no extension
+	if !requestRls.Type.Is(rls.Series) || requestRls.Ext != "" {
+		// not a season pack
+		return domain.StatusNotASeasonPack
 	}
-	// not a season pack
-	return 211
+
+	return compareReleases(clientRls, requestRls, fuzzyMatching)
 }
 
 func compareReleases(r1, r2 rls.Release, fuzzyMatching domain.FuzzyMatching) int {
 	if rls.MustNormalize(r1.Resolution) != rls.MustNormalize(r2.Resolution) {
-		return 201
+		return domain.StatusResolutionMismatch
 	}
 
 	if rls.MustNormalize(r1.Source) != rls.MustNormalize(r2.Source) {
-		return 202
+		return domain.StatusSourceMismatch
 	}
 
 	if rls.MustNormalize(r1.Group) != rls.MustNormalize(r2.Group) {
-		return 203
+		return domain.StatusRlsGrpMismatch
 	}
 
 	if !utils.EqualElements(r1.Cut, r2.Cut) {
-		return 204
+		return domain.StatusCutMismatch
 	}
 
 	if !utils.EqualElements(r1.Edition, r2.Edition) {
-		return 205
+		return domain.StatusEditionMismatch
 	}
 
 	// skip comparing repack status when skipRepackCompare is enabled
 	if !fuzzyMatching.SkipRepackCompare {
 		if !utils.EqualElements(r1.Other, r2.Other) {
-			return 206
+			return domain.StatusRepackStatusMismatch
 		}
 	}
 
@@ -58,26 +55,24 @@ func compareReleases(r1, r2 rls.Release, fuzzyMatching domain.FuzzyMatching) int
 	}
 
 	if !utils.EqualElements(r1.HDR, r2.HDR) {
-		return 207
+		return domain.StatusHdrMismatch
 	}
 
 	if r1.Collection != r2.Collection {
-		return 208
+		return domain.StatusStreamingServiceMismatch
 	}
 
 	if r1.Episode == r2.Episode {
-		return 210
+		return domain.StatusAlreadyInClient
 	}
 
-	return 250
+	return domain.StatusSuccessfulMatch
 }
 
-func PercentOfTotalEpisodes(totalEpisodes int, matchedEpisodes []int) float32 {
-	if totalEpisodes == 0 {
+func PercentOfTotalEpisodes(totalEps int, foundEps int) float32 {
+	if totalEps == 0 {
 		return 0
 	}
-	count := len(matchedEpisodes)
-	percent := float32(count) / float32(totalEpisodes)
 
-	return percent
+	return float32(foundEps) / float32(totalEps)
 }
