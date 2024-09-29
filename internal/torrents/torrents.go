@@ -18,30 +18,24 @@ type Episode struct {
 	Size int64
 }
 
-func ParseTorrentInfoFromTorrentBytes(torrentBytes []byte) (metainfo.Info, error) {
-	r := bytes.NewReader(torrentBytes)
-
-	metaInfo, err := metainfo.Load(r)
+func ParseInfoFromTorrentBytes(torrentBytes []byte) (metainfo.Info, error) {
+	metaInfo, err := metainfo.Load(bytes.NewReader(torrentBytes))
 	if err != nil {
 		return metainfo.Info{}, err
 	}
 
-	info, err := metaInfo.UnmarshalInfo()
-	if err != nil {
-		return metainfo.Info{}, err
-	}
-
-	return info, nil
+	return metaInfo.UnmarshalInfo()
 }
 
 func GetEpisodesFromTorrentInfo(info metainfo.Info) ([]Episode, error) {
-	var episodes []Episode
-
 	if !info.IsDir() {
 		return []Episode{}, fmt.Errorf("not a directory")
 	}
 
-	for _, file := range info.UpvertedFiles() {
+	files := info.UpvertedFiles()
+	episodes := make([]Episode, 0, len(files))
+
+	for _, file := range files {
 		path := file.DisplayPath(&info)
 
 		if filepath.Ext(path) != ".mkv" {
@@ -58,8 +52,11 @@ func GetEpisodesFromTorrentInfo(info metainfo.Info) ([]Episode, error) {
 		return []Episode{}, fmt.Errorf("no .mkv files found")
 	}
 
-	slices.SortStableFunc(episodes, func(a, b Episode) int {
-		return cmp.Compare(a.Path, b.Path)
-	})
+	if len(episodes) > 1 {
+		slices.SortStableFunc(episodes, func(a, b Episode) int {
+			return cmp.Compare(a.Path, b.Path)
+		})
+	}
+
 	return episodes, nil
 }

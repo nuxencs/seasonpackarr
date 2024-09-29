@@ -10,7 +10,7 @@ import (
 	"unicode"
 )
 
-func DecodeTorrentDataRawBytes(torrentBytes []byte) ([]byte, error) {
+func DecodeTorrentBytes(torrentBytes []byte) ([]byte, error) {
 	var tb []byte
 	var err error
 
