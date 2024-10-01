@@ -158,7 +158,10 @@ func (p *processor) ProcessSeasonPackHandler(c *gin.Context) {
 
 	if err := json.NewDecoder(c.Request.Body).Decode(&p.req); err != nil {
 		p.log.Error().Err(err).Msgf("error decoding request")
-		c.AbortWithStatusJSON(domain.StatusDecodingError, gin.H{"error": err.Error()})
+		c.AbortWithStatusJSON(domain.StatusDecodingError, gin.H{
+			"code":  domain.StatusDecodingError,
+			"error": err.Error(),
+		})
 		return
 	}
 
@@ -174,7 +177,10 @@ func (p *processor) ProcessSeasonPackHandler(c *gin.Context) {
 		}
 
 		p.log.Error().Err(err).Msgf("error processing season pack: %d", code)
-		c.AbortWithStatusJSON(code, gin.H{"error": err.Error()})
+		c.AbortWithStatusJSON(code, gin.H{
+			"code":  code,
+			"error": err.Error(),
+		})
 		return
 	}
 
@@ -388,7 +394,10 @@ func (p *processor) ParseTorrentHandler(c *gin.Context) {
 
 	if err := json.NewDecoder(c.Request.Body).Decode(&p.req); err != nil {
 		p.log.Error().Err(err).Msgf("error decoding request")
-		c.AbortWithStatusJSON(domain.StatusDecodingError, gin.H{"error": err.Error()})
+		c.AbortWithStatusJSON(domain.StatusDecodingError, gin.H{
+			"code":  domain.StatusDecodingError,
+			"error": err.Error(),
+		})
 		return
 	}
 
@@ -404,7 +413,10 @@ func (p *processor) ParseTorrentHandler(c *gin.Context) {
 		}
 
 		p.log.Error().Err(err).Msgf("error parsing torrent: %d", code)
-		c.AbortWithStatusJSON(code, gin.H{"error": err.Error()})
+		c.AbortWithStatusJSON(code, gin.H{
+			"code":  code,
+			"error": err.Error(),
+		})
 		return
 	}
 
