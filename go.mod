@@ -3,7 +3,7 @@ module github.com/nuxencs/seasonpackarr
 go 1.23.0
 
 require (
-	github.com/anacrolix/torrent v1.57.0
+	github.com/anacrolix/torrent v1.57.1
 	github.com/autobrr/go-qbittorrent v1.9.0
 	github.com/dlclark/regexp2 v1.11.4
 	github.com/fsnotify/fsnotify v1.7.0
@@ -23,9 +23,9 @@ require (
 )
 
 require (
-	github.com/anacrolix/generics v0.0.2-0.20240227122613-f95486179cab // indirect
+	github.com/anacrolix/generics v0.0.3-0.20240902042256-7fb2702ef0ca // indirect
 	github.com/anacrolix/missinggo v1.3.0 // indirect
-	github.com/anacrolix/missinggo/v2 v2.7.3 // indirect
+	github.com/anacrolix/missinggo/v2 v2.7.4 // indirect
 	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/bradfitz/iter v0.0.0-20191230175014-e8f45d346db8 // indirect
 	github.com/bytedance/sonic v1.12.2 // indirect
@@ -71,7 +71,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/arch v0.9.0 // indirect
 	golang.org/x/crypto v0.26.0 // indirect
-	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842 // indirect
+	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948 // indirect
 	golang.org/x/net v0.28.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.24.0 // indirect
