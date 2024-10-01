@@ -6,7 +6,6 @@ package http
 import (
 	"encoding/json"
 	"fmt"
-	netHTTP "net/http"
 	"path/filepath"
 	"sync"
 	"time"
@@ -20,6 +19,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/pkg/errors"
 
 	"github.com/autobrr/go-qbittorrent"
+	"github.com/gin-gonic/gin"
 	"github.com/moistari/rls"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/rs/zerolog"
@@ -153,12 +153,15 @@ func (p *processor) getClientName() string {
 	return p.req.ClientName
 }
 
-func (p *processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTTP.Request) {
+func (p *processor) ProcessSeasonPackHandler(c *gin.Context) {
 	p.log.Info().Msg("starting to process season pack request")
 
-	if err := json.NewDecoder(r.Body).Decode(&p.req); err != nil {
+	if err := json.NewDecoder(c.Request.Body).Decode(&p.req); err != nil {
 		p.log.Error().Err(err).Msgf("error decoding request")
-		netHTTP.Error(w, err.Error(), domain.StatusDecodingError)
+		c.AbortWithStatusJSON(domain.StatusDecodingError, gin.H{
+			"code":  domain.StatusDecodingError,
+			"error": err.Error(),
+		})
 		return
 	}
 
@@ -174,7 +177,10 @@ func (p *processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTT
 		}
 
 		p.log.Error().Err(err).Msgf("error processing season pack: %d", code)
-		netHTTP.Error(w, err.Error(), code)
+		c.AbortWithStatusJSON(code, gin.H{
+			"code":  code,
+			"error": err.Error(),
+		})
 		return
 	}
 
@@ -187,7 +193,7 @@ func (p *processor) ProcessSeasonPackHandler(w netHTTP.ResponseWriter, r *netHTT
 	}
 
 	p.log.Info().Msg("successfully matched season pack to episodes in client")
-	w.WriteHeader(code)
+	c.String(code, "successful match")
 }
 
 func (p *processor) processSeasonPack() (int, error) {
@@ -383,12 +389,15 @@ func (p *processor) processSeasonPack() (int, error) {
 	return domain.StatusSuccessfulHardlink, nil
 }
 
-func (p *processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Request) {
+func (p *processor) ParseTorrentHandler(c *gin.Context) {
 	p.log.Info().Msg("starting to parse season pack torrent")
 
-	if err := json.NewDecoder(r.Body).Decode(&p.req); err != nil {
+	if err := json.NewDecoder(c.Request.Body).Decode(&p.req); err != nil {
 		p.log.Error().Err(err).Msgf("error decoding request")
-		netHTTP.Error(w, err.Error(), domain.StatusDecodingError)
+		c.AbortWithStatusJSON(domain.StatusDecodingError, gin.H{
+			"code":  domain.StatusDecodingError,
+			"error": err.Error(),
+		})
 		return
 	}
 
@@ -404,7 +413,10 @@ func (p *processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Req
 		}
 
 		p.log.Error().Err(err).Msgf("error parsing torrent: %d", code)
-		netHTTP.Error(w, err.Error(), code)
+		c.AbortWithStatusJSON(code, gin.H{
+			"code":  code,
+			"error": err.Error(),
+		})
 		return
 	}
 
@@ -417,7 +429,7 @@ func (p *processor) ParseTorrentHandler(w netHTTP.ResponseWriter, r *netHTTP.Req
 	}
 
 	p.log.Info().Msg("successfully parsed torrent and hardlinked episodes")
-	w.WriteHeader(code)
+	c.String(code, "successful hardlink")
 }
 
 func (p *processor) parseTorrent() (int, error) {

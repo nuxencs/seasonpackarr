@@ -4,8 +4,6 @@
 package http
 
 import (
-	"net/http"
-
 	"github.com/nuxencs/seasonpackarr/internal/config"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
@@ -33,11 +31,9 @@ func (h *webhookHandler) Routes(r *gin.RouterGroup) {
 }
 
 func (h *webhookHandler) pack(c *gin.Context) {
-	newProcessor(h.log, h.cfg, h.noti).ProcessSeasonPackHandler(c.Writer, c.Request)
-	c.Status(http.StatusOK)
+	newProcessor(h.log, h.cfg, h.noti).ProcessSeasonPackHandler(c)
 }
 
 func (h *webhookHandler) parse(c *gin.Context) {
-	newProcessor(h.log, h.cfg, h.noti).ParseTorrentHandler(c.Writer, c.Request)
-	c.Status(http.StatusOK)
+	newProcessor(h.log, h.cfg, h.noti).ParseTorrentHandler(c)
 }
