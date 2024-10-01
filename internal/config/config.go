@@ -313,7 +313,6 @@ func New(configPath string, version string) *AppConfig {
 }
 
 func (c *AppConfig) defaults() {
-	viper.SetDefault("version", "dev")
 	viper.SetDefault("host", "0.0.0.0")
 	viper.SetDefault("port", 42069)
 	viper.SetDefault("clients", make(map[string]*domain.Client))
