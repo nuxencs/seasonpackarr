@@ -31,9 +31,9 @@ func (h *webhookHandler) Routes(r *gin.RouterGroup) {
 }
 
 func (h *webhookHandler) pack(c *gin.Context) {
-	newProcessor(h.log, h.cfg, h.noti).ProcessSeasonPackHandler(c.Writer, c.Request)
+	newProcessor(h.log, h.cfg, h.noti).ProcessSeasonPackHandler(c)
 }
 
 func (h *webhookHandler) parse(c *gin.Context) {
-	newProcessor(h.log, h.cfg, h.noti).ParseTorrentHandler(c.Writer, c.Request)
+	newProcessor(h.log, h.cfg, h.noti).ParseTorrentHandler(c)
 }
