@@ -237,8 +237,7 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 	p.log.Debug().Msgf("formatted season pack name: %s", announcedPackName)
 
 	for _, clientEntry := range clientEntries {
-		compareInfo := release.CheckCandidates(requestRls, clientEntry.r, p.cfg.Config.FuzzyMatching)
-		switch compareInfo.StatusCode {
+		switch compareInfo := release.CheckCandidates(requestRls, clientEntry.r, p.cfg.Config.FuzzyMatching); compareInfo.StatusCode {
 		case domain.StatusAlreadyInClient, domain.StatusNotASeasonPack:
 			return compareInfo.StatusCode, compareInfo.StatusCode.Error()
 		}
