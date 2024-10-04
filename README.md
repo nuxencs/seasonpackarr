@@ -18,7 +18,7 @@
 </h1>
 
 <p align="center">
-<b>seasonpackarr</b> is a companion app for <a href="https://github.com/autobrr/autobrr">autobrr</a> that automagically <b>hardlinks</b> downloaded episodes to a season folder when a season pack is
+<b>seasonpackarr</b> is a companion app for <a href="https://github.com/autobrr/autobrr">autobrr</a> that automagically <b>hardlinks</b> downloaded episodes into a season folder when a season pack is
 announced, eliminating the need for re-downloading existing episodes.
 </p>
 
