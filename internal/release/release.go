@@ -10,63 +10,95 @@ import (
 	"github.com/moistari/rls"
 )
 
-func CheckCandidates(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatching) int {
+func CheckCandidates(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatching) domain.CompareInfo {
 	// check if season pack or no extension
 	if !requestRls.Type.Is(rls.Series) || requestRls.Ext != "" {
 		// not a season pack
-		return domain.StatusNotASeasonPack
+		return domain.CompareInfo{StatusCode: domain.StatusNotASeasonPack}
 	}
 
-	return compareReleases(clientRls, requestRls, fuzzyMatching)
+	return compareReleases(requestRls, clientRls, fuzzyMatching)
 }
 
-func compareReleases(r1, r2 rls.Release, fuzzyMatching domain.FuzzyMatching) int {
-	if rls.MustNormalize(r1.Resolution) != rls.MustNormalize(r2.Resolution) {
-		return domain.StatusResolutionMismatch
+func compareReleases(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatching) domain.CompareInfo {
+	if rls.MustNormalize(requestRls.Resolution) != rls.MustNormalize(clientRls.Resolution) {
+		return domain.CompareInfo{
+			StatusCode:         domain.StatusResolutionMismatch,
+			RequestRejectField: requestRls.Resolution,
+			ClientRejectField:  clientRls.Resolution,
+		}
 	}
 
-	if rls.MustNormalize(r1.Source) != rls.MustNormalize(r2.Source) {
-		return domain.StatusSourceMismatch
+	if rls.MustNormalize(requestRls.Source) != rls.MustNormalize(clientRls.Source) {
+		return domain.CompareInfo{
+			StatusCode:         domain.StatusSourceMismatch,
+			RequestRejectField: requestRls.Source,
+			ClientRejectField:  clientRls.Source,
+		}
 	}
 
-	if rls.MustNormalize(r1.Group) != rls.MustNormalize(r2.Group) {
-		return domain.StatusRlsGrpMismatch
+	if rls.MustNormalize(requestRls.Group) != rls.MustNormalize(clientRls.Group) {
+		return domain.CompareInfo{
+			StatusCode:         domain.StatusRlsGrpMismatch,
+			RequestRejectField: requestRls.Group,
+			ClientRejectField:  clientRls.Group,
+		}
 	}
 
-	if !utils.EqualElements(r1.Cut, r2.Cut) {
-		return domain.StatusCutMismatch
+	if !utils.EqualElements(requestRls.Cut, clientRls.Cut) {
+		return domain.CompareInfo{
+			StatusCode:         domain.StatusCutMismatch,
+			RequestRejectField: requestRls.Cut,
+			ClientRejectField:  clientRls.Cut,
+		}
 	}
 
-	if !utils.EqualElements(r1.Edition, r2.Edition) {
-		return domain.StatusEditionMismatch
+	if !utils.EqualElements(requestRls.Edition, clientRls.Edition) {
+		return domain.CompareInfo{
+			StatusCode:         domain.StatusEditionMismatch,
+			RequestRejectField: requestRls.Edition,
+			ClientRejectField:  clientRls.Edition,
+		}
 	}
 
 	// skip comparing repack status when skipRepackCompare is enabled
 	if !fuzzyMatching.SkipRepackCompare {
-		if !utils.EqualElements(r1.Other, r2.Other) {
-			return domain.StatusRepackStatusMismatch
+		if !utils.EqualElements(requestRls.Other, clientRls.Other) {
+			return domain.CompareInfo{
+				StatusCode:         domain.StatusRepackStatusMismatch,
+				RequestRejectField: requestRls.Other,
+				ClientRejectField:  clientRls.Other,
+			}
 		}
 	}
 
 	// normalize any HDR format down to plain HDR when simplifyHdrCompare is enabled
 	if fuzzyMatching.SimplifyHdrCompare {
-		r1.HDR = utils.SimplifyHDRSlice(r1.HDR)
-		r2.HDR = utils.SimplifyHDRSlice(r2.HDR)
+		requestRls.HDR = utils.SimplifyHDRSlice(requestRls.HDR)
+		clientRls.HDR = utils.SimplifyHDRSlice(clientRls.HDR)
 	}
 
-	if !utils.EqualElements(r1.HDR, r2.HDR) {
-		return domain.StatusHdrMismatch
+	if !utils.EqualElements(requestRls.HDR, clientRls.HDR) {
+		return domain.CompareInfo{
+			StatusCode:         domain.StatusHdrMismatch,
+			RequestRejectField: requestRls.HDR,
+			ClientRejectField:  clientRls.HDR,
+		}
 	}
 
-	if r1.Collection != r2.Collection {
-		return domain.StatusStreamingServiceMismatch
+	if requestRls.Collection != clientRls.Collection {
+		return domain.CompareInfo{
+			StatusCode:         domain.StatusStreamingServiceMismatch,
+			RequestRejectField: requestRls.Collection,
+			ClientRejectField:  clientRls.Collection,
+		}
 	}
 
-	if r1.Episode == r2.Episode {
-		return domain.StatusAlreadyInClient
+	if requestRls.Episode == clientRls.Episode {
+		return domain.CompareInfo{StatusCode: domain.StatusAlreadyInClient}
 	}
 
-	return domain.StatusSuccessfulMatch
+	return domain.CompareInfo{StatusCode: domain.StatusSuccessfulMatch}
 }
 
 func PercentOfTotalEpisodes(totalEps int, foundEps int) float32 {

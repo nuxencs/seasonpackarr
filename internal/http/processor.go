@@ -39,8 +39,13 @@ type request struct {
 	ClientName string
 }
 
+type entry struct {
+	t qbittorrent.Torrent
+	r rls.Release
+}
+
 type torrentRlsEntries struct {
-	entriesMap  map[string][]domain.Entry
+	entriesMap  map[string][]entry
 	rlsMap      map[string]rls.Release
 	lastUpdated time.Time
 	err         error
@@ -121,7 +126,7 @@ func (p *processor) getAllTorrents(clientName string) torrentRlsEntries {
 	}
 
 	after := time.Now()
-	entries = &torrentRlsEntries{entriesMap: make(map[string][]domain.Entry), lastUpdated: after.Add(after.Sub(cur)), rlsMap: entries.rlsMap}
+	entries = &torrentRlsEntries{entriesMap: make(map[string][]entry), lastUpdated: after.Add(after.Sub(cur)), rlsMap: entries.rlsMap}
 
 	for _, t := range ts {
 		r, ok := entries.rlsMap[t.Name]
@@ -131,7 +136,7 @@ func (p *processor) getAllTorrents(clientName string) torrentRlsEntries {
 		}
 
 		fmtTitle := utils.GetFormattedTitle(r)
-		entries.entriesMap[fmtTitle] = append(entries.entriesMap[fmtTitle], domain.Entry{T: t, R: r})
+		entries.entriesMap[fmtTitle] = append(entries.entriesMap[fmtTitle], entry{t: t, r: r})
 	}
 
 	torrentMap.Store(clientName, entries)
@@ -157,46 +162,46 @@ func (p *processor) ProcessSeasonPackHandler(c *gin.Context) {
 	p.log.Info().Msg("starting to process season pack request")
 
 	if err := json.NewDecoder(c.Request.Body).Decode(&p.req); err != nil {
-		p.log.Error().Err(err).Msgf("error decoding request")
-		c.AbortWithStatusJSON(domain.StatusDecodingError, gin.H{
-			"code":  domain.StatusDecodingError,
-			"error": err.Error(),
+		p.log.Error().Err(err).Msgf(domain.StatusDecodingError.Message())
+		c.AbortWithStatusJSON(domain.StatusDecodingError.Code(), gin.H{
+			"statusCode": domain.StatusDecodingError.Code(),
+			"error":      err.Error(),
 		})
 		return
 	}
 
-	code, err := p.processSeasonPack()
+	statusCode, err := p.processSeasonPack()
 	if err != nil {
-		if sendErr := p.noti.Send(code, domain.NotificationPayload{
+		if sendErr := p.noti.Send(statusCode, domain.NotificationPayload{
 			ReleaseName: p.req.Name,
 			Client:      p.req.ClientName,
 			Action:      "Pack",
 			Error:       err,
 		}); sendErr != nil {
-			p.log.Error().Err(sendErr).Msgf("could not send %s notification for %d", p.noti.Name(), code)
+			p.log.Error().Err(sendErr).Msgf("could not send %s notification for %d", p.noti.Name(), statusCode)
 		}
 
-		p.log.Error().Err(err).Msgf("error processing season pack: %d", code)
-		c.AbortWithStatusJSON(code, gin.H{
-			"code":  code,
-			"error": err.Error(),
+		p.log.Error().Err(err).Msgf("error processing season pack: %s", statusCode.Message())
+		c.AbortWithStatusJSON(statusCode.Code(), gin.H{
+			"statusCode": statusCode.Code(),
+			"error":      err.Error(),
 		})
 		return
 	}
 
-	if sendErr := p.noti.Send(code, domain.NotificationPayload{
+	if sendErr := p.noti.Send(statusCode, domain.NotificationPayload{
 		ReleaseName: p.req.Name,
 		Client:      p.req.ClientName,
 		Action:      "Pack",
 	}); sendErr != nil {
-		p.log.Error().Err(sendErr).Msgf("could not send %s notification for %d", p.noti.Name(), code)
+		p.log.Error().Err(sendErr).Msgf("could not send %s notification for %d", p.noti.Name(), statusCode)
 	}
 
 	p.log.Info().Msg("successfully matched season pack to episodes in client")
-	c.String(code, "successful match")
+	c.String(statusCode.Code(), statusCode.Message())
 }
 
-func (p *processor) processSeasonPack() (int, error) {
+func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 	clientName := p.getClientName()
 
 	p.log.UpdateContext(func(c zerolog.Context) zerolog.Context {
@@ -205,12 +210,12 @@ func (p *processor) processSeasonPack() (int, error) {
 
 	clientCfg, ok := p.cfg.Config.Clients[clientName]
 	if !ok {
-		return domain.StatusClientNotFound, fmt.Errorf("client not found in config")
+		return domain.StatusClientNotFound, domain.StatusClientNotFound.Error()
 	}
 	p.log.Info().Msgf("using %s client serving at %s:%d", clientName, clientCfg.Host, clientCfg.Port)
 
 	if len(p.req.Name) == 0 {
-		return domain.StatusAnnounceNameError, fmt.Errorf("couldn't get announce name")
+		return domain.StatusAnnounceNameError, domain.StatusAnnounceNameError.Error()
 	}
 
 	if err := p.getClient(clientCfg, clientName); err != nil {
@@ -225,82 +230,42 @@ func (p *processor) processSeasonPack() (int, error) {
 	requestRls := rls.ParseString(p.req.Name)
 	clientEntries, ok := tre.entriesMap[utils.GetFormattedTitle(requestRls)]
 	if !ok {
-		return domain.StatusNoMatches, fmt.Errorf("no matching releases in client")
+		return domain.StatusNoMatches, domain.StatusNoMatches.Error()
 	}
 
 	announcedPackName := utils.FormatSeasonPackTitle(p.req.Name)
 	p.log.Debug().Msgf("formatted season pack name: %s", announcedPackName)
 
 	for _, clientEntry := range clientEntries {
-		if release.CheckCandidates(requestRls, clientEntry.R, p.cfg.Config.FuzzyMatching) == domain.StatusAlreadyInClient {
-			return domain.StatusAlreadyInClient, fmt.Errorf("release already in client")
+		compareInfo := release.CheckCandidates(requestRls, clientEntry.r, p.cfg.Config.FuzzyMatching)
+		switch compareInfo.StatusCode {
+		case domain.StatusAlreadyInClient, domain.StatusNotASeasonPack:
+			return compareInfo.StatusCode, compareInfo.StatusCode.Error()
 		}
 	}
 
-	respSet := make(map[int]bool)
+	codeSet := make(map[domain.StatusCode]bool)
 	epsSet := make(map[int]struct{})
 	matches := make([]matchInfo, 0, len(clientEntries))
 
 	for _, clientEntry := range clientEntries {
-		switch res := release.CheckCandidates(requestRls, clientEntry.R, p.cfg.Config.FuzzyMatching); res {
-		case domain.StatusResolutionMismatch:
-			p.log.Info().Msgf("resolution did not match: request(%s => %s), client(%s => %s)",
-				requestRls.String(), requestRls.Resolution, clientEntry.R.String(), clientEntry.R.Resolution)
-			respSet[res] = true
+		switch compareInfo := release.CheckCandidates(requestRls, clientEntry.r, p.cfg.Config.FuzzyMatching); compareInfo.StatusCode {
+		case domain.StatusAlreadyInClient, domain.StatusNotASeasonPack:
+			return compareInfo.StatusCode, compareInfo.StatusCode.Error()
+
+		case domain.StatusResolutionMismatch, domain.StatusSourceMismatch, domain.StatusRlsGrpMismatch,
+			domain.StatusCutMismatch, domain.StatusEditionMismatch, domain.StatusRepackStatusMismatch,
+			domain.StatusHdrMismatch, domain.StatusStreamingServiceMismatch:
+			p.log.Info().Msgf("%s: request(%s => %v), client(%s => %v)",
+				compareInfo.StatusCode.Message(), requestRls.String(), compareInfo.RequestRejectField,
+				clientEntry.r.String(), compareInfo.ClientRejectField)
+			codeSet[compareInfo.StatusCode] = true
 			continue
-
-		case domain.StatusSourceMismatch:
-			p.log.Info().Msgf("source did not match: request(%s => %s), client(%s => %s)",
-				requestRls.String(), requestRls.Source, clientEntry.R.String(), clientEntry.R.Source)
-			respSet[res] = true
-			continue
-
-		case domain.StatusRlsGrpMismatch:
-			p.log.Info().Msgf("release group did not match: request(%s => %s), client(%s => %s)",
-				requestRls.String(), requestRls.Group, clientEntry.R.String(), clientEntry.R.Group)
-			respSet[res] = true
-			continue
-
-		case domain.StatusCutMismatch:
-			p.log.Info().Msgf("cut did not match: request(%s => %s), client(%s => %s)",
-				requestRls.String(), requestRls.Cut, clientEntry.R.String(), clientEntry.R.Cut)
-			respSet[res] = true
-			continue
-
-		case domain.StatusEditionMismatch:
-			p.log.Info().Msgf("edition did not match: request(%s => %s), client(%s => %s)",
-				requestRls.String(), requestRls.Edition, clientEntry.R.String(), clientEntry.R.Edition)
-			respSet[res] = true
-			continue
-
-		case domain.StatusRepackStatusMismatch:
-			p.log.Info().Msgf("repack status did not match: request(%s => %s), client(%s => %s)",
-				requestRls.String(), requestRls.Other, clientEntry.R.String(), clientEntry.R.Other)
-			respSet[res] = true
-			continue
-
-		case domain.StatusHdrMismatch:
-			p.log.Info().Msgf("hdr metadata did not match: request(%s => %s), client(%s => %s)",
-				requestRls.String(), requestRls.HDR, clientEntry.R.String(), clientEntry.R.HDR)
-			respSet[res] = true
-			continue
-
-		case domain.StatusStreamingServiceMismatch:
-			p.log.Info().Msgf("streaming service did not match: request(%s => %s), client(%s => %s)",
-				requestRls.String(), requestRls.Collection, clientEntry.R.String(), clientEntry.R.Collection)
-			respSet[res] = true
-			continue
-
-		case domain.StatusAlreadyInClient:
-			return domain.StatusAlreadyInClient, fmt.Errorf("release already in client")
-
-		case domain.StatusNotASeasonPack:
-			return domain.StatusNotASeasonPack, fmt.Errorf("release is not a season pack")
 
 		case domain.StatusSuccessfulMatch:
-			torrentFiles, err := p.getFiles(clientEntry.T.Hash)
+			torrentFiles, err := p.getFiles(clientEntry.t.Hash)
 			if err != nil {
-				p.log.Error().Err(err).Msgf("error getting files: %s", clientEntry.T.Name)
+				p.log.Error().Err(err).Msgf("error getting files: %s", clientEntry.t.Name)
 				continue
 			}
 
@@ -316,12 +281,12 @@ func (p *processor) processSeasonPack() (int, error) {
 				break
 			}
 			if len(fileName) == 0 || size == 0 {
-				p.log.Error().Err(err).Msgf("error getting filename or size: %s", clientEntry.T.Name)
+				p.log.Error().Err(err).Msgf("error getting filename or size: %s", clientEntry.t.Name)
 				continue
 			}
 
-			epRls := rls.ParseString(clientEntry.T.Name)
-			clientEpPath := filepath.Join(clientEntry.T.SavePath, fileName)
+			epRls := rls.ParseString(clientEntry.t.Name)
+			clientEpPath := filepath.Join(clientEntry.t.SavePath, fileName)
 			announcedEpPath := filepath.Join(clientCfg.PreImportPath, announcedPackName, filepath.Base(fileName))
 
 			epsSet[epRls.Episode] = struct{}{}
@@ -334,14 +299,14 @@ func (p *processor) processSeasonPack() (int, error) {
 			})
 
 			p.log.Debug().Msgf("matched torrent from client: name(%s), size(%d), hash(%s)",
-				clientEntry.T.Name, size, clientEntry.T.Hash)
-			respSet[res] = true
+				clientEntry.t.Name, size, clientEntry.t.Hash)
+			codeSet[compareInfo.StatusCode] = true
 			continue
 		}
 	}
 
-	if !respSet[domain.StatusSuccessfulMatch] {
-		return domain.StatusNoMatches, fmt.Errorf("no matching releases in client")
+	if !codeSet[domain.StatusSuccessfulMatch] {
+		return domain.StatusNoMatches, domain.StatusNoMatches.Error()
 	}
 
 	// dedupe matches and store in matchesMap
@@ -370,7 +335,7 @@ func (p *processor) processSeasonPack() (int, error) {
 		return domain.StatusSuccessfulMatch, nil
 	}
 
-	hardlinkRespSet := make(map[int]bool)
+	hardlinkRespSet := make(map[domain.StatusCode]bool)
 
 	for _, match := range matches {
 		if err := utils.CreateHardlink(match.clientEpPath, match.announcedEpPath); err != nil {
@@ -383,7 +348,7 @@ func (p *processor) processSeasonPack() (int, error) {
 	}
 
 	if !hardlinkRespSet[domain.StatusSuccessfulHardlink] {
-		return domain.StatusFailedHardlink, fmt.Errorf("couldn't create hardlinks")
+		return domain.StatusFailedHardlink, domain.StatusFailedHardlink.Error()
 	}
 
 	return domain.StatusSuccessfulHardlink, nil
@@ -393,46 +358,46 @@ func (p *processor) ParseTorrentHandler(c *gin.Context) {
 	p.log.Info().Msg("starting to parse season pack torrent")
 
 	if err := json.NewDecoder(c.Request.Body).Decode(&p.req); err != nil {
-		p.log.Error().Err(err).Msgf("error decoding request")
-		c.AbortWithStatusJSON(domain.StatusDecodingError, gin.H{
-			"code":  domain.StatusDecodingError,
-			"error": err.Error(),
+		p.log.Error().Err(err).Msgf(domain.StatusDecodingError.Message())
+		c.AbortWithStatusJSON(domain.StatusDecodingError.Code(), gin.H{
+			"statusCode": domain.StatusDecodingError.Code(),
+			"error":      err.Error(),
 		})
 		return
 	}
 
-	code, err := p.parseTorrent()
+	statusCode, err := p.parseTorrent()
 	if err != nil {
-		if sendErr := p.noti.Send(code, domain.NotificationPayload{
+		if sendErr := p.noti.Send(statusCode, domain.NotificationPayload{
 			ReleaseName: p.req.Name,
 			Client:      p.req.ClientName,
 			Action:      "Parse",
 			Error:       err,
 		}); sendErr != nil {
-			p.log.Error().Err(sendErr).Msgf("could not send %s notification for %d", p.noti.Name(), code)
+			p.log.Error().Err(sendErr).Msgf("could not send %s notification for %d", p.noti.Name(), statusCode)
 		}
 
-		p.log.Error().Err(err).Msgf("error parsing torrent: %d", code)
-		c.AbortWithStatusJSON(code, gin.H{
-			"code":  code,
-			"error": err.Error(),
+		p.log.Error().Err(err).Msgf("error parsing torrent: %s", statusCode.Message())
+		c.AbortWithStatusJSON(statusCode.Code(), gin.H{
+			"statusCode": statusCode.Code(),
+			"error":      err.Error(),
 		})
 		return
 	}
 
-	if sendErr := p.noti.Send(code, domain.NotificationPayload{
+	if sendErr := p.noti.Send(statusCode, domain.NotificationPayload{
 		ReleaseName: p.req.Name,
 		Client:      p.req.ClientName,
 		Action:      "Parse",
 	}); sendErr != nil {
-		p.log.Error().Err(sendErr).Msgf("could not send %s notification for %d", p.noti.Name(), code)
+		p.log.Error().Err(sendErr).Msgf("could not send %s notification for %d", p.noti.Name(), statusCode)
 	}
 
 	p.log.Info().Msg("successfully parsed torrent and hardlinked episodes")
-	c.String(code, "successful hardlink")
+	c.String(statusCode.Code(), statusCode.Message())
 }
 
-func (p *processor) parseTorrent() (int, error) {
+func (p *processor) parseTorrent() (domain.StatusCode, error) {
 	clientName := p.getClientName()
 
 	p.log.UpdateContext(func(c zerolog.Context) zerolog.Context {
@@ -441,15 +406,15 @@ func (p *processor) parseTorrent() (int, error) {
 
 	clientCfg, ok := p.cfg.Config.Clients[clientName]
 	if !ok {
-		return domain.StatusClientNotFound, fmt.Errorf("client not found in config")
+		return domain.StatusClientNotFound, domain.StatusClientNotFound.Error()
 	}
 
 	if len(p.req.Name) == 0 {
-		return domain.StatusAnnounceNameError, fmt.Errorf("couldn't get announce name")
+		return domain.StatusAnnounceNameError, domain.StatusAnnounceNameError.Error()
 	}
 
 	if len(p.req.Torrent) == 0 {
-		return domain.StatusTorrentBytesError, fmt.Errorf("couldn't get torrent bytes")
+		return domain.StatusTorrentBytesError, domain.StatusTorrentBytesError.Error()
 	}
 
 	torrentBytes, err := torrents.DecodeTorrentBytes(p.req.Torrent)
@@ -475,10 +440,10 @@ func (p *processor) parseTorrent() (int, error) {
 
 	matches, ok := matchesMap.Load(p.req.Name)
 	if !ok {
-		return domain.StatusNoMatches, fmt.Errorf("no matching releases in client")
+		return domain.StatusNoMatches, domain.StatusNoMatches.Error()
 	}
 
-	hardlinkRespSet := make(map[int]bool)
+	hardlinkRespSet := make(map[domain.StatusCode]bool)
 
 	var matchedEpPath string
 	var matchErr error
@@ -518,7 +483,7 @@ func (p *processor) parseTorrent() (int, error) {
 	}
 
 	if !hardlinkRespSet[domain.StatusSuccessfulHardlink] {
-		return domain.StatusFailedHardlink, fmt.Errorf("couldn't create hardlinks")
+		return domain.StatusFailedHardlink, domain.StatusFailedHardlink.Error()
 	}
 
 	return domain.StatusSuccessfulHardlink, nil
