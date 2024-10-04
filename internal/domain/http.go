@@ -72,7 +72,7 @@ func (s StatusCode) Message() string {
 	case StatusGetClientError:
 		return "could not get client"
 	case StatusDecodingError:
-		return "could not decode request"
+		return "error decoding request"
 	case StatusAnnounceNameError:
 		return "could not get announce name"
 	case StatusGetTorrentsError:

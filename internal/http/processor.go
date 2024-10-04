@@ -178,10 +178,10 @@ func (p *processor) ProcessSeasonPackHandler(c *gin.Context) {
 			Action:      "Pack",
 			Error:       err,
 		}); sendErr != nil {
-			p.log.Error().Err(sendErr).Msgf("could not send %s notification for %d", p.noti.Name(), statusCode)
+			p.log.Error().Err(sendErr).Msgf("error sending %s notification for %d", p.noti.Name(), statusCode)
 		}
 
-		p.log.Error().Err(err).Msgf("error processing season pack: %s", statusCode.Message())
+		p.log.Error().Err(err).Msg("error processing season pack")
 		c.AbortWithStatusJSON(statusCode.Code(), gin.H{
 			"statusCode": statusCode.Code(),
 			"error":      err.Error(),
@@ -194,7 +194,7 @@ func (p *processor) ProcessSeasonPackHandler(c *gin.Context) {
 		Client:      p.req.ClientName,
 		Action:      "Pack",
 	}); sendErr != nil {
-		p.log.Error().Err(sendErr).Msgf("could not send %s notification for %d", p.noti.Name(), statusCode)
+		p.log.Error().Err(sendErr).Msgf("error sending %s notification for %d", p.noti.Name(), statusCode)
 	}
 
 	p.log.Info().Msg("successfully matched season pack to episodes in client")
@@ -374,10 +374,10 @@ func (p *processor) ParseTorrentHandler(c *gin.Context) {
 			Action:      "Parse",
 			Error:       err,
 		}); sendErr != nil {
-			p.log.Error().Err(sendErr).Msgf("could not send %s notification for %d", p.noti.Name(), statusCode)
+			p.log.Error().Err(sendErr).Msgf("error sending %s notification for %d", p.noti.Name(), statusCode)
 		}
 
-		p.log.Error().Err(err).Msgf("error parsing torrent: %s", statusCode.Message())
+		p.log.Error().Err(err).Msg("error parsing torrent")
 		c.AbortWithStatusJSON(statusCode.Code(), gin.H{
 			"statusCode": statusCode.Code(),
 			"error":      err.Error(),
@@ -390,7 +390,7 @@ func (p *processor) ParseTorrentHandler(c *gin.Context) {
 		Client:      p.req.ClientName,
 		Action:      "Parse",
 	}); sendErr != nil {
-		p.log.Error().Err(sendErr).Msgf("could not send %s notification for %d", p.noti.Name(), statusCode)
+		p.log.Error().Err(sendErr).Msgf("error sending %s notification for %d", p.noti.Name(), statusCode)
 	}
 
 	p.log.Info().Msg("successfully parsed torrent and hardlinked episodes")
