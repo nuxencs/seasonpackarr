@@ -483,7 +483,7 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 			break
 		}
 		if matchErr != nil {
-			p.log.Error().Err(matchErr).Msgf("error matching episode to file in pack, skipping hardlink: %s",
+			p.log.Error().Msgf("error matching episode to file in pack, skipping hardlink: %s",
 				filepath.Base(match.clientEpPath))
 			continue
 		}
