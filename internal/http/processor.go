@@ -450,6 +450,7 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 		return domain.StatusNoMatches, domain.StatusNoMatches.Error()
 	}
 
+	matchedEps := make([]string, 0, len(matches))
 	hardlinkRespSet := make(map[domain.StatusCode]bool)
 
 	var matchedEpPath string
@@ -471,12 +472,12 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 				continue
 			}
 			targetEpPath = filepath.Join(targetPackDir, matchedEpPath)
+			matchedEps = append(matchedEps, targetEpPath)
 			break
 		}
 		if matchErr != nil {
 			p.log.Error().Err(matchErr).Msgf("error matching episode to file in pack, skipping hardlink: %s",
 				filepath.Base(match.clientEpPath))
-			hardlinkRespSet[domain.StatusFailedHardlink] = true
 			continue
 		}
 
@@ -487,6 +488,10 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 		}
 		p.log.Log().Msgf("created hardlink: source(%s), target(%s)", match.clientEpPath, targetEpPath)
 		hardlinkRespSet[domain.StatusSuccessfulHardlink] = true
+	}
+
+	if len(matchedEps) == 0 {
+		return domain.StatusFailedMatchToTorrentEps, domain.StatusFailedMatchToTorrentEps.Error()
 	}
 
 	if !hardlinkRespSet[domain.StatusSuccessfulHardlink] {
