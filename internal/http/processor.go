@@ -172,14 +172,16 @@ func (p *processor) ProcessSeasonPackHandler(c *gin.Context) {
 
 	statusCode, err := p.processSeasonPack()
 	if err != nil {
-		if sendErr := p.noti.Send(statusCode, domain.NotificationPayload{
-			ReleaseName: p.req.Name,
-			Client:      p.req.ClientName,
-			Action:      "Pack",
-			Error:       err,
-		}); sendErr != nil {
-			p.log.Error().Err(sendErr).Msgf("error sending %s notification for %d", p.noti.Name(), statusCode)
-		}
+		go func() {
+			if sendErr := p.noti.Send(statusCode, domain.NotificationPayload{
+				ReleaseName: p.req.Name,
+				Client:      p.req.ClientName,
+				Action:      "Pack",
+				Error:       err,
+			}); sendErr != nil {
+				p.log.Error().Err(sendErr).Msgf("error sending %s notification for %d", p.noti.Name(), statusCode)
+			}
+		}()
 
 		p.log.Error().Err(err).Msg("error processing season pack")
 		c.AbortWithStatusJSON(statusCode.Code(), gin.H{
@@ -189,13 +191,15 @@ func (p *processor) ProcessSeasonPackHandler(c *gin.Context) {
 		return
 	}
 
-	if sendErr := p.noti.Send(statusCode, domain.NotificationPayload{
-		ReleaseName: p.req.Name,
-		Client:      p.req.ClientName,
-		Action:      "Pack",
-	}); sendErr != nil {
-		p.log.Error().Err(sendErr).Msgf("error sending %s notification for %d", p.noti.Name(), statusCode)
-	}
+	go func() {
+		if sendErr := p.noti.Send(statusCode, domain.NotificationPayload{
+			ReleaseName: p.req.Name,
+			Client:      p.req.ClientName,
+			Action:      "Pack",
+		}); sendErr != nil {
+			p.log.Error().Err(sendErr).Msgf("error sending %s notification for %d", p.noti.Name(), statusCode)
+		}
+	}()
 
 	p.log.Info().Msg("successfully matched season pack to episodes in client")
 	c.String(statusCode.Code(), statusCode.String())
@@ -367,14 +371,16 @@ func (p *processor) ParseTorrentHandler(c *gin.Context) {
 
 	statusCode, err := p.parseTorrent()
 	if err != nil {
-		if sendErr := p.noti.Send(statusCode, domain.NotificationPayload{
-			ReleaseName: p.req.Name,
-			Client:      p.req.ClientName,
-			Action:      "Parse",
-			Error:       err,
-		}); sendErr != nil {
-			p.log.Error().Err(sendErr).Msgf("error sending %s notification for %d", p.noti.Name(), statusCode)
-		}
+		go func() {
+			if sendErr := p.noti.Send(statusCode, domain.NotificationPayload{
+				ReleaseName: p.req.Name,
+				Client:      p.req.ClientName,
+				Action:      "Parse",
+				Error:       err,
+			}); sendErr != nil {
+				p.log.Error().Err(sendErr).Msgf("error sending %s notification for %d", p.noti.Name(), statusCode)
+			}
+		}()
 
 		p.log.Error().Err(err).Msg("error parsing torrent")
 		c.AbortWithStatusJSON(statusCode.Code(), gin.H{
@@ -384,13 +390,15 @@ func (p *processor) ParseTorrentHandler(c *gin.Context) {
 		return
 	}
 
-	if sendErr := p.noti.Send(statusCode, domain.NotificationPayload{
-		ReleaseName: p.req.Name,
-		Client:      p.req.ClientName,
-		Action:      "Parse",
-	}); sendErr != nil {
-		p.log.Error().Err(sendErr).Msgf("error sending %s notification for %d", p.noti.Name(), statusCode)
-	}
+	go func() {
+		if sendErr := p.noti.Send(statusCode, domain.NotificationPayload{
+			ReleaseName: p.req.Name,
+			Client:      p.req.ClientName,
+			Action:      "Parse",
+		}); sendErr != nil {
+			p.log.Error().Err(sendErr).Msgf("error sending %s notification for %d", p.noti.Name(), statusCode)
+		}
+	}()
 
 	p.log.Info().Msg("successfully parsed torrent and hardlinked episodes")
 	c.String(statusCode.Code(), statusCode.String())
