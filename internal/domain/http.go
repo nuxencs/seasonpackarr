@@ -69,7 +69,7 @@ func (s StatusCode) String() string {
 	case StatusFailedHardlink:
 		return "could not create hardlinks"
 	case StatusFailedMatchToTorrentEps:
-		return "could not match episode to file in pack"
+		return "could not match episodes to files in pack"
 	case StatusClientNotFound:
 		return "could not find client in config"
 	case StatusGetClientError:
