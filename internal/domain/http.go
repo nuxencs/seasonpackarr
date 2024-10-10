@@ -25,6 +25,7 @@ const (
 	StatusSuccessfulMatch          StatusCode = 250
 	StatusSuccessfulHardlink       StatusCode = 250
 	StatusFailedHardlink           StatusCode = 440
+	StatusFailedMatchToTorrentEps  StatusCode = 445
 	StatusClientNotFound           StatusCode = 472
 	StatusGetClientError           StatusCode = 471
 	StatusDecodingError            StatusCode = 470
@@ -67,6 +68,8 @@ func (s StatusCode) String() string {
 		return "successful match"
 	case StatusFailedHardlink:
 		return "could not create hardlinks"
+	case StatusFailedMatchToTorrentEps:
+		return "could not match episodes to files in pack"
 	case StatusClientNotFound:
 		return "could not find client in config"
 	case StatusGetClientError:
@@ -120,6 +123,7 @@ var NotificationStatusMap = map[string][]StatusCode{
 	},
 	NotificationLevelError: {
 		StatusFailedHardlink,
+		StatusFailedMatchToTorrentEps,
 		StatusClientNotFound,
 		StatusGetClientError,
 		StatusDecodingError,

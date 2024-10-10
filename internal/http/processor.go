@@ -338,19 +338,18 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 		return domain.StatusSuccessfulMatch, nil
 	}
 
-	hardlinkRespSet := make(map[domain.StatusCode]bool)
+	successfulHardlink := false
 
 	for _, match := range matches {
 		if err := utils.CreateHardlink(match.clientEpPath, match.announcedEpPath); err != nil {
 			p.log.Error().Err(err).Msgf("error creating hardlink: %s", match.clientEpPath)
-			hardlinkRespSet[domain.StatusFailedHardlink] = true
 			continue
 		}
 		p.log.Log().Msgf("created hardlink: source(%s), target(%s)", match.clientEpPath, match.announcedEpPath)
-		hardlinkRespSet[domain.StatusSuccessfulHardlink] = true
+		successfulHardlink = true
 	}
 
-	if !hardlinkRespSet[domain.StatusSuccessfulHardlink] {
+	if !successfulHardlink {
 		return domain.StatusFailedHardlink, domain.StatusFailedHardlink.Error()
 	}
 
@@ -450,7 +449,8 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 		return domain.StatusNoMatches, domain.StatusNoMatches.Error()
 	}
 
-	hardlinkRespSet := make(map[domain.StatusCode]bool)
+	successfulEpMatch := false
+	successfulHardlink := false
 
 	var matchedEpPath string
 	var matchErr error
@@ -471,25 +471,29 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 				continue
 			}
 			targetEpPath = filepath.Join(targetPackDir, matchedEpPath)
+			successfulEpMatch = true
+
+			if err = utils.CreateHardlink(match.clientEpPath, targetEpPath); err != nil {
+				p.log.Error().Err(err).Msgf("error creating hardlink: %s", match.clientEpPath)
+				continue
+			}
+			p.log.Log().Msgf("created hardlink: source(%s), target(%s)", match.clientEpPath, targetEpPath)
+			successfulHardlink = true
+
 			break
 		}
 		if matchErr != nil {
-			p.log.Error().Err(matchErr).Msgf("error matching episode to file in pack, skipping hardlink: %s",
+			p.log.Error().Msgf("error matching episode to file in pack, skipping hardlink: %s",
 				filepath.Base(match.clientEpPath))
-			hardlinkRespSet[domain.StatusFailedHardlink] = true
 			continue
 		}
-
-		if err = utils.CreateHardlink(match.clientEpPath, targetEpPath); err != nil {
-			p.log.Error().Err(err).Msgf("error creating hardlink: %s", match.clientEpPath)
-			hardlinkRespSet[domain.StatusFailedHardlink] = true
-			continue
-		}
-		p.log.Log().Msgf("created hardlink: source(%s), target(%s)", match.clientEpPath, targetEpPath)
-		hardlinkRespSet[domain.StatusSuccessfulHardlink] = true
 	}
 
-	if !hardlinkRespSet[domain.StatusSuccessfulHardlink] {
+	if !successfulEpMatch {
+		return domain.StatusFailedMatchToTorrentEps, domain.StatusFailedMatchToTorrentEps.Error()
+	}
+
+	if !successfulHardlink {
 		return domain.StatusFailedHardlink, domain.StatusFailedHardlink.Error()
 	}
 
