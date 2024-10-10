@@ -5,9 +5,10 @@ package torrents
 
 import (
 	"encoding/base64"
-	"fmt"
 	"strings"
 	"unicode"
+
+	"github.com/nuxencs/seasonpackarr/internal/domain"
 )
 
 func DecodeTorrentBytes(torrentBytes []byte) ([]byte, error) {
@@ -35,7 +36,7 @@ func DecodeTorrentBytes(torrentBytes []byte) ([]byte, error) {
 		}
 	}
 
-	return []byte{}, fmt.Errorf("couldn't decode torrent bytes")
+	return []byte{}, domain.StatusDecodeTorrentBytesError.Error()
 }
 
 func atoi(buf string) (ret int, valid bool, pos string) {

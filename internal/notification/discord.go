@@ -12,7 +12,6 @@ import (
 	"io"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/config"
@@ -45,10 +44,9 @@ type DiscordEmbedsFields struct {
 type EmbedColors int
 
 const (
-	LIGHT_BLUE EmbedColors = 5814783  // 58b9ff
-	RED        EmbedColors = 15548997 // ed4245
-	GREEN      EmbedColors = 5763719  // 57f287
-	GRAY       EmbedColors = 10070709 // 99aab5
+	RED   EmbedColors = 15548997 // ed4245
+	GREEN EmbedColors = 5763719  // 57f287
+	GRAY  EmbedColors = 10070709 // 99aab5
 )
 
 type discordSender struct {
@@ -72,7 +70,7 @@ func (s *discordSender) Name() string {
 	return "discord"
 }
 
-func (s *discordSender) Send(statusCode int, payload domain.NotificationPayload) error {
+func (s *discordSender) Send(statusCode domain.StatusCode, payload domain.NotificationPayload) error {
 	if !s.isEnabled() {
 		s.log.Debug().Msg("no webhook defined, skipping notification")
 		return nil
@@ -129,15 +127,15 @@ func (s *discordSender) isEnabled() bool {
 	return len(s.cfg.Config.Notifications.Discord) != 0
 }
 
-func (s *discordSender) shouldSend(statusCode int) bool {
+func (s *discordSender) shouldSend(statusCode domain.StatusCode) bool {
 	if len(s.cfg.Config.Notifications.NotificationLevel) == 0 {
 		return false
 	}
 
-	statusCodes := make(map[int]struct{})
+	statusCodes := make(map[domain.StatusCode]struct{})
 
 	for _, level := range s.cfg.Config.Notifications.NotificationLevel {
-		if codes, ok := domain.StatusMap[level]; ok {
+		if codes, ok := domain.NotificationStatusMap[level]; ok {
 			for _, code := range codes {
 				statusCodes[code] = struct{}{}
 			}
@@ -148,12 +146,12 @@ func (s *discordSender) shouldSend(statusCode int) bool {
 	return shouldSend
 }
 
-func (s *discordSender) buildEmbed(statusCode int, payload domain.NotificationPayload) DiscordEmbeds {
-	color := LIGHT_BLUE
+func (s *discordSender) buildEmbed(statusCode domain.StatusCode, payload domain.NotificationPayload) DiscordEmbeds {
+	var color EmbedColors
 
-	if slices.Contains(domain.StatusMap[domain.NotificationLevelInfo], statusCode) { // not matching
+	if slices.Contains(domain.NotificationStatusMap[domain.NotificationLevelInfo], statusCode) { // not matching
 		color = GRAY
-	} else if slices.Contains(domain.StatusMap[domain.NotificationLevelError], statusCode) { // error processing
+	} else if slices.Contains(domain.NotificationStatusMap[domain.NotificationLevelError], statusCode) { // error processing
 		color = RED
 	} else { // success
 		color = GREEN
@@ -190,15 +188,13 @@ func (s *discordSender) buildEmbed(statusCode int, payload domain.NotificationPa
 
 	if payload.Error != nil {
 		// actual error?
-		if slices.Contains(domain.StatusMap[domain.NotificationLevelError], statusCode) {
+		if slices.Contains(domain.NotificationStatusMap[domain.NotificationLevelError], statusCode) {
 			f := DiscordEmbedsFields{
 				Name:   "Error",
 				Value:  fmt.Sprintf("```%s```", payload.Error.Error()),
 				Inline: false,
 			}
 			fields = append(fields, f)
-		} else {
-			payload.Message = payload.Error.Error()
 		}
 	}
 
@@ -207,10 +203,6 @@ func (s *discordSender) buildEmbed(statusCode int, payload domain.NotificationPa
 		Color:     int(color),
 		Fields:    fields,
 		Timestamp: time.Now(),
-	}
-
-	if payload.Message != "" {
-		embed.Description = strings.ToUpper(string(payload.Message[0])) + payload.Message[1:]
 	}
 
 	return embed

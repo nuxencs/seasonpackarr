@@ -6,7 +6,7 @@ package domain
 
 type Sender interface {
 	Name() string
-	Send(statusCode int, payload NotificationPayload) error
+	Send(statusCode StatusCode, payload NotificationPayload) error
 }
 
 const (
