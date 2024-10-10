@@ -162,7 +162,7 @@ func (p *processor) ProcessSeasonPackHandler(c *gin.Context) {
 	p.log.Info().Msg("starting to process season pack request")
 
 	if err := json.NewDecoder(c.Request.Body).Decode(&p.req); err != nil {
-		p.log.Error().Err(err).Msgf(domain.StatusDecodingError.Message())
+		p.log.Error().Err(err).Msgf("%s", domain.StatusDecodingError)
 		c.AbortWithStatusJSON(domain.StatusDecodingError.Code(), gin.H{
 			"statusCode": domain.StatusDecodingError.Code(),
 			"error":      err.Error(),
@@ -198,7 +198,7 @@ func (p *processor) ProcessSeasonPackHandler(c *gin.Context) {
 	}
 
 	p.log.Info().Msg("successfully matched season pack to episodes in client")
-	c.String(statusCode.Code(), statusCode.Message())
+	c.String(statusCode.Code(), statusCode.String())
 }
 
 func (p *processor) processSeasonPack() (domain.StatusCode, error) {
@@ -256,7 +256,7 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 			domain.StatusCutMismatch, domain.StatusEditionMismatch, domain.StatusRepackStatusMismatch,
 			domain.StatusHdrMismatch, domain.StatusStreamingServiceMismatch:
 			p.log.Info().Msgf("%s: request(%s => %v), client(%s => %v)",
-				compareInfo.StatusCode.Message(), requestRls.String(), compareInfo.RequestRejectField,
+				compareInfo.StatusCode, requestRls.String(), compareInfo.RequestRejectField,
 				clientEntry.r.String(), compareInfo.ClientRejectField)
 			codeSet[compareInfo.StatusCode] = true
 			continue
@@ -357,7 +357,7 @@ func (p *processor) ParseTorrentHandler(c *gin.Context) {
 	p.log.Info().Msg("starting to parse season pack torrent")
 
 	if err := json.NewDecoder(c.Request.Body).Decode(&p.req); err != nil {
-		p.log.Error().Err(err).Msgf(domain.StatusDecodingError.Message())
+		p.log.Error().Err(err).Msgf("%s", domain.StatusDecodingError)
 		c.AbortWithStatusJSON(domain.StatusDecodingError.Code(), gin.H{
 			"statusCode": domain.StatusDecodingError.Code(),
 			"error":      err.Error(),
@@ -393,7 +393,7 @@ func (p *processor) ParseTorrentHandler(c *gin.Context) {
 	}
 
 	p.log.Info().Msg("successfully parsed torrent and hardlinked episodes")
-	c.String(statusCode.Code(), statusCode.Message())
+	c.String(statusCode.Code(), statusCode.String())
 }
 
 func (p *processor) parseTorrent() (domain.StatusCode, error) {

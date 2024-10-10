@@ -37,7 +37,7 @@ const (
 	StatusEpisodeCountError        StatusCode = 450
 )
 
-func (s StatusCode) Message() string {
+func (s StatusCode) String() string {
 	switch s {
 	case StatusNoMatches:
 		return "no matching releases in client"
@@ -97,7 +97,7 @@ func (s StatusCode) Code() int {
 }
 
 func (s StatusCode) Error() error {
-	return fmt.Errorf(s.Message())
+	return fmt.Errorf("%s", s)
 }
 
 var NotificationStatusMap = map[string][]StatusCode{

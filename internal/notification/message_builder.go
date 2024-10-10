@@ -12,5 +12,5 @@ import (
 
 // BuildTitle constructs the title of the notification message.
 func BuildTitle(statusCode domain.StatusCode) string {
-	return strings.ToUpper(string(statusCode.Message()[0])) + statusCode.Message()[1:]
+	return strings.ToUpper(string(statusCode.String()[0])) + statusCode.String()[1:]
 }
