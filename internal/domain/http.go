@@ -123,6 +123,7 @@ var NotificationStatusMap = map[string][]StatusCode{
 	},
 	NotificationLevelError: {
 		StatusFailedHardlink,
+		StatusFailedMatchToTorrentEps,
 		StatusClientNotFound,
 		StatusGetClientError,
 		StatusDecodingError,
