@@ -260,8 +260,8 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 			domain.StatusCutMismatch, domain.StatusEditionMismatch, domain.StatusRepackStatusMismatch,
 			domain.StatusHdrMismatch, domain.StatusStreamingServiceMismatch:
 			p.log.Info().Msgf("%s: request(%s => %v), client(%s => %v)",
-				compareInfo.StatusCode, requestRls.String(), compareInfo.RequestRejectField,
-				clientEntry.r.String(), compareInfo.ClientRejectField)
+				compareInfo.StatusCode, requestRls.String(), compareInfo.RejectValueA,
+				clientEntry.r.String(), compareInfo.RejectValueB)
 			codeSet[compareInfo.StatusCode] = true
 			continue
 
@@ -467,7 +467,7 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 				torrentEp.Path, torrentEp.Size)
 			if len(matchedEpPath) == 0 {
 				p.log.Debug().Msgf("%s: client(%s => %v), torrent(%s => %v)", compareInfo.StatusCode,
-					filepath.Base(match.clientEpPath), compareInfo.ClientRejectField, torrentEp.Path, compareInfo.TorrentRejectField)
+					filepath.Base(match.clientEpPath), compareInfo.RejectValueA, torrentEp.Path, compareInfo.RejectValueB)
 				continue
 			}
 			targetEpPath = filepath.Join(targetPackDir, matchedEpPath)

@@ -4,8 +4,7 @@
 package domain
 
 type CompareInfo struct {
-	StatusCode         StatusCode
-	RequestRejectField any
-	ClientRejectField  any
-	TorrentRejectField any
+	StatusCode   StatusCode
+	RejectValueA any
+	RejectValueB any
 }

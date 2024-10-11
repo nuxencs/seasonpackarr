@@ -50,9 +50,9 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			want: compare{
 				path: "",
 				info: domain.CompareInfo{
-					StatusCode:         domain.StatusEpisodeMismatch,
-					ClientRejectField:  1,
-					TorrentRejectField: 2,
+					StatusCode:   domain.StatusEpisodeMismatch,
+					RejectValueA: 1,
+					RejectValueB: 2,
 				},
 			},
 		},
@@ -67,9 +67,9 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			want: compare{
 				path: "",
 				info: domain.CompareInfo{
-					StatusCode:         domain.StatusSeasonMismatch,
-					ClientRejectField:  2,
-					TorrentRejectField: 3,
+					StatusCode:   domain.StatusSeasonMismatch,
+					RejectValueA: 2,
+					RejectValueB: 3,
 				},
 			},
 		},
@@ -84,9 +84,9 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			want: compare{
 				path: "",
 				info: domain.CompareInfo{
-					StatusCode:         domain.StatusResolutionMismatch,
-					ClientRejectField:  "1080p",
-					TorrentRejectField: "2160p",
+					StatusCode:   domain.StatusResolutionMismatch,
+					RejectValueA: "1080p",
+					RejectValueB: "2160p",
 				},
 			},
 		},
@@ -101,9 +101,9 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			want: compare{
 				path: "",
 				info: domain.CompareInfo{
-					StatusCode:         domain.StatusRlsGrpMismatch,
-					ClientRejectField:  "RlsGrp",
-					TorrentRejectField: "OtherRlsGrp",
+					StatusCode:   domain.StatusRlsGrpMismatch,
+					RejectValueA: "RlsGrp",
+					RejectValueB: "OtherRlsGrp",
 				},
 			},
 		},
@@ -118,9 +118,9 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			want: compare{
 				path: "",
 				info: domain.CompareInfo{
-					StatusCode:         domain.StatusSizeMismatch,
-					ClientRejectField:  int64(2316560346),
-					TorrentRejectField: int64(2278773077),
+					StatusCode:   domain.StatusSizeMismatch,
+					RejectValueA: int64(2316560346),
+					RejectValueB: int64(2278773077),
 				},
 			},
 		},
