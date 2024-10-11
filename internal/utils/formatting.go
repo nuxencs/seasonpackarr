@@ -5,7 +5,6 @@ package utils
 
 import (
 	"fmt"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -40,42 +39,6 @@ func FormatSeasonPackTitle(packName string) string {
 		packName = reDots.ReplaceAllString(packName, ".")
 	}
 	return packName
-}
-
-func MatchEpToSeasonPackEp(clientEpPath string, clientEpSize int64, torrentEpPath string, torrentEpSize int64) (string, error) {
-	epInClientRls := rls.ParseString(filepath.Base(clientEpPath))
-	epInTorrentRls := rls.ParseString(filepath.Base(torrentEpPath))
-
-	err := compareEpisodes(epInClientRls, epInTorrentRls)
-	if err != nil {
-		return "", err
-	}
-
-	if clientEpSize != torrentEpSize {
-		return "", fmt.Errorf("size mismatch")
-	}
-
-	return torrentEpPath, nil
-}
-
-func compareEpisodes(episodeRls, torrentEpRls rls.Release) error {
-	if episodeRls.Series != torrentEpRls.Series {
-		return fmt.Errorf("season mismatch")
-	}
-
-	if episodeRls.Episode != torrentEpRls.Episode {
-		return fmt.Errorf("episode mismatch")
-	}
-
-	if episodeRls.Resolution != torrentEpRls.Resolution {
-		return fmt.Errorf("resolution mismatch")
-	}
-
-	if rls.MustNormalize(episodeRls.Group) != rls.MustNormalize(torrentEpRls.Group) {
-		return fmt.Errorf("group mismatch")
-	}
-
-	return nil
 }
 
 func normalizeTitle(title string) string {
