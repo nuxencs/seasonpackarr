@@ -112,33 +112,33 @@ func MatchEpToSeasonPackEp(clientEpPath string, clientEpSize int64, torrentEpPat
 		}
 	}
 
-	epInClientRls := rls.ParseString(filepath.Base(clientEpPath))
-	epInTorrentRls := rls.ParseString(filepath.Base(torrentEpPath))
+	clientEpRls := rls.ParseString(filepath.Base(clientEpPath))
+	torrentEpRls := rls.ParseString(filepath.Base(torrentEpPath))
 
 	switch {
-	case epInClientRls.Series != epInTorrentRls.Series:
+	case clientEpRls.Series != torrentEpRls.Series:
 		return "", domain.CompareInfo{
 			StatusCode:   domain.StatusSeasonMismatch,
-			RejectValueA: epInClientRls.Series,
-			RejectValueB: epInTorrentRls.Series,
+			RejectValueA: clientEpRls.Series,
+			RejectValueB: torrentEpRls.Series,
 		}
-	case epInClientRls.Episode != epInTorrentRls.Episode:
+	case clientEpRls.Episode != torrentEpRls.Episode:
 		return "", domain.CompareInfo{
 			StatusCode:   domain.StatusEpisodeMismatch,
-			RejectValueA: epInClientRls.Episode,
-			RejectValueB: epInTorrentRls.Episode,
+			RejectValueA: clientEpRls.Episode,
+			RejectValueB: torrentEpRls.Episode,
 		}
-	case epInClientRls.Resolution != epInTorrentRls.Resolution:
+	case clientEpRls.Resolution != torrentEpRls.Resolution:
 		return "", domain.CompareInfo{
 			StatusCode:   domain.StatusResolutionMismatch,
-			RejectValueA: epInClientRls.Resolution,
-			RejectValueB: epInTorrentRls.Resolution,
+			RejectValueA: clientEpRls.Resolution,
+			RejectValueB: torrentEpRls.Resolution,
 		}
-	case rls.MustNormalize(epInClientRls.Group) != rls.MustNormalize(epInTorrentRls.Group):
+	case rls.MustNormalize(clientEpRls.Group) != rls.MustNormalize(torrentEpRls.Group):
 		return "", domain.CompareInfo{
 			StatusCode:   domain.StatusRlsGrpMismatch,
-			RejectValueA: epInClientRls.Group,
-			RejectValueB: epInTorrentRls.Group,
+			RejectValueA: clientEpRls.Group,
+			RejectValueB: torrentEpRls.Group,
 		}
 	}
 
