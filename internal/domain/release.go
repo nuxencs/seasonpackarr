@@ -7,4 +7,5 @@ type CompareInfo struct {
 	StatusCode         StatusCode
 	RequestRejectField any
 	ClientRejectField  any
+	TorrentRejectField any
 }

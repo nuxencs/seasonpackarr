@@ -453,7 +453,7 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 	successfulHardlink := false
 
 	var matchedEpPath string
-	var matchErr error
+	var compareInfo domain.CompareInfo
 	var targetEpPath string
 
 	targetPackDir := filepath.Join(clientCfg.PreImportPath, parsedPackName)
@@ -463,11 +463,11 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 			// reset targetEpPath for each checked torrentEp
 			targetEpPath = ""
 
-			matchedEpPath, matchErr = utils.MatchEpToSeasonPackEp(match.clientEpPath, match.clientEpSize,
+			matchedEpPath, compareInfo = release.MatchEpToSeasonPackEp(match.clientEpPath, match.clientEpSize,
 				torrentEp.Path, torrentEp.Size)
-			if matchErr != nil {
-				p.log.Debug().Err(matchErr).Msgf("episode did not match: client(%s), torrent(%s)",
-					filepath.Base(match.clientEpPath), torrentEp.Path)
+			if len(matchedEpPath) == 0 {
+				p.log.Debug().Msgf("%s: client(%s => %v), torrent(%s => %v)", compareInfo.StatusCode,
+					filepath.Base(match.clientEpPath), compareInfo.ClientRejectField, torrentEp.Path, compareInfo.TorrentRejectField)
 				continue
 			}
 			targetEpPath = filepath.Join(targetPackDir, matchedEpPath)
@@ -482,7 +482,7 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 
 			break
 		}
-		if matchErr != nil {
+		if len(matchedEpPath) == 0 {
 			p.log.Error().Msgf("error matching episode to file in pack, skipping hardlink: %s",
 				filepath.Base(match.clientEpPath))
 			continue

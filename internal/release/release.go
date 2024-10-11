@@ -4,6 +4,8 @@
 package release
 
 import (
+	"path/filepath"
+
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/utils"
 
@@ -99,6 +101,48 @@ func compareReleases(requestRls, clientRls rls.Release, fuzzyMatching domain.Fuz
 	}
 
 	return domain.CompareInfo{StatusCode: domain.StatusSuccessfulMatch}
+}
+
+func MatchEpToSeasonPackEp(clientEpPath string, clientEpSize int64, torrentEpPath string, torrentEpSize int64) (string, domain.CompareInfo) {
+	if clientEpSize != torrentEpSize {
+		return "", domain.CompareInfo{
+			StatusCode:         domain.StatusSizeMismatch,
+			ClientRejectField:  clientEpSize,
+			TorrentRejectField: torrentEpSize,
+		}
+	}
+
+	epInClientRls := rls.ParseString(filepath.Base(clientEpPath))
+	epInTorrentRls := rls.ParseString(filepath.Base(torrentEpPath))
+
+	switch {
+	case epInClientRls.Series != epInTorrentRls.Series:
+		return "", domain.CompareInfo{
+			StatusCode:         domain.StatusSeasonMismatch,
+			ClientRejectField:  epInClientRls.Series,
+			TorrentRejectField: epInTorrentRls.Series,
+		}
+	case epInClientRls.Episode != epInTorrentRls.Episode:
+		return "", domain.CompareInfo{
+			StatusCode:         domain.StatusEpisodeMismatch,
+			ClientRejectField:  epInClientRls.Episode,
+			TorrentRejectField: epInTorrentRls.Episode,
+		}
+	case epInClientRls.Resolution != epInTorrentRls.Resolution:
+		return "", domain.CompareInfo{
+			StatusCode:         domain.StatusResolutionMismatch,
+			ClientRejectField:  epInClientRls.Resolution,
+			TorrentRejectField: epInTorrentRls.Resolution,
+		}
+	case rls.MustNormalize(epInClientRls.Group) != rls.MustNormalize(epInTorrentRls.Group):
+		return "", domain.CompareInfo{
+			StatusCode:         domain.StatusRlsGrpMismatch,
+			ClientRejectField:  epInClientRls.Group,
+			TorrentRejectField: epInTorrentRls.Group,
+		}
+	}
+
+	return torrentEpPath, domain.CompareInfo{}
 }
 
 func PercentOfTotalEpisodes(totalEps int, foundEps int) float32 {

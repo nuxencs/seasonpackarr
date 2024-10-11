@@ -3,9 +3,7 @@
 
 package domain
 
-import (
-	"fmt"
-)
+import "fmt"
 
 type StatusCode int
 
@@ -21,6 +19,9 @@ const (
 	StatusStreamingServiceMismatch StatusCode = 208
 	StatusAlreadyInClient          StatusCode = 210
 	StatusNotASeasonPack           StatusCode = 211
+	StatusSizeMismatch             StatusCode = 212
+	StatusSeasonMismatch           StatusCode = 213
+	StatusEpisodeMismatch          StatusCode = 214
 	StatusBelowThreshold           StatusCode = 230
 	StatusSuccessfulMatch          StatusCode = 250
 	StatusSuccessfulHardlink       StatusCode = 250
@@ -62,6 +63,12 @@ func (s StatusCode) String() string {
 		return "release already in client"
 	case StatusNotASeasonPack:
 		return "release is not a season pack"
+	case StatusSizeMismatch:
+		return "size did not match"
+	case StatusSeasonMismatch:
+		return "season did not match"
+	case StatusEpisodeMismatch:
+		return "episode did not match"
 	case StatusBelowThreshold:
 		return "number of matches below threshold"
 	case StatusSuccessfulMatch:
