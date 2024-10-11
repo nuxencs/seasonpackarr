@@ -1,9 +1,11 @@
 package release
 
 import (
-	"github.com/nuxencs/seasonpackarr/internal/domain"
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/nuxencs/seasonpackarr/internal/domain"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func Test_MatchEpToSeasonPackEp(t *testing.T) {
