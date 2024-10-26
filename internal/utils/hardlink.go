@@ -12,7 +12,7 @@ func CreateHardlink(srcPath, trgPath string) error {
 	trgDir := filepath.Dir(trgPath)
 
 	// create the target directory if it doesn't exist
-	if err := os.MkdirAll(trgDir, 0755); err != nil {
+	if err := os.MkdirAll(trgDir, 0o755); err != nil {
 		return err
 	}
 

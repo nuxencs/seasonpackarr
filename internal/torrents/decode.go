@@ -45,7 +45,8 @@ func atoi(buf string) (ret int, valid bool, pos string) {
 	}
 
 	i := 0
-	for ; unicode.IsSpace(rune(buf[i])); i++ {
+	for unicode.IsSpace(rune(buf[i])) {
+		i++
 	}
 
 	r := buf[i]

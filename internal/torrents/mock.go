@@ -31,7 +31,7 @@ func mockEpisodes(dir string, numEpisodes int) error {
 		episodePath := filepath.Join(dir, episodeName)
 
 		// Create a minimal file.
-		if err = os.WriteFile(episodePath, []byte("0"), 0644); err != nil {
+		if err = os.WriteFile(episodePath, []byte("0"), 0o644); err != nil {
 			return err
 		}
 	}

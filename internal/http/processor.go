@@ -272,8 +272,8 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 				continue
 			}
 
-			var fileName = ""
-			var size int64 = 0
+			var fileName string
+			var size int64
 			for _, f := range *torrentFiles {
 				if filepath.Ext(f.Name) != ".mkv" {
 					continue
@@ -454,14 +454,12 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 
 	var matchedEpPath string
 	var compareInfo domain.CompareInfo
-	var targetEpPath string
 
 	targetPackDir := filepath.Join(clientCfg.PreImportPath, parsedPackName)
 
 	for _, match := range matches {
 		for _, torrentEp := range torrentEps {
-			// reset targetEpPath for each checked torrentEp
-			targetEpPath = ""
+			var targetEpPath string
 
 			matchedEpPath, compareInfo = release.MatchEpToSeasonPackEp(match.clientEpPath, match.clientEpSize,
 				torrentEp.Path, torrentEp.Size)

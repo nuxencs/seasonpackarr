@@ -460,7 +460,7 @@ func (c *AppConfig) UpdateConfig() error {
 	lines = c.processLines(lines)
 
 	output := strings.Join(lines, "\n")
-	if err := os.WriteFile(filePath, []byte(output), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte(output), 0o644); err != nil {
 		return errors.Wrap(err, "could not write config file: %s", filePath)
 	}
 
@@ -478,7 +478,7 @@ func (c *AppConfig) processLines(lines []string) []string {
 		foundLineFuzzyMatching      = false
 		foundLineSkipRepackCompare  = false
 		foundLineSimplifyHdrCompare = false
-		foundLineApiToken           = false
+		foundLineAPIToken           = false
 	)
 
 	for i, line := range lines {
@@ -517,13 +517,13 @@ func (c *AppConfig) processLines(lines []string) []string {
 			lines[i] = fmt.Sprintf("  simplifyHdrCompare: %t", c.Config.FuzzyMatching.SimplifyHdrCompare)
 			foundLineSimplifyHdrCompare = true
 		}
-		if !foundLineApiToken && strings.Contains(line, "apiToken:") {
+		if !foundLineAPIToken && strings.Contains(line, "apiToken:") {
 			if c.Config.APIToken == "" {
 				lines[i] = "# apiToken: \"\""
 			} else {
 				lines[i] = fmt.Sprintf("apiToken: \"%s\"", c.Config.APIToken)
 			}
-			foundLineApiToken = true
+			foundLineAPIToken = true
 		}
 	}
 
@@ -603,7 +603,7 @@ func (c *AppConfig) processLines(lines []string) []string {
 		}
 	}
 
-	if !foundLineApiToken {
+	if !foundLineAPIToken {
 		lines = append(lines, "# API Token")
 		lines = append(lines, "# If not defined, removes api authentication")
 		lines = append(lines, "#")
