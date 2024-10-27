@@ -44,9 +44,9 @@ type DiscordEmbedsFields struct {
 type EmbedColors int
 
 const (
-	RED   EmbedColors = 15548997 // ed4245
-	GREEN EmbedColors = 5763719  // 57f287
-	GRAY  EmbedColors = 10070709 // 99aab5
+	RED   EmbedColors = 0xed4245
+	GREEN EmbedColors = 0x57f287
+	GRAY  EmbedColors = 0x99aab5
 )
 
 type discordSender struct {
