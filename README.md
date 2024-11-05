@@ -23,8 +23,9 @@ announced, eliminating the need for re-downloading existing episodes.
 </p>
 
 > [!WARNING]
-> This application is currently in active development. If you encounter any bugs, please report them in the Discord
-> server or open an issue, so I can fix it.
+> This application is currently under active development. If you encounter any bugs, please report them in the dedicated
+> #seasonpackarr channel on the TRaSH-Guides [Discord server](https://trash-guides.info/discord) or create a new issue
+> on GitHub, so I can fix them.
 
 ## Installation
 
