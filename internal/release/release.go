@@ -152,3 +152,19 @@ func PercentOfTotalEpisodes(totalEps int, foundEps int) float32 {
 
 	return float32(foundEps) / float32(totalEps)
 }
+
+func IsValidEpisodeFile(torrentFileName string) bool {
+	torrentFileRls := rls.ParseString(filepath.Base(torrentFileName))
+
+	// ignore non video files
+	if torrentFileRls.Ext != "mkv" {
+		return false
+	}
+
+	// ignore sample files
+	if rls.MustNormalize(torrentFileRls.Group) == "sample" {
+		return false
+	}
+
+	return true
+}

@@ -275,7 +275,7 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 			var fileName string
 			var size int64
 			for _, f := range *torrentFiles {
-				if filepath.Ext(f.Name) != ".mkv" {
+				if !release.IsValidEpisodeFile(f.Name) {
 					continue
 				}
 
