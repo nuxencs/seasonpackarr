@@ -191,3 +191,55 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 		})
 	}
 }
+
+func Test_IsValidEpisodeFile(t *testing.T) {
+	type args struct {
+		torrentFileName string
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "sample_with_dash",
+			args: args{
+				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp-sample.mkv",
+			},
+			want: false,
+		},
+		{
+			name: "sample_with_dot",
+			args: args{
+				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.sample.mkv",
+			},
+			want: false,
+		},
+		{
+			name: "wrong_ext",
+			args: args{
+				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.nfo",
+			},
+			want: false,
+		},
+		{
+			name: "wrong_ext_and_sample",
+			args: args{
+				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.sample.nfo",
+			},
+			want: false,
+		},
+		{
+			name: "valid_release",
+			args: args{
+				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.mkv",
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equalf(t, tt.want, IsValidEpisodeFile(tt.args.torrentFileName), "IsValidEpisodeFile(%v)", tt.args.torrentFileName)
+		})
+	}
+}
