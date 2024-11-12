@@ -31,11 +31,17 @@ announced, eliminating the need for re-downloading existing episodes.
 
 ### Linux
 
-Download the latest release, or download the [source code](https://github.com/nuxencs/seasonpackarr/releases/latest) and build it yourself using `go build`.
+To download the latest release, you can use one of the following methods:
 
 ```bash
-wget $(curl -s https://api.github.com/repos/nuxencs/seasonpackarr/releases/latest | grep download | grep linux_x86_64 | cut -d\" -f4)
+# using curl
+curl -s https://api.github.com/repos/nuxencs/seasonpackarr/releases/latest | grep download | grep linux_x86_64 | cut -d\" -f4 | xargs curl -LO
+
+# using wget
+wget -qO- https://api.github.com/repos/nuxencs/seasonpackarr/releases/latest | grep download | grep linux_x86_64 | cut -d\" -f4 | xargs wget
 ```
+
+Alternatively, you can download the [source code](https://github.com/nuxencs/seasonpackarr/releases/latest) and build it yourself using `go build`.
 
 #### Unpack
 
