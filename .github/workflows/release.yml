@@ -137,6 +137,18 @@ jobs:
           flavor: |
             latest=auto
 
+      - name: Get version info
+        id: version
+        run: |
+          VERSION="${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}"
+          if [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+            SHORT_SHA=$(git rev-parse --short HEAD)
+            VERSION="${LATEST_TAG}-develop-${SHORT_SHA}"
+          fi
+          echo "Version: ${VERSION}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -157,7 +169,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             BUILDTIME=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
-            VERSION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+            VERSION=${{ steps.version.outputs.version }}
             REVISION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.revision'] }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
