@@ -3,7 +3,7 @@ module github.com/nuxencs/seasonpackarr
 go 1.23.0
 
 require (
-	github.com/anacrolix/torrent v1.57.1
+	github.com/anacrolix/torrent v1.58.0
 	github.com/autobrr/go-qbittorrent v1.11.0
 	github.com/dlclark/regexp2 v1.11.4
 	github.com/fsnotify/fsnotify v1.8.0
@@ -18,7 +18,7 @@ require (
 	github.com/rs/zerolog v1.33.0
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
