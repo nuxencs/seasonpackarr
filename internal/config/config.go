@@ -372,6 +372,14 @@ func (c *AppConfig) loadFromEnv() {
 					}
 				case prefix + "API_TOKEN":
 					c.Config.APIToken = envPair[1]
+				case prefix + "FUZZY_MATCHING_SKIP_REPACK_COMPARE":
+					if b, err := strconv.ParseBool(envPair[1]); err == nil {
+						c.Config.FuzzyMatching.SkipRepackCompare = b
+					}
+				case prefix + "FUZZY_MATCHING_SIMPLIFY_HDR_COMPARE":
+					if b, err := strconv.ParseBool(envPair[1]); err == nil {
+						c.Config.FuzzyMatching.SimplifyHdrCompare = b
+					}
 				}
 			}
 		}
