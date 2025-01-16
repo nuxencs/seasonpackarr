@@ -292,13 +292,22 @@ func New(configPath string, version string) *AppConfig {
 	}
 	c.defaults()
 	c.Config = &domain.Config{
-		Version:    version,
-		ConfigPath: configPath,
+		Version:       version,
+		ConfigPath:    configPath,
+		Clients:       make(map[string]*domain.Client),
+		FuzzyMatching: domain.FuzzyMatching{},
+		Notifications: domain.Notifications{},
 	}
 
-	c.load(configPath)
+	// Load environment variables first
 	c.loadFromEnv()
 
+	// Only try to load config file if no clients were configured via env vars
+	if len(c.Config.Clients) == 0 {
+		c.load(configPath)
+	}
+
+	// Validate client configuration regardless of source
 	for clientName, client := range c.Config.Clients {
 		if client.PreImportPath == "" {
 			log.Fatalf("preImportPath for client %q can't be empty, please provide a valid path to the directory you want seasonpacks to be hardlinked to", clientName)
@@ -340,12 +349,17 @@ func (c *AppConfig) loadFromEnv() {
 
 			if envPair[1] != "" {
 				switch envPair[0] {
+				// Core settings
 				case prefix + "HOST":
 					c.Config.Host = envPair[1]
 				case prefix + "PORT":
 					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
 						c.Config.Port = int(i)
 					}
+				case prefix + "API_TOKEN":
+					c.Config.APIToken = envPair[1]
+
+				// Logging settings
 				case prefix + "LOG_LEVEL":
 					c.Config.LogLevel = envPair[1]
 				case prefix + "LOG_PATH":
@@ -358,6 +372,8 @@ func (c *AppConfig) loadFromEnv() {
 					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
 						c.Config.LogMaxBackups = int(i)
 					}
+
+				// Feature settings
 				case prefix + "SMART_MODE":
 					if b, err := strconv.ParseBool(envPair[1]); err == nil {
 						c.Config.SmartMode = b
@@ -370,8 +386,8 @@ func (c *AppConfig) loadFromEnv() {
 					if b, err := strconv.ParseBool(envPair[1]); err == nil {
 						c.Config.ParseTorrentFile = b
 					}
-				case prefix + "API_TOKEN":
-					c.Config.APIToken = envPair[1]
+
+				// Fuzzy matching settings
 				case prefix + "FUZZY_MATCHING_SKIP_REPACK_COMPARE":
 					if b, err := strconv.ParseBool(envPair[1]); err == nil {
 						c.Config.FuzzyMatching.SkipRepackCompare = b
@@ -379,6 +395,48 @@ func (c *AppConfig) loadFromEnv() {
 				case prefix + "FUZZY_MATCHING_SIMPLIFY_HDR_COMPARE":
 					if b, err := strconv.ParseBool(envPair[1]); err == nil {
 						c.Config.FuzzyMatching.SimplifyHdrCompare = b
+					}
+
+				// Notification settings
+				case prefix + "NOTIFICATIONS_DISCORD":
+					c.Config.Notifications.Discord = envPair[1]
+				case prefix + "NOTIFICATIONS_NOTIFICATION_LEVEL":
+					// Expect comma-separated list
+					levels := strings.Split(envPair[1], ",")
+					// Trim spaces from each level
+					for i, level := range levels {
+						levels[i] = strings.TrimSpace(level)
+					}
+					c.Config.Notifications.NotificationLevel = levels
+				}
+
+				// Client settings - handle dynamic client names
+				if strings.HasPrefix(envPair[0], prefix+"CLIENTS_") {
+					parts := strings.Split(strings.TrimPrefix(envPair[0], prefix+"CLIENTS_"), "_")
+					if len(parts) == 2 {
+						clientName := strings.ToLower(parts[0])
+						setting := parts[1]
+
+						// Initialize client if it doesn't exist
+						if c.Config.Clients[clientName] == nil {
+							c.Config.Clients[clientName] = &domain.Client{}
+						}
+
+						// Apply setting
+						switch setting {
+						case "HOST":
+							c.Config.Clients[clientName].Host = envPair[1]
+						case "PORT":
+							if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
+								c.Config.Clients[clientName].Port = int(i)
+							}
+						case "USERNAME":
+							c.Config.Clients[clientName].Username = envPair[1]
+						case "PASSWORD":
+							c.Config.Clients[clientName].Password = envPair[1]
+						case "PREIMPORTPATH":
+							c.Config.Clients[clientName].PreImportPath = envPair[1]
+						}
 					}
 				}
 			}
@@ -392,13 +450,14 @@ func (c *AppConfig) load(configPath string) {
 	// clean trailing slash from configPath
 	configPath = path.Clean(configPath)
 	if configPath != "" {
-		// check if path and file exists
-		// if not, create path and file
+		configFile := path.Join(configPath, "config.yaml")
+
+		// Only create config file if it doesn't exist
 		if err := c.writeConfig(configPath, "config.yaml"); err != nil {
 			log.Printf("config write error: %q", err)
 		}
 
-		viper.SetConfigFile(path.Join(configPath, "config.yaml"))
+		viper.SetConfigFile(configFile)
 	} else {
 		viper.SetConfigName("config")
 
@@ -408,9 +467,13 @@ func (c *AppConfig) load(configPath string) {
 		viper.AddConfigPath("$HOME/.seasonpackarr")
 	}
 
-	// read config
+	// read config, but don't fail if file doesn't exist
 	if err := viper.ReadInConfig(); err != nil {
-		log.Fatalf("config read error: %q", err)
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			// Only fail on errors other than file not found
+			log.Fatalf("config read error: %q", err)
+		}
+		return
 	}
 
 	if err := viper.Unmarshal(c.Config); err != nil {
