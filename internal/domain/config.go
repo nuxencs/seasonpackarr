@@ -40,4 +40,5 @@ type Config struct {
 	FuzzyMatching      FuzzyMatching      `yaml:"fuzzyMatching"`
 	APIToken           string             `yaml:"apiToken"`
 	Notifications      Notifications      `yaml:"notifications"`
+	DisableConfigFile  bool
 }

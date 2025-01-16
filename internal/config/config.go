@@ -290,7 +290,7 @@ func New(configPath string, version string) *AppConfig {
 	c := &AppConfig{
 		m: new(sync.Mutex),
 	}
-	c.defaults()
+
 	c.Config = &domain.Config{
 		Version:       version,
 		ConfigPath:    configPath,
@@ -299,15 +299,23 @@ func New(configPath string, version string) *AppConfig {
 		Notifications: domain.Notifications{},
 	}
 
-	// Load environment variables first
+	// check config file mode first
+	c.Config.DisableConfigFile = os.Getenv("SEASONPACKARR__DISABLE_CONFIG_FILE") == "true"
+
+	// set defaults unless config file is disabled
+	if !c.Config.DisableConfigFile {
+		c.defaults()
+	}
+
+	// always load environment variables
 	c.loadFromEnv()
 
-	// Only try to load config file if no clients were configured via env vars
-	if len(c.Config.Clients) == 0 {
+	// load config file if not disabled
+	if !c.Config.DisableConfigFile {
 		c.load(configPath)
 	}
 
-	// Validate client configuration regardless of source
+	// validate client configuration regardless of source
 	for clientName, client := range c.Config.Clients {
 		if client.PreImportPath == "" {
 			log.Fatalf("preImportPath for client %q can't be empty, please provide a valid path to the directory you want seasonpacks to be hardlinked to", clientName)
@@ -342,14 +350,34 @@ func (c *AppConfig) defaults() {
 func (c *AppConfig) loadFromEnv() {
 	prefix := "SEASONPACKARR__"
 
+	logLevel := "DEBUG" // default
+	if envLogLevel := os.Getenv(prefix + "LOG_LEVEL"); envLogLevel != "" {
+		logLevel = envLogLevel
+	}
+
+	// create a temporary logger with the detected log level
+	tempConfig := &domain.Config{
+		LogLevel: logLevel,
+		Version:  "dev",
+	}
+	log := logger.New(tempConfig)
+
 	envs := os.Environ()
 	for _, env := range envs {
 		if strings.HasPrefix(env, prefix) {
 			envPair := strings.SplitN(env, "=", 2)
 
+			logValue := envPair[1]
+			if strings.Contains(envPair[0], "PASSWORD") ||
+				strings.Contains(envPair[0], "TOKEN") ||
+				strings.Contains(envPair[0], "API_KEY") {
+				logValue = "**REDACTED**"
+			}
+
+			log.Trace().Msgf("Processing environment variable: %s=%s", envPair[0], logValue)
+
 			if envPair[1] != "" {
 				switch envPair[0] {
-				// Core settings
 				case prefix + "HOST":
 					c.Config.Host = envPair[1]
 				case prefix + "PORT":
@@ -359,7 +387,6 @@ func (c *AppConfig) loadFromEnv() {
 				case prefix + "API_TOKEN":
 					c.Config.APIToken = envPair[1]
 
-				// Logging settings
 				case prefix + "LOG_LEVEL":
 					c.Config.LogLevel = envPair[1]
 				case prefix + "LOG_PATH":
@@ -373,7 +400,6 @@ func (c *AppConfig) loadFromEnv() {
 						c.Config.LogMaxBackups = int(i)
 					}
 
-				// Feature settings
 				case prefix + "SMART_MODE":
 					if b, err := strconv.ParseBool(envPair[1]); err == nil {
 						c.Config.SmartMode = b
@@ -387,7 +413,6 @@ func (c *AppConfig) loadFromEnv() {
 						c.Config.ParseTorrentFile = b
 					}
 
-				// Fuzzy matching settings
 				case prefix + "FUZZY_MATCHING_SKIP_REPACK_COMPARE":
 					if b, err := strconv.ParseBool(envPair[1]); err == nil {
 						c.Config.FuzzyMatching.SkipRepackCompare = b
@@ -397,32 +422,33 @@ func (c *AppConfig) loadFromEnv() {
 						c.Config.FuzzyMatching.SimplifyHdrCompare = b
 					}
 
-				// Notification settings
 				case prefix + "NOTIFICATIONS_DISCORD":
 					c.Config.Notifications.Discord = envPair[1]
 				case prefix + "NOTIFICATIONS_NOTIFICATION_LEVEL":
-					// Expect comma-separated list
 					levels := strings.Split(envPair[1], ",")
-					// Trim spaces from each level
 					for i, level := range levels {
 						levels[i] = strings.TrimSpace(level)
 					}
 					c.Config.Notifications.NotificationLevel = levels
+
+				case prefix + "DISABLE_CONFIG_FILE":
+					if b, err := strconv.ParseBool(envPair[1]); err == nil {
+						c.Config.DisableConfigFile = b
+					}
 				}
 
-				// Client settings - handle dynamic client names
+				// client settings - handle dynamic client names
 				if strings.HasPrefix(envPair[0], prefix+"CLIENTS_") {
 					parts := strings.Split(strings.TrimPrefix(envPair[0], prefix+"CLIENTS_"), "_")
 					if len(parts) == 2 {
 						clientName := strings.ToLower(parts[0])
 						setting := parts[1]
 
-						// Initialize client if it doesn't exist
+						// initialize client if it doesn't exist
 						if c.Config.Clients[clientName] == nil {
 							c.Config.Clients[clientName] = &domain.Client{}
 						}
 
-						// Apply setting
 						switch setting {
 						case "HOST":
 							c.Config.Clients[clientName].Host = envPair[1]
@@ -452,7 +478,7 @@ func (c *AppConfig) load(configPath string) {
 	if configPath != "" {
 		configFile := path.Join(configPath, "config.yaml")
 
-		// Only create config file if it doesn't exist
+		// only create config file if it doesn't exist
 		if err := c.writeConfig(configPath, "config.yaml"); err != nil {
 			log.Printf("config write error: %q", err)
 		}
@@ -461,7 +487,7 @@ func (c *AppConfig) load(configPath string) {
 	} else {
 		viper.SetConfigName("config")
 
-		// Search config in directories
+		// search config in directories
 		viper.AddConfigPath(".")
 		viper.AddConfigPath("$HOME/.config/seasonpackarr")
 		viper.AddConfigPath("$HOME/.seasonpackarr")
@@ -470,7 +496,7 @@ func (c *AppConfig) load(configPath string) {
 	// read config, but don't fail if file doesn't exist
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			// Only fail on errors other than file not found
+			// only fail on errors other than file not found
 			log.Fatalf("config read error: %q", err)
 		}
 		return
@@ -520,6 +546,10 @@ func (c *AppConfig) DynamicReload(log logger.Logger) {
 }
 
 func (c *AppConfig) UpdateConfig() error {
+	if c.Config.DisableConfigFile {
+		return nil
+	}
+
 	filePath := path.Join(c.Config.ConfigPath, "config.yaml")
 
 	f, err := os.ReadFile(filePath)

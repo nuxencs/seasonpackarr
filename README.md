@@ -60,7 +60,7 @@ Afterwards you need to make the binary executable by running the following comma
 chmod +x /usr/bin/seasonpackarr
 ```
 
-Note: If the commands fail, prefix them with `sudo ` and run them again.
+Note: If the commands fail, prefix them with `sudo` and run them again.
 
 #### Systemd (Recommended)
 
@@ -142,7 +142,7 @@ of this clearer:
 
 - Announce name: `Show.S01.1080p.WEB-DL.DDPA5.1.H.264-RlsGrp`
 - Folder name: `Show.S01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp`
-   
+
 Using the announce name would create the wrong folder and would lead to all the files in the torrent being downloaded
 again. The issue in the given example is the additional `A` after `DDP` which is not present in the folder name. By
 using the parsed folder name the files will be hardlinked into the exact folder that is being used in the torrent.
@@ -252,11 +252,14 @@ along in the `HTTP Request Headers` of your autobrr request; if not, the request
 headers to pass the API token, but I'll explain both options here.
 
 1. **Header**: Edit the `HTTP Request Headers` field and replace `api_token` with the token you set in your config.
+
     ```
     X-API-Token=api_token
     ```
+
 2. **Query Parameter**: Append `?apikey=api_token` at the end of your `Endpoint` field and replace `api_token` with the
    token you've set in your config.
+
     ```
     http://host:port/api/pack?apikey=api_token
     ```
@@ -305,7 +308,7 @@ Navigate to the `Actions` tab, click on `Add new` and change the `Action type` o
 Depending on whether you intend to only send to qBittorrent or also integrate with Sonarr, you'll need to fill out different fields.
 
 1. **Only qBittorrent**: Fill in the `Save Path` field with the directory where your torrent data resides, for instance
-   `/data/torrents`, or the `Category` field with a qBittorrent category that saves to your desired location. 
+   `/data/torrents`, or the `Category` field with a qBittorrent category that saves to your desired location.
 2. **Sonarr Integration**: Fill in the `Category` field with the category that Sonarr utilizes for all its downloads,
    such as `tv-hd` or `tv-uhd`.
 

@@ -1,13 +1,14 @@
 services:
   seasonpackarr:
     container_name: seasonpackarr
-    image: ghcr.io/nuxencs/seasonpackarr:latest
+    image: ghcr.io/nuxencs/seasonpackarr
     restart: unless-stopped
-    user: ${PUID}:${PGID}
+    user: ${PUID}:${PGID} #UID and GID
     ports:
       - "127.0.0.1:42069:42069"
     environment:
       # Core settings
+      - SEASONPACKARR__DISABLE_CONFIG_FILE=false # set to true to not rely on config.yaml
       - SEASONPACKARR__HOST=0.0.0.0
       - SEASONPACKARR__PORT=42069
       - SEASONPACKARR__API_TOKEN=
@@ -38,5 +39,5 @@ services:
       - SEASONPACKARR__CLIENTS_DEFAULT_PASSWORD=adminadmin
       - SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH=/data/torrents/tv
     volumes:
-      - ${DOCKERCONFDIR}/seasonpackarr:/config
-      - /data/torrents:/data/torrents
+      - ${DOCKERCONFDIR}/seasonpackarr:/config # location of the config file
+      - /data/torrents:/data/torrents # your torrent data directory
