@@ -302,18 +302,13 @@ func New(configPath string, version string) *AppConfig {
 	// check config file mode first
 	c.Config.DisableConfigFile = os.Getenv("SEASONPACKARR__DISABLE_CONFIG_FILE") == "true"
 
-	// set defaults unless config file is disabled
+	// load default configuration values if config file is enabled
 	if !c.Config.DisableConfigFile {
 		c.defaults()
-	}
-
-	// always load environment variables
-	c.loadFromEnv()
-
-	// load config file if not disabled
-	if !c.Config.DisableConfigFile {
 		c.load(configPath)
 	}
+
+	c.loadFromEnv()
 
 	// validate client configuration regardless of source
 	for clientName, client := range c.Config.Clients {
