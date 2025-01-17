@@ -292,11 +292,9 @@ func New(configPath string, version string) *AppConfig {
 	}
 
 	c.Config = &domain.Config{
-		Version:       version,
-		ConfigPath:    configPath,
-		Clients:       make(map[string]*domain.Client),
-		FuzzyMatching: domain.FuzzyMatching{},
-		Notifications: domain.Notifications{},
+		Version:    version,
+		ConfigPath: configPath,
+		Clients:    make(map[string]*domain.Client),
 	}
 
 	// check config file mode first
@@ -345,7 +343,7 @@ func (c *AppConfig) defaults() {
 func (c *AppConfig) loadFromEnv() {
 	prefix := "SEASONPACKARR__"
 
-	logLevel := "DEBUG" // default
+	logLevel := "DEBUG"
 	if envLogLevel := os.Getenv(prefix + "LOG_LEVEL"); envLogLevel != "" {
 		logLevel = envLogLevel
 	}
@@ -471,30 +469,25 @@ func (c *AppConfig) load(configPath string) {
 	// clean trailing slash from configPath
 	configPath = path.Clean(configPath)
 	if configPath != "" {
-		configFile := path.Join(configPath, "config.yaml")
-
-		// only create config file if it doesn't exist
+		// check if path and file exists
+		// if not, create path and file
 		if err := c.writeConfig(configPath, "config.yaml"); err != nil {
 			log.Printf("config write error: %q", err)
 		}
 
-		viper.SetConfigFile(configFile)
+		viper.SetConfigFile(path.Join(configPath, "config.yaml"))
 	} else {
 		viper.SetConfigName("config")
 
-		// search config in directories
+		// Search config in directories
 		viper.AddConfigPath(".")
 		viper.AddConfigPath("$HOME/.config/seasonpackarr")
 		viper.AddConfigPath("$HOME/.seasonpackarr")
 	}
 
-	// read config, but don't fail if file doesn't exist
+	// read config
 	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			// only fail on errors other than file not found
-			log.Fatalf("config read error: %q", err)
-		}
-		return
+		log.Fatalf("config read error: %q", err)
 	}
 
 	if err := viper.Unmarshal(c.Config); err != nil {
