@@ -416,6 +416,11 @@ func (c *AppConfig) DynamicReload(log logger.Logger) {
 		c.m.Lock()
 		defer c.m.Unlock()
 
+		// only reload config on write events
+		if !e.Op.Has(fsnotify.Write) {
+			return
+		}
+
 		logLevel := viper.GetString("logLevel")
 		c.Config.LogLevel = logLevel
 		log.SetLogLevel(c.Config.LogLevel)
