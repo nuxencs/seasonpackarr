@@ -63,7 +63,7 @@ var startCmd = &cobra.Command{
 
 		select {
 		case sig := <-sigCh:
-			log.Info().Msgf("received signal: %q, shutting down server.", sig.String())
+			log.Info().Msgf("received signal: %q, shutting down server.", sig)
 			os.Exit(0)
 
 		case err := <-errorChannel:

@@ -1,20 +1,21 @@
 // Copyright (c) 2023 - 2024, nuxen and the seasonpackarr contributors.
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package utils
+package metadata
 
 import (
 	"fmt"
 
 	"github.com/nuxencs/seasonpackarr/pkg/errors"
 
+	"github.com/moistari/rls"
 	"github.com/mrobinsn/go-tvmaze/tvmaze"
 )
 
-func GetEpisodesPerSeason(title string, season int) (int, error) {
+func EpisodesInSeason(release rls.Release) (int, error) {
 	totalEpisodes := 0
 
-	show, err := tvmaze.DefaultClient.GetShow(normalizeTitle(title))
+	show, err := tvmaze.DefaultClient.GetShow(rls.MustNormalize(release.Title))
 	if err != nil {
 		return 0, errors.Wrap(err, "failed to find show on tvmaze")
 	}
@@ -25,13 +26,13 @@ func GetEpisodesPerSeason(title string, season int) (int, error) {
 	}
 
 	for _, episode := range episodes {
-		if episode.Season == season {
+		if episode.Season == release.Series {
 			totalEpisodes++
 		}
 	}
 
 	if totalEpisodes == 0 {
-		return 0, fmt.Errorf("failed to find episodes in season %d of %q", season, title)
+		return 0, fmt.Errorf("failed to find episodes in season %d of %q", release.Series, release.Title)
 	}
 
 	return totalEpisodes, nil

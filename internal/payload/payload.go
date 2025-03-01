@@ -36,7 +36,7 @@ type parseVars struct {
 	ClientName          string
 }
 
-func CompilePackPayload(torrentName string, clientName string) (io.Reader, error) {
+func CompilePack(torrentName string, clientName string) (io.Reader, error) {
 	var buffer bytes.Buffer
 
 	tmplVars := packVars{
@@ -56,7 +56,7 @@ func CompilePackPayload(torrentName string, clientName string) (io.Reader, error
 	return &buffer, nil
 }
 
-func CompileParsePayload(torrentName string, torrentBytes []byte, clientName string) (io.Reader, error) {
+func CompileParse(torrentName string, torrentBytes []byte, clientName string) (io.Reader, error) {
 	var buffer bytes.Buffer
 
 	tmplVars := parseVars{
@@ -77,7 +77,7 @@ func CompileParsePayload(torrentName string, torrentBytes []byte, clientName str
 	return &buffer, nil
 }
 
-func ExecRequest(url string, body io.Reader, apiToken string) error {
+func Exec(url string, body io.Reader, apiToken string) error {
 	req, err := http.NewRequest(http.MethodPost, url, body)
 	if err != nil {
 		return err

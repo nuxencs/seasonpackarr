@@ -1,7 +1,7 @@
 // Copyright (c) 2023 - 2024, nuxen and the seasonpackarr contributors.
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package utils
+package format
 
 import (
 	"testing"
@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_GetFormattedTitle(t *testing.T) {
+func Test_ComparableTitle(t *testing.T) {
 	tests := []struct {
 		name     string
 		packName string
@@ -90,12 +90,12 @@ func Test_GetFormattedTitle(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := rls.ParseString(tt.packName)
-			assert.Equalf(t, tt.want, GetFormattedTitle(r), "FormatSeasonPackTitle(%s)", tt.packName)
+			assert.Equalf(t, tt.want, ComparableTitle(r), "ComparableTitle(%s)", tt.packName)
 		})
 	}
 }
 
-func Test_FormatSeasonPackTitle(t *testing.T) {
+func Test_CleanAnnounceTitle(t *testing.T) {
 	tests := []struct {
 		name     string
 		packName string
@@ -169,7 +169,8 @@ func Test_FormatSeasonPackTitle(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equalf(t, tt.want, FormatSeasonPackTitle(tt.packName), "FormatSeasonPackTitle(%s)", tt.packName)
+			r := rls.ParseString(tt.packName)
+			assert.Equalf(t, tt.want, CleanAnnounceTitle(r), "CleanAnnounceTitle(%s)", tt.packName)
 		})
 	}
 }

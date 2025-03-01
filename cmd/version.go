@@ -6,7 +6,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	netHTTP "net/http"
+	"net/http"
 	"os"
 	"time"
 
@@ -24,13 +24,13 @@ var versionCmd = &cobra.Command{
 		fmt.Printf("Version: %v\nCommit: %v\nBuild date: %v\n", buildinfo.Version, buildinfo.Commit, buildinfo.Date)
 
 		// get the latest release tag from api
-		client := netHTTP.Client{
+		client := http.Client{
 			Timeout: 10 * time.Second,
 		}
 
 		resp, err := client.Get("https://api.github.com/repos/nuxencs/seasonpackarr/releases/latest")
 		if err != nil {
-			if errors.Is(err, netHTTP.ErrHandlerTimeout) {
+			if errors.Is(err, http.ErrHandlerTimeout) {
 				fmt.Println("Server timed out while fetching latest release from api")
 			} else {
 				fmt.Printf("Failed to fetch latest release from api: %v\n", err)
@@ -40,7 +40,7 @@ var versionCmd = &cobra.Command{
 		defer resp.Body.Close()
 
 		// api returns 500 instead of 404 here
-		if resp.StatusCode == netHTTP.StatusNotFound || resp.StatusCode == netHTTP.StatusInternalServerError {
+		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusInternalServerError {
 			fmt.Print("No release found")
 			os.Exit(1)
 		}

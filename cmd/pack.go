@@ -24,13 +24,13 @@ var packCmd = &cobra.Command{
 
 		rlsName = args[0]
 
-		body, err := payload.CompilePackPayload(rlsName, clientName)
+		body, err := payload.CompilePack(rlsName, clientName)
 		if err != nil {
 			fmt.Println(err.Error())
 			return
 		}
 
-		err = payload.ExecRequest(fmt.Sprintf("http://%s:%d/api/pack", host, port), body, apiKey)
+		err = payload.Exec(fmt.Sprintf("http://%s:%d/api/pack", host, port), body, apiKey)
 		if err != nil {
 			fmt.Println(err.Error())
 			return

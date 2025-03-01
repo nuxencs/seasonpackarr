@@ -62,13 +62,13 @@ var parseCmd = &cobra.Command{
 			}
 		}
 
-		body, err = payload.CompileParsePayload(rlsName, torrentBytes, clientName)
+		body, err = payload.CompileParse(rlsName, torrentBytes, clientName)
 		if err != nil {
 			fmt.Println(err.Error())
 			return
 		}
 
-		err = payload.ExecRequest(fmt.Sprintf("http://%s:%d/api/parse", host, port), body, apiKey)
+		err = payload.Exec(fmt.Sprintf("http://%s:%d/api/parse", host, port), body, apiKey)
 		if err != nil {
 			fmt.Println(err.Error())
 			return
