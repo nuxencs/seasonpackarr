@@ -41,7 +41,7 @@ archives:
       - seasonpackarr
     format_overrides:
       - goos: windows
-        format: [ "zip" ]
+        formats: [ "zip" ]
     files:
       - none*
     name_template: >-
