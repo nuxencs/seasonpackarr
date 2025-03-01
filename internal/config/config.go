@@ -416,8 +416,8 @@ func (c *AppConfig) DynamicReload(log logger.Logger) {
 		c.m.Lock()
 		defer c.m.Unlock()
 
-		// only reload config on write events
-		if !e.Op.Has(fsnotify.Write) {
+		// only reload config on write and create events
+		if !e.Has(fsnotify.Write) && !e.Has(fsnotify.Create) {
 			return
 		}
 
