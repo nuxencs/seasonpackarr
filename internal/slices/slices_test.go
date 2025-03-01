@@ -1,7 +1,7 @@
-// Copyright (c) 2023 - 2024, nuxen and the seasonpackarr contributors.
+// Copyright (c) 2023 - 2025, nuxen and the seasonpackarr contributors.
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-package utils
+package slices
 
 import (
 	"testing"
@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_DedupeSlice(t *testing.T) {
+func Test_Dedupe(t *testing.T) {
 	tests := []struct {
 		name  string
 		slice interface{}
@@ -60,9 +60,9 @@ func Test_DedupeSlice(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			switch v := tt.slice.(type) {
 			case []string:
-				assert.ElementsMatchf(t, tt.want, DedupeSlice(v), "Dedupe(%v)", v)
+				assert.ElementsMatchf(t, tt.want, Dedupe(v), "Dedupe(%v)", v)
 			case []int:
-				assert.ElementsMatchf(t, tt.want, DedupeSlice(v), "Dedupe(%v)", v)
+				assert.ElementsMatchf(t, tt.want, Dedupe(v), "Dedupe(%v)", v)
 			default:
 				t.Errorf("Unsupported slice type in test case: %v", tt.name)
 			}
@@ -154,7 +154,7 @@ func Test_EqualElements(t *testing.T) {
 	}
 }
 
-func Test_SimplifyHDRSlice(t *testing.T) {
+func Test_SimplifyHDR(t *testing.T) {
 	tests := []struct {
 		name  string
 		input []string
@@ -183,7 +183,7 @@ func Test_SimplifyHDRSlice(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equalf(t, tt.want, SimplifyHDRSlice(tt.input), "SimplifyHDRSlice(%v)", tt.input)
+			assert.Equalf(t, tt.want, SimplifyHDR(tt.input), "SimplifyHDR(%v)", tt.input)
 		})
 	}
 }

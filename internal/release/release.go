@@ -1,4 +1,4 @@
-// Copyright (c) 2023 - 2024, nuxen and the seasonpackarr contributors.
+// Copyright (c) 2023 - 2025, nuxen and the seasonpackarr contributors.
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 package release
@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
-	"github.com/nuxencs/seasonpackarr/internal/utils"
+	"github.com/nuxencs/seasonpackarr/internal/slices"
 
 	"github.com/moistari/rls"
 )
@@ -19,11 +19,11 @@ func CheckCandidates(requestRls, clientRls rls.Release, fuzzyMatching domain.Fuz
 		return domain.CompareInfo{StatusCode: domain.StatusNotASeasonPack}
 	}
 
-	return compareReleases(requestRls, clientRls, fuzzyMatching)
+	return compare(requestRls, clientRls, fuzzyMatching)
 }
 
-func compareReleases(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatching) domain.CompareInfo {
-	if rls.MustNormalize(requestRls.Resolution) != rls.MustNormalize(clientRls.Resolution) {
+func compare(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatching) domain.CompareInfo {
+	if requestRls.Resolution != clientRls.Resolution {
 		return domain.CompareInfo{
 			StatusCode:   domain.StatusResolutionMismatch,
 			RejectValueA: requestRls.Resolution,
@@ -31,7 +31,7 @@ func compareReleases(requestRls, clientRls rls.Release, fuzzyMatching domain.Fuz
 		}
 	}
 
-	if rls.MustNormalize(requestRls.Source) != rls.MustNormalize(clientRls.Source) {
+	if requestRls.Source != clientRls.Source {
 		return domain.CompareInfo{
 			StatusCode:   domain.StatusSourceMismatch,
 			RejectValueA: requestRls.Source,
@@ -47,7 +47,7 @@ func compareReleases(requestRls, clientRls rls.Release, fuzzyMatching domain.Fuz
 		}
 	}
 
-	if !utils.EqualElements(requestRls.Cut, clientRls.Cut) {
+	if !slices.EqualElements(requestRls.Cut, clientRls.Cut) {
 		return domain.CompareInfo{
 			StatusCode:   domain.StatusCutMismatch,
 			RejectValueA: requestRls.Cut,
@@ -55,7 +55,7 @@ func compareReleases(requestRls, clientRls rls.Release, fuzzyMatching domain.Fuz
 		}
 	}
 
-	if !utils.EqualElements(requestRls.Edition, clientRls.Edition) {
+	if !slices.EqualElements(requestRls.Edition, clientRls.Edition) {
 		return domain.CompareInfo{
 			StatusCode:   domain.StatusEditionMismatch,
 			RejectValueA: requestRls.Edition,
@@ -65,7 +65,7 @@ func compareReleases(requestRls, clientRls rls.Release, fuzzyMatching domain.Fuz
 
 	// skip comparing repack status when skipRepackCompare is enabled
 	if !fuzzyMatching.SkipRepackCompare {
-		if !utils.EqualElements(requestRls.Other, clientRls.Other) {
+		if !slices.EqualElements(requestRls.Other, clientRls.Other) {
 			return domain.CompareInfo{
 				StatusCode:   domain.StatusRepackStatusMismatch,
 				RejectValueA: requestRls.Other,
@@ -76,11 +76,11 @@ func compareReleases(requestRls, clientRls rls.Release, fuzzyMatching domain.Fuz
 
 	// normalize any HDR format down to plain HDR when simplifyHdrCompare is enabled
 	if fuzzyMatching.SimplifyHdrCompare {
-		requestRls.HDR = utils.SimplifyHDRSlice(requestRls.HDR)
-		clientRls.HDR = utils.SimplifyHDRSlice(clientRls.HDR)
+		requestRls.HDR = slices.SimplifyHDR(requestRls.HDR)
+		clientRls.HDR = slices.SimplifyHDR(clientRls.HDR)
 	}
 
-	if !utils.EqualElements(requestRls.HDR, clientRls.HDR) {
+	if !slices.EqualElements(requestRls.HDR, clientRls.HDR) {
 		return domain.CompareInfo{
 			StatusCode:   domain.StatusHdrMismatch,
 			RejectValueA: requestRls.HDR,

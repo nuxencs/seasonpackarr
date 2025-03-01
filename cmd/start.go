@@ -1,4 +1,4 @@
-// Copyright (c) 2023 - 2024, nuxen and the seasonpackarr contributors.
+// Copyright (c) 2023 - 2025, nuxen and the seasonpackarr contributors.
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 package cmd
@@ -63,7 +63,7 @@ var startCmd = &cobra.Command{
 
 		select {
 		case sig := <-sigCh:
-			log.Info().Msgf("received signal: %q, shutting down server.", sig.String())
+			log.Info().Msgf("received signal: %q, shutting down server.", sig)
 			os.Exit(0)
 
 		case err := <-errorChannel:

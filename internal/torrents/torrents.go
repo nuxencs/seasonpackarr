@@ -1,4 +1,4 @@
-// Copyright (c) 2023 - 2024, nuxen and the seasonpackarr contributors.
+// Copyright (c) 2023 - 2025, nuxen and the seasonpackarr contributors.
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 package torrents
@@ -18,8 +18,8 @@ type Episode struct {
 	Size int64
 }
 
-func ParseInfoFromTorrentBytes(torrentBytes []byte) (metainfo.Info, error) {
-	metaInfo, err := metainfo.Load(bytes.NewReader(torrentBytes))
+func Info(torrent []byte) (metainfo.Info, error) {
+	metaInfo, err := metainfo.Load(bytes.NewReader(torrent))
 	if err != nil {
 		return metainfo.Info{}, err
 	}
@@ -27,7 +27,7 @@ func ParseInfoFromTorrentBytes(torrentBytes []byte) (metainfo.Info, error) {
 	return metaInfo.UnmarshalInfo()
 }
 
-func GetEpisodesFromTorrentInfo(info metainfo.Info) ([]Episode, error) {
+func Episodes(info metainfo.Info) ([]Episode, error) {
 	if !info.IsDir() {
 		return []Episode{}, fmt.Errorf("not a directory")
 	}
