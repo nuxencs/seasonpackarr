@@ -285,8 +285,8 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 			domain.StatusCutMismatch, domain.StatusEditionMismatch, domain.StatusRepackStatusMismatch,
 			domain.StatusHdrMismatch, domain.StatusStreamingServiceMismatch:
 			p.log.Info().Msgf("%s: request(%s => %v), client(%s => %v)",
-				compareInfo.StatusCode, requestRls, compareInfo.RejectValueA,
-				filteredEntry.release, compareInfo.RejectValueB)
+				compareInfo.StatusCode, requestRls.String(), compareInfo.RejectValueA,
+				filteredEntry.release.String(), compareInfo.RejectValueB)
 			codeSet[compareInfo.StatusCode] = true
 			continue
 
@@ -299,9 +299,8 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 
 			clientEpPath := filepath.Join(filteredEntry.torrent.SavePath, fileName)
 			announcedEpPath := filepath.Join(clientCfg.PreImportPath, announcedPackName, filepath.Base(fileName))
-			episode := filteredEntry.release.Episode
 
-			epsSet[episode] = struct{}{}
+			epsSet[filteredEntry.release.Episode] = struct{}{}
 
 			// append current matchInfo to matches slice
 			matches = append(matches, matchInfo{
