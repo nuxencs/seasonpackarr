@@ -1,5 +1,5 @@
 // Copyright (c) 2021 - 2025, Ludvig Lundgren and the autobrr contributors.
-// Code is heavly modified for use with seasonpackarr
+// Code is heavily modified for use with seasonpackarr
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 package config
