@@ -1,4 +1,4 @@
-// Copyright (c) 2021 - 2024, Ludvig Lundgren and the autobrr contributors.
+// Copyright (c) 2021 - 2025, Ludvig Lundgren and the autobrr contributors.
 // Code is modified for use with seasonpackarr
 // SPDX-License-Identifier: GPL-2.0-or-later
 
@@ -27,6 +27,7 @@ type Notifications struct {
 type Config struct {
 	Version            string
 	ConfigPath         string
+	DisableConfigFile  bool
 	Host               string             `yaml:"host"`
 	Port               int                `yaml:"port"`
 	Clients            map[string]*Client `yaml:"clients"`
