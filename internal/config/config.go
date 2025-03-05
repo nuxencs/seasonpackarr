@@ -180,7 +180,7 @@ notifications:
   # Decides what notifications you want to receive
   #
   # Default: [ "MATCH", "ERROR" ]
-  # 
+  #
   # Options: "MATCH", "INFO", "ERROR"
   #
   # Examples:
@@ -376,82 +376,86 @@ func (c *AppConfig) loadFromEnv() {
 	for _, env := range envs {
 		if strings.HasPrefix(env, prefix) {
 			envPair := strings.SplitN(env, "=", 2)
+			envKey, envValue := envPair[0], envPair[1]
 
-			logValue := envPair[1]
-			if strings.Contains(envPair[0], "PASSWORD") ||
-				strings.Contains(envPair[0], "TOKEN") ||
-				strings.Contains(envPair[0], "API_KEY") {
-				logValue = "**REDACTED**"
+			// Determine if this is a sensitive value that should be redacted in logs
+			sensitiveKeys := []string{"PASSWORD", "API_TOKEN", "DISCORD"}
+			logValue := envValue
+
+			for _, sensitive := range sensitiveKeys {
+				if strings.Contains(envKey, sensitive) {
+					logValue = "**REDACTED**"
+					break
+				}
 			}
 
-			zLog.Trace().Msgf("processing environment variable: %s=%s", envPair[0], logValue)
+			zLog.Trace().Msgf("processing environment variable: %s=%s", envKey, logValue)
 
-			if envPair[1] != "" {
-				switch envPair[0] {
-
+			if envValue != "" {
+				switch envKey {
 				// disable config file
 				case prefix + "DISABLE_CONFIG_FILE":
-					if b, err := strconv.ParseBool(envPair[1]); err == nil {
+					if b, err := strconv.ParseBool(envValue); err == nil {
 						c.Config.DisableConfigFile = b
 					}
 
 				// server settings
 				case prefix + "HOST":
-					c.Config.Host = envPair[1]
+					c.Config.Host = envValue
 				case prefix + "PORT":
-					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
+					if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
 						c.Config.Port = int(i)
 					}
 
 				// log settings
 				case prefix + "LOG_LEVEL":
-					c.Config.LogLevel = envPair[1]
+					c.Config.LogLevel = envValue
 				case prefix + "LOG_PATH":
-					c.Config.LogPath = envPair[1]
+					c.Config.LogPath = envValue
 				case prefix + "LOG_MAX_SIZE":
-					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
+					if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
 						c.Config.LogMaxSize = int(i)
 					}
 				case prefix + "LOG_MAX_BACKUPS":
-					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
+					if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
 						c.Config.LogMaxBackups = int(i)
 					}
 
 				// smart mode settings
 				case prefix + "SMART_MODE":
-					if b, err := strconv.ParseBool(envPair[1]); err == nil {
+					if b, err := strconv.ParseBool(envValue); err == nil {
 						c.Config.SmartMode = b
 					}
 				case prefix + "SMART_MODE_THRESHOLD":
-					if f, _ := strconv.ParseFloat(envPair[1], 32); f > 0 {
+					if f, _ := strconv.ParseFloat(envValue, 32); f > 0 {
 						c.Config.SmartModeThreshold = float32(f)
 					}
 
 				// parse torrent file
 				case prefix + "PARSE_TORRENT_FILE":
-					if b, err := strconv.ParseBool(envPair[1]); err == nil {
+					if b, err := strconv.ParseBool(envValue); err == nil {
 						c.Config.ParseTorrentFile = b
 					}
 
 				// api token
 				case prefix + "API_TOKEN":
-					c.Config.APIToken = envPair[1]
+					c.Config.APIToken = envValue
 
 				// fuzzy matching settings
 				case prefix + "FUZZY_MATCHING_SKIP_REPACK_COMPARE":
-					if b, err := strconv.ParseBool(envPair[1]); err == nil {
+					if b, err := strconv.ParseBool(envValue); err == nil {
 						c.Config.FuzzyMatching.SkipRepackCompare = b
 					}
 				case prefix + "FUZZY_MATCHING_SIMPLIFY_HDR_COMPARE":
-					if b, err := strconv.ParseBool(envPair[1]); err == nil {
+					if b, err := strconv.ParseBool(envValue); err == nil {
 						c.Config.FuzzyMatching.SimplifyHdrCompare = b
 					}
 
 				// notifications settings
 				case prefix + "NOTIFICATIONS_DISCORD":
-					c.Config.Notifications.Discord = envPair[1]
+					c.Config.Notifications.Discord = envValue
 				case prefix + "NOTIFICATIONS_NOTIFICATION_LEVEL":
-					levels := strings.Split(envPair[1], ",")
+					levels := strings.Split(envValue, ",")
 					for i, level := range levels {
 						levels[i] = strings.TrimSpace(level)
 					}
@@ -459,8 +463,8 @@ func (c *AppConfig) loadFromEnv() {
 				}
 
 				// client settings
-				if strings.HasPrefix(envPair[0], prefix+"CLIENTS_") {
-					parts := strings.Split(strings.TrimPrefix(envPair[0], prefix+"CLIENTS_"), "_")
+				if strings.HasPrefix(envKey, prefix+"CLIENTS_") {
+					parts := strings.Split(strings.TrimPrefix(envValue, prefix+"CLIENTS_"), "_")
 					if len(parts) == 2 {
 						clientName := strings.ToLower(parts[0])
 						setting := parts[1]
@@ -472,17 +476,17 @@ func (c *AppConfig) loadFromEnv() {
 
 						switch setting {
 						case "HOST":
-							c.Config.Clients[clientName].Host = envPair[1]
+							c.Config.Clients[clientName].Host = envValue
 						case "PORT":
-							if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
+							if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
 								c.Config.Clients[clientName].Port = int(i)
 							}
 						case "USERNAME":
-							c.Config.Clients[clientName].Username = envPair[1]
+							c.Config.Clients[clientName].Username = envValue
 						case "PASSWORD":
-							c.Config.Clients[clientName].Password = envPair[1]
+							c.Config.Clients[clientName].Password = envValue
 						case "PREIMPORTPATH":
-							c.Config.Clients[clientName].PreImportPath = envPair[1]
+							c.Config.Clients[clientName].PreImportPath = envValue
 						}
 					}
 				}
@@ -571,39 +575,13 @@ func (c *AppConfig) DynamicReload(log logger.Logger) {
 			return
 		}
 
-		logLevel := k.String("logLevel")
-		c.Config.LogLevel = logLevel
-		log.SetLogLevel(c.Config.LogLevel)
-
-		logPath := k.String("logPath")
-		c.Config.LogPath = logPath
-
-		smartMode := k.Bool("smartMode")
-		c.Config.SmartMode = smartMode
-
-		smartModeThreshold := k.Float64("smartModeThreshold")
-		c.Config.SmartModeThreshold = float32(smartModeThreshold)
-
-		parseTorrentFile := k.Bool("parseTorrentFile")
-		c.Config.ParseTorrentFile = parseTorrentFile
-
-		skipRepackCompare := k.Bool("fuzzyMatching.skipRepackCompare")
-		c.Config.FuzzyMatching.SkipRepackCompare = skipRepackCompare
-
-		simplifyHdrCompare := k.Bool("fuzzyMatching.simplifyHdrCompare")
-		c.Config.FuzzyMatching.SimplifyHdrCompare = simplifyHdrCompare
-
-		notificationLevel := k.Strings("notifications.notificationLevel")
-		c.Config.Notifications.NotificationLevel = notificationLevel
-
-		discordWebhook := k.String("notifications.discord")
-		c.Config.Notifications.Discord = discordWebhook
-
 		// unmarshal the updated config into the Config struct
 		if err := k.Unmarshal("", c.Config); err != nil {
 			log.Error().Err(err).Msg("failed to unmarshal updated config")
 			return
 		}
+
+		log.SetLogLevel(c.Config.LogLevel)
 
 		log.Debug().Msg("config file reloaded!")
 	})
