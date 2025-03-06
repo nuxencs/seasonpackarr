@@ -290,21 +290,21 @@ func New(configPath string, version string) *AppConfig {
 			"The only difference between the old and the new config is, that the qbit client info is now stored in an array to allow for multiple clients to be configured.")
 	}
 
+	// init app config
 	c := &AppConfig{
+		Config: &domain.Config{
+			Version:    version,
+			ConfigPath: configPath,
+		},
 		m: new(sync.Mutex),
 		k: koanf.New("."),
-		Config: &domain.Config{
-			Version:           version,
-			ConfigPath:        configPath,
-			DisableConfigFile: false,
-		},
 	}
 
-	c.Config.DisableConfigFile = os.Getenv("SEASONPACKARR__DISABLE_CONFIG_FILE") == "true"
 	c.defaults()
+	c.Config.DisableConfigFile = os.Getenv("SEASONPACKARR__DISABLE_CONFIG_FILE") == "true"
 
 	if !c.Config.DisableConfigFile {
-		c.load(configPath)
+		c.load()
 	}
 
 	c.loadFromEnv()
@@ -324,6 +324,7 @@ func New(configPath string, version string) *AppConfig {
 
 func (c *AppConfig) defaults() {
 	// Set default values
+	c.Config.DisableConfigFile = false
 	c.Config.Host = "0.0.0.0"
 	c.Config.Port = 42069
 	c.Config.Clients = map[string]*domain.Client{
@@ -500,9 +501,9 @@ func (c *AppConfig) loadFromEnv() {
 	}
 }
 
-func (c *AppConfig) load(configPath string) {
-	// clean trailing slash from configPath
-	configPath = path.Clean(configPath)
+func (c *AppConfig) load() {
+	// clean trailing slash from c.Config.ConfigPath
+	configPath := path.Clean(c.Config.ConfigPath)
 
 	var configFile string
 
@@ -592,19 +593,19 @@ func (c *AppConfig) UpdateConfig() error {
 		return nil
 	}
 
-	filePath := path.Join(c.Config.ConfigPath, "config.yaml")
+	configFile := path.Join(c.Config.ConfigPath, "config.yaml")
 
-	f, err := os.ReadFile(filePath)
+	f, err := os.ReadFile(configFile)
 	if err != nil {
-		return errors.Wrap(err, "could not read config filePath: %s", filePath)
+		return errors.Wrap(err, "could not read config configFile: %s", configFile)
 	}
 
 	lines := strings.Split(string(f), "\n")
 	lines = c.processLines(lines)
 
 	output := strings.Join(lines, "\n")
-	if err := os.WriteFile(filePath, []byte(output), 0o644); err != nil {
-		return errors.Wrap(err, "could not write config file: %s", filePath)
+	if err := os.WriteFile(configFile, []byte(output), 0o644); err != nil {
+		return errors.Wrap(err, "could not write config file: %s", configFile)
 	}
 
 	return nil
