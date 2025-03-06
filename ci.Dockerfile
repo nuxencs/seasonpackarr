@@ -26,11 +26,15 @@ RUN --network=none --mount=target=. \
 
 # build runner
 FROM alpine:latest AS runner
+
+ARG VERSION
+
 RUN apk add --no-cache ca-certificates curl tzdata jq
 
 LABEL org.opencontainers.image.source="https://github.com/nuxencs/seasonpackarr" \
       org.opencontainers.image.licenses="GPL-2.0-or-later" \
-      org.opencontainers.image.base.name="alpine:latest"
+      org.opencontainers.image.base.name="alpine:latest" \
+      org.opencontainers.image.version=$VERSION
 
 ENV HOME="/config" \
     XDG_CONFIG_HOME="/config" \
