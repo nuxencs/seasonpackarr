@@ -26,6 +26,9 @@ RUN --network=none --mount=target=. \
 
 # build runner
 FROM alpine:latest AS runner
+
+ARG VERSION
+
 RUN apk add --no-cache ca-certificates curl tzdata jq
 
 LABEL org.opencontainers.image.source="https://github.com/nuxencs/seasonpackarr" \
