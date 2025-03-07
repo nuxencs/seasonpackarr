@@ -27,6 +27,7 @@ type Notifications struct {
 type Config struct {
 	Version            string
 	ConfigPath         string
+	DisableConfigFile  bool
 	Host               string             `yaml:"host"`
 	Port               int                `yaml:"port"`
 	Clients            map[string]*Client `yaml:"clients"`

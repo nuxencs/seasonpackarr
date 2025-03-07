@@ -1,5 +1,5 @@
 // Copyright (c) 2021 - 2025, Ludvig Lundgren and the autobrr contributors.
-// Code is modified for use with seasonpackarr
+// Code is heavily modified for use with seasonpackarr
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 package config
@@ -21,8 +21,10 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/pkg/errors"
 
-	"github.com/fsnotify/fsnotify"
-	"github.com/spf13/viper"
+	"github.com/knadh/koanf/parsers/yaml"
+	"github.com/knadh/koanf/providers/file"
+	"github.com/knadh/koanf/providers/structs"
+	"github.com/knadh/koanf/v2"
 )
 
 var configTemplate = `# yaml-language-server: $schema=https://raw.githubusercontent.com/nuxencs/seasonpackarr/develop/schemas/config-schema.json
@@ -178,7 +180,7 @@ notifications:
   # Decides what notifications you want to receive
   #
   # Default: [ "MATCH", "ERROR" ]
-  # 
+  #
   # Options: "MATCH", "INFO", "ERROR"
   #
   # Examples:
@@ -277,6 +279,7 @@ type Config interface {
 type AppConfig struct {
 	Config *domain.Config
 	m      *sync.Mutex
+	k      *koanf.Koanf
 }
 
 func New(configPath string, version string) *AppConfig {
@@ -287,16 +290,23 @@ func New(configPath string, version string) *AppConfig {
 			"The only difference between the old and the new config is, that the qbit client info is now stored in an array to allow for multiple clients to be configured.")
 	}
 
+	// init app config
 	c := &AppConfig{
+		Config: &domain.Config{
+			Version:    version,
+			ConfigPath: configPath,
+		},
 		m: new(sync.Mutex),
-	}
-	c.defaults()
-	c.Config = &domain.Config{
-		Version:    version,
-		ConfigPath: configPath,
+		k: koanf.New("."),
 	}
 
-	c.load(configPath)
+	c.defaults()
+	c.Config.DisableConfigFile = os.Getenv("SEASONPACKARR__DISABLE_CONFIG_FILE") == "true"
+
+	if !c.Config.DisableConfigFile {
+		c.load()
+	}
+
 	c.loadFromEnv()
 
 	for clientName, client := range c.Config.Clients {
@@ -313,76 +323,190 @@ func New(configPath string, version string) *AppConfig {
 }
 
 func (c *AppConfig) defaults() {
-	viper.SetDefault("host", "0.0.0.0")
-	viper.SetDefault("port", 42069)
-	viper.SetDefault("clients", make(map[string]*domain.Client))
-	viper.SetDefault("logPath", "")
-	viper.SetDefault("logLevel", "DEBUG")
-	viper.SetDefault("logMaxSize", 50)
-	viper.SetDefault("logMaxBackups", 3)
-	viper.SetDefault("smartMode", false)
-	viper.SetDefault("smartModeThreshold", 0.75)
-	viper.SetDefault("parseTorrentFile", false)
-	viper.SetDefault("fuzzyMatching.skipRepackCompare", false)
-	viper.SetDefault("fuzzyMatching.simplifyHdrCompare", false)
-	viper.SetDefault("apiToken", "")
-	viper.SetDefault("notifications.notificationLevel", []string{"MATCH", "ERROR"})
-	viper.SetDefault("notifications.discord", "")
+	// Set default values
+	c.Config.DisableConfigFile = false
+	c.Config.Host = "0.0.0.0"
+	c.Config.Port = 42069
+	c.Config.Clients = map[string]*domain.Client{
+		"default": {
+			Host:          "127.0.0.1",
+			Port:          8080,
+			Username:      "admin",
+			Password:      "adminadmin",
+			PreImportPath: "",
+		},
+	}
+	c.Config.LogPath = ""
+	c.Config.LogLevel = "DEBUG"
+	c.Config.LogMaxSize = 50
+	c.Config.LogMaxBackups = 3
+	c.Config.SmartMode = false
+	c.Config.SmartModeThreshold = 0.75
+	c.Config.ParseTorrentFile = false
+	c.Config.FuzzyMatching = domain.FuzzyMatching{
+		SkipRepackCompare:  false,
+		SimplifyHdrCompare: false,
+	}
+	c.Config.APIToken = ""
+	c.Config.Notifications = domain.Notifications{
+		NotificationLevel: []string{"MATCH", "ERROR"},
+		Discord:           "",
+	}
+
+	// load default values into koanf
+	if err := c.k.Load(structs.Provider(c.Config, "yaml"), nil); err != nil {
+		log.Fatalf("could not load default values into config: %q", err)
+	}
 }
 
 func (c *AppConfig) loadFromEnv() {
 	prefix := "SEASONPACKARR__"
 
+	logLevel := c.Config.LogLevel
+	if envLogLevel := os.Getenv(prefix + "LOG_LEVEL"); envLogLevel != "" {
+		logLevel = envLogLevel
+	}
+
+	// create a temporary logger with the detected log level
+	zLog := logger.New(&domain.Config{
+		LogLevel: logLevel,
+		Version:  c.Config.Version,
+	})
+
 	envs := os.Environ()
 	for _, env := range envs {
 		if strings.HasPrefix(env, prefix) {
 			envPair := strings.SplitN(env, "=", 2)
+			envKey, envValue := envPair[0], envPair[1]
 
-			if envPair[1] != "" {
-				switch envPair[0] {
+			// Determine if this is a sensitive value that should be redacted in logs
+			sensitiveKeys := []string{"PASSWORD", "API_TOKEN", "DISCORD"}
+			logValue := envValue
+
+			for _, sensitive := range sensitiveKeys {
+				if strings.Contains(envKey, sensitive) {
+					logValue = "**REDACTED**"
+					break
+				}
+			}
+
+			zLog.Trace().Msgf("processing environment variable: %s=%s", envKey, logValue)
+
+			if envValue != "" {
+				switch envKey {
+				// disable config file
+				case prefix + "DISABLE_CONFIG_FILE":
+					if b, err := strconv.ParseBool(envValue); err == nil {
+						c.Config.DisableConfigFile = b
+					}
+
+				// server settings
 				case prefix + "HOST":
-					c.Config.Host = envPair[1]
+					c.Config.Host = envValue
 				case prefix + "PORT":
-					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
+					if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
 						c.Config.Port = int(i)
 					}
+
+				// log settings
 				case prefix + "LOG_LEVEL":
-					c.Config.LogLevel = envPair[1]
+					c.Config.LogLevel = envValue
 				case prefix + "LOG_PATH":
-					c.Config.LogPath = envPair[1]
+					c.Config.LogPath = envValue
 				case prefix + "LOG_MAX_SIZE":
-					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
+					if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
 						c.Config.LogMaxSize = int(i)
 					}
 				case prefix + "LOG_MAX_BACKUPS":
-					if i, _ := strconv.ParseInt(envPair[1], 10, 32); i > 0 {
+					if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
 						c.Config.LogMaxBackups = int(i)
 					}
+
+				// smart mode settings
 				case prefix + "SMART_MODE":
-					if b, err := strconv.ParseBool(envPair[1]); err == nil {
+					if b, err := strconv.ParseBool(envValue); err == nil {
 						c.Config.SmartMode = b
 					}
 				case prefix + "SMART_MODE_THRESHOLD":
-					if f, _ := strconv.ParseFloat(envPair[1], 32); f > 0 {
+					if f, _ := strconv.ParseFloat(envValue, 32); f > 0 {
 						c.Config.SmartModeThreshold = float32(f)
 					}
+
+				// parse torrent file
 				case prefix + "PARSE_TORRENT_FILE":
-					if b, err := strconv.ParseBool(envPair[1]); err == nil {
+					if b, err := strconv.ParseBool(envValue); err == nil {
 						c.Config.ParseTorrentFile = b
 					}
+
+				// api token
 				case prefix + "API_TOKEN":
-					c.Config.APIToken = envPair[1]
+					c.Config.APIToken = envValue
+
+				// fuzzy matching settings
+				case prefix + "FUZZY_MATCHING_SKIP_REPACK_COMPARE":
+					if b, err := strconv.ParseBool(envValue); err == nil {
+						c.Config.FuzzyMatching.SkipRepackCompare = b
+					}
+				case prefix + "FUZZY_MATCHING_SIMPLIFY_HDR_COMPARE":
+					if b, err := strconv.ParseBool(envValue); err == nil {
+						c.Config.FuzzyMatching.SimplifyHdrCompare = b
+					}
+
+				// notifications settings
+				case prefix + "NOTIFICATIONS_DISCORD":
+					c.Config.Notifications.Discord = envValue
+				case prefix + "NOTIFICATIONS_NOTIFICATION_LEVEL":
+					levels := strings.Split(envValue, ",")
+					for i, level := range levels {
+						levels[i] = strings.TrimSpace(level)
+					}
+					c.Config.Notifications.NotificationLevel = levels
+				}
+
+				// client settings
+				if strings.HasPrefix(envKey, prefix+"CLIENTS_") {
+					parts := strings.Split(strings.TrimPrefix(envValue, prefix+"CLIENTS_"), "_")
+					if len(parts) == 2 {
+						clientName := strings.ToLower(parts[0])
+						setting := parts[1]
+
+						// initialize client if it doesn't exist
+						if c.Config.Clients[clientName] == nil {
+							c.Config.Clients[clientName] = &domain.Client{}
+						}
+
+						switch setting {
+						case "HOST":
+							c.Config.Clients[clientName].Host = envValue
+						case "PORT":
+							if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
+								c.Config.Clients[clientName].Port = int(i)
+							}
+						case "USERNAME":
+							c.Config.Clients[clientName].Username = envValue
+						case "PASSWORD":
+							c.Config.Clients[clientName].Password = envValue
+						case "PREIMPORTPATH":
+							c.Config.Clients[clientName].PreImportPath = envValue
+						}
+					}
 				}
 			}
 		}
 	}
+
+	// load parsed env variables into koanf
+	if err := c.k.Load(structs.Provider(c.Config, "yaml"), nil); err != nil {
+		log.Fatalf("could not load env vars into config: %q", err)
+	}
 }
 
-func (c *AppConfig) load(configPath string) {
-	viper.SetConfigType("yaml")
+func (c *AppConfig) load() {
+	// clean trailing slash from c.Config.ConfigPath
+	configPath := path.Clean(c.Config.ConfigPath)
 
-	// clean trailing slash from configPath
-	configPath = path.Clean(configPath)
+	var configFile string
+
 	if configPath != "" {
 		// check if path and file exists
 		// if not, create path and file
@@ -390,83 +514,98 @@ func (c *AppConfig) load(configPath string) {
 			log.Printf("config write error: %q", err)
 		}
 
-		viper.SetConfigFile(path.Join(configPath, "config.yaml"))
+		configFile = path.Join(configPath, "config.yaml")
 	} else {
-		viper.SetConfigName("config")
+		// try to find config in standard locations
+		locations := []string{
+			"./config.yaml",
+			"$HOME/.config/seasonpackarr/config.yaml",
+			"$HOME/.seasonpackarr/config.yaml",
+		}
 
-		// Search config in directories
-		viper.AddConfigPath(".")
-		viper.AddConfigPath("$HOME/.config/seasonpackarr")
-		viper.AddConfigPath("$HOME/.seasonpackarr")
+		for _, loc := range locations {
+			expandedLoc := os.ExpandEnv(loc)
+			if _, err := os.Stat(expandedLoc); err == nil {
+				configFile = expandedLoc
+				break
+			}
+		}
+
+		if configFile == "" {
+			log.Fatalf("could not find config file")
+		}
 	}
 
-	// read config
-	if err := viper.ReadInConfig(); err != nil {
+	// load the config file
+	if err := c.k.Load(file.Provider(configFile), yaml.Parser()); err != nil {
 		log.Fatalf("config read error: %q", err)
 	}
 
-	if err := viper.Unmarshal(c.Config); err != nil {
-		log.Fatalf("Could not unmarshal config file: %v: err %q", viper.ConfigFileUsed(), err)
+	// unmarshal the config into the Config struct
+	if err := c.k.Unmarshal("", c.Config); err != nil {
+		log.Fatalf("could not unmarshal config file: %v: err %q", configFile, err)
 	}
 }
 
 func (c *AppConfig) DynamicReload(log logger.Logger) {
-	viper.WatchConfig()
-	viper.OnConfigChange(func(e fsnotify.Event) {
-		c.m.Lock()
-		defer c.m.Unlock()
+	if c.Config.DisableConfigFile {
+		return
+	}
 
-		// only reload config on write and create events
-		if !e.Has(fsnotify.Write) && !e.Has(fsnotify.Create) {
+	configFile := path.Join(c.Config.ConfigPath, "config.yaml")
+
+	// use koanf's built-in file watcher
+	f := file.Provider(configFile)
+
+	// watch the config file for changes
+	f.Watch(func(event any, err error) {
+		if err != nil {
+			log.Error().Err(err).Msg("error watching config file")
 			return
 		}
 
-		logLevel := viper.GetString("logLevel")
-		c.Config.LogLevel = logLevel
+		c.m.Lock()
+		defer c.m.Unlock()
+
+		// create a new koanf instance for reloading
+		k := koanf.New(".")
+
+		// load the config file
+		if err := k.Load(f, yaml.Parser()); err != nil {
+			log.Error().Err(err).Msg("failed to reload config file")
+			return
+		}
+
+		// unmarshal the updated config into the Config struct
+		if err := k.Unmarshal("", c.Config); err != nil {
+			log.Error().Err(err).Msg("failed to unmarshal updated config")
+			return
+		}
+
 		log.SetLogLevel(c.Config.LogLevel)
-
-		logPath := viper.GetString("logPath")
-		c.Config.LogPath = logPath
-
-		smartMode := viper.GetBool("smartMode")
-		c.Config.SmartMode = smartMode
-
-		smartModeThreshold := viper.GetFloat64("smartModeThreshold")
-		c.Config.SmartModeThreshold = float32(smartModeThreshold)
-
-		parseTorrentFile := viper.GetBool("parseTorrentFile")
-		c.Config.ParseTorrentFile = parseTorrentFile
-
-		skipRepackCompare := viper.GetBool("fuzzyMatching.skipRepackCompare")
-		c.Config.FuzzyMatching.SkipRepackCompare = skipRepackCompare
-
-		simplifyHdrCompare := viper.GetBool("fuzzyMatching.simplifyHdrCompare")
-		c.Config.FuzzyMatching.SimplifyHdrCompare = simplifyHdrCompare
-
-		notificationLevel := viper.GetStringSlice("notifications.notificationLevel")
-		c.Config.Notifications.NotificationLevel = notificationLevel
-
-		discordWebhook := viper.GetString("notifications.discord")
-		c.Config.Notifications.Discord = discordWebhook
 
 		log.Debug().Msg("config file reloaded!")
 	})
 }
 
 func (c *AppConfig) UpdateConfig() error {
-	filePath := path.Join(c.Config.ConfigPath, "config.yaml")
+	if c.Config.DisableConfigFile {
+		return nil
+	}
 
-	f, err := os.ReadFile(filePath)
+	configFile := path.Join(c.Config.ConfigPath, "config.yaml")
+
+	f, err := os.ReadFile(configFile)
 	if err != nil {
-		return errors.Wrap(err, "could not read config filePath: %s", filePath)
+		return errors.Wrap(err, "could not read config configFile: %s", configFile)
 	}
 
 	lines := strings.Split(string(f), "\n")
 	lines = c.processLines(lines)
 
 	output := strings.Join(lines, "\n")
-	if err := os.WriteFile(filePath, []byte(output), 0o644); err != nil {
-		return errors.Wrap(err, "could not write config file: %s", filePath)
+	if err := os.WriteFile(configFile, []byte(output), 0o644); err != nil {
+		return errors.Wrap(err, "could not write config file: %s", configFile)
 	}
 
 	return nil
