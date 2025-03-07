@@ -143,8 +143,8 @@ jobs:
           VERSION="${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}"
           if [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
             LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-            SHORT_SHA=$(git rev-parse --short HEAD)
-            VERSION="${LATEST_TAG}-develop-${SHORT_SHA}"
+            COMMITS_SINCE_TAG=$(git rev-list ${LATEST_TAG}..HEAD --count)
+            VERSION="${LATEST_TAG}-dev${COMMITS_SINCE_TAG}"
           fi
           echo "Version: ${VERSION}"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
