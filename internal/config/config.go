@@ -327,15 +327,7 @@ func (c *AppConfig) defaults() {
 	c.Config.DisableConfigFile = false
 	c.Config.Host = "0.0.0.0"
 	c.Config.Port = 42069
-	c.Config.Clients = map[string]*domain.Client{
-		"default": {
-			Host:          "127.0.0.1",
-			Port:          8080,
-			Username:      "admin",
-			Password:      "adminadmin",
-			PreImportPath: "",
-		},
-	}
+	c.Config.Clients = make(map[string]*domain.Client)
 	c.Config.LogPath = ""
 	c.Config.LogLevel = "DEBUG"
 	c.Config.LogMaxSize = 50
