@@ -165,6 +165,24 @@ fuzzyMatching:
   #
   simplifyHdrCompare: false
 
+# Metadata
+# Here you can provide credentials for additional metadata providers
+#
+metadata:
+  # TVDB API Key
+  # Your TVDB API Key. If you have a user-subscription key, also provide your subscriber PIN in tvdbPIN.
+  #
+  # Optional
+  #
+  tvdbAPIKey: ""
+
+  # TVDB PIN
+  # Your TVDB Subscriber PIN.
+  #
+  # Optional
+  #
+  tvdbPIN: ""
+
 # API Token
 # If not defined, removes api authentication
 #
@@ -339,6 +357,13 @@ func (c *AppConfig) defaults() {
 		SkipRepackCompare:  false,
 		SimplifyHdrCompare: false,
 	}
+	c.Config.Metadata = domain.Metadata{
+		TVDBAPIKey: "",
+		TVDBPIN:    "",
+		// SonarrHost:   "",
+		// SonarrPort:   0,
+		// SonarrAPIKey: "",
+	}
 	c.Config.APIToken = ""
 	c.Config.Notifications = domain.Notifications{
 		NotificationLevel: []string{"MATCH", "ERROR"},
@@ -443,6 +468,12 @@ func (c *AppConfig) loadFromEnv() {
 					if b, err := strconv.ParseBool(envValue); err == nil {
 						c.Config.FuzzyMatching.SimplifyHdrCompare = b
 					}
+
+				// metadata settings
+				case prefix + "METADATA_TVDB_API_KEY":
+					c.Config.Metadata.TVDBAPIKey = envValue
+				case prefix + "METADATA_TVDB_PIN":
+					c.Config.Metadata.TVDBPIN = envValue
 
 				// notifications settings
 				case prefix + "NOTIFICATIONS_DISCORD":
@@ -614,7 +645,13 @@ func (c *AppConfig) processLines(lines []string) []string {
 		foundLineFuzzyMatching      = false
 		foundLineSkipRepackCompare  = false
 		foundLineSimplifyHdrCompare = false
+		foundLineMetadata           = false
+		foundLineMetadataTVDBAPIKey = false
+		foundLineMetadataTVDBPIN    = false
 		foundLineAPIToken           = false
+		foundLineNotifications      = false
+		foundLineNotificationLevel  = false
+		foundLineDiscord            = false
 	)
 
 	for i, line := range lines {
@@ -653,6 +690,17 @@ func (c *AppConfig) processLines(lines []string) []string {
 			lines[i] = fmt.Sprintf("  simplifyHdrCompare: %t", c.Config.FuzzyMatching.SimplifyHdrCompare)
 			foundLineSimplifyHdrCompare = true
 		}
+		if !foundLineMetadata && strings.Contains(line, "metadata:") {
+			foundLineMetadata = true
+		}
+		if foundLineMetadata && !foundLineMetadataTVDBAPIKey && strings.Contains(line, "tvdbAPIKey:") {
+			lines[i] = fmt.Sprintf("  tvdbAPIKey: \"%s\"", c.Config.Metadata.TVDBAPIKey)
+			foundLineMetadataTVDBAPIKey = true
+		}
+		if foundLineMetadata && !foundLineMetadataTVDBPIN && strings.Contains(line, "tvdbPIN:") {
+			lines[i] = fmt.Sprintf("  tvdbPIN: \"%s\"", c.Config.Metadata.TVDBPIN)
+			foundLineMetadataTVDBPIN = true
+		}
 		if !foundLineAPIToken && strings.Contains(line, "apiToken:") {
 			if c.Config.APIToken == "" {
 				lines[i] = "# apiToken: \"\""
@@ -660,6 +708,21 @@ func (c *AppConfig) processLines(lines []string) []string {
 				lines[i] = fmt.Sprintf("apiToken: \"%s\"", c.Config.APIToken)
 			}
 			foundLineAPIToken = true
+		}
+		if !foundLineNotifications && strings.Contains(line, "notifications:") {
+			foundLineNotifications = true
+		}
+		if foundLineNotifications && !foundLineNotificationLevel && strings.Contains(line, "notificationLevel:") {
+			printLevels := make([]string, len(c.Config.Notifications.NotificationLevel))
+			for i, level := range c.Config.Notifications.NotificationLevel {
+				printLevels[i] = fmt.Sprintf("%q", strings.TrimSpace(level))
+			}
+			lines[i] = fmt.Sprintf("  notificationLevel: [%s]", strings.Join(printLevels, ", "))
+			foundLineNotificationLevel = true
+		}
+		if foundLineNotifications && !foundLineDiscord && strings.Contains(line, "discord:") {
+			lines[i] = fmt.Sprintf("  discord: \"%s\"", c.Config.Notifications.Discord)
+			foundLineDiscord = true
 		}
 	}
 
@@ -739,6 +802,29 @@ func (c *AppConfig) processLines(lines []string) []string {
 		}
 	}
 
+	if !foundLineMetadata {
+		lines = append(lines, "# Metadata")
+		lines = append(lines, "# Here you can provide credentials for additional metadata providers")
+		lines = append(lines, "#")
+		lines = append(lines, "metadata:")
+		if !foundLineMetadataTVDBAPIKey {
+			lines = append(lines, "  # TVDB API Key")
+			lines = append(lines, "  # Your TVDB API Key. If you have a user-subscription key, also provide your subscriber PIN in tvdbPIN.")
+			lines = append(lines, "  #")
+			lines = append(lines, "  # Optional")
+			lines = append(lines, "  #")
+			lines = append(lines, fmt.Sprintf("  tvdbAPIKey: \"%s\"\n", c.Config.Metadata.TVDBAPIKey))
+		}
+		if !foundLineMetadataTVDBPIN {
+			lines = append(lines, "  # TVDB PIN")
+			lines = append(lines, "  # Your TVDB Subscriber PIN.")
+			lines = append(lines, "  #")
+			lines = append(lines, "  # Optional")
+			lines = append(lines, "  #")
+			lines = append(lines, fmt.Sprintf("  tvdbPIN: \"%s\"\n", c.Config.Metadata.TVDBPIN))
+		}
+	}
+
 	if !foundLineAPIToken {
 		lines = append(lines, "# API Token")
 		lines = append(lines, "# If not defined, removes api authentication")
@@ -749,6 +835,37 @@ func (c *AppConfig) processLines(lines []string) []string {
 			lines = append(lines, "# apiToken: \"\"\n")
 		} else {
 			lines = append(lines, fmt.Sprintf("apiToken: \"%s\"\n", c.Config.APIToken))
+		}
+	}
+
+	if !foundLineNotifications {
+		lines = append(lines, "# Notifications")
+		lines = append(lines, "# You can decide which notifications you want to receive")
+		lines = append(lines, "#")
+		lines = append(lines, "notifications:")
+		if !foundLineNotificationLevel {
+			lines = append(lines, "  # Notification Level")
+			lines = append(lines, "  # Decides what notifications you want to receive")
+			lines = append(lines, "  #")
+			lines = append(lines, "  # Default: [ \"MATCH\", \"ERROR\" ]")
+			lines = append(lines, "  #")
+			lines = append(lines, "  # Options: \"MATCH\", \"INFO\", \"ERROR\"")
+			lines = append(lines, "  #")
+			lines = append(lines, "  # Examples:")
+			lines = append(lines, "  # [ \"MATCH\", \"INFO\", \"ERROR\" ] would send everything")
+			lines = append(lines, "  # [ \"MATCH\", \"INFO\" ] would send all matches and rejection infos")
+			lines = append(lines, "  # [ \"MATCH\", \"ERROR\" ] would send all matches and errors")
+			lines = append(lines, "  # [ \"ERROR\" ] would only send all errors")
+			lines = append(lines, "  #")
+			lines = append(lines, fmt.Sprintf("  notificationLevel: %s\n", c.Config.Notifications.NotificationLevel))
+		}
+		if !foundLineDiscord {
+			lines = append(lines, "  # Discord")
+			lines = append(lines, "  # Uses the given Discord webhook to send notifications for various events")
+			lines = append(lines, "  #")
+			lines = append(lines, "  # Optional")
+			lines = append(lines, "  #")
+			lines = append(lines, fmt.Sprintf("  discord: \"%s\"\n", c.Config.Notifications.Discord))
 		}
 	}
 

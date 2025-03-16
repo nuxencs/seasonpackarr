@@ -32,6 +32,7 @@ type processor struct {
 	log  zerolog.Logger
 	cfg  *config.AppConfig
 	noti domain.Sender
+	meta *metadata.MetadataProvider
 	req  *request
 }
 
@@ -66,11 +67,12 @@ var (
 	entryMap  = xsync.NewMapOf[string, *entryCache]()
 )
 
-func newProcessor(log logger.Logger, config *config.AppConfig, notification domain.Sender) *processor {
+func newProcessor(log logger.Logger, config *config.AppConfig, notification domain.Sender, metadata *metadata.MetadataProvider) *processor {
 	return &processor{
 		log:  log.With().Str("module", "processor").Logger(),
 		cfg:  config,
 		noti: notification,
+		meta: metadata,
 	}
 }
 
@@ -321,7 +323,7 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 	}
 
 	if p.cfg.Config.SmartMode {
-		totalEps, err := metadata.EpisodesInSeason(requestRls)
+		totalEps, err := p.meta.EpisodesInSeason(requestRls)
 		if err != nil {
 			return domain.StatusEpisodeCountError, errors.Wrap(err, domain.StatusEpisodeCountError.String())
 		}

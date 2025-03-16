@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_EpisodesInSeason(t *testing.T) {
+func Test_TVMaze_EpisodesInSeason(t *testing.T) {
 	tests := []struct {
 		name    string
 		release rls.Release
@@ -29,17 +29,17 @@ func Test_EpisodesInSeason(t *testing.T) {
 		{
 			name: "anime_show",
 			release: rls.Release{
-				Title:  "Attack on Titan",
+				Title:  "Demon Slayer",
 				Series: 1,
 			},
-			want:    25,
+			want:    26,
 			wantErr: false,
 		},
 		{
 			name: "season_doesnt_exist",
 			release: rls.Release{
-				Title:  "Halo",
-				Series: 0,
+				Title:  "Game of Thrones",
+				Series: 15,
 			},
 			want:    0,
 			wantErr: true,
@@ -74,13 +74,15 @@ func Test_EpisodesInSeason(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := EpisodesInSeason(tt.release)
+			tvmazeClient := newTVMaze()
+
+			got, err := tvmazeClient.episodesInSeason(tt.release)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Parse() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			assert.Equalf(t, tt.want, got, "EpisodesInSeason(%s, %d)", tt.release.Title, tt.release.Series)
+			assert.Equalf(t, tt.want, got, "TVDB EpisodesInSeason(%s, %d)", tt.release.Title, tt.release.Series)
 		})
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/config"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
+	"github.com/nuxencs/seasonpackarr/internal/metadata"
 
 	"github.com/gin-gonic/gin"
 )
@@ -15,13 +16,15 @@ type webhookHandler struct {
 	log  logger.Logger
 	cfg  *config.AppConfig
 	noti domain.Sender
+	meta *metadata.MetadataProvider
 }
 
-func newWebhookHandler(log logger.Logger, cfg *config.AppConfig, notification domain.Sender) *webhookHandler {
+func newWebhookHandler(log logger.Logger, cfg *config.AppConfig, notification domain.Sender, metadata *metadata.MetadataProvider) *webhookHandler {
 	return &webhookHandler{
 		log:  log,
 		cfg:  cfg,
 		noti: notification,
+		meta: metadata,
 	}
 }
 
@@ -31,9 +34,9 @@ func (h *webhookHandler) Routes(r *gin.RouterGroup) {
 }
 
 func (h *webhookHandler) pack(c *gin.Context) {
-	newProcessor(h.log, h.cfg, h.noti).ProcessSeasonPackHandler(c)
+	newProcessor(h.log, h.cfg, h.noti, h.meta).ProcessSeasonPackHandler(c)
 }
 
 func (h *webhookHandler) parse(c *gin.Context) {
-	newProcessor(h.log, h.cfg, h.noti).ParseTorrentHandler(c)
+	newProcessor(h.log, h.cfg, h.noti, h.meta).ParseTorrentHandler(c)
 }

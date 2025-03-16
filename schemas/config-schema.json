@@ -20,7 +20,13 @@
     },
     "logLevel": {
       "type": "string",
-      "enum": ["ERROR", "DEBUG", "INFO", "WARN", "TRACE"],
+      "enum": [
+        "ERROR",
+        "DEBUG",
+        "INFO",
+        "WARN",
+        "TRACE"
+      ],
       "default": "INFO"
     },
     "logMaxSize": {
@@ -54,7 +60,12 @@
       "default": ""
     }
   },
-  "required": ["host", "port", "clients", "logLevel"],
+  "required": [
+    "host",
+    "port",
+    "clients",
+    "logLevel"
+  ],
   "$defs": {
     "clients": {
       "type": "object",
@@ -90,7 +101,13 @@
           "default": ""
         }
       },
-      "required": ["host", "port", "username", "password", "preImportPath"]
+      "required": [
+        "host",
+        "port",
+        "username",
+        "password",
+        "preImportPath"
+      ]
     },
     "fuzzyMatching": {
       "type": "object",
@@ -106,6 +123,20 @@
         }
       }
     },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tvdbAPIKey": {
+          "type": "string",
+          "default": ""
+        },
+        "tvdbPIN": {
+          "type": "string",
+          "default": ""
+        }
+      }
+    },
     "notifications": {
       "type": "object",
       "additionalProperties": false,
@@ -114,7 +145,11 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["MATCH", "INFO", "ERROR"]
+            "enum": [
+              "MATCH",
+              "INFO",
+              "ERROR"
+            ]
           },
           "minItems": 1,
           "uniqueItems": true
