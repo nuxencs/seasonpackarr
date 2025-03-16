@@ -457,7 +457,7 @@ func (c *AppConfig) loadFromEnv() {
 
 				// client settings
 				if strings.HasPrefix(envKey, prefix+"CLIENTS_") {
-					parts := strings.Split(strings.TrimPrefix(envValue, prefix+"CLIENTS_"), "_")
+					parts := strings.Split(strings.TrimPrefix(envKey, prefix+"CLIENTS_"), "_")
 					if len(parts) == 2 {
 						clientName := strings.ToLower(parts[0])
 						setting := parts[1]

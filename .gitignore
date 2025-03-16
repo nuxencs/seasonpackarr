@@ -23,4 +23,5 @@ go.work
 
 # Additional files
 .idea/
+.vscode/
 dist/
