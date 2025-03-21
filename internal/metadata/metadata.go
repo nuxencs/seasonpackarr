@@ -43,10 +43,10 @@ func (m *MetadataProvider) EpisodesInSeason(release rls.Release) (int, error) {
 		return 0, fmt.Errorf("TVMaze search failed and TVDB client is not available")
 	}
 
-	episodes, err := m.tvdbClient.episodesInSeason(release)
+	episodesTVDB, err := m.tvdbClient.episodesInSeason(release)
 	if err != nil {
 		return 0, fmt.Errorf("error fetching episodes from TVDB: %w", err)
 	}
 
-	return episodes, nil
+	return episodesTVDB, nil
 }

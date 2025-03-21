@@ -167,8 +167,8 @@ func (t *tvdbClient) makeAPIRequest(endpoint string) ([]byte, error) {
 	return body, nil
 }
 
-func (t *tvdbClient) search(title string) (string, error) {
-	resp, err := t.makeAPIRequest(fmt.Sprintf("/search?query=%s&type=series", url.QueryEscape(rls.MustNormalize(title))))
+func (t *tvdbClient) search(title string, year int) (string, error) {
+	resp, err := t.makeAPIRequest(fmt.Sprintf("/search?query=%s&type=series&year=%d", url.QueryEscape(rls.MustNormalize(title)), year))
 	if err != nil {
 		return "", err
 	}
@@ -191,7 +191,7 @@ func (t *tvdbClient) search(title string) (string, error) {
 
 // episodesInSeason returns the number of episodes in a season of a show.
 func (t *tvdbClient) episodesInSeason(release rls.Release) (int, error) {
-	tvdbID, err := t.search(release.Title)
+	tvdbID, err := t.search(release.Title, release.Year)
 	if err != nil {
 		return 0, errors.Wrap(err, fmt.Sprintf("failed to find show %q on tvdb", release.Title))
 	}
