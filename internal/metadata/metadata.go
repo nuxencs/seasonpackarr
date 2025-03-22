@@ -5,10 +5,13 @@ package metadata
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/logger"
 
 	"github.com/moistari/rls"
+	"github.com/rs/zerolog"
 )
 
 type metadataProvider interface {
@@ -16,11 +19,12 @@ type metadataProvider interface {
 }
 
 type MetadataProvider struct {
+	log          zerolog.Logger
 	tvmazeClient metadataProvider
 	tvdbClient   metadataProvider
 }
 
-func NewMetadataProvider(metadata domain.Metadata) *MetadataProvider {
+func NewMetadataProvider(log logger.Logger, metadata domain.Metadata) *MetadataProvider {
 	tvmazeClient := newTVMaze()
 	var tvdbClient metadataProvider
 
@@ -29,24 +33,56 @@ func NewMetadataProvider(metadata domain.Metadata) *MetadataProvider {
 	}
 
 	return &MetadataProvider{
+		log:          log.With().Logger(),
 		tvmazeClient: tvmazeClient,
 		tvdbClient:   tvdbClient,
 	}
 }
 
 func (m *MetadataProvider) EpisodesInSeason(release rls.Release) (int, error) {
-	if episodesTVMaze, err := m.tvmazeClient.episodesInSeason(release); err == nil {
-		return episodesTVMaze, nil
-	}
-
 	if m.tvdbClient == nil {
-		return 0, fmt.Errorf("TVMaze search failed and TVDB client is not available")
+		return m.tvmazeClient.episodesInSeason(release)
 	}
 
-	episodesTVDB, err := m.tvdbClient.episodesInSeason(release)
-	if err != nil {
-		return 0, fmt.Errorf("error fetching episodes from TVDB: %w", err)
+	type result struct {
+		episodes int
+		err      error
 	}
 
-	return episodesTVDB, nil
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	var tvdbResult, tvmazeResult result
+	go func() {
+		defer wg.Done()
+		episodes, err := m.tvdbClient.episodesInSeason(release)
+		tvdbResult = result{episodes, err}
+	}()
+
+	go func() {
+		defer wg.Done()
+		episodes, err := m.tvmazeClient.episodesInSeason(release)
+		tvmazeResult = result{episodes, err}
+	}()
+
+	wg.Wait()
+
+	if tvdbResult.err == nil && tvmazeResult.err == nil {
+		if tvdbResult.episodes != tvmazeResult.episodes {
+			m.log.Debug().Msgf("episode count differs: TVDB=%d, TVMaze=%d for %s S%02d, using TVDB",
+				tvdbResult.episodes, tvmazeResult.episodes, release.Title, release.Series)
+		}
+
+		return tvdbResult.episodes, nil
+	}
+
+	if tvdbResult.err == nil {
+		return tvdbResult.episodes, nil
+	}
+
+	if tvmazeResult.err == nil {
+		return tvmazeResult.episodes, nil
+	}
+
+	return 0, fmt.Errorf("failed to get episodes: TVDB error: %w, TVMaze error: %v", tvdbResult.err, tvmazeResult.err)
 }

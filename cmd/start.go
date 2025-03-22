@@ -42,7 +42,7 @@ var startCmd = &cobra.Command{
 		noti := notification.NewDiscordSender(log, cfg)
 
 		// init metadata providers
-		metadata := metadata.NewMetadataProvider(cfg.Config.Metadata)
+		metadata := metadata.NewMetadataProvider(log, cfg.Config.Metadata)
 
 		srv := http.NewServer(log, cfg, noti, metadata)
 
