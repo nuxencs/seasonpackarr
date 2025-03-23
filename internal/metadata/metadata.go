@@ -69,8 +69,8 @@ func (m *MetadataProvider) EpisodesInSeason(release rls.Release) (int, error) {
 
 	if tvdbResult.err == nil && tvmazeResult.err == nil {
 		if tvdbResult.episodes != tvmazeResult.episodes {
-			m.log.Debug().Msgf("episode count differs: TVDB=%d, TVMaze=%d for %s S%02d, using TVDB",
-				tvdbResult.episodes, tvmazeResult.episodes, release.Title, release.Series)
+			m.log.Debug().Msgf("episode count differs for %s S%02d: TVDB=%d, TVMaze=%d, using TVDB",
+				release.Title, release.Series, tvdbResult.episodes, tvmazeResult.episodes)
 		}
 
 		return tvdbResult.episodes, nil
