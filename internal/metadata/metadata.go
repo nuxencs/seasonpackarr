@@ -77,10 +77,12 @@ func (m *MetadataProvider) EpisodesInSeason(release rls.Release) (int, error) {
 	}
 
 	if tvdbResult.err == nil {
+		m.log.Debug().Msgf("TVMaze query failed with error: %v, using TVDB", tvdbResult.err)
 		return tvdbResult.episodes, nil
 	}
 
 	if tvmazeResult.err == nil {
+		m.log.Debug().Msgf("TVDB query failed with error: %v, using TVMaze", tvmazeResult.err)
 		return tvmazeResult.episodes, nil
 	}
 

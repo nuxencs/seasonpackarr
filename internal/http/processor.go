@@ -331,9 +331,10 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 		foundEps := len(epsSet)
 		percentEps := release.PercentOfTotalEpisodes(totalEps, foundEps)
 
+		p.log.Info().Msgf("found %d/%d (%.2f%%) episodes in client", foundEps, totalEps, percentEps*100)
+
 		if percentEps < p.cfg.Config.SmartModeThreshold {
-			return domain.StatusBelowThreshold, errors.Wrap(fmt.Errorf("found %d/%d (%.2f%%) episodes in client",
-				foundEps, totalEps, percentEps*100), domain.StatusBelowThreshold.String())
+			return domain.StatusBelowThreshold, domain.StatusBelowThreshold.Error()
 		}
 	}
 
@@ -352,7 +353,7 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 			p.log.Error().Err(err).Msgf("error creating hardlink: %s", match.clientEpPath)
 			continue
 		}
-		p.log.Log().Msgf("created hardlink: source(%s), target(%s)", match.clientEpPath, match.announcedEpPath)
+		p.log.Info().Msgf("created hardlink: source(%s), target(%s)", match.clientEpPath, match.announcedEpPath)
 		successfulHardlink = true
 	}
 
@@ -482,7 +483,7 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 				p.log.Error().Err(err).Msgf("error creating hardlink: %s", match.clientEpPath)
 				continue
 			}
-			p.log.Log().Msgf("created hardlink: source(%s), target(%s)", match.clientEpPath, targetEpPath)
+			p.log.Info().Msgf("created hardlink: source(%s), target(%s)", match.clientEpPath, targetEpPath)
 			successfulHardlink = true
 
 			break
