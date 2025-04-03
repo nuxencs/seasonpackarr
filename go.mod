@@ -2,12 +2,14 @@ module github.com/nuxencs/seasonpackarr
 
 go 1.23.0
 
+toolchain go1.24.1
+
 require (
 	github.com/anacrolix/torrent v1.58.1
 	github.com/autobrr/go-qbittorrent v1.11.0
 	github.com/dlclark/regexp2 v1.11.5
-	github.com/gin-contrib/cors v1.7.3
-	github.com/gin-contrib/requestid v1.0.4
+	github.com/gin-contrib/cors v1.7.5
+	github.com/gin-contrib/requestid v1.0.5
 	github.com/gin-gonic/gin v1.10.0
 	github.com/google/uuid v1.6.0
 	github.com/knadh/koanf/parsers/yaml v0.1.0
@@ -17,7 +19,7 @@ require (
 	github.com/mrobinsn/go-tvmaze v1.2.1
 	github.com/pkg/errors v0.9.1
 	github.com/puzpuzpuz/xsync/v3 v3.5.1
-	github.com/rs/zerolog v1.33.0
+	github.com/rs/zerolog v1.34.0
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
@@ -32,8 +34,8 @@ require (
 	github.com/anacrolix/missinggo/v2 v2.8.0 // indirect
 	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/bradfitz/iter v0.0.0-20191230175014-e8f45d346db8 // indirect
-	github.com/bytedance/sonic v1.12.10 // indirect
-	github.com/bytedance/sonic/loader v0.2.3 // indirect
+	github.com/bytedance/sonic v1.13.2 // indirect
+	github.com/bytedance/sonic/loader v0.2.4 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
@@ -41,7 +43,7 @@ require (
 	github.com/gin-contrib/sse v1.0.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
-	github.com/go-playground/validator/v10 v10.25.0 // indirect
+	github.com/go-playground/validator/v10 v10.26.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/huandu/xstrings v1.5.0 // indirect
@@ -68,14 +70,14 @@ require (
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
-	golang.org/x/arch v0.14.0 // indirect
-	golang.org/x/crypto v0.35.0 // indirect
+	golang.org/x/arch v0.15.0 // indirect
+	golang.org/x/crypto v0.36.0 // indirect
 	golang.org/x/exp v0.0.0-20250228200357-dead58393ab7 // indirect
-	golang.org/x/net v0.35.0 // indirect
-	golang.org/x/sync v0.11.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
-	golang.org/x/text v0.22.0 // indirect
-	google.golang.org/protobuf v1.36.5 // indirect
+	golang.org/x/net v0.38.0 // indirect
+	golang.org/x/sync v0.12.0 // indirect
+	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/text v0.23.0 // indirect
+	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/blake3 v1.4.0 // indirect
 )
