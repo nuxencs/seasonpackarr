@@ -136,6 +136,24 @@ fuzzyMatching:
   #
   simplifyHdrCompare: false
 
+# Metadata
+# Here you can provide credentials for additional metadata providers
+#
+metadata:
+  # TVDB API Key
+  # Your TVDB API Key. If you have a user-subscription key, also provide your subscriber PIN in tvdbPIN.
+  #
+  # Optional
+  #
+  tvdbAPIKey: ""
+
+  # TVDB PIN
+  # Your TVDB Subscriber PIN.
+  #
+  # Optional
+  #
+  tvdbPIN: ""
+
 # API Token
 # If not defined, removes api authentication
 #

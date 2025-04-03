@@ -32,6 +32,7 @@ type processor struct {
 	log  zerolog.Logger
 	cfg  *config.AppConfig
 	noti domain.Sender
+	meta *metadata.MetadataProvider
 	req  *request
 }
 
@@ -66,11 +67,12 @@ var (
 	entryMap  = xsync.NewMapOf[string, *entryCache]()
 )
 
-func newProcessor(log logger.Logger, config *config.AppConfig, notification domain.Sender) *processor {
+func newProcessor(log logger.Logger, config *config.AppConfig, notification domain.Sender, metadata *metadata.MetadataProvider) *processor {
 	return &processor{
 		log:  log.With().Str("module", "processor").Logger(),
 		cfg:  config,
 		noti: notification,
+		meta: metadata,
 	}
 }
 
@@ -321,7 +323,7 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 	}
 
 	if p.cfg.Config.SmartMode {
-		totalEps, err := metadata.EpisodesInSeason(requestRls)
+		totalEps, err := p.meta.EpisodesInSeason(requestRls)
 		if err != nil {
 			return domain.StatusEpisodeCountError, errors.Wrap(err, domain.StatusEpisodeCountError.String())
 		}
@@ -329,9 +331,10 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 		foundEps := len(epsSet)
 		percentEps := release.PercentOfTotalEpisodes(totalEps, foundEps)
 
+		p.log.Info().Msgf("found %d/%d (%.2f%%) episodes in client", foundEps, totalEps, percentEps*100)
+
 		if percentEps < p.cfg.Config.SmartModeThreshold {
-			return domain.StatusBelowThreshold, errors.Wrap(fmt.Errorf("found %d/%d (%.2f%%) episodes in client",
-				foundEps, totalEps, percentEps*100), domain.StatusBelowThreshold.String())
+			return domain.StatusBelowThreshold, domain.StatusBelowThreshold.Error()
 		}
 	}
 
@@ -350,7 +353,7 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 			p.log.Error().Err(err).Msgf("error creating hardlink: %s", match.clientEpPath)
 			continue
 		}
-		p.log.Log().Msgf("created hardlink: source(%s), target(%s)", match.clientEpPath, match.announcedEpPath)
+		p.log.Info().Msgf("created hardlink: source(%s), target(%s)", match.clientEpPath, match.announcedEpPath)
 		successfulHardlink = true
 	}
 
@@ -480,7 +483,7 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 				p.log.Error().Err(err).Msgf("error creating hardlink: %s", match.clientEpPath)
 				continue
 			}
-			p.log.Log().Msgf("created hardlink: source(%s), target(%s)", match.clientEpPath, targetEpPath)
+			p.log.Info().Msgf("created hardlink: source(%s), target(%s)", match.clientEpPath, targetEpPath)
 			successfulHardlink = true
 
 			break

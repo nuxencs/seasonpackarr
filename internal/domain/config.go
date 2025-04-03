@@ -24,6 +24,14 @@ type Notifications struct {
 	// Shoutrrr  string `yaml:"shoutrrr"`
 }
 
+type Metadata struct {
+	TVDBAPIKey string `yaml:"tvdbAPIKey"`
+	TVDBPIN    string `yaml:"tvdbPIN"`
+	// SonarrHost   string `yaml:"sonarrHost"`
+	// SonarrPort   int    `yaml:"sonarrPort"`
+	// SonarrAPIKey string `yaml:"sonarrAPIKey"`
+}
+
 type Config struct {
 	Version            string
 	ConfigPath         string
@@ -39,6 +47,7 @@ type Config struct {
 	SmartModeThreshold float32            `yaml:"smartModeThreshold"`
 	ParseTorrentFile   bool               `yaml:"parseTorrentFile"`
 	FuzzyMatching      FuzzyMatching      `yaml:"fuzzyMatching"`
+	Metadata           Metadata           `yaml:"metadata"`
 	APIToken           string             `yaml:"apiToken"`
 	Notifications      Notifications      `yaml:"notifications"`
 }

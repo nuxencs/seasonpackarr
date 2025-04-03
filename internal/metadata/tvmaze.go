@@ -12,12 +12,19 @@ import (
 	"github.com/mrobinsn/go-tvmaze/tvmaze"
 )
 
-func EpisodesInSeason(release rls.Release) (int, error) {
+type tvmazeClient struct{}
+
+func newTVMaze() metadataProvider {
+	return &tvmazeClient{}
+}
+
+// episodesInSeason returns the number of episodes in a season of a show.
+func (t *tvmazeClient) episodesInSeason(release rls.Release) (int, error) {
 	totalEpisodes := 0
 
 	show, err := tvmaze.DefaultClient.GetShow(rls.MustNormalize(release.Title))
 	if err != nil {
-		return 0, errors.Wrap(err, "failed to find show on tvmaze")
+		return 0, errors.Wrap(err, fmt.Sprintf("failed to find show %q on tvmaze", release.Title))
 	}
 
 	episodes, err := show.GetEpisodes()
