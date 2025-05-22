@@ -250,12 +250,12 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 	p.log.Info().Msgf("using %s client serving at %s:%d", clientName, clientCfg.Host, clientCfg.Port)
 
 	if err := p.getClient(clientCfg, clientName); err != nil {
-		return domain.StatusGetClientError, errors.Wrap(err, domain.StatusGetClientError.String())
+		return domain.StatusGetClientError, fmt.Errorf("%s: %w", domain.StatusGetClientError, err)
 	}
 
 	entries, err := p.getAllTorrents(clientName)
 	if err != nil {
-		return domain.StatusGetTorrentsError, errors.Wrap(err, domain.StatusGetTorrentsError.String())
+		return domain.StatusGetTorrentsError, fmt.Errorf("%s: %w", domain.StatusGetTorrentsError, err)
 	}
 
 	requestRls := rls.ParseString(p.req.Name)
@@ -325,7 +325,7 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 	if p.cfg.Config.SmartMode {
 		totalEps, err := p.meta.EpisodesInSeason(requestRls)
 		if err != nil {
-			return domain.StatusEpisodeCountError, errors.Wrap(err, domain.StatusEpisodeCountError.String())
+			return domain.StatusEpisodeCountError, fmt.Errorf("%s: %w", domain.StatusEpisodeCountError, err)
 		}
 
 		foundEps := len(epsSet)
@@ -433,20 +433,20 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 
 	torrentBytes, err := torrents.DecodeTorrentBytes(p.req.Torrent)
 	if err != nil {
-		return domain.StatusDecodeTorrentBytesError, errors.Wrap(err, domain.StatusDecodeTorrentBytesError.String())
+		return domain.StatusDecodeTorrentBytesError, fmt.Errorf("%s: %w", domain.StatusDecodeTorrentBytesError, err)
 	}
 	p.req.Torrent = torrentBytes
 
 	torrentInfo, err := torrents.Info(p.req.Torrent)
 	if err != nil {
-		return domain.StatusParseTorrentInfoError, errors.Wrap(err, domain.StatusParseTorrentInfoError.String())
+		return domain.StatusParseTorrentInfoError, fmt.Errorf("%s: %w", domain.StatusParseTorrentInfoError, err)
 	}
 	parsedPackName := torrentInfo.BestName()
 	p.log.Debug().Msgf("parsed season pack name: %s", parsedPackName)
 
 	torrentEps, err := torrents.Episodes(torrentInfo)
 	if err != nil {
-		return domain.StatusGetEpisodesError, errors.Wrap(err, domain.StatusGetEpisodesError.String())
+		return domain.StatusGetEpisodesError, fmt.Errorf("%s: %w", domain.StatusGetEpisodesError, err)
 	}
 	for _, torrentEp := range torrentEps {
 		p.log.Debug().Msgf("found episode in pack: name(%s), size(%d)", torrentEp.Path, torrentEp.Size)

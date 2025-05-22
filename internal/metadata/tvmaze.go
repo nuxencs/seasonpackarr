@@ -24,7 +24,8 @@ func (t *tvmazeClient) episodesInSeason(release rls.Release) (int, error) {
 
 	show, err := tvmaze.DefaultClient.GetShow(rls.MustNormalize(release.Title))
 	if err != nil {
-		return 0, errors.Wrap(err, fmt.Sprintf("failed to find show %q on tvmaze", release.Title))
+		//return 0, errors.Wrap(err, fmt.Sprintf("failed to find show %q on tvmaze", release.Title))
+		return 0, fmt.Errorf("failed to find show %q on tvmaze: %w", release.Title, err)
 	}
 
 	episodes, err := show.GetEpisodes()
