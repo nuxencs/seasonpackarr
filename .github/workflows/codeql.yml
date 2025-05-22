@@ -20,7 +20,7 @@ on:
     - cron: '0 4 * * 6'
 
 env:
-  GO_VERSION: '1.23.0'
+  GO_VERSION: '1.24.2'
 
 jobs:
   analyze:
