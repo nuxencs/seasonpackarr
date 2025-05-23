@@ -14,32 +14,32 @@ import (
 	"github.com/rs/zerolog"
 )
 
-type metadataProvider interface {
+type provider interface {
 	episodesInSeason(release rls.Release) (int, error)
 }
 
-type MetadataProvider struct {
+type Provider struct {
 	log          zerolog.Logger
-	tvmazeClient metadataProvider
-	tvdbClient   metadataProvider
+	tvmazeClient provider
+	tvdbClient   provider
 }
 
-func NewMetadataProvider(log logger.Logger, metadata domain.Metadata) *MetadataProvider {
-	tvmazeClient := newTVMaze()
-	var tvdbClient metadataProvider
+func NewMetadataProvider(log logger.Logger, metadata domain.Metadata) *Provider {
+	tvmaze := newTVMaze()
+	var tvdb provider
 
 	if metadata.TVDBAPIKey != "" {
-		tvdbClient = newTVDB(metadata.TVDBAPIKey, metadata.TVDBPIN)
+		tvdb = newTVDB(metadata.TVDBAPIKey, metadata.TVDBPIN)
 	}
 
-	return &MetadataProvider{
+	return &Provider{
 		log:          log.With().Logger(),
-		tvmazeClient: tvmazeClient,
-		tvdbClient:   tvdbClient,
+		tvmazeClient: tvmaze,
+		tvdbClient:   tvdb,
 	}
 }
 
-func (m *MetadataProvider) EpisodesInSeason(release rls.Release) (int, error) {
+func (m *Provider) EpisodesInSeason(release rls.Release) (int, error) {
 	if m.tvdbClient == nil {
 		return m.tvmazeClient.episodesInSeason(release)
 	}

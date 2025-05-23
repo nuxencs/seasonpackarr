@@ -65,7 +65,7 @@ const (
 	tvdbBaseURL = "https://api4.thetvdb.com/v4"
 )
 
-func newTVDB(apiKey, pin string) metadataProvider {
+func newTVDB(apiKey, pin string) provider {
 	return &tvdbClient{
 		apiKey: apiKey,
 		pin:    pin,
