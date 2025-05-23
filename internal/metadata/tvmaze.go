@@ -25,12 +25,12 @@ func (t *tvmazeClient) episodesInSeason(release rls.Release) (int, error) {
 	// try finding the show with the parsed title first
 	show, showErr := tvmaze.DefaultClient.GetShow(release.Title)
 	if showErr != nil {
-		// retry with the normalized title if the parsed title fails
 		if showErr.Error() != errNotFound {
 			return 0, fmt.Errorf("failed to find show %q on tvmaze: %w", release.Title, showErr)
 
 		}
 
+		// retry with the normalized title if the parsed title fails
 		show, showErr = tvmaze.DefaultClient.GetShow(rls.MustNormalize(release.Title))
 		if showErr != nil {
 			return 0, fmt.Errorf("failed to find show %q on tvmaze: %w", release.Title, showErr)
