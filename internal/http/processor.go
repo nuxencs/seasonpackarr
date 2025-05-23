@@ -32,7 +32,7 @@ type processor struct {
 	log  zerolog.Logger
 	cfg  *config.AppConfig
 	noti domain.Sender
-	meta *metadata.MetadataProvider
+	meta *metadata.Provider
 	req  *request
 }
 
@@ -67,7 +67,7 @@ var (
 	entryMap  = xsync.NewMapOf[string, *entryCache]()
 )
 
-func newProcessor(log logger.Logger, config *config.AppConfig, notification domain.Sender, metadata *metadata.MetadataProvider) *processor {
+func newProcessor(log logger.Logger, config *config.AppConfig, notification domain.Sender, metadata *metadata.Provider) *processor {
 	return &processor{
 		log:  log.With().Str("module", "processor").Logger(),
 		cfg:  config,

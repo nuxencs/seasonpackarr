@@ -12,19 +12,29 @@ import (
 	"github.com/mrobinsn/go-tvmaze/tvmaze"
 )
 
+var errNotFound = "received error status code (404): 404 Not Found"
+
 type tvmazeClient struct{}
 
-func newTVMaze() metadataProvider {
+func newTVMaze() provider {
 	return &tvmazeClient{}
 }
 
 // episodesInSeason returns the number of episodes in a season of a show.
 func (t *tvmazeClient) episodesInSeason(release rls.Release) (int, error) {
-	totalEpisodes := 0
+	// try finding the show with the parsed title first
+	show, showErr := tvmaze.DefaultClient.GetShow(release.Title)
+	if showErr != nil {
+		if showErr.Error() != errNotFound {
+			return 0, fmt.Errorf("failed to find show %q on tvmaze: %w", release.Title, showErr)
 
-	show, err := tvmaze.DefaultClient.GetShow(rls.MustNormalize(release.Title))
-	if err != nil {
-		return 0, fmt.Errorf("failed to find show %q on tvmaze: %w", release.Title, err)
+		}
+
+		// retry with the normalized title if the parsed title fails
+		show, showErr = tvmaze.DefaultClient.GetShow(rls.MustNormalize(release.Title))
+		if showErr != nil {
+			return 0, fmt.Errorf("failed to find show %q on tvmaze: %w", release.Title, showErr)
+		}
 	}
 
 	episodes, err := show.GetEpisodes()
@@ -32,6 +42,7 @@ func (t *tvmazeClient) episodesInSeason(release rls.Release) (int, error) {
 		return 0, errors.Wrap(err, "failed to get episodes from tvmaze")
 	}
 
+	var totalEpisodes int
 	for _, episode := range episodes {
 		if episode.Season == release.Series {
 			totalEpisodes++

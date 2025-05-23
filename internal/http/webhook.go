@@ -16,10 +16,10 @@ type webhookHandler struct {
 	log  logger.Logger
 	cfg  *config.AppConfig
 	noti domain.Sender
-	meta *metadata.MetadataProvider
+	meta *metadata.Provider
 }
 
-func newWebhookHandler(log logger.Logger, cfg *config.AppConfig, notification domain.Sender, metadata *metadata.MetadataProvider) *webhookHandler {
+func newWebhookHandler(log logger.Logger, cfg *config.AppConfig, notification domain.Sender, metadata *metadata.Provider) *webhookHandler {
 	return &webhookHandler{
 		log:  log,
 		cfg:  cfg,
