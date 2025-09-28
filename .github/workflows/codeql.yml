@@ -20,7 +20,7 @@ on:
     - cron: '0 4 * * 6'
 
 env:
-  GO_VERSION: '1.23.0'
+  GO_VERSION: '1.24.2'
 
 jobs:
   analyze:
@@ -59,10 +59,10 @@ jobs:
         # your codebase is analyzed, see https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/codeql-code-scanning-for-compiled-languages
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true

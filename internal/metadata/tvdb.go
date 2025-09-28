@@ -65,7 +65,7 @@ const (
 	tvdbBaseURL = "https://api4.thetvdb.com/v4"
 )
 
-func newTVDB(apiKey, pin string) metadataProvider {
+func newTVDB(apiKey, pin string) provider {
 	return &tvdbClient{
 		apiKey: apiKey,
 		pin:    pin,
@@ -193,7 +193,7 @@ func (t *tvdbClient) search(title string, year int) (string, error) {
 func (t *tvdbClient) episodesInSeason(release rls.Release) (int, error) {
 	tvdbID, err := t.search(release.Title, release.Year)
 	if err != nil {
-		return 0, errors.Wrap(err, fmt.Sprintf("failed to find show %q on tvdb", release.Title))
+		return 0, fmt.Errorf("failed to find show %q on tvdb: %w", release.Title, err)
 	}
 
 	resp, err := t.makeAPIRequest(fmt.Sprintf("/series/%s/episodes/default?page=0&season=%d", tvdbID, release.Series))

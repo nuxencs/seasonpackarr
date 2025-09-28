@@ -27,12 +27,12 @@ type Server struct {
 	log  logger.Logger
 	cfg  *config.AppConfig
 	noti domain.Sender
-	meta *metadata.MetadataProvider
+	meta *metadata.Provider
 
 	httpServer http.Server
 }
 
-func NewServer(log logger.Logger, config *config.AppConfig, notification domain.Sender, metadata *metadata.MetadataProvider) *Server {
+func NewServer(log logger.Logger, config *config.AppConfig, notification domain.Sender, metadata *metadata.Provider) *Server {
 	return &Server{
 		log:  log,
 		cfg:  config,
