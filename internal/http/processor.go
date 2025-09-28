@@ -6,6 +6,7 @@ package http
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"sync"
 	"time"
@@ -79,8 +80,13 @@ func newProcessor(log logger.Logger, config *config.AppConfig, notification doma
 func (p *processor) getClient(client *domain.Client, clientName string) error {
 	c, ok := clientMap.Load(clientName)
 	if !ok {
+		host, err := buildHost(client)
+		if err != nil {
+			return errors.Wrap(err, "failed to build host")
+		}
+
 		clientCfg := qbittorrent.Config{
-			Host:     fmt.Sprintf("http://%s:%d", client.Host, client.Port),
+			Host:     host,
 			Username: client.Username,
 			Password: client.Password,
 		}
@@ -247,7 +253,7 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 	if !ok {
 		return domain.StatusClientNotFound, domain.StatusClientNotFound.Error()
 	}
-	p.log.Info().Msgf("using %s client serving at %s:%d", clientName, clientCfg.Host, clientCfg.Port)
+	p.log.Info().Msgf("using %s client", clientName)
 
 	if err := p.getClient(clientCfg, clientName); err != nil {
 		return domain.StatusGetClientError, errors.Wrap(err, domain.StatusGetClientError.String())
@@ -422,6 +428,7 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 	if !ok {
 		return domain.StatusClientNotFound, domain.StatusClientNotFound.Error()
 	}
+	p.log.Info().Msgf("using %s client", clientName)
 
 	if len(p.req.Name) == 0 {
 		return domain.StatusAnnounceNameError, domain.StatusAnnounceNameError.Error()
@@ -504,4 +511,26 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 	}
 
 	return domain.StatusSuccessfulHardlink, nil
+}
+
+func buildHost(client *domain.Client) (string, error) {
+	if len(client.Host) == 0 {
+		return "", errors.New("host is required")
+	}
+
+	parsedURL, err := url.Parse(client.Host)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to parse host")
+	}
+
+	host := client.Host
+	if client.Port != 0 {
+		host = fmt.Sprintf("%s:%d", client.Host, client.Port)
+	}
+
+	if parsedURL.Scheme == "" {
+		host = fmt.Sprintf("http://%s", host)
+	}
+
+	return host, nil
 }
