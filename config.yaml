@@ -136,6 +136,13 @@ fuzzyMatching:
   #
   simplifyHdrCompare: false
 
+  # Simplify WEB Compare
+  # Toggle simplification of WEB-DL for comparing, e.g. WEB-DL will be treated the same as WEB
+  #
+  # Default: false
+  #
+  simplifyWebCompare: false
+
 # Metadata
 # Here you can provide credentials for additional metadata providers
 #
