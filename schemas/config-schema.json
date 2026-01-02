@@ -103,7 +103,6 @@
       },
       "required": [
         "host",
-        "port",
         "username",
         "password",
         "preImportPath"
@@ -118,6 +117,10 @@
           "default": false
         },
         "simplifyHdrCompare": {
+          "type": "boolean",
+          "default": false
+        },
+        "simplifyWebCompare": {
           "type": "boolean",
           "default": false
         }
