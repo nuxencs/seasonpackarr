@@ -31,6 +31,12 @@ func compare(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatchi
 		}
 	}
 
+	// normalize WEB-DL down to plain WEB when simplifyWebCompare is enabled
+	if fuzzyMatching.SimplifyWebCompare {
+		requestRls.Source = simplifyWEB(requestRls.Source)
+		clientRls.Source = simplifyWEB(clientRls.Source)
+	}
+
 	if requestRls.Source != clientRls.Source {
 		return domain.CompareInfo{
 			StatusCode:   domain.StatusSourceMismatch,
@@ -167,4 +173,12 @@ func IsValidEpisodeFile(torrentFileName string) bool {
 	}
 
 	return true
+}
+
+func simplifyWEB(source string) string {
+	if source == "WEB-DL" {
+		return "WEB"
+	}
+
+	return source
 }

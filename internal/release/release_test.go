@@ -243,3 +243,48 @@ func Test_IsValidEpisodeFile(t *testing.T) {
 		})
 	}
 }
+
+func Test_SimplifyWEB(t *testing.T) {
+	type args struct {
+		source string
+	}
+	tests := []struct {
+		name string
+		args args
+		want string
+	}{
+		{
+			name: "web-dl",
+			args: args{
+				source: "WEB-DL",
+			},
+			want: "WEB",
+		},
+		{
+			name: "webrip",
+			args: args{
+				source: "WEBRiP",
+			},
+			want: "WEBRiP",
+		},
+		{
+			name: "bluray",
+			args: args{
+				source: "BluRay",
+			},
+			want: "BluRay",
+		},
+		{
+			name: "empty",
+			args: args{
+				source: "",
+			},
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equalf(t, tt.want, simplifyWEB(tt.args.source), "simplifyWEB(%v)", tt.args.source)
+		})
+	}
+}

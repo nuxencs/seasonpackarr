@@ -165,6 +165,13 @@ fuzzyMatching:
   #
   simplifyHdrCompare: false
 
+  # Simplify WEB Compare
+  # Toggle simplification of WEB-DL for comparing, e.g. WEB-DL will be treated the same as WEB
+  #
+  # Default: false
+  #
+  simplifyWebCompare: false
+
 # Metadata
 # Here you can provide credentials for additional metadata providers
 #
@@ -356,6 +363,7 @@ func (c *AppConfig) defaults() {
 	c.Config.FuzzyMatching = domain.FuzzyMatching{
 		SkipRepackCompare:  false,
 		SimplifyHdrCompare: false,
+		SimplifyWebCompare: false,
 	}
 	c.Config.Metadata = domain.Metadata{
 		TVDBAPIKey: "",
@@ -467,6 +475,10 @@ func (c *AppConfig) loadFromEnv() {
 				case prefix + "FUZZY_MATCHING_SIMPLIFY_HDR_COMPARE":
 					if b, err := strconv.ParseBool(envValue); err == nil {
 						c.Config.FuzzyMatching.SimplifyHdrCompare = b
+					}
+				case prefix + "FUZZY_MATCHING_SIMPLIFY_WEB_COMPARE":
+					if b, err := strconv.ParseBool(envValue); err == nil {
+						c.Config.FuzzyMatching.SimplifyWebCompare = b
 					}
 
 				// metadata settings
@@ -645,6 +657,7 @@ func (c *AppConfig) processLines(lines []string) []string {
 		foundLineFuzzyMatching      = false
 		foundLineSkipRepackCompare  = false
 		foundLineSimplifyHdrCompare = false
+		foundLineSimplifyWebCompare = false
 		foundLineMetadata           = false
 		foundLineMetadataTVDBAPIKey = false
 		foundLineMetadataTVDBPIN    = false
@@ -689,6 +702,10 @@ func (c *AppConfig) processLines(lines []string) []string {
 		if foundLineFuzzyMatching && !foundLineSimplifyHdrCompare && strings.Contains(line, "simplifyHdrCompare:") {
 			lines[i] = fmt.Sprintf("  simplifyHdrCompare: %t", c.Config.FuzzyMatching.SimplifyHdrCompare)
 			foundLineSimplifyHdrCompare = true
+		}
+		if foundLineFuzzyMatching && !foundLineSimplifyWebCompare && strings.Contains(line, "simplifyWebCompare:") {
+			lines[i] = fmt.Sprintf("  simplifyWebCompare: %t", c.Config.FuzzyMatching.SimplifyWebCompare)
+			foundLineSimplifyWebCompare = true
 		}
 		if !foundLineMetadata && strings.Contains(line, "metadata:") {
 			foundLineMetadata = true
@@ -799,6 +816,14 @@ func (c *AppConfig) processLines(lines []string) []string {
 			lines = append(lines, "  # Default: false")
 			lines = append(lines, "  #")
 			lines = append(lines, fmt.Sprintf("  simplifyHdrCompare: %t\n", c.Config.FuzzyMatching.SimplifyHdrCompare))
+		}
+		if !foundLineSimplifyWebCompare {
+			lines = append(lines, "  # Simplify WEB Compare")
+			lines = append(lines, "  # Toggle simplification of WEB-DL for comparing, e.g. WEB-DL will be treated the same as WEB")
+			lines = append(lines, "  #")
+			lines = append(lines, "  # Default: false")
+			lines = append(lines, "  #")
+			lines = append(lines, fmt.Sprintf("  simplifyWebCompare: %t\n", c.Config.FuzzyMatching.SimplifyWebCompare))
 		}
 	}
 
