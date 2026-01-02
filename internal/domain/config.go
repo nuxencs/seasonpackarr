@@ -15,6 +15,7 @@ type Client struct {
 type FuzzyMatching struct {
 	SkipRepackCompare  bool `yaml:"skipRepackCompare"`
 	SimplifyHdrCompare bool `yaml:"simplifyHdrCompare"`
+	SimplifyWebCompare bool `yaml:"simplifyWebCompare"`
 }
 
 type Notifications struct {
