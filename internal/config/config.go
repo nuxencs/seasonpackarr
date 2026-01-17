@@ -172,6 +172,13 @@ fuzzyMatching:
   #
   simplifyWebCompare: false
 
+  # Skip Year Compare
+  # Toggle comparing of the year of a release, e.g. a release without a year will be treated the same as a release with a year
+  #
+  # Default: false
+  #
+  skipYearCompare: false
+
 # Metadata
 # Here you can provide credentials for additional metadata providers
 #
@@ -647,24 +654,30 @@ func (c *AppConfig) UpdateConfig() error {
 }
 
 func (c *AppConfig) processLines(lines []string) []string {
-	// keep track of not found values to append at bottom
+	// keep track of not found values to append at the bottom
 	var (
-		foundLineLogLevel           = false
-		foundLineLogPath            = false
+		foundLineLogLevel = false
+		foundLineLogPath  = false
+
 		foundLineSmartMode          = false
 		foundLineSmartModeThreshold = false
 		foundLineParseTorrentFile   = false
+
 		foundLineFuzzyMatching      = false
 		foundLineSkipRepackCompare  = false
 		foundLineSimplifyHdrCompare = false
 		foundLineSimplifyWebCompare = false
+		foundLineSkipYearCompare    = false
+
 		foundLineMetadata           = false
 		foundLineMetadataTVDBAPIKey = false
 		foundLineMetadataTVDBPIN    = false
-		foundLineAPIToken           = false
-		foundLineNotifications      = false
-		foundLineNotificationLevel  = false
-		foundLineDiscord            = false
+
+		foundLineAPIToken = false
+
+		foundLineNotifications     = false
+		foundLineNotificationLevel = false
+		foundLineDiscord           = false
 	)
 
 	for i, line := range lines {
@@ -680,6 +693,7 @@ func (c *AppConfig) processLines(lines []string) []string {
 			}
 			foundLineLogPath = true
 		}
+
 		if !foundLineSmartMode && strings.Contains(line, "smartMode:") {
 			lines[i] = fmt.Sprintf("smartMode: %t", c.Config.SmartMode)
 			foundLineSmartMode = true
@@ -692,6 +706,7 @@ func (c *AppConfig) processLines(lines []string) []string {
 			lines[i] = fmt.Sprintf("parseTorrentFile: %t", c.Config.ParseTorrentFile)
 			foundLineParseTorrentFile = true
 		}
+
 		if !foundLineFuzzyMatching && strings.Contains(line, "fuzzyMatching:") {
 			foundLineFuzzyMatching = true
 		}
@@ -707,6 +722,11 @@ func (c *AppConfig) processLines(lines []string) []string {
 			lines[i] = fmt.Sprintf("  simplifyWebCompare: %t", c.Config.FuzzyMatching.SimplifyWebCompare)
 			foundLineSimplifyWebCompare = true
 		}
+		if foundLineFuzzyMatching && !foundLineSkipYearCompare && strings.Contains(line, "skipYearCompare:") {
+			lines[i] = fmt.Sprintf("  skipYearCompare: %t", c.Config.FuzzyMatching.SkipYearCompare)
+			foundLineSkipYearCompare = true
+		}
+
 		if !foundLineMetadata && strings.Contains(line, "metadata:") {
 			foundLineMetadata = true
 		}
@@ -718,6 +738,7 @@ func (c *AppConfig) processLines(lines []string) []string {
 			lines[i] = fmt.Sprintf("  tvdbPIN: \"%s\"", c.Config.Metadata.TVDBPIN)
 			foundLineMetadataTVDBPIN = true
 		}
+
 		if !foundLineAPIToken && strings.Contains(line, "apiToken:") {
 			if c.Config.APIToken == "" {
 				lines[i] = "# apiToken: \"\""
@@ -726,6 +747,7 @@ func (c *AppConfig) processLines(lines []string) []string {
 			}
 			foundLineAPIToken = true
 		}
+
 		if !foundLineNotifications && strings.Contains(line, "notifications:") {
 			foundLineNotifications = true
 		}
@@ -824,6 +846,14 @@ func (c *AppConfig) processLines(lines []string) []string {
 			lines = append(lines, "  # Default: false")
 			lines = append(lines, "  #")
 			lines = append(lines, fmt.Sprintf("  simplifyWebCompare: %t\n", c.Config.FuzzyMatching.SimplifyWebCompare))
+		}
+		if !foundLineSkipYearCompare {
+			lines = append(lines, "  # Skip Year Compare")
+			lines = append(lines, "  # Toggle comparing of the year of a release, e.g. a release without a year will be treated the same as a release with a year")
+			lines = append(lines, "  #")
+			lines = append(lines, "  # Default: false")
+			lines = append(lines, "  #")
+			lines = append(lines, fmt.Sprintf("  skipYearCompare: %t\n", c.Config.FuzzyMatching.SkipRepackCompare))
 		}
 	}
 

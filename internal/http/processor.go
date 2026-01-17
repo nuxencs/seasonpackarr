@@ -145,7 +145,7 @@ func (p *processor) getAllTorrents(clientName string) (map[string][]entry, error
 			entries.rlsMap[t.Name] = r
 		}
 
-		comparableTitle := format.ComparableTitle(r)
+		comparableTitle := format.ComparableTitle(r, p.cfg.Config.FuzzyMatching)
 		entries.entriesMap[comparableTitle] = append(entries.entriesMap[comparableTitle], entry{torrent: t, release: r})
 	}
 
@@ -265,7 +265,7 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 	}
 
 	requestRls := rls.ParseString(p.req.Name)
-	filteredEntries, ok := entries[format.ComparableTitle(requestRls)]
+	filteredEntries, ok := entries[format.ComparableTitle(requestRls, p.cfg.Config.FuzzyMatching)]
 	if !ok {
 		return domain.StatusNoMatches, domain.StatusNoMatches.Error()
 	}

@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/nuxencs/seasonpackarr/internal/domain"
+
 	"github.com/moistari/rls"
 )
 
@@ -20,10 +22,12 @@ var (
 	dots    = regexp.MustCompile(`(?i)\.+`)
 )
 
-func ComparableTitle(r rls.Release) string {
-	s := fmt.Sprintf("%s%d%d", rls.MustNormalize(r.Title), r.Year, r.Series)
+func ComparableTitle(r rls.Release, fuzzyMatching domain.FuzzyMatching) string {
+	if fuzzyMatching.SkipYearCompare {
+		return fmt.Sprintf("%s%d", rls.MustNormalize(r.Title), r.Series)
+	}
 
-	return s
+	return fmt.Sprintf("%s%d%d", rls.MustNormalize(r.Title), r.Year, r.Series)
 }
 
 func CleanAnnounceTitle(release rls.Release) string {

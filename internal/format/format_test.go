@@ -6,15 +6,18 @@ package format
 import (
 	"testing"
 
+	"github.com/nuxencs/seasonpackarr/internal/domain"
+
 	"github.com/moistari/rls"
 	"github.com/stretchr/testify/assert"
 )
 
 func Test_ComparableTitle(t *testing.T) {
 	tests := []struct {
-		name     string
-		packName string
-		want     string
+		name          string
+		packName      string
+		fuzzyMatching domain.FuzzyMatching
+		want          string
 	}{
 		{
 			name:     "pack_1",
@@ -86,11 +89,23 @@ func Test_ComparableTitle(t *testing.T) {
 			packName: "The Continental 2023 S01 2160p PCOK WEB-DL DDP5.1 Atmos HDR DV H.265-FLUX",
 			want:     "the continental20231",
 		},
+		{
+			name:          "pack_skip_year",
+			packName:      "The Continental 2023 S01 2160p PCOK WEB-DL DDP5.1 Atmos HDR DV H.265-FLUX",
+			fuzzyMatching: domain.FuzzyMatching{SkipYearCompare: true},
+			want:          "the continental1",
+		},
+		{
+			name:          "pack_skip_empty_year",
+			packName:      "The Continental S01 2160p PCOK WEB-DL DDP5.1 Atmos HDR DV H.265-FLUX",
+			fuzzyMatching: domain.FuzzyMatching{SkipYearCompare: true},
+			want:          "the continental1",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := rls.ParseString(tt.packName)
-			assert.Equalf(t, tt.want, ComparableTitle(r), "ComparableTitle(%s)", tt.packName)
+			assert.Equalf(t, tt.want, ComparableTitle(r, tt.fuzzyMatching), "ComparableTitle(%s)", tt.packName)
 		})
 	}
 }

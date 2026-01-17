@@ -123,6 +123,10 @@
         "simplifyWebCompare": {
           "type": "boolean",
           "default": false
+        },
+        "skipYearCompare" : {
+          "type": "boolean",
+          "default": false
         }
       }
     },
