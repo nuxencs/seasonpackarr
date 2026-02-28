@@ -143,6 +143,13 @@ fuzzyMatching:
   #
   simplifyWebCompare: false
 
+  # Skip Year Compare
+  # Toggle comparing of the year of a release, e.g. a release without a year will be treated the same as a release with a year
+  #
+  # Default: false
+  #
+  skipYearCompare: false
+
 # Metadata
 # Here you can provide credentials for additional metadata providers
 #
