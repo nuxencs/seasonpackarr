@@ -1,0 +1,7 @@
+seasonpackarr autobrr integration reference
+
+- seasonpackarr is intended to be triggered from autobrr external webhook filters
+- filter priority matters; seasonpackarr should run before ordinary TV-download filters when the goal is to intercept season packs
+- /api/pack is for announce-driven matching
+- /api/parse is for torrent-aware matching when parsing is enabled
+- changes that alter webhook expectations should update product specs and README

@@ -1,0 +1,8 @@
+seasonpackarr release matching reference
+
+- matching is the core product behavior
+- current comparisons include resolution, source, release group, cut, edition, repack state, HDR, streaming service, and episode identity
+- skipRepackCompare weakens one gate intentionally
+- simplifyHdrCompare normalizes HDR variants
+- MatchEpToSeasonPackEp also checks file size and parsed release attributes
+- broadened matching needs tests and justification because false positives are costlier than extra downloads
