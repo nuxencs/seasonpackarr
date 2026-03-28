@@ -644,11 +644,16 @@ func (p *processor) validateImportDestination(clientCfg *domain.Client) (domain.
 	}
 
 	actualPath := strings.TrimSpace(category.SavePath)
-	if actualPath == "" {
-		actualPath, err = p.req.Client.GetDefaultSavePath()
+	if actualPath == "" || !filepath.IsAbs(filepath.FromSlash(actualPath)) {
+		defaultSavePath, err := p.req.Client.GetDefaultSavePath()
 		if err != nil {
 			return domain.StatusQbitConfigError, fmt.Errorf("%s: could not read qbittorrent default save path: %w",
 				domain.StatusQbitConfigError, err)
+		}
+		if actualPath == "" {
+			actualPath = defaultSavePath
+		} else {
+			actualPath = filepath.Join(defaultSavePath, actualPath)
 		}
 	}
 

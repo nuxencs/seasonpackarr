@@ -416,6 +416,23 @@ func TestValidateImportDestinationCategoryOnly(t *testing.T) {
 			wantStatus: domain.StatusQbitConfigError,
 			wantErr:    true,
 		},
+		{
+			name: "relative category save path resolved against default",
+			categories: map[string]qbittorrent.Category{
+				"tv-hd": {Name: "tv-hd", SavePath: "import"},
+			},
+			defaultSave: tempDir,
+			wantStatus:  domain.StatusSuccessfulHardlink,
+		},
+		{
+			name: "relative category save path mismatch after resolution",
+			categories: map[string]qbittorrent.Category{
+				"tv-hd": {Name: "tv-hd", SavePath: "other"},
+			},
+			defaultSave: tempDir,
+			wantStatus:  domain.StatusQbitConfigError,
+			wantErr:     true,
+		},
 	}
 
 	for _, tt := range tests {
