@@ -12,8 +12,8 @@ import (
 func Test_Dedupe(t *testing.T) {
 	tests := []struct {
 		name  string
-		slice interface{}
-		want  interface{}
+		slice any
+		want  any
 	}{
 		{
 			name:  "string_slice_some_duplicates",
@@ -73,8 +73,8 @@ func Test_Dedupe(t *testing.T) {
 func Test_EqualElements(t *testing.T) {
 	tests := []struct {
 		name string
-		x    interface{}
-		y    interface{}
+		x    any
+		y    any
 		want bool
 	}{
 		{

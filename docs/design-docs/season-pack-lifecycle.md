@@ -14,9 +14,10 @@ Describe the normal path from webhook hit to hardlink creation.
 6. Existing client episode releases are inspected.
 7. `internal/release/` compares announce and client releases under configured fuzzy-matching rules.
 8. Smart mode may consult metadata providers to decide whether a grab is worthwhile.
-9. If torrent parsing is enabled or requested, torrent contents are decoded to derive stable target naming.
+9. `POST /api/parse` decodes torrent contents to derive stable target naming.
 10. Matching episode files are hardlinked into the season-pack target directory.
-11. Logs and notifications communicate outcome.
+11. `POST /api/parse` validates that the effective qBittorrent destination matches `preImportPath`, imports the season pack using explicit overrides only, rechecks if qBittorrent reports missing files, and resumes the torrent.
+12. Logs and notifications communicate outcome.
 
 ## Failure Classes
 
@@ -26,6 +27,7 @@ Describe the normal path from webhook hit to hardlink creation.
 - release mismatch
 - torrent parse mismatch
 - filesystem hardlink failure
+- qBittorrent import or recheck failure
 
 ## Verification Notes
 

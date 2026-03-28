@@ -32,6 +32,16 @@ import (
 	"github.com/rs/zerolog"
 )
 
+type qbitClient interface {
+	GetTorrents(qbittorrent.TorrentFilterOptions) ([]qbittorrent.Torrent, error)
+	GetFilesInformation(hash string) (*qbittorrent.TorrentFiles, error)
+	AddTorrentFromMemory(buf []byte, options map[string]string) error
+	GetCategories() (map[string]qbittorrent.Category, error)
+	GetDefaultSavePath() (string, error)
+	Recheck(hashes []string) error
+	Resume(hashes []string) error
+}
+
 type processor struct {
 	log  zerolog.Logger
 	cfg  *config.AppConfig
@@ -43,7 +53,7 @@ type processor struct {
 type request struct {
 	Name       string
 	Torrent    json.RawMessage
-	Client     *qbittorrent.Client
+	Client     qbitClient
 	ClientName string
 }
 
@@ -66,8 +76,7 @@ type matchInfo struct {
 }
 
 var (
-	clientMap = xsync.NewMapOf[string, *qbittorrent.Client]()
-	matchMap  = xsync.NewMapOf[string, []matchInfo]()
+	clientMap = xsync.NewMapOf[string, qbitClient]()
 	entryMap  = xsync.NewMapOf[string, *entryCache]()
 )
 
@@ -81,6 +90,10 @@ func newProcessor(log logger.Logger, config *config.AppConfig, notification doma
 }
 
 func (p *processor) getClient(client *domain.Client, clientName string) error {
+	if p.req.Client != nil {
+		return nil
+	}
+
 	c, ok := clientMap.Load(clientName)
 	if !ok {
 		host, err := buildHost(client)
@@ -95,12 +108,13 @@ func (p *processor) getClient(client *domain.Client, clientName string) error {
 			APIKey:   client.APIKey,
 		}
 
-		c = qbittorrent.NewClient(clientCfg)
+		rawClient := qbittorrent.NewClient(clientCfg)
 
-		if err := c.Login(); err != nil {
+		if err := rawClient.Login(); err != nil {
 			return errors.Wrap(err, "failed to login to qbittorrent")
 		}
 
+		c = rawClient
 		clientMap.Store(clientName, c)
 	}
 
@@ -249,29 +263,37 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 		return c.Str("release", p.req.Name).Str("clientname", clientName)
 	})
 
-	if len(p.req.Name) == 0 {
-		return domain.StatusAnnounceNameError, domain.StatusAnnounceNameError.Error()
-	}
-
 	clientCfg, ok := p.cfg.Config.Clients[clientName]
 	if !ok {
 		return domain.StatusClientNotFound, domain.StatusClientNotFound.Error()
 	}
 	p.log.Info().Msgf("using %s client", clientName)
 
+	if _, statusCode, err := p.collectMatches(clientName, clientCfg); err != nil {
+		return statusCode, err
+	}
+
+	return domain.StatusSuccessfulMatch, nil
+}
+
+func (p *processor) collectMatches(clientName string, clientCfg *domain.Client) ([]matchInfo, domain.StatusCode, error) {
+	if len(p.req.Name) == 0 {
+		return nil, domain.StatusAnnounceNameError, domain.StatusAnnounceNameError.Error()
+	}
+
 	if err := p.getClient(clientCfg, clientName); err != nil {
-		return domain.StatusGetClientError, fmt.Errorf("%s: %w", domain.StatusGetClientError, err)
+		return nil, domain.StatusGetClientError, fmt.Errorf("%s: %w", domain.StatusGetClientError, err)
 	}
 
 	entries, err := p.getAllTorrents(clientName)
 	if err != nil {
-		return domain.StatusGetTorrentsError, fmt.Errorf("%s: %w", domain.StatusGetTorrentsError, err)
+		return nil, domain.StatusGetTorrentsError, fmt.Errorf("%s: %w", domain.StatusGetTorrentsError, err)
 	}
 
 	requestRls := rls.ParseString(p.req.Name)
 	filteredEntries, ok := entries[format.ComparableTitle(requestRls, p.cfg.Config.FuzzyMatching)]
 	if !ok {
-		return domain.StatusNoMatches, domain.StatusNoMatches.Error()
+		return nil, domain.StatusNoMatches, domain.StatusNoMatches.Error()
 	}
 
 	announcedPackName := format.CleanAnnounceTitle(requestRls)
@@ -280,7 +302,7 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 	for _, filteredEntry := range filteredEntries {
 		switch compareInfo := release.CheckCandidates(requestRls, filteredEntry.release, p.cfg.Config.FuzzyMatching); compareInfo.StatusCode {
 		case domain.StatusAlreadyInClient, domain.StatusNotASeasonPack:
-			return compareInfo.StatusCode, compareInfo.StatusCode.Error()
+			return nil, compareInfo.StatusCode, compareInfo.StatusCode.Error()
 		}
 	}
 
@@ -291,7 +313,7 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 	for _, filteredEntry := range filteredEntries {
 		switch compareInfo := release.CheckCandidates(requestRls, filteredEntry.release, p.cfg.Config.FuzzyMatching); compareInfo.StatusCode {
 		case domain.StatusAlreadyInClient, domain.StatusNotASeasonPack:
-			return compareInfo.StatusCode, compareInfo.StatusCode.Error()
+			return nil, compareInfo.StatusCode, compareInfo.StatusCode.Error()
 
 		case domain.StatusResolutionMismatch, domain.StatusSourceMismatch, domain.StatusRlsGrpMismatch,
 			domain.StatusCutMismatch, domain.StatusEditionMismatch, domain.StatusRepackStatusMismatch,
@@ -313,8 +335,6 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 			announcedEpPath := filepath.Join(clientCfg.PreImportPath, announcedPackName, filepath.Base(fileName))
 
 			epsSet[filteredEntry.release.Episode] = struct{}{}
-
-			// append current matchInfo to matches slice
 			matches = append(matches, matchInfo{
 				clientEpPath:    clientEpPath,
 				clientEpSize:    size,
@@ -324,18 +344,17 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 			p.log.Debug().Msgf("matched torrent from client: name(%s), size(%d), hash(%s)",
 				filteredEntry.torrent.Name, size, filteredEntry.torrent.Hash)
 			codeSet[compareInfo.StatusCode] = true
-			continue
 		}
 	}
 
 	if !codeSet[domain.StatusSuccessfulMatch] {
-		return domain.StatusNoMatches, domain.StatusNoMatches.Error()
+		return nil, domain.StatusNoMatches, domain.StatusNoMatches.Error()
 	}
 
 	if p.cfg.Config.SmartMode {
 		totalEps, err := p.meta.EpisodesInSeason(requestRls)
 		if err != nil {
-			return domain.StatusEpisodeCountError, fmt.Errorf("%s: %w", domain.StatusEpisodeCountError, err)
+			return nil, domain.StatusEpisodeCountError, fmt.Errorf("%s: %w", domain.StatusEpisodeCountError, err)
 		}
 
 		foundEps := len(epsSet)
@@ -344,34 +363,11 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 		p.log.Info().Msgf("found %d/%d (%.2f%%) episodes in client", foundEps, totalEps, percentEps*100)
 
 		if percentEps < p.cfg.Config.SmartModeThreshold {
-			return domain.StatusBelowThreshold, domain.StatusBelowThreshold.Error()
+			return nil, domain.StatusBelowThreshold, domain.StatusBelowThreshold.Error()
 		}
 	}
 
-	// dedupe matches and store in matchMap
-	matches = slices.Dedupe(matches)
-	matchMap.Store(p.req.Name, matches)
-
-	if p.cfg.Config.ParseTorrentFile {
-		return domain.StatusSuccessfulMatch, nil
-	}
-
-	successfulHardlink := false
-
-	for _, match := range matches {
-		if err := files.CreateHardlink(match.clientEpPath, match.announcedEpPath); err != nil {
-			p.log.Error().Err(err).Msgf("error creating hardlink: %s", match.clientEpPath)
-			continue
-		}
-		p.log.Info().Msgf("created hardlink: source(%s), target(%s)", match.clientEpPath, match.announcedEpPath)
-		successfulHardlink = true
-	}
-
-	if !successfulHardlink {
-		return domain.StatusFailedHardlink, domain.StatusFailedHardlink.Error()
-	}
-
-	return domain.StatusSuccessfulHardlink, nil
+	return slices.Dedupe(matches), domain.StatusSuccessfulMatch, nil
 }
 
 func (p *processor) ParseTorrentHandler(c *gin.Context) {
@@ -417,7 +413,7 @@ func (p *processor) ParseTorrentHandler(c *gin.Context) {
 		}
 	}()
 
-	p.log.Info().Msg("successfully parsed torrent and hardlinked episodes")
+	p.log.Info().Msg("successfully parsed torrent, hardlinked episodes, and imported the season pack")
 	c.String(statusCode.Code(), statusCode.String())
 }
 
@@ -434,12 +430,22 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 	}
 	p.log.Info().Msgf("using %s client", clientName)
 
-	if len(p.req.Name) == 0 {
-		return domain.StatusAnnounceNameError, domain.StatusAnnounceNameError.Error()
-	}
-
 	if len(p.req.Torrent) == 0 {
 		return domain.StatusTorrentBytesError, domain.StatusTorrentBytesError.Error()
+	}
+
+	if err := p.getClient(clientCfg, clientName); err != nil {
+		return domain.StatusGetClientError, fmt.Errorf("%s: %w", domain.StatusGetClientError, err)
+	}
+
+	statusCode, err := p.validateImportDestination(clientCfg)
+	if err != nil {
+		return statusCode, err
+	}
+
+	matches, statusCode, err := p.collectMatches(clientName, clientCfg)
+	if err != nil {
+		return statusCode, err
 	}
 
 	torrentBytes, err := torrents.DecodeTorrentBytes(p.req.Torrent)
@@ -463,23 +469,15 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 		p.log.Debug().Msgf("found episode in pack: name(%s), size(%d)", torrentEp.Path, torrentEp.Size)
 	}
 
-	matches, ok := matchMap.Load(p.req.Name)
-	if !ok {
-		return domain.StatusNoMatches, domain.StatusNoMatches.Error()
-	}
-
 	successfulEpMatch := false
 	successfulHardlink := false
-
-	var matchedEpPath string
-	var compareInfo domain.CompareInfo
-
 	targetPackDir := filepath.Join(clientCfg.PreImportPath, parsedPackName)
 
 	for _, match := range matches {
-		for _, torrentEp := range torrentEps {
-			var targetEpPath string
+		matchedEpPath := ""
+		var compareInfo domain.CompareInfo
 
+		for _, torrentEp := range torrentEps {
 			matchedEpPath, compareInfo = release.MatchEpToSeasonPackEp(match.clientEpPath, match.clientEpSize,
 				torrentEp.Path, torrentEp.Size)
 			if len(matchedEpPath) == 0 {
@@ -487,7 +485,8 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 					filepath.Base(match.clientEpPath), compareInfo.RejectValueA, torrentEp.Path, compareInfo.RejectValueB)
 				continue
 			}
-			targetEpPath = filepath.Join(targetPackDir, matchedEpPath)
+
+			targetEpPath := filepath.Join(targetPackDir, matchedEpPath)
 			successfulEpMatch = true
 
 			if err = files.CreateHardlink(match.clientEpPath, targetEpPath); err != nil {
@@ -499,10 +498,10 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 
 			break
 		}
+
 		if len(matchedEpPath) == 0 {
 			p.log.Error().Msgf("error matching episode to file in pack, skipping hardlink: %s",
 				filepath.Base(match.clientEpPath))
-			continue
 		}
 	}
 
@@ -514,7 +513,231 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 		return domain.StatusFailedHardlink, domain.StatusFailedHardlink.Error()
 	}
 
+	statusCode, err = p.importSeasonPack(clientCfg, torrentBytes)
+	if err != nil {
+		return statusCode, err
+	}
+
 	return domain.StatusSuccessfulHardlink, nil
+}
+
+func (p *processor) importSeasonPack(clientCfg *domain.Client, torrentBytes []byte) (domain.StatusCode, error) {
+	hash, err := torrents.InfoHash(torrentBytes)
+	if err != nil {
+		return domain.StatusParseTorrentInfoError, fmt.Errorf("%s: %w", domain.StatusParseTorrentInfoError, err)
+	}
+
+	options, statusCode, err := buildTorrentAddOptions(clientCfg)
+	if err != nil {
+		return statusCode, err
+	}
+
+	if err := p.req.Client.AddTorrentFromMemory(torrentBytes, options.Prepare()); err != nil {
+		return domain.StatusAddTorrentError, fmt.Errorf("%s: %w", domain.StatusAddTorrentError, err)
+	}
+	p.log.Info().Msgf("added torrent to qbittorrent: hash(%s), savepath(%s), category(%s)",
+		hash, options.SavePath, options.Category)
+
+	addedTorrent, statusCode, err := p.waitForTorrent(hash, 15*time.Second)
+	if err != nil {
+		return statusCode, err
+	}
+
+	if addedTorrent.State == qbittorrent.TorrentStateMissingFiles {
+		p.log.Info().Msgf("torrent entered missingFiles state, triggering recheck: hash(%s)", addedTorrent.Hash)
+		if err := p.req.Client.Recheck([]string{addedTorrent.Hash}); err != nil {
+			return domain.StatusRecheckTorrentError, fmt.Errorf("%s: %w", domain.StatusRecheckTorrentError, err)
+		}
+
+		addedTorrent, statusCode, err = p.waitForRecheck(addedTorrent.Hash, 1*time.Minute)
+		if err != nil {
+			return statusCode, err
+		}
+	}
+
+	if isActiveTorrentState(addedTorrent.State) {
+		return domain.StatusSuccessfulHardlink, nil
+	}
+
+	if err := p.req.Client.Resume([]string{addedTorrent.Hash}); err != nil {
+		return domain.StatusResumeTorrentError, fmt.Errorf("%s: %w", domain.StatusResumeTorrentError, err)
+	}
+	p.log.Info().Msgf("resumed imported torrent: hash(%s), state(%s)", addedTorrent.Hash, addedTorrent.State)
+
+	return domain.StatusSuccessfulHardlink, nil
+}
+
+func buildTorrentAddOptions(clientCfg *domain.Client) (*qbittorrent.TorrentAddOptions, domain.StatusCode, error) {
+	contentLayout, ok, err := resolveContentLayout(clientCfg.Qbit.ContentLayout)
+	if err != nil {
+		return nil, domain.StatusQbitConfigError, fmt.Errorf("%s: %w", domain.StatusQbitConfigError, err)
+	}
+
+	opts := &qbittorrent.TorrentAddOptions{
+		SkipHashCheck: true,
+		Paused:        clientCfg.Qbit.PausedOnAdd,
+	}
+
+	if clientCfg.Qbit.Category != "" {
+		opts.Category = strings.TrimSpace(clientCfg.Qbit.Category)
+	}
+	if clientCfg.Qbit.SavePath != "" {
+		opts.SavePath = strings.TrimSpace(clientCfg.Qbit.SavePath)
+		opts.AutoTMM = false
+	}
+	if ok {
+		opts.ContentLayout = contentLayout
+	}
+
+	if len(clientCfg.Qbit.Tags) > 0 {
+		trimmed := make([]string, 0, len(clientCfg.Qbit.Tags))
+		for _, tag := range clientCfg.Qbit.Tags {
+			if t := strings.TrimSpace(tag); t != "" {
+				trimmed = append(trimmed, t)
+			}
+		}
+		if len(trimmed) > 0 {
+			opts.Tags = strings.Join(trimmed, ",")
+		}
+	}
+
+	return opts, domain.StatusSuccessfulHardlink, nil
+}
+
+func resolveContentLayout(mode string) (qbittorrent.ContentLayout, bool, error) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "":
+		return "", false, nil
+	case "subfolder":
+		return qbittorrent.ContentLayoutSubfolderCreate, true, nil
+	case "nosubfolder":
+		return qbittorrent.ContentLayoutSubfolderNone, true, nil
+	case "original":
+		return qbittorrent.ContentLayoutOriginal, true, nil
+	default:
+		return "", false, fmt.Errorf("unsupported content layout %q", mode)
+	}
+}
+
+func (p *processor) validateImportDestination(clientCfg *domain.Client) (domain.StatusCode, error) {
+	expected := normalizePath(clientCfg.PreImportPath)
+
+	if clientCfg.Qbit.SavePath != "" {
+		actual := normalizePath(clientCfg.Qbit.SavePath)
+		if actual != expected {
+			return domain.StatusQbitConfigError, fmt.Errorf("%s: qbit.savePath(%s) must match preImportPath(%s)",
+				domain.StatusQbitConfigError, clientCfg.Qbit.SavePath, clientCfg.PreImportPath)
+		}
+		return domain.StatusSuccessfulHardlink, nil
+	}
+
+	categories, err := p.req.Client.GetCategories()
+	if err != nil {
+		return domain.StatusQbitConfigError, fmt.Errorf("%s: could not read qbittorrent categories: %w",
+			domain.StatusQbitConfigError, err)
+	}
+
+	category, ok := categories[clientCfg.Qbit.Category]
+	if !ok {
+		return domain.StatusQbitConfigError, fmt.Errorf("%s: qbit category %q was not found in qbittorrent",
+			domain.StatusQbitConfigError, clientCfg.Qbit.Category)
+	}
+
+	actualPath := strings.TrimSpace(category.SavePath)
+	if actualPath == "" {
+		actualPath, err = p.req.Client.GetDefaultSavePath()
+		if err != nil {
+			return domain.StatusQbitConfigError, fmt.Errorf("%s: could not read qbittorrent default save path: %w",
+				domain.StatusQbitConfigError, err)
+		}
+	}
+
+	actual := normalizePath(actualPath)
+	if actual != expected {
+		return domain.StatusQbitConfigError, fmt.Errorf("%s: qbittorrent destination(%s) must match preImportPath(%s)",
+			domain.StatusQbitConfigError, actualPath, clientCfg.PreImportPath)
+	}
+
+	return domain.StatusSuccessfulHardlink, nil
+}
+
+func normalizePath(path string) string {
+	return filepath.Clean(filepath.FromSlash(strings.TrimSpace(path)))
+}
+
+func (p *processor) waitForTorrent(hash string, timeout time.Duration) (qbittorrent.Torrent, domain.StatusCode, error) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		torrent, ok, err := p.lookupTorrent(hash)
+		if err != nil {
+			return qbittorrent.Torrent{}, domain.StatusFindTorrentError, fmt.Errorf("%s: %w", domain.StatusFindTorrentError, err)
+		}
+		if ok {
+			return torrent, domain.StatusSuccessfulHardlink, nil
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	return qbittorrent.Torrent{}, domain.StatusFindTorrentError,
+		fmt.Errorf("%s: timed out waiting for hash %s", domain.StatusFindTorrentError, hash)
+}
+
+func (p *processor) waitForRecheck(hash string, timeout time.Duration) (qbittorrent.Torrent, domain.StatusCode, error) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		torrent, ok, err := p.lookupTorrent(hash)
+		if err != nil {
+			return qbittorrent.Torrent{}, domain.StatusFindTorrentError, fmt.Errorf("%s: %w", domain.StatusFindTorrentError, err)
+		}
+		if !ok {
+			time.Sleep(250 * time.Millisecond)
+			continue
+		}
+
+		switch torrent.State {
+		case qbittorrent.TorrentStateCheckingDl, qbittorrent.TorrentStateCheckingUp, qbittorrent.TorrentStateCheckingResumeData,
+			qbittorrent.TorrentStateMoving, qbittorrent.TorrentStateAllocating, qbittorrent.TorrentStateMissingFiles:
+			time.Sleep(250 * time.Millisecond)
+			continue
+		default:
+			return torrent, domain.StatusSuccessfulHardlink, nil
+		}
+	}
+
+	return qbittorrent.Torrent{}, domain.StatusRecheckTorrentError,
+		fmt.Errorf("%s: timed out waiting for recheck to complete for hash %s", domain.StatusRecheckTorrentError, hash)
+}
+
+func (p *processor) lookupTorrent(hash string) (qbittorrent.Torrent, bool, error) {
+	torrents, err := p.req.Client.GetTorrents(qbittorrent.TorrentFilterOptions{Hashes: []string{hash}})
+	if err != nil {
+		return qbittorrent.Torrent{}, false, err
+	}
+
+	for _, torrent := range torrents {
+		if strings.EqualFold(torrent.Hash, hash) || strings.EqualFold(torrent.InfohashV1, hash) {
+			return torrent, true, nil
+		}
+	}
+
+	if len(torrents) == 1 {
+		return torrents[0], true, nil
+	}
+
+	return qbittorrent.Torrent{}, false, nil
+}
+
+func isActiveTorrentState(state qbittorrent.TorrentState) bool {
+	switch state {
+	case qbittorrent.TorrentStateDownloading, qbittorrent.TorrentStateUploading,
+		qbittorrent.TorrentStateStalledDl, qbittorrent.TorrentStateStalledUp,
+		qbittorrent.TorrentStateForcedDl, qbittorrent.TorrentStateForcedUp,
+		qbittorrent.TorrentStateQueuedDl, qbittorrent.TorrentStateQueuedUp,
+		qbittorrent.TorrentStateMetaDl:
+		return true
+	default:
+		return false
+	}
 }
 
 func buildHost(client *domain.Client) (string, error) {

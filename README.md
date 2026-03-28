@@ -19,7 +19,7 @@
 
 <p align="center">
 <b>seasonpackarr</b> is a companion app for <a href="https://github.com/autobrr/autobrr">autobrr</a> that automagically <b>hardlinks</b> downloaded episodes into a season folder when a season pack is
-announced, eliminating the need for re-downloading existing episodes.
+announced, then imports the parsed season pack into qBittorrent so only missing episodes need to download.
 </p>
 
 > [!WARNING]
@@ -146,8 +146,8 @@ which is below the threshold.
 
 ### Parse Torrent
 
-Can be enabled in the config by setting `parseTorrentFile` to `true`. This option will make sure that the season pack
-folder that gets created by seasonpackarr will always have the correct name. One example that will make the benefit
+Torrent parsing is now the default season-pack path. `POST /api/parse` always uses the torrent metadata to make sure the
+season pack folder that gets created by seasonpackarr has the correct name. One example that will make the benefit
 of this clearer:
 
 - Announce name: `Show.S01.1080p.WEB-DL.DDPA5.1.H.264-RlsGrp`
@@ -157,8 +157,32 @@ Using the announce name would create the wrong folder and would lead to all the 
 again. The issue in the given example is the additional `A` after `DDP` which is not present in the folder name. By
 using the parsed folder name the files will be hardlinked into the exact folder that is being used in the torrent.
 
-You can take a look at the [Webhook](#webhook) section to see what you would need to add in your autobrr filter to
-make use of this feature.
+`POST /api/parse` also becomes the place where seasonpackarr pushes the torrent to qBittorrent,
+rechecks it if qBittorrent reports missing files, and resumes it once the existing hardlinked files have been accounted for.
+
+### qBittorrent Import Policy
+
+Each configured client can define how `POST /api/parse` re-imports the season pack into qBittorrent:
+
+```yaml
+clients:
+  default:
+    preImportPath: "/data/torrents/tv-hd"
+    qbit:
+      category: "tv-hd"
+      savePath: ""
+      tags: [ "seasonpackarr" ]
+      pausedOnAdd: true
+      # contentLayout: "subfolder"
+```
+
+- `preImportPath` is the hardlink target directory.
+- `qbit.category` or `qbit.savePath` must be configured. Both can be set together.
+- `qbit.savePath` must already exist and must match `preImportPath`.
+- If `qbit.savePath` is empty, seasonpackarr checks the qBittorrent category save path and then the qBittorrent default save path. The resolved destination must match `preImportPath` or `/api/parse` fails.
+- `qbit.category` and `qbit.tags` are applied when seasonpackarr adds the torrent back to qBittorrent.
+- `qbit.pausedOnAdd` should normally stay `true` so seasonpackarr can recheck before resuming.
+- `qbit.contentLayout` is optional. If unset, qBittorrent uses its configured default.
 
 ### Fuzzy Matching
 
@@ -184,7 +208,6 @@ specific needs.
 ```yaml
 smartMode: true
 smartModeThreshold: 0.75
-parseTorrentFile: true
 skipRepackCompare: true
 simplifyHdrCompare: false
 ```
@@ -275,17 +298,8 @@ The external filter you just created will be disabled by default. To avoid unwan
 
 ### Actions
 
-Now, you need to decide whether you want to enable torrent parsing. By activating this feature, seasonpackarr will parse
-the torrent file for the season pack folder name to ensure the creation of the correct folder. You can enable this
-functionality by setting `parseTorrentFile` to `true` in your config file.
-
-If you choose to enable this feature, first follow the instructions in the [Webhook](#webhook) section, and then proceed
-to the [qBittorrent](#qbittorrent) section. If you leave this feature disabled, you can skip the Webhook section and go
-straight to the qBittorrent section.
-
-> [!WARNING]
-> If you enable that option you need to make sure that the Webhook action is above the qBittorrent action, otherwise the
-> feature won't work correctly.
+Add a single autobrr `Webhook` action for `/api/parse`. Do not add a separate autobrr qBittorrent action.
+seasonpackarr will add the torrent to qBittorrent itself using the configured client `qbit` settings.
 
 #### Webhook
 
@@ -309,22 +323,13 @@ Finally, complete the `Payload (JSON)` field as shown below. Ensure that the val
 }
 ```
 
-#### qBittorrent
+The webhook action is enough. On success, seasonpackarr will:
 
-Navigate to the `Actions` tab, click on `Add new` and change the `Action type` of the newly added action to `qBittorrent`.
-Depending on whether you intend to only send to qBittorrent or also integrate with Sonarr, you'll need to fill out different fields.
-
-1. **Only qBittorrent**: Fill in the `Save Path` field with the directory where your torrent data resides, for instance
-   `/data/torrents`, or the `Category` field with a qBittorrent category that saves to your desired location. 
-2. **Sonarr Integration**: Fill in the `Category` field with the category that Sonarr utilizes for all its downloads,
-   such as `tv-hd` or `tv-uhd`.
-
-Last but not least, under `Rules`, make sure that `Skip Hash Check` remains disabled. This precaution prevents torrents
-added by seasonpackarr from causing errors in your qBittorrent client when some episodes of a season are missing.
-
-> [!WARNING]
-> If you enable that option regardless, you will most likely have to deal with errored torrents, which would require you
-> to manually trigger a recheck on them to fix the issue.
+1. Parse the torrent for the real pack/folder name.
+2. Hardlink matching local episodes into the target season-pack path.
+3. Add the torrent to qBittorrent using the configured save path/category/tags.
+4. Trigger a qBittorrent recheck if the torrent lands in `missingFiles`.
+5. Resume the imported torrent so only genuinely missing episodes download.
 
 ## Credits
 

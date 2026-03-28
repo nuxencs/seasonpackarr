@@ -51,12 +51,51 @@ clients:
     #
     apiKey: ""
 
-    # Pre Import Path of qBittorrent for Sonarr
+    # Pre Import Path
+    # Hardlink target path seasonpackarr writes into before qBittorrent rechecks the pack.
     # Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
     #
     # Default: ""
     #
     preImportPath: ""
+
+    # qBittorrent Import Policy
+    # seasonpackarr will add the parsed season pack back to qBittorrent using these settings
+    #
+    qbit:
+      # qBittorrent Category
+      # Required unless savePath is set. Used when seasonpackarr adds the season pack.
+      # If savePath is omitted, the category/default qBittorrent destination must match preImportPath.
+      #
+      category: ""
+
+      # qBittorrent Save Path
+      # Required unless category is set. Must already exist and must match preImportPath.
+      #
+      savePath: ""
+
+      # qBittorrent Tags
+      # Optional tags added to the imported torrent
+      #
+      # Optional
+      #
+      tags: [ "seasonpackarr" ]
+
+      # Paused On Add
+      # Add the torrent paused first so seasonpackarr can recheck before resuming it
+      #
+      # Default: true
+      #
+      pausedOnAdd: true
+
+      # Content Layout
+      # Optional override. If empty, qBittorrent uses its configured default.
+      #
+      # Optional
+      #
+      # Options: "subfolder", "nosubfolder", "original"
+      #
+      # contentLayout: "subfolder"
 
   # Below you can find an example on how to define a second qBittorrent client
   # If you want to define even more clients just copy this segment and adjust the values accordingly
@@ -73,6 +112,13 @@ clients:
   #  apiKey: ""
   #
   #  preImportPath: ""
+  #
+  #  qbit:
+  #    category: "tv-hd"
+  #    savePath: ""
+  #    tags: [ "seasonpackarr" ]
+  #    pausedOnAdd: true
+  #    contentLayout: "subfolder"
 
 # seasonpackarr logs file
 # If not defined, logs to stdout
@@ -119,13 +165,6 @@ logLevel: "DEBUG"
 # Default: 0.75
 #
 # smartModeThreshold: 0.75
-
-# Parse Torrent File
-# Toggles torrent file parsing to get the correct folder name
-#
-# Default: false
-#
-# parseTorrentFile: false
 
 # Fuzzy Matching
 # You can decide for which criteria the matching should be less strict, e.g. repack status and HDR format

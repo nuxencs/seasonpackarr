@@ -78,7 +78,7 @@ func LoggerMiddleware(logger logger.Logger) gin.HandlerFunc {
 				log.Trace().
 					Str("type", "access").
 					Timestamp().
-					Fields(map[string]interface{}{
+					Fields(map[string]any{
 						"remote_ip":  c.ClientIP(),
 						"url":        c.Request.URL.Path,
 						"proto":      c.Request.Proto,

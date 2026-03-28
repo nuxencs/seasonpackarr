@@ -7,9 +7,11 @@ seasonpackarr configuration surface reference
   - port
   - apiToken
   - clients.<name>.host/port/username/password/apiKey/preImportPath
+  - clients.<name>.qbit.category/savePath/tags/pausedOnAdd/contentLayout
+  - clients require qbit.category or qbit.savePath
+  - qbit.contentLayout is optional; unset defers to qBittorrent defaults
   - smartMode
   - smartModeThreshold
-  - parseTorrentFile
   - fuzzyMatching.skipRepackCompare
   - fuzzyMatching.simplifyHdrCompare
   - metadata.tvdbAPIKey

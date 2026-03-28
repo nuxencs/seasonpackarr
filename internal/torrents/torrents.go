@@ -27,6 +27,15 @@ func Info(torrent []byte) (metainfo.Info, error) {
 	return metaInfo.UnmarshalInfo()
 }
 
+func InfoHash(torrent []byte) (string, error) {
+	metaInfo, err := metainfo.Load(bytes.NewReader(torrent))
+	if err != nil {
+		return "", err
+	}
+
+	return metaInfo.HashInfoBytes().HexString(), nil
+}
+
 func Episodes(info metainfo.Info) ([]Episode, error) {
 	if !info.IsDir() {
 		return []Episode{}, fmt.Errorf("not a directory")

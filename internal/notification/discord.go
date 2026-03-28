@@ -23,7 +23,7 @@ import (
 )
 
 type DiscordMessage struct {
-	Content interface{}     `json:"content"`
+	Content any             `json:"content"`
 	Embeds  []DiscordEmbeds `json:"embeds,omitempty"`
 }
 

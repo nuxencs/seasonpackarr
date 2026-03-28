@@ -45,10 +45,6 @@
       "type": "number",
       "default": 0.75
     },
-    "parseTorrentFile": {
-      "type": "boolean",
-      "default": false
-    },
     "fuzzyMatching": {
       "$ref": "#/$defs/fuzzyMatching"
     },
@@ -103,12 +99,73 @@
         "preImportPath": {
           "type": "string",
           "default": ""
+        },
+        "qbit": {
+          "$ref": "#/$defs/qbit"
         }
       },
       "required": [
         "host",
-        "preImportPath"
+        "preImportPath",
+        "qbit"
       ]
+    },
+    "qbit": {
+      "type": "object",
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "category"
+          ],
+          "properties": {
+            "category": {
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "savePath"
+          ],
+          "properties": {
+            "savePath": {
+              "minLength": 1
+            }
+          }
+        }
+      ],
+      "properties": {
+        "category": {
+          "type": "string",
+          "default": ""
+        },
+        "savePath": {
+          "type": "string",
+          "default": ""
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "seasonpackarr"
+          ]
+        },
+        "pausedOnAdd": {
+          "type": "boolean",
+          "default": true
+        },
+        "contentLayout": {
+          "type": "string",
+          "enum": [
+            "subfolder",
+            "nosubfolder",
+            "original"
+          ]
+        }
+      }
     },
     "fuzzyMatching": {
       "type": "object",

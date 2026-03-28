@@ -9,7 +9,7 @@
 1. `main.go` calls Cobra commands in `cmd/`.
 2. `cmd/start.go` loads config, logger, notifications, metadata providers, then starts the HTTP server.
 3. `internal/http/server.go` builds `/api/healthz`, `/api/pack`, and `/api/parse`.
-4. `internal/http/processor.go` orchestrates payload decode, auth-adjacent request handling, client inspection, metadata lookups, release matching, and hardlink creation.
+4. `internal/http/processor.go` orchestrates payload decode, auth-adjacent request handling, client inspection, metadata lookups, release matching, hardlink creation, and qBittorrent import/recheck for `/api/parse`.
 5. `internal/release/` decides whether a client episode and announced season pack are compatible.
 6. `internal/files/` performs the hardlink operation.
 7. `internal/notification/` emits Discord notifications for notable events.

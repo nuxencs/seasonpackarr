@@ -11,6 +11,15 @@ type Client struct {
 	Password      string `yaml:"password"`
 	APIKey        string `yaml:"apiKey"`
 	PreImportPath string `yaml:"preImportPath"`
+	Qbit          Qbit   `yaml:"qbit"`
+}
+
+type Qbit struct {
+	Category      string   `yaml:"category"`
+	SavePath      string   `yaml:"savePath"`
+	Tags          []string `yaml:"tags"`
+	PausedOnAdd   bool     `yaml:"pausedOnAdd"`
+	ContentLayout string   `yaml:"contentLayout"`
 }
 
 type FuzzyMatching struct {
@@ -48,7 +57,6 @@ type Config struct {
 	LogMaxBackups      int                `yaml:"logMaxBackups"`
 	SmartMode          bool               `yaml:"smartMode"`
 	SmartModeThreshold float32            `yaml:"smartModeThreshold"`
-	ParseTorrentFile   bool               `yaml:"parseTorrentFile"`
 	FuzzyMatching      FuzzyMatching      `yaml:"fuzzyMatching"`
 	Metadata           Metadata           `yaml:"metadata"`
 	APIToken           string             `yaml:"apiToken"`

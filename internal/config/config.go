@@ -80,12 +80,51 @@ clients:
     #
     apiKey: ""
 
-    # Pre Import Path of qBittorrent for Sonarr
+    # Pre Import Path
+    # Hardlink target path seasonpackarr writes into before qBittorrent rechecks the pack.
     # Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
     #
     # Default: ""
     #
     preImportPath: ""
+
+    # qBittorrent Import Policy
+    # seasonpackarr will add the parsed season pack back to qBittorrent using these settings
+    #
+    qbit:
+      # qBittorrent Category
+      # Required unless savePath is set. Used when seasonpackarr adds the season pack.
+      # If savePath is omitted, the category/default qBittorrent destination must match preImportPath.
+      #
+      category: ""
+
+      # qBittorrent Save Path
+      # Required unless category is set. Must already exist and must match preImportPath.
+      #
+      savePath: ""
+
+      # qBittorrent Tags
+      # Optional tags added to the imported torrent
+      #
+      # Optional
+      #
+      tags: [ "seasonpackarr" ]
+
+      # Paused On Add
+      # Add the torrent paused first so seasonpackarr can recheck before resuming it
+      #
+      # Default: true
+      #
+      pausedOnAdd: true
+
+      # Content Layout
+      # Optional override. If empty, qBittorrent uses its configured default.
+      #
+      # Optional
+      #
+      # Options: "subfolder", "nosubfolder", "original"
+      #
+      # contentLayout: "subfolder"
 
   # Below you can find an example on how to define a second qBittorrent client
   # If you want to define even more clients just copy this segment and adjust the values accordingly
@@ -102,6 +141,13 @@ clients:
   #  apiKey: ""
   #
   #  preImportPath: ""
+  #
+  #  qbit:
+  #    category: "tv-hd"
+  #    savePath: ""
+  #    tags: [ "seasonpackarr" ]
+  #    pausedOnAdd: true
+  #    contentLayout: "subfolder"
 
 # seasonpackarr logs file
 # If not defined, logs to stdout
@@ -148,13 +194,6 @@ logLevel: "DEBUG"
 # Default: 0.75
 #
 # smartModeThreshold: 0.75
-
-# Parse Torrent File
-# Toggles torrent file parsing to get the correct folder name
-#
-# Default: false
-#
-# parseTorrentFile: false
 
 # Fuzzy Matching
 # You can decide for which criteria the matching should be less strict, e.g. repack status and HDR format
@@ -323,6 +362,11 @@ type AppConfig struct {
 	k      *koanf.Koanf
 }
 
+const (
+	deprecatedParseTorrentFileKey = "parseTorrentFile"
+	deprecatedParseTorrentFileEnv = "SEASONPACKARR__PARSE_TORRENT_FILE"
+)
+
 func New(configPath string, version string) *AppConfig {
 	if _, err := os.Stat(filepath.Join(configPath, "config.toml")); err == nil {
 		log.Fatalf("A legacy 'config.toml' file has been detected. " +
@@ -348,19 +392,57 @@ func New(configPath string, version string) *AppConfig {
 		c.load()
 	}
 
+	if err := validateDeprecatedConfigInputs(c.k, os.LookupEnv); err != nil {
+		log.Fatal(err)
+	}
+
 	c.loadFromEnv()
 
 	for clientName, client := range c.Config.Clients {
-		if client.PreImportPath == "" {
-			log.Fatalf("preImportPath for client %q can't be empty, please provide a valid path to the directory you want seasonpacks to be hardlinked to", clientName)
-		}
-
-		if _, err := os.Stat(client.PreImportPath); errors.Is(err, fs.ErrNotExist) {
-			log.Fatalf("preImportPath for client %q doesn't exist, please make sure you entered the correct path", clientName)
+		if err := validateClientConfig(clientName, client); err != nil {
+			log.Fatal(err)
 		}
 	}
 
 	return c
+}
+
+func validateDeprecatedConfigInputs(k *koanf.Koanf, lookupEnv func(string) (string, bool)) error {
+	if k != nil && k.Exists(deprecatedParseTorrentFileKey) {
+		return fmt.Errorf("deprecated config detected: %s was removed; torrent parsing is always enabled now; please remove the key from your config, add the new qbit section (see example config / README), and update your autobrr filter to use only a Webhook action",
+			deprecatedParseTorrentFileKey)
+	}
+
+	if lookupEnv != nil {
+		if value, ok := lookupEnv(deprecatedParseTorrentFileEnv); ok && strings.TrimSpace(value) != "" {
+			return fmt.Errorf("deprecated environment variable detected: %s was removed; torrent parsing is always enabled now; please remove this env var, add the new qbit section (see example config / README), and update your autobrr filter to use only a Webhook action",
+				deprecatedParseTorrentFileEnv)
+		}
+	}
+
+	return nil
+}
+
+func validateClientConfig(clientName string, client *domain.Client) error {
+	if client.PreImportPath == "" {
+		return fmt.Errorf("preImportPath for client %q can't be empty, please provide a valid path to the directory you want seasonpacks to be hardlinked to", clientName)
+	}
+
+	if _, err := os.Stat(client.PreImportPath); errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("preImportPath for client %q doesn't exist, please make sure you entered the correct path", clientName)
+	}
+
+	if client.Qbit.Category == "" && client.Qbit.SavePath == "" {
+		return fmt.Errorf("client %q must configure qbit.category or qbit.savePath", clientName)
+	}
+
+	if client.Qbit.SavePath != "" {
+		if _, err := os.Stat(client.Qbit.SavePath); errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("qbit.savePath for client %q doesn't exist, please make sure you entered the correct path", clientName)
+		}
+	}
+
+	return nil
 }
 
 func (c *AppConfig) defaults() {
@@ -375,7 +457,6 @@ func (c *AppConfig) defaults() {
 	c.Config.LogMaxBackups = 3
 	c.Config.SmartMode = false
 	c.Config.SmartModeThreshold = 0.75
-	c.Config.ParseTorrentFile = false
 	c.Config.FuzzyMatching = domain.FuzzyMatching{
 		SkipRepackCompare:  false,
 		SimplifyHdrCompare: false,
@@ -473,12 +554,6 @@ func (c *AppConfig) loadFromEnv() {
 						c.Config.SmartModeThreshold = float32(f)
 					}
 
-				// parse torrent file
-				case prefix + "PARSE_TORRENT_FILE":
-					if b, err := strconv.ParseBool(envValue); err == nil {
-						c.Config.ParseTorrentFile = b
-					}
-
 				// api token
 				case prefix + "API_TOKEN":
 					c.Config.APIToken = envValue
@@ -515,33 +590,56 @@ func (c *AppConfig) loadFromEnv() {
 				}
 
 				// client settings
-				if strings.HasPrefix(envKey, prefix+"CLIENTS_") {
-					parts := strings.Split(strings.TrimPrefix(envKey, prefix+"CLIENTS_"), "_")
-					if len(parts) == 2 {
-						clientName := strings.ToLower(parts[0])
-						setting := parts[1]
+				if after, ok := strings.CutPrefix(envKey, prefix+"CLIENTS_"); ok {
+					rest := after
+					before, after, ok := strings.Cut(rest, "_")
+					if !ok {
+						continue
+					}
 
-						// initialize client if it doesn't exist
-						if c.Config.Clients[clientName] == nil {
-							c.Config.Clients[clientName] = &domain.Client{}
+					clientName := strings.ToLower(before)
+					setting := after
+
+					// initialize client if it doesn't exist
+					if c.Config.Clients[clientName] == nil {
+						c.Config.Clients[clientName] = &domain.Client{}
+					}
+
+					switch setting {
+					case "HOST":
+						c.Config.Clients[clientName].Host = envValue
+					case "PORT":
+						if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
+							c.Config.Clients[clientName].Port = int(i)
 						}
-
-						switch setting {
-						case "HOST":
-							c.Config.Clients[clientName].Host = envValue
-						case "PORT":
-							if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
-								c.Config.Clients[clientName].Port = int(i)
+					case "USERNAME":
+						c.Config.Clients[clientName].Username = envValue
+					case "PASSWORD":
+						c.Config.Clients[clientName].Password = envValue
+					case "APIKEY":
+						c.Config.Clients[clientName].APIKey = envValue
+					case "PREIMPORTPATH":
+						c.Config.Clients[clientName].PreImportPath = envValue
+					case "QBIT_CATEGORY":
+						c.Config.Clients[clientName].Qbit.Category = envValue
+					case "QBIT_SAVE_PATH":
+						c.Config.Clients[clientName].Qbit.SavePath = envValue
+					case "QBIT_TAGS":
+						tags := strings.Split(envValue, ",")
+						c.Config.Clients[clientName].Qbit.Tags = c.Config.Clients[clientName].Qbit.Tags[:0]
+						for _, tag := range tags {
+							tag = strings.TrimSpace(tag)
+							if tag == "" {
+								continue
 							}
-						case "USERNAME":
-							c.Config.Clients[clientName].Username = envValue
-						case "PASSWORD":
-							c.Config.Clients[clientName].Password = envValue
-						case "APIKEY":
-							c.Config.Clients[clientName].APIKey = envValue
-						case "PREIMPORTPATH":
-							c.Config.Clients[clientName].PreImportPath = envValue
+							c.Config.Clients[clientName].Qbit.Tags = append(c.Config.Clients[clientName].Qbit.Tags, tag)
 						}
+					case "QBIT_PAUSED_ON_ADD":
+						if b, err := strconv.ParseBool(envValue); err == nil {
+							c.Config.Clients[clientName].Qbit.PausedOnAdd = b
+						}
+					case "QBIT_CONTENT_LAYOUT":
+						c.Config.Clients[clientName].Qbit.ContentLayout = strings.ToLower(envValue)
 					}
 				}
 			}
@@ -629,10 +727,21 @@ func (c *AppConfig) DynamicReload(log logger.Logger) {
 			return
 		}
 
+		if err := validateDeprecatedConfigInputs(k, os.LookupEnv); err != nil {
+			log.Fatal().Err(err).Msg("reloaded config uses removed parseTorrentFile setting")
+		}
+
 		// unmarshal the updated config into the Config struct
 		if err := k.Unmarshal("", c.Config); err != nil {
 			log.Error().Err(err).Msg("failed to unmarshal updated config")
 			return
+		}
+
+		for clientName, client := range c.Config.Clients {
+			if err := validateClientConfig(clientName, client); err != nil {
+				log.Error().Err(err).Msg("reloaded config is invalid")
+				return
+			}
 		}
 
 		log.SetLogLevel(c.Config.LogLevel)
@@ -672,7 +781,6 @@ func (c *AppConfig) processLines(lines []string) []string {
 
 		foundLineSmartMode          = false
 		foundLineSmartModeThreshold = false
-		foundLineParseTorrentFile   = false
 
 		foundLineFuzzyMatching      = false
 		foundLineSkipRepackCompare  = false
@@ -713,11 +821,6 @@ func (c *AppConfig) processLines(lines []string) []string {
 			lines[i] = fmt.Sprintf("smartModeThreshold: %.2f", c.Config.SmartModeThreshold)
 			foundLineSmartModeThreshold = true
 		}
-		if !foundLineParseTorrentFile && strings.Contains(line, "parseTorrentFile:") {
-			lines[i] = fmt.Sprintf("parseTorrentFile: %t", c.Config.ParseTorrentFile)
-			foundLineParseTorrentFile = true
-		}
-
 		if !foundLineFuzzyMatching && strings.Contains(line, "fuzzyMatching:") {
 			foundLineFuzzyMatching = true
 		}
@@ -818,15 +921,6 @@ func (c *AppConfig) processLines(lines []string) []string {
 		lines = append(lines, "# Default: 0.75")
 		lines = append(lines, "#")
 		lines = append(lines, fmt.Sprintf("# smartModeThreshold: %.2f\n", c.Config.SmartModeThreshold))
-	}
-
-	if !foundLineParseTorrentFile {
-		lines = append(lines, "# Parse Torrent File")
-		lines = append(lines, "# Toggles torrent file parsing to get the correct folder name")
-		lines = append(lines, "#")
-		lines = append(lines, "# Default: false")
-		lines = append(lines, "#")
-		lines = append(lines, fmt.Sprintf("# parseTorrentFile: %t\n", c.Config.ParseTorrentFile))
 	}
 
 	if !foundLineFuzzyMatching {
