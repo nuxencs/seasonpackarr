@@ -6,8 +6,11 @@ package http
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -518,19 +521,19 @@ func buildHost(client *domain.Client) (string, error) {
 		return "", errors.New("host is required")
 	}
 
-	parsedURL, err := url.Parse(client.Host)
+	host := client.Host
+	if !strings.Contains(host, "://") {
+		host = "http://" + host
+	}
+
+	parsedURL, err := url.Parse(host)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to parse host")
 	}
 
-	host := client.Host
 	if client.Port != 0 {
-		host = fmt.Sprintf("%s:%d", client.Host, client.Port)
+		parsedURL.Host = net.JoinHostPort(parsedURL.Hostname(), strconv.Itoa(client.Port))
 	}
 
-	if parsedURL.Scheme == "" {
-		host = fmt.Sprintf("http://%s", host)
-	}
-
-	return host, nil
+	return parsedURL.String(), nil
 }
