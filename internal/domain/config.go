@@ -17,6 +17,7 @@ type Client struct {
 type Qbit struct {
 	Category      string   `yaml:"category"`
 	SavePath      string   `yaml:"savePath"`
+	DownloadPath  string   `yaml:"downloadPath"`
 	Tags          []string `yaml:"tags"`
 	PausedOnAdd   bool     `yaml:"pausedOnAdd"`
 	ContentLayout string   `yaml:"contentLayout"`

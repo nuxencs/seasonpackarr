@@ -74,6 +74,13 @@ clients:
       #
       savePath: ""
 
+      # qBittorrent Download Path
+      # Optional temporary download path. If set, qBittorrent downloads to this path first.
+      #
+      # Optional
+      #
+      # downloadPath: ""
+
       # qBittorrent Tags
       # Optional tags added to the imported torrent
       #
@@ -116,6 +123,7 @@ clients:
   #  qbit:
   #    category: "tv-hd"
   #    savePath: ""
+  #    downloadPath: ""
   #    tags: [ "seasonpackarr" ]
   #    pausedOnAdd: true
   #    contentLayout: "subfolder"

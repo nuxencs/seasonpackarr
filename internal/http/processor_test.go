@@ -351,6 +351,8 @@ func TestBuildTorrentAddOptionsOmitsUnsetOverrides(t *testing.T) {
 	require.Equal(t, "true", prepared["stopped"])
 	_, hasSavePath := prepared["savepath"]
 	require.False(t, hasSavePath)
+	_, hasDownloadPath := prepared["downloadPath"]
+	require.False(t, hasDownloadPath)
 	_, hasContentLayout := prepared["contentLayout"]
 	require.False(t, hasContentLayout)
 	_, hasRootFolder := prepared["root_folder"]
@@ -368,6 +370,21 @@ func TestBuildTorrentAddOptionsUsesExplicitLayout(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
 	require.Equal(t, string(qbittorrent.ContentLayoutSubfolderCreate), options.Prepare()["contentLayout"])
+}
+
+func TestBuildTorrentAddOptionsSetsDownloadPath(t *testing.T) {
+	options, statusCode, err := buildTorrentAddOptions(&domain.Client{
+		Qbit: domain.Qbit{
+			Category:     "tv-hd",
+			DownloadPath: "/data/incomplete",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
+
+	prepared := options.Prepare()
+	require.Equal(t, "/data/incomplete", prepared["downloadPath"])
+	require.Equal(t, "true", prepared["useDownloadPath"])
 }
 
 func TestBuildTorrentAddOptionsRejectsInvalidLayout(t *testing.T) {

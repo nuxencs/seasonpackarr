@@ -103,6 +103,13 @@ clients:
       #
       savePath: ""
 
+      # qBittorrent Download Path
+      # Optional temporary download path. If set, qBittorrent downloads to this path first.
+      #
+      # Optional
+      #
+      # downloadPath: ""
+
       # qBittorrent Tags
       # Optional tags added to the imported torrent
       #
@@ -145,6 +152,7 @@ clients:
   #  qbit:
   #    category: "tv-hd"
   #    savePath: ""
+  #    downloadPath: ""
   #    tags: [ "seasonpackarr" ]
   #    pausedOnAdd: true
   #    contentLayout: "subfolder"
@@ -442,6 +450,12 @@ func validateClientConfig(clientName string, client *domain.Client) error {
 		}
 	}
 
+	if client.Qbit.DownloadPath != "" {
+		if _, err := os.Stat(client.Qbit.DownloadPath); errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("qbit.downloadPath for client %q doesn't exist, please make sure you entered the correct path", clientName)
+		}
+	}
+
 	return nil
 }
 
@@ -624,6 +638,8 @@ func (c *AppConfig) loadFromEnv() {
 						c.Config.Clients[clientName].Qbit.Category = envValue
 					case "QBIT_SAVE_PATH":
 						c.Config.Clients[clientName].Qbit.SavePath = envValue
+					case "QBIT_DOWNLOAD_PATH":
+						c.Config.Clients[clientName].Qbit.DownloadPath = envValue
 					case "QBIT_TAGS":
 						tags := strings.Split(envValue, ",")
 						c.Config.Clients[clientName].Qbit.Tags = c.Config.Clients[clientName].Qbit.Tags[:0]

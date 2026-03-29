@@ -144,6 +144,10 @@
           "type": "string",
           "default": ""
         },
+        "downloadPath": {
+          "type": "string",
+          "default": ""
+        },
         "tags": {
           "type": "array",
           "items": {

@@ -583,7 +583,9 @@ func buildTorrentAddOptions(clientCfg *domain.Client) (*qbittorrent.TorrentAddOp
 	}
 	if clientCfg.Qbit.SavePath != "" {
 		opts.SavePath = strings.TrimSpace(clientCfg.Qbit.SavePath)
-		opts.AutoTMM = false
+	}
+	if clientCfg.Qbit.DownloadPath != "" {
+		opts.DownloadPath = strings.TrimSpace(clientCfg.Qbit.DownloadPath)
 	}
 	if ok {
 		opts.ContentLayout = contentLayout
