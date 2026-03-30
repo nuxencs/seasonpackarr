@@ -470,8 +470,8 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 	}
 
 	successfulEpMatch := false
-	successfulHardlink := false
 	targetPackDir := filepath.Join(clientCfg.PreImportPath, parsedPackName)
+	linkedTargets := make(map[string]struct{})
 
 	for _, match := range matches {
 		matchedEpPath := ""
@@ -489,12 +489,17 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 			targetEpPath := filepath.Join(targetPackDir, matchedEpPath)
 			successfulEpMatch = true
 
+			if _, linked := linkedTargets[targetEpPath]; linked {
+				p.log.Debug().Msgf("skipping already linked target: %s", targetEpPath)
+				break
+			}
+
 			if err = files.CreateHardlink(match.clientEpPath, targetEpPath); err != nil {
 				p.log.Error().Err(err).Msgf("error creating hardlink: %s", match.clientEpPath)
 				continue
 			}
 			p.log.Info().Msgf("created hardlink: source(%s), target(%s)", match.clientEpPath, targetEpPath)
-			successfulHardlink = true
+			linkedTargets[targetEpPath] = struct{}{}
 
 			break
 		}
@@ -505,11 +510,13 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 		}
 	}
 
+	p.log.Info().Msgf("hardlinked %d/%d episodes from pack", len(linkedTargets), len(torrentEps))
+
 	if !successfulEpMatch {
 		return domain.StatusFailedMatchToTorrentEps, domain.StatusFailedMatchToTorrentEps.Error()
 	}
 
-	if !successfulHardlink {
+	if len(linkedTargets) == 0 {
 		return domain.StatusFailedHardlink, domain.StatusFailedHardlink.Error()
 	}
 

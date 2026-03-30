@@ -4,10 +4,12 @@
 package http
 
 import (
+	"bytes"
 	"encoding/base64"
 	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nuxencs/seasonpackarr/internal/config"
@@ -17,6 +19,7 @@ import (
 
 	"github.com/autobrr/go-qbittorrent"
 	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
 
@@ -277,6 +280,100 @@ func TestParseTorrentStandaloneImportsAndResumes(t *testing.T) {
 
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep1Name))
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep2Name))
+}
+
+func TestParseTorrentSkipsCrossSeedDuplicates(t *testing.T) {
+	clientMap = xsync.NewMapOf[string, qbitClient]()
+	entryMap = xsync.NewMapOf[string, *entryCache]()
+
+	tempDir := t.TempDir()
+	sourceDir1 := filepath.Join(tempDir, "source1")
+	sourceDir2 := filepath.Join(tempDir, "source2")
+	importDir := filepath.Join(tempDir, "import")
+	require.NoError(t, os.MkdirAll(sourceDir1, 0o755))
+	require.NoError(t, os.MkdirAll(sourceDir2, 0o755))
+	require.NoError(t, os.MkdirAll(importDir, 0o755))
+
+	releaseName := "Series.S01.1080p.WEB-DL.H.264-RlsGrp"
+	torrentBytes, err := torrents.TorrentFromRls(releaseName, 2)
+	require.NoError(t, err)
+
+	infoHash, err := torrents.InfoHash(torrentBytes)
+	require.NoError(t, err)
+
+	ep1Name := "Series.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"
+	ep2Name := "Series.S01E02.1080p.WEB-DL.H.264-RlsGrp.mkv"
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir1, ep1Name), []byte("0"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir1, ep2Name), []byte("0"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir2, ep1Name), []byte("0"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir2, ep2Name), []byte("0"), 0o644))
+
+	ep1Files := qbittorrent.TorrentFiles{{Name: ep1Name, Size: 1}}
+	ep2Files := qbittorrent.TorrentFiles{{Name: ep2Name, Size: 1}}
+
+	// Two cross-seeded torrents for each episode at different paths
+	mockClient := &mockQbitClient{
+		allTorrents: []qbittorrent.Torrent{
+			{Name: "Series.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1a", SavePath: sourceDir1},
+			{Name: "Series.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1b", SavePath: sourceDir2},
+			{Name: "Series.S01E02.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep2a", SavePath: sourceDir1},
+			{Name: "Series.S01E02.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep2b", SavePath: sourceDir2},
+		},
+		filesByHash: map[string]*qbittorrent.TorrentFiles{
+			"ep1a": &ep1Files,
+			"ep1b": &ep1Files,
+			"ep2a": &ep2Files,
+			"ep2b": &ep2Files,
+		},
+		lookupSequence: []qbittorrent.Torrent{
+			{Hash: infoHash, InfohashV1: infoHash, State: qbittorrent.TorrentStatePausedDl},
+		},
+		categories: map[string]qbittorrent.Category{
+			"tv-hd": {Name: "tv-hd", SavePath: importDir},
+		},
+	}
+
+	cfg := &config.AppConfig{
+		Config: &domain.Config{
+			Clients: map[string]*domain.Client{
+				"default": {
+					PreImportPath: importDir,
+					Qbit: domain.Qbit{
+						Category: "tv-hd",
+					},
+				},
+			},
+		},
+	}
+
+	var logBuf bytes.Buffer
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
+
+	p := newProcessor(
+		logger.New(&domain.Config{LogLevel: "DEBUG", Version: "test"}),
+		cfg,
+		nil,
+		nil,
+	)
+	p.log = zerolog.New(&logBuf).With().Logger()
+	p.req = &request{
+		Name:       releaseName,
+		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
+		Client:     mockClient,
+		ClientName: "default",
+	}
+
+	statusCode, err := p.parseTorrent()
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
+
+	// Each episode should have exactly one hardlink despite cross-seed duplicates
+	require.FileExists(t, filepath.Join(importDir, releaseName, ep1Name))
+	require.FileExists(t, filepath.Join(importDir, releaseName, ep2Name))
+
+	// Verify duplicates were skipped, not attempted
+	logOutput := logBuf.String()
+	require.Equal(t, 2, strings.Count(logOutput, "skipping already linked target"))
 }
 
 func TestProcessSeasonPackIsGateOnly(t *testing.T) {
