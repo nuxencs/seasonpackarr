@@ -70,9 +70,8 @@ type entryCache struct {
 }
 
 type matchInfo struct {
-	clientEpPath    string
-	clientEpSize    int64
-	announcedEpPath string
+	clientEpPath string
+	clientEpSize int64
 }
 
 var (
@@ -296,9 +295,6 @@ func (p *processor) collectMatches(clientName string, clientCfg *domain.Client) 
 		return nil, domain.StatusNoMatches, domain.StatusNoMatches.Error()
 	}
 
-	announcedPackName := format.CleanAnnounceTitle(requestRls)
-	p.log.Debug().Msgf("formatted season pack name: %s", announcedPackName)
-
 	for _, filteredEntry := range filteredEntries {
 		switch compareInfo := release.CheckCandidates(requestRls, filteredEntry.release, p.cfg.Config.FuzzyMatching); compareInfo.StatusCode {
 		case domain.StatusAlreadyInClient, domain.StatusNotASeasonPack:
@@ -332,13 +328,11 @@ func (p *processor) collectMatches(clientName string, clientCfg *domain.Client) 
 			}
 
 			clientEpPath := filepath.Join(filteredEntry.torrent.SavePath, fileName)
-			announcedEpPath := filepath.Join(clientCfg.PreImportPath, announcedPackName, filepath.Base(fileName))
 
 			epsSet[filteredEntry.release.Episode] = struct{}{}
 			matches = append(matches, matchInfo{
-				clientEpPath:    clientEpPath,
-				clientEpSize:    size,
-				announcedEpPath: announcedEpPath,
+				clientEpPath: clientEpPath,
+				clientEpSize: size,
 			})
 
 			p.log.Debug().Msgf("matched torrent from client: name(%s), size(%d), hash(%s)",
