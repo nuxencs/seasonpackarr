@@ -124,6 +124,16 @@ will need to adjust the created config file to your needs and start the containe
 You can configure a decent part of the features seasonpackarr provides. I will explain the most important ones here in
 more detail.
 
+### qBittorrent Client Authentication
+
+Each entry under `clients` connects seasonpackarr to one qBittorrent instance. You can authenticate with the traditional
+`username` and `password` fields, or with `apiKey` when using qBittorrent 5.2.0 or newer. If `apiKey` is set,
+seasonpackarr uses qBittorrent API key authentication for that client instead of username/password login.
+
+If you use [qui's reverse proxy](https://getqui.com/docs/features/reverse-proxy/), set the client `host` to the full
+proxy URL, for example `http://localhost:7476/proxy/abc123...`, and leave `username`, `password`, and `apiKey` empty.
+qui keeps the qBittorrent session and handles authentication for proxied clients.
+
 ### Smart Mode
 
 Can be enabled in the config by setting `smartMode` to `true`. Works together with `smartModeThreshold` to determine if

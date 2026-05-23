@@ -73,6 +73,13 @@ clients:
     #
     password: "adminadmin"
 
+    # qBittorrent API Key
+    # Requires qBittorrent 5.2.0 or newer. If set, apiKey is used instead of username/password authentication.
+    #
+    # Optional
+    #
+    apiKey: ""
+
     # Pre Import Path of qBittorrent for Sonarr
     # Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
     #
@@ -91,6 +98,8 @@ clients:
   #  username: "example"
   #
   #  password: "example"
+  #
+  #  apiKey: ""
   #
   #  preImportPath: ""
 
@@ -412,7 +421,7 @@ func (c *AppConfig) loadFromEnv() {
 			envKey, envValue := envPair[0], envPair[1]
 
 			// Determine if this is a sensitive value that should be redacted in logs
-			sensitiveKeys := []string{"PASSWORD", "API_TOKEN", "DISCORD"}
+			sensitiveKeys := []string{"PASSWORD", "API_TOKEN", "APIKEY", "DISCORD"}
 			logValue := envValue
 
 			for _, sensitive := range sensitiveKeys {
@@ -528,6 +537,8 @@ func (c *AppConfig) loadFromEnv() {
 							c.Config.Clients[clientName].Username = envValue
 						case "PASSWORD":
 							c.Config.Clients[clientName].Password = envValue
+						case "APIKEY":
+							c.Config.Clients[clientName].APIKey = envValue
 						case "PREIMPORTPATH":
 							c.Config.Clients[clientName].PreImportPath = envValue
 						}

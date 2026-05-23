@@ -7,7 +7,7 @@ This is a self-hosted integration service with network-facing HTTP endpoints and
 ## Current Controls
 
 - API token auth for `/api/pack` and `/api/parse`
-- explicit config-driven client credentials
+- explicit config-driven client credentials, including qBittorrent passwords or API keys
 - narrow HTTP surface
 - CodeQL in CI
 - Go vulnerability scanning expected in local verification
@@ -30,7 +30,7 @@ Both traces reach config loading through `koanf.Unmarshal` in `internal/config/c
 
 ## Rules For Changes
 
-- never log API tokens, passwords, or raw secrets
+- never log API tokens, API keys, passwords, or raw secrets
 - treat filesystem target-path derivation as security-sensitive
 - document any new outbound network dependency in `docs/references/`
 - add verification notes when auth, pathing, or external request logic changes

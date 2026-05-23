@@ -92,6 +92,7 @@ func (p *processor) getClient(client *domain.Client, clientName string) error {
 			Host:     host,
 			Username: client.Username,
 			Password: client.Password,
+			APIKey:   client.APIKey,
 		}
 
 		c = qbittorrent.NewClient(clientCfg)

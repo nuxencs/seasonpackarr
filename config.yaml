@@ -44,6 +44,13 @@ clients:
     #
     password: "adminadmin"
 
+    # qBittorrent API Key
+    # Requires qBittorrent 5.2.0 or newer. If set, apiKey is used instead of username/password authentication.
+    #
+    # Optional
+    #
+    apiKey: ""
+
     # Pre Import Path of qBittorrent for Sonarr
     # Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
     #
@@ -62,6 +69,8 @@ clients:
   #  username: "example"
   #
   #  password: "example"
+  #
+  #  apiKey: ""
   #
   #  preImportPath: ""
 

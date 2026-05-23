@@ -9,6 +9,7 @@ type Client struct {
 	Port          int    `yaml:"port"`
 	Username      string `yaml:"username"`
 	Password      string `yaml:"password"`
+	APIKey        string `yaml:"apiKey"`
 	PreImportPath string `yaml:"preImportPath"`
 }
 
