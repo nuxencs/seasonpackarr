@@ -96,6 +96,10 @@
           "type": "string",
           "default": "adminadmin"
         },
+        "apiKey": {
+          "type": "string",
+          "default": ""
+        },
         "preImportPath": {
           "type": "string",
           "default": ""
@@ -103,8 +107,6 @@
       },
       "required": [
         "host",
-        "username",
-        "password",
         "preImportPath"
       ]
     },
