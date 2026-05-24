@@ -161,11 +161,11 @@ func (m *mockQbitClient) GetFilesInformation(hash string) (*qbittorrent.TorrentF
 	return m.filesByHash[hash], nil
 }
 
-func (m *mockQbitClient) AddTorrentFromMemory(buf []byte, options map[string]string) error {
+func (m *mockQbitClient) AddTorrentFromMemory(buf []byte, options map[string]string) (*qbittorrent.TorrentAddResponse, error) {
 	m.addBytes = append([]byte(nil), buf...)
 	m.addOptions = make(map[string]string, len(options))
 	maps.Copy(m.addOptions, options)
-	return nil
+	return &qbittorrent.TorrentAddResponse{}, nil
 }
 
 func (m *mockQbitClient) GetCategories() (map[string]qbittorrent.Category, error) {

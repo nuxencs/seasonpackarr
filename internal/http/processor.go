@@ -35,7 +35,7 @@ import (
 type qbitClient interface {
 	GetTorrents(qbittorrent.TorrentFilterOptions) ([]qbittorrent.Torrent, error)
 	GetFilesInformation(hash string) (*qbittorrent.TorrentFiles, error)
-	AddTorrentFromMemory(buf []byte, options map[string]string) error
+	AddTorrentFromMemory(buf []byte, options map[string]string) (*qbittorrent.TorrentAddResponse, error)
 	GetCategories() (map[string]qbittorrent.Category, error)
 	GetDefaultSavePath() (string, error)
 	Recheck(hashes []string) error
@@ -533,7 +533,7 @@ func (p *processor) importSeasonPack(clientCfg *domain.Client, torrentBytes []by
 		return statusCode, err
 	}
 
-	if err := p.req.Client.AddTorrentFromMemory(torrentBytes, options.Prepare()); err != nil {
+	if _, err := p.req.Client.AddTorrentFromMemory(torrentBytes, options.Prepare()); err != nil {
 		return domain.StatusAddTorrentError, fmt.Errorf("%s: %w", domain.StatusAddTorrentError, err)
 	}
 	p.log.Info().Msgf("added torrent to qbittorrent: hash(%s), savepath(%s), category(%s)",
