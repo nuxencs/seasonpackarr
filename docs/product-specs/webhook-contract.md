@@ -12,7 +12,7 @@ Requests must include the configured API token. Unauthorized requests are reject
 ## Behavioral Intent
 
 - `/api/pack` processes a season-pack announce against existing client data
-- `/api/parse` recomputes matching against existing client data, uses torrent-content-aware pathing, validates the effective qBittorrent destination against `preImportPath`, hardlinks matching files, then imports the season pack into qBittorrent using the configured client import policy
+- `/api/parse` recomputes matching against existing client data, uses torrent-content-aware pathing, resolves the effective qBittorrent destination, hardlinks matching files there, then imports the season pack into qBittorrent using the configured client import policy
 
 ## Contract Stability Rules
 

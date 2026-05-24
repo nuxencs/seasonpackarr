@@ -167,19 +167,19 @@ Each configured client can define how `POST /api/parse` re-imports the season pa
 ```yaml
 clients:
   default:
-    preImportPath: "/data/torrents/tv-hd"
     qbit:
       category: "tv-hd"
       savePath: ""
+      # downloadPath: "/data/torrents/incomplete"
       tags: [ "seasonpackarr" ]
       pausedOnAdd: true
       # contentLayout: "subfolder"
 ```
 
-- `preImportPath` is the hardlink target directory.
 - `qbit.category` or `qbit.savePath` must be configured. Both can be set together.
-- `qbit.savePath` must already exist and must match `preImportPath`.
-- If `qbit.savePath` is empty, seasonpackarr checks the qBittorrent category save path and then the qBittorrent default save path. The resolved destination must match `preImportPath` or `/api/parse` fails.
+- `qbit.savePath` must already exist. When set, it is the final hardlink/import destination.
+- If `qbit.savePath` is empty, seasonpackarr checks the qBittorrent category save path and then the qBittorrent default save path. The resolved destination is the final hardlink/import destination.
+- `qbit.downloadPath` is optional and only controls qBittorrent's temporary download path. It is not used as the hardlink target.
 - `qbit.category` and `qbit.tags` are applied when seasonpackarr adds the torrent back to qBittorrent.
 - `qbit.pausedOnAdd` should normally stay `true` so seasonpackarr can recheck before resuming.
 - `qbit.contentLayout` is optional. If unset, qBittorrent uses its configured default.
@@ -217,7 +217,7 @@ renamed season packs and episodes can get matched.
 
 ## autobrr Filter setup
 
-Support for multiple Sonarr and qBittorrent instances with different pre import directories was added with v0.4.0, so
+Support for multiple Sonarr and qBittorrent instances with different import destinations was added with v0.4.0, so
 you will need to run multiple instances of seasonpackarr and create multiple filters to achieve the same functionality
 in lower versions. If you are running v0.4.0 or above you just need to set up your filters according to [External Filters](#external-filters).
 The following is a simple example filter that only allows 1080p season packs to be matched.
@@ -326,7 +326,7 @@ Finally, complete the `Payload (JSON)` field as shown below. Ensure that the val
 The webhook action is enough. On success, seasonpackarr will:
 
 1. Parse the torrent for the real pack/folder name.
-2. Hardlink matching local episodes into the target season-pack path.
+2. Hardlink matching local episodes into the resolved qBittorrent destination.
 3. Add the torrent to qBittorrent using the configured save path/category/tags.
 4. Trigger a qBittorrent recheck if the torrent lands in `missingFiles`.
 5. Resume the imported torrent so only genuinely missing episodes download.

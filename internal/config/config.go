@@ -80,26 +80,17 @@ clients:
     #
     apiKey: ""
 
-    # Pre Import Path
-    # Hardlink target path seasonpackarr writes into before qBittorrent rechecks the pack.
-    # Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
-    #
-    # Default: ""
-    #
-    preImportPath: ""
-
     # qBittorrent Import Policy
     # seasonpackarr will add the parsed season pack back to qBittorrent using these settings
     #
     qbit:
       # qBittorrent Category
-      # Required unless savePath is set. Used when seasonpackarr adds the season pack.
-      # If savePath is omitted, the category/default qBittorrent destination must match preImportPath.
+      # Required unless savePath is set. Used to resolve the final hardlink/import destination.
       #
       category: ""
 
       # qBittorrent Save Path
-      # Required unless category is set. Must already exist and must match preImportPath.
+      # Required unless category is set. Must already exist. Used as the final hardlink/import destination.
       #
       savePath: ""
 
@@ -146,8 +137,6 @@ clients:
   #  password: "example"
   #
   #  apiKey: ""
-  #
-  #  preImportPath: ""
   #
   #  qbit:
   #    category: "tv-hd"
@@ -373,6 +362,8 @@ type AppConfig struct {
 const (
 	deprecatedParseTorrentFileKey = "parseTorrentFile"
 	deprecatedParseTorrentFileEnv = "SEASONPACKARR__PARSE_TORRENT_FILE"
+	deprecatedPreImportPathKey    = "preImportPath"
+	deprecatedPreImportPathEnv    = "PREIMPORTPATH"
 )
 
 func New(configPath string, version string) *AppConfig {
@@ -428,18 +419,33 @@ func validateDeprecatedConfigInputs(k *koanf.Koanf, lookupEnv func(string) (stri
 		}
 	}
 
+	if k != nil {
+		for _, clientName := range k.MapKeys("clients") {
+			clientPreImportPathKey := fmt.Sprintf("clients.%s.%s", clientName, deprecatedPreImportPathKey)
+			if k.Exists(clientPreImportPathKey) {
+				return fmt.Errorf("deprecated config detected: %s was removed; use qbit.savePath or qbit.category as the final qBittorrent destination instead",
+					clientPreImportPathKey)
+			}
+		}
+	}
+
+	if lookupEnv != nil {
+		for _, env := range os.Environ() {
+			envKey, envValue, ok := strings.Cut(env, "=")
+			if !ok || strings.TrimSpace(envValue) == "" {
+				continue
+			}
+			if strings.HasPrefix(envKey, "SEASONPACKARR__CLIENTS_") && strings.HasSuffix(envKey, "_"+deprecatedPreImportPathEnv) {
+				return fmt.Errorf("deprecated environment variable detected: %s was removed; use the qbit save path/category environment variables instead",
+					envKey)
+			}
+		}
+	}
+
 	return nil
 }
 
 func validateClientConfig(clientName string, client *domain.Client) error {
-	if client.PreImportPath == "" {
-		return fmt.Errorf("preImportPath for client %q can't be empty, please provide a valid path to the directory you want seasonpacks to be hardlinked to", clientName)
-	}
-
-	if _, err := os.Stat(client.PreImportPath); errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("preImportPath for client %q doesn't exist, please make sure you entered the correct path", clientName)
-	}
-
 	if client.Qbit.Category == "" && client.Qbit.SavePath == "" {
 		return fmt.Errorf("client %q must configure qbit.category or qbit.savePath", clientName)
 	}
@@ -632,8 +638,6 @@ func (c *AppConfig) loadFromEnv() {
 						c.Config.Clients[clientName].Password = envValue
 					case "APIKEY":
 						c.Config.Clients[clientName].APIKey = envValue
-					case "PREIMPORTPATH":
-						c.Config.Clients[clientName].PreImportPath = envValue
 					case "QBIT_CATEGORY":
 						c.Config.Clients[clientName].Qbit.Category = envValue
 					case "QBIT_SAVE_PATH":

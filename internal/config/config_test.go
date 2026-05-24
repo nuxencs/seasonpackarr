@@ -39,6 +39,34 @@ func TestValidateDeprecatedConfigInputsRejectsDeprecatedEnv(t *testing.T) {
 	require.Contains(t, err.Error(), "update your autobrr filter")
 }
 
+func TestValidateDeprecatedConfigInputsRejectsPreImportPathInYAML(t *testing.T) {
+	k := loadTestConfig(t, `
+clients:
+  default:
+    preImportPath: /data/torrents/tv-hd
+    qbit:
+      category: tv-hd
+`)
+
+	err := validateDeprecatedConfigInputs(k, nil)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "clients.default.preImportPath")
+	require.Contains(t, err.Error(), "was removed")
+	require.Contains(t, err.Error(), "qbit.savePath or qbit.category")
+}
+
+func TestValidateDeprecatedConfigInputsRejectsPreImportPathEnv(t *testing.T) {
+	t.Setenv("SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH", "/data/torrents/tv-hd")
+
+	err := validateDeprecatedConfigInputs(nil, os.LookupEnv)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH")
+	require.Contains(t, err.Error(), "was removed")
+	require.Contains(t, err.Error(), "qbit save path/category")
+}
+
 func TestValidateDeprecatedConfigInputsAllowsCurrentConfig(t *testing.T) {
 	k := loadTestConfig(t, "host: 0.0.0.0\nclients: {}\n")
 

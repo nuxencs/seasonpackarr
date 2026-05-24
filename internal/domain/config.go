@@ -5,13 +5,12 @@
 package domain
 
 type Client struct {
-	Host          string `yaml:"host"`
-	Port          int    `yaml:"port"`
-	Username      string `yaml:"username"`
-	Password      string `yaml:"password"`
-	APIKey        string `yaml:"apiKey"`
-	PreImportPath string `yaml:"preImportPath"`
-	Qbit          Qbit   `yaml:"qbit"`
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	APIKey   string `yaml:"apiKey"`
+	Qbit     Qbit   `yaml:"qbit"`
 }
 
 type Qbit struct {

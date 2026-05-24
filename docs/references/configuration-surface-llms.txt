@@ -6,8 +6,8 @@ seasonpackarr configuration surface reference
   - host
   - port
   - apiToken
-  - clients.<name>.host/port/username/password/apiKey/preImportPath
-  - clients.<name>.qbit.category/savePath/tags/pausedOnAdd/contentLayout
+  - clients.<name>.host/port/username/password/apiKey
+  - clients.<name>.qbit.category/savePath/downloadPath/tags/pausedOnAdd/contentLayout
   - clients require qbit.category or qbit.savePath
   - qbit.contentLayout is optional; unset defers to qBittorrent defaults
   - smartMode

@@ -96,17 +96,12 @@
           "type": "string",
           "default": ""
         },
-        "preImportPath": {
-          "type": "string",
-          "default": ""
-        },
         "qbit": {
           "$ref": "#/$defs/qbit"
         }
       },
       "required": [
         "host",
-        "preImportPath",
         "qbit"
       ]
     },

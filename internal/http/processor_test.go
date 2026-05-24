@@ -6,6 +6,7 @@ package http
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"maps"
 	"os"
 	"path/filepath"
@@ -131,6 +132,8 @@ type mockQbitClient struct {
 	filesByHash    map[string]*qbittorrent.TorrentFiles
 	categories     map[string]qbittorrent.Category
 	defaultSave    string
+	categoryErr    error
+	defaultSaveErr error
 	lookupSequence []qbittorrent.Torrent
 	lookupIndex    int
 	addOptions     map[string]string
@@ -169,10 +172,16 @@ func (m *mockQbitClient) AddTorrentFromMemory(buf []byte, options map[string]str
 }
 
 func (m *mockQbitClient) GetCategories() (map[string]qbittorrent.Category, error) {
+	if m.categoryErr != nil {
+		return nil, m.categoryErr
+	}
 	return m.categories, nil
 }
 
 func (m *mockQbitClient) GetDefaultSavePath() (string, error) {
+	if m.defaultSaveErr != nil {
+		return "", m.defaultSaveErr
+	}
 	return m.defaultSave, nil
 }
 
@@ -234,7 +243,6 @@ func TestParseTorrentStandaloneImportsAndResumes(t *testing.T) {
 		Config: &domain.Config{
 			Clients: map[string]*domain.Client{
 				"default": {
-					PreImportPath: importDir,
 					Qbit: domain.Qbit{
 						Category:    "tv-hd",
 						Tags:        []string{"seasonpackarr"},
@@ -337,7 +345,6 @@ func TestParseTorrentSkipsCrossSeedDuplicates(t *testing.T) {
 		Config: &domain.Config{
 			Clients: map[string]*domain.Client{
 				"default": {
-					PreImportPath: importDir,
 					Qbit: domain.Qbit{
 						Category: "tv-hd",
 					},
@@ -403,7 +410,6 @@ func TestProcessSeasonPackIsGateOnly(t *testing.T) {
 		Config: &domain.Config{
 			Clients: map[string]*domain.Client{
 				"default": {
-					PreImportPath: importDir,
 					Qbit: domain.Qbit{
 						Category:    "tv-hd",
 						PausedOnAdd: true,
@@ -495,7 +501,7 @@ func TestBuildTorrentAddOptionsRejectsInvalidLayout(t *testing.T) {
 	require.Equal(t, domain.StatusQbitConfigError, statusCode)
 }
 
-func TestValidateImportDestinationCategoryOnly(t *testing.T) {
+func TestResolveImportRootCategoryOnly(t *testing.T) {
 	tempDir := t.TempDir()
 	importDir := filepath.Join(tempDir, "import")
 	require.NoError(t, os.MkdirAll(importDir, 0o755))
@@ -504,6 +510,7 @@ func TestValidateImportDestinationCategoryOnly(t *testing.T) {
 		name        string
 		categories  map[string]qbittorrent.Category
 		defaultSave string
+		wantRoot    string
 		wantStatus  domain.StatusCode
 		wantErr     bool
 	}{
@@ -512,6 +519,7 @@ func TestValidateImportDestinationCategoryOnly(t *testing.T) {
 			categories: map[string]qbittorrent.Category{
 				"tv-hd": {Name: "tv-hd", SavePath: importDir},
 			},
+			wantRoot:   importDir,
 			wantStatus: domain.StatusSuccessfulHardlink,
 		},
 		{
@@ -520,15 +528,16 @@ func TestValidateImportDestinationCategoryOnly(t *testing.T) {
 				"tv-hd": {Name: "tv-hd", SavePath: ""},
 			},
 			defaultSave: importDir,
+			wantRoot:    importDir,
 			wantStatus:  domain.StatusSuccessfulHardlink,
 		},
 		{
-			name: "resolved path mismatch fails",
+			name: "category save path is used as destination",
 			categories: map[string]qbittorrent.Category{
 				"tv-hd": {Name: "tv-hd", SavePath: filepath.Join(tempDir, "other")},
 			},
-			wantStatus: domain.StatusQbitConfigError,
-			wantErr:    true,
+			wantRoot:   filepath.Join(tempDir, "other"),
+			wantStatus: domain.StatusSuccessfulHardlink,
 		},
 		{
 			name: "relative category save path resolved against default",
@@ -536,16 +545,17 @@ func TestValidateImportDestinationCategoryOnly(t *testing.T) {
 				"tv-hd": {Name: "tv-hd", SavePath: "import"},
 			},
 			defaultSave: tempDir,
+			wantRoot:    importDir,
 			wantStatus:  domain.StatusSuccessfulHardlink,
 		},
 		{
-			name: "relative category save path mismatch after resolution",
+			name: "relative category save path resolves against default",
 			categories: map[string]qbittorrent.Category{
 				"tv-hd": {Name: "tv-hd", SavePath: "other"},
 			},
 			defaultSave: tempDir,
-			wantStatus:  domain.StatusQbitConfigError,
-			wantErr:     true,
+			wantRoot:    filepath.Join(tempDir, "other"),
+			wantStatus:  domain.StatusSuccessfulHardlink,
 		},
 	}
 
@@ -560,8 +570,7 @@ func TestValidateImportDestinationCategoryOnly(t *testing.T) {
 				},
 			}
 
-			statusCode, err := p.validateImportDestination(&domain.Client{
-				PreImportPath: importDir,
+			root, statusCode, err := p.resolveImportRoot(&domain.Client{
 				Qbit: domain.Qbit{
 					Category: "tv-hd",
 				},
@@ -572,34 +581,183 @@ func TestValidateImportDestinationCategoryOnly(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
+			require.Equal(t, normalizePath(tt.wantRoot), root)
 		})
 	}
 }
 
-func TestValidateImportDestinationExplicitSavePath(t *testing.T) {
+func TestResolveImportRootExplicitSavePath(t *testing.T) {
 	tempDir := t.TempDir()
 	importDir := filepath.Join(tempDir, "import")
-	otherDir := filepath.Join(tempDir, "other")
 	require.NoError(t, os.MkdirAll(importDir, 0o755))
-	require.NoError(t, os.MkdirAll(otherDir, 0o755))
 
 	p := &processor{req: &request{Client: &mockQbitClient{}}}
 
-	statusCode, err := p.validateImportDestination(&domain.Client{
-		PreImportPath: importDir,
+	root, statusCode, err := p.resolveImportRoot(&domain.Client{
 		Qbit: domain.Qbit{
 			SavePath: importDir,
 		},
 	})
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
+	require.Equal(t, normalizePath(importDir), root)
+}
 
-	statusCode, err = p.validateImportDestination(&domain.Client{
-		PreImportPath: importDir,
+func TestResolveImportRootRejectsQbitLookupFailures(t *testing.T) {
+	t.Run("category read error", func(t *testing.T) {
+		p := &processor{req: &request{Client: &mockQbitClient{
+			categoryErr: errors.New("category boom"),
+		}}}
+
+		_, statusCode, err := p.resolveImportRoot(&domain.Client{
+			Qbit: domain.Qbit{
+				Category: "tv-hd",
+			},
+		})
+		require.Error(t, err)
+		require.Equal(t, domain.StatusQbitConfigError, statusCode)
+	})
+
+	t.Run("missing category", func(t *testing.T) {
+		p := &processor{req: &request{Client: &mockQbitClient{
+			categories: map[string]qbittorrent.Category{},
+		}}}
+
+		_, statusCode, err := p.resolveImportRoot(&domain.Client{
+			Qbit: domain.Qbit{
+				Category: "tv-hd",
+			},
+		})
+		require.Error(t, err)
+		require.Equal(t, domain.StatusQbitConfigError, statusCode)
+	})
+
+	t.Run("default save path error", func(t *testing.T) {
+		p := &processor{req: &request{Client: &mockQbitClient{
+			categories: map[string]qbittorrent.Category{
+				"tv-hd": {Name: "tv-hd", SavePath: ""},
+			},
+			defaultSaveErr: errors.New("default boom"),
+		}}}
+
+		_, statusCode, err := p.resolveImportRoot(&domain.Client{
+			Qbit: domain.Qbit{
+				Category: "tv-hd",
+			},
+		})
+		require.Error(t, err)
+		require.Equal(t, domain.StatusQbitConfigError, statusCode)
+	})
+
+	t.Run("empty resolved destination", func(t *testing.T) {
+		p := &processor{req: &request{Client: &mockQbitClient{
+			categories: map[string]qbittorrent.Category{
+				"tv-hd": {Name: "tv-hd", SavePath: ""},
+			},
+		}}}
+
+		_, statusCode, err := p.resolveImportRoot(&domain.Client{
+			Qbit: domain.Qbit{
+				Category: "tv-hd",
+			},
+		})
+		require.Error(t, err)
+		require.Equal(t, domain.StatusQbitConfigError, statusCode)
+	})
+}
+
+func TestParseTorrentUsesSavePathAsHardlinkRoot(t *testing.T) {
+	clientMap = xsync.NewMapOf[string, qbitClient]()
+	entryMap = xsync.NewMapOf[string, *entryCache]()
+
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	saveDir := filepath.Join(tempDir, "save")
+	downloadDir := filepath.Join(tempDir, "download")
+	require.NoError(t, os.MkdirAll(sourceDir, 0o755))
+	require.NoError(t, os.MkdirAll(saveDir, 0o755))
+	require.NoError(t, os.MkdirAll(downloadDir, 0o755))
+
+	releaseName := "Series.S01.1080p.WEB-DL.H.264-RlsGrp"
+	torrentBytes, err := torrents.TorrentFromRls(releaseName, 1)
+	require.NoError(t, err)
+
+	infoHash, err := torrents.InfoHash(torrentBytes)
+	require.NoError(t, err)
+
+	epName := "Series.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"
+	require.NoError(t, os.WriteFile(filepath.Join(sourceDir, epName), []byte("0"), 0o644))
+
+	epFiles := qbittorrent.TorrentFiles{{Name: epName, Size: 1}}
+	mockClient := &mockQbitClient{
+		allTorrents: []qbittorrent.Torrent{
+			{Name: "Series.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
+		},
+		filesByHash: map[string]*qbittorrent.TorrentFiles{
+			"ep1": &epFiles,
+		},
+		lookupSequence: []qbittorrent.Torrent{
+			{Hash: infoHash, InfohashV1: infoHash, State: qbittorrent.TorrentStatePausedDl},
+		},
+		categories: map[string]qbittorrent.Category{
+			"tv-hd": {Name: "tv-hd", SavePath: filepath.Join(tempDir, "category")},
+		},
+	}
+
+	cfg := &config.AppConfig{
+		Config: &domain.Config{
+			Clients: map[string]*domain.Client{
+				"default": {
+					Qbit: domain.Qbit{
+						Category:     "tv-hd",
+						SavePath:     saveDir,
+						DownloadPath: downloadDir,
+						PausedOnAdd:  true,
+					},
+				},
+			},
+		},
+	}
+
+	p := newProcessor(
+		logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}),
+		cfg,
+		nil,
+		nil,
+	)
+	p.req = &request{
+		Name:       releaseName,
+		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
+		Client:     mockClient,
+		ClientName: "default",
+	}
+
+	statusCode, err := p.parseTorrent()
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
+
+	require.FileExists(t, filepath.Join(saveDir, releaseName, epName))
+	require.NoFileExists(t, filepath.Join(downloadDir, releaseName, epName))
+	require.Equal(t, saveDir, mockClient.addOptions["savepath"])
+	require.Equal(t, downloadDir, mockClient.addOptions["downloadPath"])
+}
+
+func TestResolveImportRootDoesNotUseDownloadPath(t *testing.T) {
+	tempDir := t.TempDir()
+	saveDir := filepath.Join(tempDir, "save")
+	downloadDir := filepath.Join(tempDir, "download")
+	require.NoError(t, os.MkdirAll(saveDir, 0o755))
+	require.NoError(t, os.MkdirAll(downloadDir, 0o755))
+
+	p := &processor{req: &request{Client: &mockQbitClient{}}}
+
+	root, statusCode, err := p.resolveImportRoot(&domain.Client{
 		Qbit: domain.Qbit{
-			SavePath: otherDir,
+			SavePath:     saveDir,
+			DownloadPath: downloadDir,
 		},
 	})
-	require.Error(t, err)
-	require.Equal(t, domain.StatusQbitConfigError, statusCode)
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
+	require.Equal(t, normalizePath(saveDir), root)
 }

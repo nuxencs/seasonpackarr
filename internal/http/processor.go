@@ -432,7 +432,7 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 		return domain.StatusGetClientError, fmt.Errorf("%s: %w", domain.StatusGetClientError, err)
 	}
 
-	statusCode, err := p.validateImportDestination(clientCfg)
+	importRoot, statusCode, err := p.resolveImportRoot(clientCfg)
 	if err != nil {
 		return statusCode, err
 	}
@@ -464,7 +464,7 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 	}
 
 	successfulEpMatch := false
-	targetPackDir := filepath.Join(clientCfg.PreImportPath, parsedPackName)
+	targetPackDir := filepath.Join(importRoot, parsedPackName)
 	linkedTargets := make(map[string]struct{})
 
 	for _, match := range matches {
@@ -622,27 +622,20 @@ func resolveContentLayout(mode string) (qbittorrent.ContentLayout, bool, error) 
 	}
 }
 
-func (p *processor) validateImportDestination(clientCfg *domain.Client) (domain.StatusCode, error) {
-	expected := normalizePath(clientCfg.PreImportPath)
-
+func (p *processor) resolveImportRoot(clientCfg *domain.Client) (string, domain.StatusCode, error) {
 	if clientCfg.Qbit.SavePath != "" {
-		actual := normalizePath(clientCfg.Qbit.SavePath)
-		if actual != expected {
-			return domain.StatusQbitConfigError, fmt.Errorf("%s: qbit.savePath(%s) must match preImportPath(%s)",
-				domain.StatusQbitConfigError, clientCfg.Qbit.SavePath, clientCfg.PreImportPath)
-		}
-		return domain.StatusSuccessfulHardlink, nil
+		return normalizePath(clientCfg.Qbit.SavePath), domain.StatusSuccessfulHardlink, nil
 	}
 
 	categories, err := p.req.Client.GetCategories()
 	if err != nil {
-		return domain.StatusQbitConfigError, fmt.Errorf("%s: could not read qbittorrent categories: %w",
+		return "", domain.StatusQbitConfigError, fmt.Errorf("%s: could not read qbittorrent categories: %w",
 			domain.StatusQbitConfigError, err)
 	}
 
 	category, ok := categories[clientCfg.Qbit.Category]
 	if !ok {
-		return domain.StatusQbitConfigError, fmt.Errorf("%s: qbit category %q was not found in qbittorrent",
+		return "", domain.StatusQbitConfigError, fmt.Errorf("%s: qbit category %q was not found in qbittorrent",
 			domain.StatusQbitConfigError, clientCfg.Qbit.Category)
 	}
 
@@ -650,7 +643,7 @@ func (p *processor) validateImportDestination(clientCfg *domain.Client) (domain.
 	if actualPath == "" || !filepath.IsAbs(filepath.FromSlash(actualPath)) {
 		defaultSavePath, err := p.req.Client.GetDefaultSavePath()
 		if err != nil {
-			return domain.StatusQbitConfigError, fmt.Errorf("%s: could not read qbittorrent default save path: %w",
+			return "", domain.StatusQbitConfigError, fmt.Errorf("%s: could not read qbittorrent default save path: %w",
 				domain.StatusQbitConfigError, err)
 		}
 		if actualPath == "" {
@@ -659,14 +652,12 @@ func (p *processor) validateImportDestination(clientCfg *domain.Client) (domain.
 			actualPath = filepath.Join(defaultSavePath, actualPath)
 		}
 	}
-
-	actual := normalizePath(actualPath)
-	if actual != expected {
-		return domain.StatusQbitConfigError, fmt.Errorf("%s: qbittorrent destination(%s) must match preImportPath(%s)",
-			domain.StatusQbitConfigError, actualPath, clientCfg.PreImportPath)
+	if strings.TrimSpace(actualPath) == "" {
+		return "", domain.StatusQbitConfigError, fmt.Errorf("%s: resolved qbittorrent destination is empty",
+			domain.StatusQbitConfigError)
 	}
 
-	return domain.StatusSuccessfulHardlink, nil
+	return normalizePath(actualPath), domain.StatusSuccessfulHardlink, nil
 }
 
 func normalizePath(path string) string {

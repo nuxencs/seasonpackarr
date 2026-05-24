@@ -16,7 +16,7 @@ Describe the normal path from webhook hit to hardlink creation.
 8. Smart mode may consult metadata providers to decide whether a grab is worthwhile.
 9. `POST /api/parse` decodes torrent contents to derive stable target naming.
 10. Matching episode files are hardlinked into the season-pack target directory.
-11. `POST /api/parse` validates that the effective qBittorrent destination matches `preImportPath`, imports the season pack using explicit overrides only, rechecks if qBittorrent reports missing files, and resumes the torrent.
+11. `POST /api/parse` resolves the effective qBittorrent destination, hardlinks into that path, imports the season pack using explicit overrides only, rechecks if qBittorrent reports missing files, and resumes the torrent.
 12. Logs and notifications communicate outcome.
 
 ## Failure Classes

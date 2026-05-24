@@ -51,26 +51,17 @@ clients:
     #
     apiKey: ""
 
-    # Pre Import Path
-    # Hardlink target path seasonpackarr writes into before qBittorrent rechecks the pack.
-    # Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
-    #
-    # Default: ""
-    #
-    preImportPath: ""
-
     # qBittorrent Import Policy
     # seasonpackarr will add the parsed season pack back to qBittorrent using these settings
     #
     qbit:
       # qBittorrent Category
-      # Required unless savePath is set. Used when seasonpackarr adds the season pack.
-      # If savePath is omitted, the category/default qBittorrent destination must match preImportPath.
+      # Required unless savePath is set. Used to resolve the final hardlink/import destination.
       #
       category: ""
 
       # qBittorrent Save Path
-      # Required unless category is set. Must already exist and must match preImportPath.
+      # Required unless category is set. Must already exist. Used as the final hardlink/import destination.
       #
       savePath: ""
 
@@ -117,8 +108,6 @@ clients:
   #  password: "example"
   #
   #  apiKey: ""
-  #
-  #  preImportPath: ""
   #
   #  qbit:
   #    category: "tv-hd"
