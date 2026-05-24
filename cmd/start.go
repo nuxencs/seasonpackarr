@@ -31,10 +31,6 @@ var startCmd = &cobra.Command{
 		// init new logger
 		log := logger.New(cfg.Config)
 
-		if err := cfg.UpdateConfig(); err != nil {
-			log.Error().Err(err).Msgf("error updating config")
-		}
-
 		// init dynamic config
 		cfg.DynamicReload(log)
 
