@@ -9,6 +9,76 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 )
 
+func TestBuildTransmissionURL(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		client  *domain.Client
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "empty host",
+			client:  &domain.Client{Host: ""},
+			wantErr: true,
+		},
+		{
+			name:   "bare hostname appends rpc path",
+			client: &domain.Client{Host: "localhost"},
+			want:   "http://localhost/transmission/rpc",
+		},
+		{
+			name:   "bare hostname with port field",
+			client: &domain.Client{Host: "localhost", Port: 9091},
+			want:   "http://localhost:9091/transmission/rpc",
+		},
+		{
+			name:   "hostname with http scheme",
+			client: &domain.Client{Host: "http://myhost"},
+			want:   "http://myhost/transmission/rpc",
+		},
+		{
+			name:   "hostname with https scheme",
+			client: &domain.Client{Host: "https://myhost"},
+			want:   "https://myhost/transmission/rpc",
+		},
+		{
+			name:   "ip address with port field",
+			client: &domain.Client{Host: "192.168.1.1", Port: 9091},
+			want:   "http://192.168.1.1:9091/transmission/rpc",
+		},
+		{
+			name:   "existing port overridden by port field",
+			client: &domain.Client{Host: "http://localhost:8080", Port: 9091},
+			want:   "http://localhost:9091/transmission/rpc",
+		},
+		{
+			name:   "zero port field does not append port",
+			client: &domain.Client{Host: "http://localhost", Port: 0},
+			want:   "http://localhost/transmission/rpc",
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := buildTransmissionURL(tt.client)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("buildTransmissionURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNew_unknownType(t *testing.T) {
 	t.Parallel()
 
