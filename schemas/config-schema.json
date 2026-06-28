@@ -80,6 +80,11 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["qbittorrent", "transmission"],
+          "default": "qbittorrent"
+        },
         "host": {
           "type": "string",
           "default": "127.0.0.1"

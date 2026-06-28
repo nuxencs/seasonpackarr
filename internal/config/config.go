@@ -48,38 +48,45 @@ clients:
   # Default: default
   #
   default:
-    # qBittorrent Hostname / IP
+    # Client type
+    # Supported values: "qbittorrent" (default), "transmission"
+    #
+    # Default: "qbittorrent"
+    #
+    type: "qbittorrent"
+
+    # Hostname / IP
     #
     # Default: "127.0.0.1"
     #
     host: "127.0.0.1"
 
-    # qBittorrent Port
+    # Port
     #
     # Default: 8080
     #
     port: 8080
 
-    # qBittorrent Username
+    # Username
     #
     # Default: "admin"
     #
     username: "admin"
 
-    # qBittorrent Password
+    # Password
     #
     # Default: "adminadmin"
     #
     password: "adminadmin"
 
-    # qBittorrent API Key
+    # API Key (qBittorrent only)
     # Requires qBittorrent 5.2.0 or newer. If set, apiKey is used instead of username/password authentication.
     #
     # Optional
     #
     apiKey: ""
 
-    # Pre Import Path of qBittorrent for Sonarr
+    # Pre Import Path for Sonarr
     # Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
     #
     # Default: ""
@@ -90,6 +97,8 @@ clients:
   # If you want to define even more clients just copy this segment and adjust the values accordingly
   #
   #multi_client_example:
+  #  type: "qbittorrent"
+  #
   #  host: "127.0.0.1"
   #
   #  port: 9090
@@ -99,6 +108,21 @@ clients:
   #  password: "example"
   #
   #  apiKey: ""
+  #
+  #  preImportPath: ""
+
+  # Example Transmission client configuration
+  #
+  #transmission_example:
+  #  type: "transmission"
+  #
+  #  host: "127.0.0.1"
+  #
+  #  port: 9091
+  #
+  #  username: ""
+  #
+  #  password: ""
   #
   #  preImportPath: ""
 
@@ -349,6 +373,10 @@ func New(configPath string, version string) *AppConfig {
 	c.loadFromEnv()
 
 	for clientName, client := range c.Config.Clients {
+		if client.Type != "" && client.Type != "qbittorrent" && client.Type != "transmission" {
+			log.Fatalf("type for client %q is invalid: %q — must be \"qbittorrent\" or \"transmission\"", clientName, client.Type)
+		}
+
 		if client.PreImportPath == "" {
 			log.Fatalf("preImportPath for client %q can't be empty, please provide a valid path to the directory you want seasonpacks to be hardlinked to", clientName)
 		}
@@ -525,6 +553,8 @@ func (c *AppConfig) loadFromEnv() {
 						}
 
 						switch setting {
+						case "TYPE":
+							c.Config.Clients[clientName].Type = envValue
 						case "HOST":
 							c.Config.Clients[clientName].Host = envValue
 						case "PORT":
