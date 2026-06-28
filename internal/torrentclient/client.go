@@ -35,7 +35,7 @@ func New(client *domain.Client) (TorrentClient, error) {
 	case "", "qbittorrent":
 		return newQbitClient(client)
 	case "transmission":
-		return nil, errors.New("transmission adapter not yet implemented")
+		return newTransmissionClient(client)
 	default:
 		return nil, fmt.Errorf("unknown client type: %s", client.Type)
 	}
