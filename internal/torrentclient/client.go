@@ -33,7 +33,7 @@ type TorrentClient interface {
 func New(client *domain.Client) (TorrentClient, error) {
 	switch client.Type {
 	case "", "qbittorrent":
-		return nil, errors.New("qbittorrent adapter not yet implemented")
+		return newQbitClient(client)
 	case "transmission":
 		return nil, errors.New("transmission adapter not yet implemented")
 	default:
