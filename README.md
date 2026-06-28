@@ -124,15 +124,26 @@ will need to adjust the created config file to your needs and start the containe
 You can configure a decent part of the features seasonpackarr provides. I will explain the most important ones here in
 more detail.
 
-### qBittorrent Client Authentication
+### Torrent Client Configuration
 
-Each entry under `clients` connects seasonpackarr to one qBittorrent instance. You can authenticate with the traditional
-`username` and `password` fields, or with `apiKey` when using qBittorrent 5.2.0 or newer. If `apiKey` is set,
-seasonpackarr uses qBittorrent API key authentication for that client instead of username/password login.
+Each entry under `clients` connects seasonpackarr to one torrent client instance. Set the `type` field to either
+`"qbittorrent"` (default) or `"transmission"` to select the client type. The `preImportPath` field works identically
+for both client types.
+
+#### qBittorrent
+
+For qBittorrent clients, you can authenticate with the traditional `username` and `password` fields, or with `apiKey`
+when using qBittorrent 5.2.0 or newer. If `apiKey` is set, seasonpackarr uses qBittorrent API key authentication for
+that client instead of username/password login.
 
 If you use [qui's reverse proxy](https://getqui.com/docs/features/reverse-proxy/), set the client `host` to the full
 proxy URL, for example `http://localhost:7476/proxy/abc123...`, and leave `username`, `password`, and `apiKey` empty.
 qui keeps the qBittorrent session and handles authentication for proxied clients.
+
+#### Transmission
+
+For Transmission clients, set `type: "transmission"` and provide `username` and `password` for the Transmission RPC
+interface (no `apiKey` field). The default port is `9091`.
 
 ### Smart Mode
 
@@ -194,7 +205,7 @@ renamed season packs and episodes can get matched.
 
 ## autobrr Filter setup
 
-Support for multiple Sonarr and qBittorrent instances with different pre import directories was added with v0.4.0, so
+Support for multiple Sonarr and torrent client instances with different pre import directories was added with v0.4.0, so
 you will need to run multiple instances of seasonpackarr and create multiple filters to achieve the same functionality
 in lower versions. If you are running v0.4.0 or above you just need to set up your filters according to [External Filters](#external-filters).
 The following is a simple example filter that only allows 1080p season packs to be matched.
@@ -244,7 +255,7 @@ to look like this:
 }
 ```
 
-Replace the `clientname` value, in this case `default`, with the name you gave your desired qBittorrent client in your
+Replace the `clientname` value, in this case `default`, with the name you gave your desired torrent client in your
 config under the `clients` section. If you don't specify a `clientname` in the JSON payload, seasonpackarr will try to
 use the `default` client; if you renamed or removed the `default` client the request will fail.
 
@@ -280,11 +291,11 @@ the torrent file for the season pack folder name to ensure the creation of the c
 functionality by setting `parseTorrentFile` to `true` in your config file.
 
 If you choose to enable this feature, first follow the instructions in the [Webhook](#webhook) section, and then proceed
-to the [qBittorrent](#qbittorrent) section. If you leave this feature disabled, you can skip the Webhook section and go
-straight to the qBittorrent section.
+to your torrent client section below. If you leave this feature disabled, you can skip the Webhook section and go
+straight to your torrent client section below.
 
 > [!WARNING]
-> If you enable that option you need to make sure that the Webhook action is above the qBittorrent action, otherwise the
+> If you enable that option you need to make sure that the Webhook action is above the torrent client action, otherwise the
 > feature won't work correctly.
 
 #### Webhook
@@ -321,6 +332,24 @@ Depending on whether you intend to only send to qBittorrent or also integrate wi
 
 Last but not least, under `Rules`, make sure that `Skip Hash Check` remains disabled. This precaution prevents torrents
 added by seasonpackarr from causing errors in your qBittorrent client when some episodes of a season are missing.
+
+> [!WARNING]
+> If you enable that option regardless, you will most likely have to deal with errored torrents, which would require you
+> to manually trigger a recheck on them to fix the issue.
+
+#### Transmission
+
+Navigate to the `Actions` tab, click on `Add new` and change the `Action type` of the newly added action to
+`Transmission`. Depending on whether you intend to only send to Transmission or also integrate with Sonarr, you'll need
+to fill out different fields.
+
+1. **Only Transmission**: Fill in the `Save Path` field with the directory where your torrent data resides, for instance
+   `/data/torrents`.
+2. **Sonarr Integration**: Fill in the `Save Path` field with the directory that Sonarr monitors for Transmission
+   downloads.
+
+Last but not least, under `Rules`, make sure that `Skip Hash Check` remains disabled. This precaution prevents torrents
+added by seasonpackarr from causing errors in your Transmission client when some episodes of a season are missing.
 
 > [!WARNING]
 > If you enable that option regardless, you will most likely have to deal with errored torrents, which would require you

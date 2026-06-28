@@ -1,12 +1,15 @@
 seasonpackarr configuration surface reference
 
 - config contract spans internal defaults, config.yaml, runtime loading, and schemas/config-schema.json
-- clients can point host directly at a qBittorrent Web API endpoint or at a qui reverse-proxy URL; with qui proxy auth, leave username/password/apiKey empty
+- clients support two types via clients.<name>.type: "qbittorrent" (default) or "transmission"
+- qBittorrent clients can point host at a qui reverse-proxy URL; with qui proxy auth, leave username/password/apiKey empty
+- Transmission clients use username/password only (no apiKey); default port 9091; protocol (legacy vs JSON-RPC 2.0) is auto-negotiated
+- preImportPath works identically for both client types
 - high-signal settings:
   - host
   - port
   - apiToken
-  - clients.<name>.host/port/username/password/apiKey/preImportPath
+  - clients.<name>.type/host/port/username/password/apiKey/preImportPath
   - smartMode
   - smartModeThreshold
   - parseTorrentFile

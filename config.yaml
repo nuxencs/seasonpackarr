@@ -20,25 +20,34 @@ clients:
   # Default: default
   #
   default:
-    # qBittorrent Hostname / IP
+    # Client type
+    # Supported values: "qbittorrent", "transmission"
+    #
+    # Default: "qbittorrent"
+    #
+    type: "qbittorrent"
+
+    # Hostname / IP
     #
     # Default: "127.0.0.1"
     #
     host: "127.0.0.1"
 
-    # qBittorrent Port
+    # Port
+    # qBittorrent default: 8080
+    # Transmission default: 9091
     #
     # Default: 8080
     #
     port: 8080
 
-    # qBittorrent Username
+    # Username
     #
     # Default: "admin"
     #
     username: "admin"
 
-    # qBittorrent Password
+    # Password
     #
     # Default: "adminadmin"
     #
@@ -46,12 +55,13 @@ clients:
 
     # qBittorrent API Key
     # Requires qBittorrent 5.2.0 or newer. If set, apiKey is used instead of username/password authentication.
+    # Not used for Transmission clients.
     #
     # Optional
     #
     apiKey: ""
 
-    # Pre Import Path of qBittorrent for Sonarr
+    # Pre Import Path for Sonarr
     # Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
     #
     # Default: ""
@@ -62,6 +72,8 @@ clients:
   # If you want to define even more clients just copy this segment and adjust the values accordingly
   #
   #multi_client_example:
+  #  type: "qbittorrent"
+  #
   #  host: "127.0.0.1"
   #
   #  port: 9090
@@ -71,6 +83,22 @@ clients:
   #  password: "example"
   #
   #  apiKey: ""
+  #
+  #  preImportPath: ""
+
+  # Example Transmission client configuration
+  # The protocol version (legacy vs. JSON-RPC 2.0) is auto-negotiated — no extra config needed.
+  #
+  #transmission_example:
+  #  type: "transmission"
+  #
+  #  host: "127.0.0.1"
+  #
+  #  port: 9091
+  #
+  #  username: ""
+  #
+  #  password: ""
   #
   #  preImportPath: ""
 
