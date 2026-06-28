@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
@@ -24,7 +25,7 @@ type protoKind int
 
 const (
 	protoLegacy   protoKind = iota
-	protoJSONRPC2           // reserved for Step 4
+	protoJSONRPC2           // Transmission 4.1+ JSON-RPC 2.0 / snake_case
 )
 
 type transmissionClient struct {
@@ -33,6 +34,7 @@ type transmissionClient struct {
 	pass      string
 	sessionID string
 	proto     protoKind
+	idCounter uint64
 	http      *http.Client
 	mu        sync.Mutex
 }
@@ -50,9 +52,16 @@ func newTransmissionClient(client *domain.Client) (*transmissionClient, error) {
 		http: &http.Client{Timeout: 30 * time.Second},
 	}
 
-	// Ping to fail fast on bad host/auth, mirrors qBit's eager Login().
-	if err := tc.doLegacy("session-get", nil, nil); err != nil {
+	// Ping to fail fast on bad host/auth and negotiate protocol version.
+	var sessionResp struct {
+		RPCVersionSemver string `json:"rpc-version-semver"`
+	}
+	if err := tc.doLegacy("session-get", nil, &sessionResp); err != nil {
 		return nil, errors.Wrap(err, "failed to connect to transmission")
+	}
+
+	if majorVersion(sessionResp.RPCVersionSemver) >= 6 {
+		tc.proto = protoJSONRPC2
 	}
 
 	return tc, nil
@@ -79,6 +88,20 @@ func buildTransmissionURL(client *domain.Client) (string, error) {
 
 	parsed.Path = "/transmission/rpc"
 	return parsed.String(), nil
+}
+
+// majorVersion parses the major component from a semver string (e.g. "6.0.0" → 6).
+// Returns 0 on any parse failure so unknown versions fall back to legacy.
+func majorVersion(semver string) int {
+	if semver == "" {
+		return 0
+	}
+	major, _, _ := strings.Cut(semver, ".")
+	n, err := strconv.Atoi(major)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 func (t *transmissionClient) post(body []byte, out any) error {
@@ -184,6 +207,48 @@ func (t *transmissionClient) doLegacy(method string, args any, out any) error {
 	return nil
 }
 
+type jsonrpcEnvelope struct {
+	JSONRPC string `json:"jsonrpc"`
+	ID      uint64 `json:"id"`
+	Method  string `json:"method"`
+	Params  any    `json:"params,omitempty"`
+}
+
+type jsonrpcResponse struct {
+	Result json.RawMessage `json:"result"`
+	Error  *struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+func (t *transmissionClient) doJSONRPC(method string, params any, out any) error {
+	id := atomic.AddUint64(&t.idCounter, 1)
+	env := jsonrpcEnvelope{JSONRPC: "2.0", ID: id, Method: method, Params: params}
+
+	body, err := json.Marshal(env)
+	if err != nil {
+		return errors.Wrap(err, "failed to marshal request")
+	}
+
+	var raw jsonrpcResponse
+	if err := t.post(body, &raw); err != nil {
+		return err
+	}
+
+	if raw.Error != nil {
+		return fmt.Errorf("transmission rpc: %s (code %d)", raw.Error.Message, raw.Error.Code)
+	}
+
+	if out != nil && raw.Result != nil {
+		if err := json.Unmarshal(raw.Result, out); err != nil {
+			return errors.Wrap(err, "failed to decode result")
+		}
+	}
+
+	return nil
+}
+
 type legacyTorrentsArgs struct {
 	Fields []string `json:"fields"`
 	IDs    []string `json:"ids,omitempty"`
@@ -206,7 +271,49 @@ type legacyFilesResp struct {
 	} `json:"torrents"`
 }
 
+type jsonrpcTorrentsParams struct {
+	Fields []string `json:"fields"`
+	IDs    []string `json:"ids,omitempty"`
+}
+
+type jsonrpcTorrentsResp struct {
+	Torrents []struct {
+		HashString  string `json:"hash_string"`
+		Name        string `json:"name"`
+		DownloadDir string `json:"download_dir"`
+	} `json:"torrents"`
+}
+
+type jsonrpcFilesResp struct {
+	Torrents []struct {
+		Files []struct {
+			Name   string `json:"name"`
+			Length int64  `json:"length"`
+		} `json:"files"`
+	} `json:"torrents"`
+}
+
 func (t *transmissionClient) GetTorrents() ([]Torrent, error) {
+	if t.proto == protoJSONRPC2 {
+		params := jsonrpcTorrentsParams{Fields: []string{"hash_string", "name", "download_dir"}}
+
+		var resp jsonrpcTorrentsResp
+		if err := t.doJSONRPC("torrent_get", params, &resp); err != nil {
+			return nil, errors.Wrap(err, "failed to get torrents")
+		}
+
+		torrents := make([]Torrent, 0, len(resp.Torrents))
+		for _, tr := range resp.Torrents {
+			torrents = append(torrents, Torrent{
+				Hash:     tr.HashString,
+				Name:     tr.Name,
+				SavePath: tr.DownloadDir,
+			})
+		}
+
+		return torrents, nil
+	}
+
 	args := legacyTorrentsArgs{Fields: []string{"hashString", "name", "downloadDir"}}
 
 	var resp legacyTorrentsResp
@@ -227,6 +334,33 @@ func (t *transmissionClient) GetTorrents() ([]Torrent, error) {
 }
 
 func (t *transmissionClient) GetFiles(hash string) ([]File, error) {
+	if t.proto == protoJSONRPC2 {
+		params := jsonrpcTorrentsParams{
+			IDs:    []string{hash},
+			Fields: []string{"files"},
+		}
+
+		var resp jsonrpcFilesResp
+		if err := t.doJSONRPC("torrent_get", params, &resp); err != nil {
+			return nil, errors.Wrap(err, "failed to get files")
+		}
+
+		if len(resp.Torrents) == 0 {
+			return nil, fmt.Errorf("transmission: torrent not found: %s", hash)
+		}
+
+		rawFiles := resp.Torrents[0].Files
+		files := make([]File, 0, len(rawFiles))
+		for _, f := range rawFiles {
+			files = append(files, File{
+				Name: f.Name,
+				Size: f.Length,
+			})
+		}
+
+		return files, nil
+	}
+
 	args := legacyTorrentsArgs{
 		IDs:    []string{hash},
 		Fields: []string{"files"},
