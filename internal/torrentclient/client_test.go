@@ -92,6 +92,21 @@ func TestBuildHost(t *testing.T) {
 			client: &domain.Client{Host: "http://192.168.1.1:9090"},
 			want:   "http://192.168.1.1:9090",
 		},
+		{
+			name:   "zero port field does not append port",
+			client: &domain.Client{Host: "http://localhost", Port: 0},
+			want:   "http://localhost",
+		},
+		{
+			name:   "host with path preserved",
+			client: &domain.Client{Host: "http://localhost:8080/123456abcdef"},
+			want:   "http://localhost:8080/123456abcdef",
+		},
+		{
+			name:   "host with path and port field override",
+			client: &domain.Client{Host: "http://localhost:8080/123456abcdef", Port: 9090},
+			want:   "http://localhost:9090/123456abcdef",
+		},
 	}
 
 	for _, tt := range tests {

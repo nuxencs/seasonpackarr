@@ -6,11 +6,7 @@ package http
 import (
 	"encoding/json"
 	"fmt"
-	"net"
-	"net/url"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -22,10 +18,10 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/metadata"
 	"github.com/nuxencs/seasonpackarr/internal/release"
 	"github.com/nuxencs/seasonpackarr/internal/slices"
+	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 	"github.com/nuxencs/seasonpackarr/pkg/errors"
 
-	"github.com/autobrr/go-qbittorrent"
 	"github.com/gin-gonic/gin"
 	"github.com/moistari/rls"
 	"github.com/puzpuzpuz/xsync/v3"
@@ -43,12 +39,12 @@ type processor struct {
 type request struct {
 	Name       string
 	Torrent    json.RawMessage
-	Client     *qbittorrent.Client
+	Client     torrentclient.TorrentClient
 	ClientName string
 }
 
 type entry struct {
-	torrent qbittorrent.Torrent
+	torrent torrentclient.Torrent
 	release rls.Release
 }
 
@@ -66,7 +62,7 @@ type matchInfo struct {
 }
 
 var (
-	clientMap = xsync.NewMapOf[string, *qbittorrent.Client]()
+	clientMap = xsync.NewMapOf[string, torrentclient.TorrentClient]()
 	matchMap  = xsync.NewMapOf[string, []matchInfo]()
 	entryMap  = xsync.NewMapOf[string, *entryCache]()
 )
@@ -83,22 +79,10 @@ func newProcessor(log logger.Logger, config *config.AppConfig, notification doma
 func (p *processor) getClient(client *domain.Client, clientName string) error {
 	c, ok := clientMap.Load(clientName)
 	if !ok {
-		host, err := buildHost(client)
+		var err error
+		c, err = torrentclient.New(client)
 		if err != nil {
-			return errors.Wrap(err, "failed to build host")
-		}
-
-		clientCfg := qbittorrent.Config{
-			Host:     host,
-			Username: client.Username,
-			Password: client.Password,
-			APIKey:   client.APIKey,
-		}
-
-		c = qbittorrent.NewClient(clientCfg)
-
-		if err := c.Login(); err != nil {
-			return errors.Wrap(err, "failed to login to qbittorrent")
+			return errors.Wrap(err, "failed to create torrent client")
 		}
 
 		clientMap.Store(clientName, c)
@@ -134,7 +118,7 @@ func (p *processor) getAllTorrents(clientName string) (map[string][]entry, error
 		return entries.entriesMap, nil
 	}
 
-	ts, err := p.req.Client.GetTorrents(qbittorrent.TorrentFilterOptions{})
+	ts, err := p.req.Client.GetTorrents()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get torrents")
 	}
@@ -158,14 +142,14 @@ func (p *processor) getAllTorrents(clientName string) (map[string][]entry, error
 }
 
 func (p *processor) getFiles(hash string) (string, int64, error) {
-	torrentFiles, err := p.req.Client.GetFilesInformation(hash)
+	torrentFiles, err := p.req.Client.GetFiles(hash)
 	if err != nil {
 		return "", 0, err
 	}
 
 	var fileName string
 	var size int64
-	for _, f := range *torrentFiles {
+	for _, f := range torrentFiles {
 		if !release.IsValidEpisodeFile(f.Name) {
 			continue
 		}
@@ -515,26 +499,4 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 	}
 
 	return domain.StatusSuccessfulHardlink, nil
-}
-
-func buildHost(client *domain.Client) (string, error) {
-	if len(client.Host) == 0 {
-		return "", errors.New("host is required")
-	}
-
-	host := client.Host
-	if !strings.Contains(host, "://") {
-		host = "http://" + host
-	}
-
-	parsedURL, err := url.Parse(host)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to parse host")
-	}
-
-	if client.Port != 0 {
-		parsedURL.Host = net.JoinHostPort(parsedURL.Hostname(), strconv.Itoa(client.Port))
-	}
-
-	return parsedURL.String(), nil
 }
