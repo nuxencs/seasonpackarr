@@ -14,17 +14,35 @@ import (
 	"github.com/nuxencs/seasonpackarr/pkg/errors"
 )
 
+// Torrent is the neutral view of a torrent shared across client implementations.
+//
+// SavePath MUST be the absolute on-disk directory the torrent's content was
+// downloaded into. Together with File.Name it forms the hardlink source path
+// (see TorrentClient).
 type Torrent struct {
 	Hash     string
 	Name     string
 	SavePath string
 }
 
+// File is the neutral view of a single file within a torrent.
+//
+// Name MUST be the file path relative to the owning Torrent.SavePath, including
+// the torrent's root folder (e.g. "Show.S01/Show.S01E01.mkv" for a multi-file
+// torrent). This is load-bearing: the processor hardlinks
+// filepath.Join(Torrent.SavePath, File.Name), so returning a bare basename here
+// would silently break hardlinking.
 type File struct {
 	Name string
 	Size int64
 }
 
+// TorrentClient is the minimal surface the processor needs from a torrent client.
+//
+// Contract for implementations: the values returned must satisfy
+// filepath.Join(Torrent.SavePath, File.Name) == the real absolute on-disk path
+// of the file, so it can be used directly as a hardlink source. The hash
+// returned by GetTorrents must be accepted as-is by GetFiles.
 type TorrentClient interface {
 	GetTorrents() ([]Torrent, error)
 	GetFiles(hash string) ([]File, error)
