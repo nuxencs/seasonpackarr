@@ -120,7 +120,7 @@ func (p *processor) getAllTorrents(clientName string) (map[string][]entry, error
 
 	ts, err := p.req.Client.GetTorrents()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get torrents")
+		return nil, err
 	}
 
 	after := time.Now()
