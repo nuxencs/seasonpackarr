@@ -82,7 +82,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["qbittorrent", "transmission"],
+          "enum": ["", "qbittorrent", "transmission"],
           "default": "qbittorrent"
         },
         "host": {
