@@ -57,9 +57,18 @@ func TestBuildTransmissionURL(t *testing.T) {
 			client: &domain.Client{Host: "http://localhost", Port: 0},
 			want:   "http://localhost/transmission/rpc",
 		},
+		{
+			name:   "credentials embedded as user info",
+			client: &domain.Client{Host: "localhost", Port: 9091, Username: "admin", Password: "secret"},
+			want:   "http://admin:secret@localhost:9091/transmission/rpc",
+		},
+		{
+			name:   "username only still embeds user info",
+			client: &domain.Client{Host: "localhost", Username: "admin"},
+			want:   "http://admin:@localhost/transmission/rpc",
+		},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got, err := buildTransmissionURL(tt.client)
@@ -72,8 +81,8 @@ func TestBuildTransmissionURL(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if got != tt.want {
-				t.Errorf("buildTransmissionURL() = %q, want %q", got, tt.want)
+			if got.String() != tt.want {
+				t.Errorf("buildTransmissionURL() = %q, want %q", got.String(), tt.want)
 			}
 		})
 	}

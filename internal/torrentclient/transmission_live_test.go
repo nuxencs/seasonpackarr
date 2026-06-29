@@ -31,8 +31,6 @@ func TestTransmissionLive(t *testing.T) {
 		t.Fatalf("newTransmissionClient: %v", err)
 	}
 
-	t.Logf("negotiated protocol: %v", c.proto)
-
 	torrents, err := c.GetTorrents()
 	if err != nil {
 		t.Fatalf("GetTorrents: %v", err)
