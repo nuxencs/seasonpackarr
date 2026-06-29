@@ -143,7 +143,8 @@ qui keeps the qBittorrent session and handles authentication for proxied clients
 #### Transmission
 
 For Transmission clients, set `type: "transmission"` and provide `username` and `password` for the Transmission RPC
-interface (no `apiKey` field). The default port is `9091`.
+interface (no `apiKey` field). Transmission listens on port `9091` by default, so set `port: 9091` (seasonpackarr does
+not assume a port if it is left unset).
 
 ### Smart Mode
 

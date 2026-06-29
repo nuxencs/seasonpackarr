@@ -21,7 +21,7 @@ clients:
   #
   default:
     # Client type
-    # Supported values: "qbittorrent", "transmission"
+    # Supported values: "qbittorrent" (default), "transmission"
     #
     # Default: "qbittorrent"
     #
@@ -34,8 +34,7 @@ clients:
     host: "127.0.0.1"
 
     # Port
-    # qBittorrent default: 8080
-    # Transmission default: 9091
+    # qBittorrent listens on 8080 by default, Transmission on 9091
     #
     # Default: 8080
     #
@@ -53,9 +52,8 @@ clients:
     #
     password: "adminadmin"
 
-    # qBittorrent API Key
+    # API Key (qBittorrent only)
     # Requires qBittorrent 5.2.0 or newer. If set, apiKey is used instead of username/password authentication.
-    # Not used for Transmission clients.
     #
     # Optional
     #
@@ -87,7 +85,7 @@ clients:
   #  preImportPath: ""
 
   # Example Transmission client configuration
-  # The protocol version (legacy vs. JSON-RPC 2.0) is auto-negotiated — no extra config needed.
+  # Transmission listens on port 9091 by default, so set the port accordingly.
   #
   #transmission_example:
   #  type: "transmission"

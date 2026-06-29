@@ -62,6 +62,7 @@ clients:
     host: "127.0.0.1"
 
     # Port
+    # qBittorrent listens on 8080 by default, Transmission on 9091
     #
     # Default: 8080
     #
@@ -112,6 +113,7 @@ clients:
   #  preImportPath: ""
 
   # Example Transmission client configuration
+  # Transmission listens on port 9091 by default, so set the port accordingly.
   #
   #transmission_example:
   #  type: "transmission"
