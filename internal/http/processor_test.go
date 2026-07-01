@@ -4,110 +4,122 @@
 package http
 
 import (
+	"errors"
+	"path/filepath"
 	"testing"
 
-	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 )
 
-func TestBuildHost(t *testing.T) {
-	t.Parallel()
+// mockTorrentClient is a configurable in-memory torrentclient.TorrentClient for
+// exercising the processor without a live torrent client.
+type mockTorrentClient struct {
+	torrents    []torrentclient.Torrent
+	torrentsErr error
+	files       []torrentclient.File
+	filesErr    error
+	gotHash     string
+}
 
-	tests := []struct {
-		name    string
-		client  *domain.Client
-		want    string
-		wantErr bool
-	}{
-		{
-			name:    "empty host",
-			client:  &domain.Client{Host: ""},
-			want:    "",
-			wantErr: true,
+func (m *mockTorrentClient) GetTorrents() ([]torrentclient.Torrent, error) {
+	return m.torrents, m.torrentsErr
+}
+
+func (m *mockTorrentClient) GetFiles(hash string) ([]torrentclient.File, error) {
+	m.gotHash = hash
+	return m.files, m.filesErr
+}
+
+func newTestProcessor(client torrentclient.TorrentClient) *processor {
+	return &processor{req: &request{Client: client}}
+}
+
+// TestTorrentClientPathContract locks in the load-bearing contract documented on
+// torrentclient.TorrentClient: the hardlink source the processor uses is
+// filepath.Join(Torrent.SavePath, <file name from GetFiles>). File names keep
+// their torrent-root-folder prefix and SavePath is the absolute on-disk download
+// dir, so the join is the real file path. A future TorrentClient implementation
+// that returns a bare basename or a non-absolute SavePath would break hardlinking
+// silently — this test fails first.
+func TestTorrentClientPathContract(t *testing.T) {
+	const savePath = "/data/torrents/tv"
+	mock := &mockTorrentClient{
+		torrents: []torrentclient.Torrent{
+			{Hash: "abc123", Name: "Some.Show.S01.1080p", SavePath: savePath},
 		},
-		{
-			name:   "bare hostname",
-			client: &domain.Client{Host: "localhost"},
-			want:   "http://localhost",
-		},
-		{
-			name:   "bare hostname with port field",
-			client: &domain.Client{Host: "localhost", Port: 8080},
-			want:   "http://localhost:8080",
-		},
-		{
-			name:   "hostname with http scheme",
-			client: &domain.Client{Host: "http://localhost"},
-			want:   "http://localhost",
-		},
-		{
-			name:   "hostname with https scheme",
-			client: &domain.Client{Host: "https://myhost"},
-			want:   "https://myhost",
-		},
-		{
-			name:   "hostname with scheme and port field",
-			client: &domain.Client{Host: "https://myhost", Port: 8080},
-			want:   "https://myhost:8080",
-		},
-		{
-			name:   "hostname with existing port and port field override",
-			client: &domain.Client{Host: "http://localhost:9090", Port: 8080},
-			want:   "http://localhost:8080",
-		},
-		{
-			name:   "schemeless host:port string",
-			client: &domain.Client{Host: "localhost:9090"},
-			want:   "http://localhost:9090",
-		},
-		{
-			name:   "schemeless host:port with port field override",
-			client: &domain.Client{Host: "localhost:9090", Port: 8080},
-			want:   "http://localhost:8080",
-		},
-		{
-			name:   "ip address",
-			client: &domain.Client{Host: "192.168.1.1"},
-			want:   "http://192.168.1.1",
-		},
-		{
-			name:   "ip address with port field",
-			client: &domain.Client{Host: "192.168.1.1", Port: 8080},
-			want:   "http://192.168.1.1:8080",
-		},
-		{
-			name:   "scheme with ip and port in host",
-			client: &domain.Client{Host: "http://192.168.1.1:9090"},
-			want:   "http://192.168.1.1:9090",
-		},
-		{
-			name:   "zero port field does not append port",
-			client: &domain.Client{Host: "http://localhost", Port: 0},
-			want:   "http://localhost",
-		},
-		{
-			name:   "host with path preserved",
-			client: &domain.Client{Host: "http://localhost:8080/123456abcdef"},
-			want:   "http://localhost:8080/123456abcdef",
-		},
-		{
-			name:   "host with path and port field override",
-			client: &domain.Client{Host: "http://localhost:8080/123456abcdef", Port: 9090},
-			want:   "http://localhost:9090/123456abcdef",
+		files: []torrentclient.File{
+			{Name: "Some.Show.S01.1080p/Some.Show.S01E01.1080p.mkv", Size: 1_000_000},
 		},
 	}
+	p := newTestProcessor(mock)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+	ts, err := p.req.Client.GetTorrents()
+	if err != nil {
+		t.Fatalf("GetTorrents: %v", err)
+	}
+	if len(ts) != 1 {
+		t.Fatalf("len(torrents) = %d, want 1", len(ts))
+	}
 
-			got, err := buildHost(tt.client)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("buildHost() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("buildHost() = %q, want %q", got, tt.want)
-			}
-		})
+	fileName, size, err := p.getFiles(ts[0].Hash)
+	if err != nil {
+		t.Fatalf("getFiles: %v", err)
+	}
+	if mock.gotHash != "abc123" {
+		t.Errorf("GetFiles called with hash %q, want abc123", mock.gotHash)
+	}
+	if size != 1_000_000 {
+		t.Errorf("size = %d, want 1000000", size)
+	}
+
+	gotSource := filepath.Join(ts[0].SavePath, fileName)
+	const wantSource = "/data/torrents/tv/Some.Show.S01.1080p/Some.Show.S01E01.1080p.mkv"
+	if gotSource != wantSource {
+		t.Errorf("hardlink source = %q, want %q", gotSource, wantSource)
+	}
+}
+
+func TestGetFilesSelectsFirstValidEpisode(t *testing.T) {
+	mock := &mockTorrentClient{
+		files: []torrentclient.File{
+			{Name: "Some.Show.S01/poster.jpg", Size: 50},                  // not a video
+			{Name: "Some.Show.S01/Some.Show.S01E01.mkv", Size: 1_000_000}, // first valid
+			{Name: "Some.Show.S01/Some.Show.S01E02.mkv", Size: 1_100_000},
+		},
+	}
+	p := newTestProcessor(mock)
+
+	fileName, size, err := p.getFiles("h")
+	if err != nil {
+		t.Fatalf("getFiles: %v", err)
+	}
+	if fileName != "Some.Show.S01/Some.Show.S01E01.mkv" {
+		t.Errorf("fileName = %q, want Some.Show.S01/Some.Show.S01E01.mkv", fileName)
+	}
+	if size != 1_000_000 {
+		t.Errorf("size = %d, want 1000000", size)
+	}
+}
+
+func TestGetFilesErrorsWhenNoValidEpisode(t *testing.T) {
+	mock := &mockTorrentClient{
+		files: []torrentclient.File{
+			{Name: "Some.Show.S01/poster.jpg", Size: 50},
+			{Name: "Some.Show.S01/readme.txt", Size: 10},
+		},
+	}
+	p := newTestProcessor(mock)
+
+	if _, _, err := p.getFiles("h"); err == nil {
+		t.Fatal("expected error when no valid episode file is present, got nil")
+	}
+}
+
+func TestGetFilesPropagatesClientError(t *testing.T) {
+	errBoom := errors.New("boom")
+	p := newTestProcessor(&mockTorrentClient{filesErr: errBoom})
+
+	if _, _, err := p.getFiles("h"); !errors.Is(err, errBoom) {
+		t.Fatalf("getFiles error = %v, want it to wrap errBoom", err)
 	}
 }

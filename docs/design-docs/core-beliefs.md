@@ -22,7 +22,7 @@ If a change depends on reasoning that is not obvious from code, capture it in do
 
 ## 6. External Systems Are Real Constraints
 
-autobrr, qBittorrent, TVDB, and TVMaze shape behavior. Integration assumptions should be explicit and easy to re-check.
+autobrr, qBittorrent, Transmission, TVDB, and TVMaze shape behavior. Integration assumptions should be explicit and easy to re-check.
 
 ## 7. Progressive Disclosure Over Exhaustive Dumping
 

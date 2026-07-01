@@ -4,7 +4,7 @@
 
 ## Primary User Job
 
-A user with autobrr, qBittorrent, and TV automation wants season packs to be grabbed without redownloading episodes they already have.
+A user with autobrr, a torrent client (qBittorrent or Transmission), and TV automation wants season packs to be grabbed without redownloading episodes they already have.
 
 ## Product Promise
 
@@ -29,4 +29,4 @@ Prefer work that improves one of:
 2. filesystem safety
 3. config clarity
 4. operator observability
-5. integration confidence with autobrr/qBittorrent
+5. integration confidence with autobrr and supported torrent clients (qBittorrent, Transmission)

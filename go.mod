@@ -10,6 +10,7 @@ require (
 	github.com/gin-contrib/requestid v1.0.5
 	github.com/gin-gonic/gin v1.11.0
 	github.com/google/uuid v1.6.0
+	github.com/hekmon/transmissionrpc/v3 v3.0.0
 	github.com/knadh/koanf/parsers/yaml v1.1.0
 	github.com/knadh/koanf/providers/file v1.2.1
 	github.com/knadh/koanf/v2 v2.3.2
@@ -27,6 +28,8 @@ require (
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/fatih/structs v1.1.0 // indirect
 	github.com/goccy/go-yaml v1.19.1 // indirect
+	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
+	github.com/hekmon/cunits/v2 v2.1.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.58.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
