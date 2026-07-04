@@ -2,14 +2,14 @@
 
 ## System Summary
 
-`seasonpackarr` is a config-driven Go service with a small CLI surface. Its main job: accept autobrr-triggered webhook requests, validate/authenticate them, compare season-pack announcements against already-downloaded episode releases in configured qBittorrent clients, optionally fetch extra metadata or parse torrent contents, then hardlink matched files into the expected season-pack folder.
+`seasonpackarr` is a config-driven Go service with a small CLI surface. Its main job: accept autobrr-triggered webhook requests, validate/authenticate them, compare season-pack announcements against already-downloaded episode releases in configured torrent clients, optionally fetch extra metadata, parse torrent contents, hardlink matched files into the expected season-pack folder, and import the pack into the torrent client.
 
 ## Main Runtime Flow
 
 1. `main.go` calls Cobra commands in `cmd/`.
 2. `cmd/start.go` loads config, logger, notifications, metadata providers, then starts the HTTP server.
 3. `internal/http/server.go` builds `/api/healthz`, `/api/pack`, and `/api/parse`.
-4. `internal/http/processor.go` orchestrates payload decode, auth-adjacent request handling, client inspection, metadata lookups, release matching, and hardlink creation.
+4. `internal/http/processor.go` orchestrates payload decode, auth-adjacent request handling, client inspection, metadata lookups, and release matching; `/api/pack` is match-only, while `/api/parse` resolves the client's import root (`internal/torrentclient` `ImportRoot`), hardlinks matched files, and imports the pack into the torrent client (`Import`). See [docs/design-docs/qbittorrent-import-flow.md](docs/design-docs/qbittorrent-import-flow.md) for the client-side import flow (complete vs partial pack, with diagrams).
 5. `internal/release/` decides whether a client episode and announced season pack are compatible.
 6. `internal/files/` performs the hardlink operation.
 7. `internal/notification/` emits Discord notifications for notable events.
@@ -77,7 +77,7 @@ If a change starts pushing transport concerns into matching logic or file ops, s
 ## External Dependencies
 
 - autobrr webhook integration
-- qBittorrent API access
+- qBittorrent and Transmission API access
 - TVDB API
 - TVMaze API
 - filesystem hardlink support

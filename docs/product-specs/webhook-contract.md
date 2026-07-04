@@ -11,8 +11,8 @@ Requests must include the configured API token. Unauthorized requests are reject
 
 ## Behavioral Intent
 
-- `/api/pack` processes a season-pack announce against existing client data
-- `/api/parse` does the same with torrent-content-aware pathing when torrent bytes or a torrent-derived payload are available
+- `/api/pack` is a pure match gate: it decides whether a season-pack announce matches episodes already in the client and returns a successful match; it has no filesystem side effects and adds nothing to the client
+- `/api/parse` owns the import: it decodes the torrent payload, recomputes the matches, resolves the client's import root, hardlinks matched episodes into the parsed pack folder, and imports the torrent into the client via the per-client `import` policy (add stopped, verify/recheck, then always start once the data checks out)
 
 ## Contract Stability Rules
 
