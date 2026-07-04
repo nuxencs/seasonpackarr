@@ -6,6 +6,7 @@ package config
 
 import (
 	"bytes"
+	"fmt"
 	"io/fs"
 	"log"
 	"os"
@@ -87,12 +88,48 @@ clients:
     #
     apiKey: ""
 
-    # Pre Import Path for Sonarr
-    # Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
+    # Import Policy
+    # Controls how /api/parse re-imports the matched season pack back into the client
+    # after the local episodes have been hardlinked into place.
     #
-    # Default: ""
-    #
-    preImportPath: ""
+    import:
+      # Save Path
+      # Final import destination. Used both as the hardlink root and as the client's save directory.
+      # Optional for qBittorrent (falls back to the category save path, then the default save path)
+      # and for transmission (falls back to the session download dir). When set it must already exist.
+      # A qBittorrent client must configure either savePath or category.
+      #
+      # Default: ""
+      #
+      savePath: ""
+
+      # Tags
+      # Tags (qBittorrent) / labels (transmission) applied to the imported torrent.
+      #
+      # Optional
+      #
+      tags: [ "seasonpackarr" ]
+
+      # Category (qBittorrent only)
+      # Category to add the torrent with. Also used to resolve the import destination when savePath is empty.
+      #
+      # Default: ""
+      #
+      category: ""
+
+      # Download Path (qBittorrent only)
+      # Temporary (incomplete) download path. Never used as the final import destination.
+      #
+      # Optional
+      #
+      # downloadPath: ""
+
+      # Content Layout (qBittorrent only)
+      # Options: "subfolder", "nosubfolder", "original"; empty defers to the qBittorrent default.
+      #
+      # Optional
+      #
+      # contentLayout: "subfolder"
 
   # Below you can find an example on how to define a second qBittorrent client
   # If you want to define even more clients just copy this segment and adjust the values accordingly
@@ -110,10 +147,15 @@ clients:
   #
   #  apiKey: ""
   #
-  #  preImportPath: ""
+  #  import:
+  #    category: "tv-hd"
+  #    savePath: ""
+  #    tags: [ "seasonpackarr" ]
 
   # Example Transmission client configuration
   # Transmission listens on port 9091 by default, so set the port accordingly.
+  # Transmission has no categories or content layout, so configure import.savePath
+  # (or leave it empty to use the session download dir).
   #
   #transmission_example:
   #  type: "transmission"
@@ -126,7 +168,9 @@ clients:
   #
   #  password: ""
   #
-  #  preImportPath: ""
+  #  import:
+  #    savePath: "/data/torrents/tv-hd"
+  #    tags: [ "seasonpackarr" ]
 
 # seasonpackarr logs file
 # If not defined, logs to stdout
@@ -173,13 +217,6 @@ logLevel: "DEBUG"
 # Default: 0.75
 #
 # smartModeThreshold: 0.75
-
-# Parse Torrent File
-# Toggles torrent file parsing to get the correct folder name
-#
-# Default: false
-#
-# parseTorrentFile: false
 
 # Fuzzy Matching
 # You can decide for which criteria the matching should be less strict, e.g. repack status and HDR format
@@ -372,23 +409,104 @@ func New(configPath string, version string) *AppConfig {
 		c.load()
 	}
 
+	if err := validateDeprecatedConfigInputs(c.k, os.LookupEnv); err != nil {
+		log.Fatal(err)
+	}
+
 	c.loadFromEnv()
 
 	for clientName, client := range c.Config.Clients {
-		if client.Type != "" && client.Type != "qbittorrent" && client.Type != "transmission" {
-			log.Fatalf("type for client %q is invalid: %q — must be \"qbittorrent\" or \"transmission\"", clientName, client.Type)
-		}
-
-		if client.PreImportPath == "" {
-			log.Fatalf("preImportPath for client %q can't be empty, please provide a valid path to the directory you want seasonpacks to be hardlinked to", clientName)
-		}
-
-		if _, err := os.Stat(client.PreImportPath); errors.Is(err, fs.ErrNotExist) {
-			log.Fatalf("preImportPath for client %q doesn't exist, please make sure you entered the correct path", clientName)
+		if err := validateClientConfig(clientName, client); err != nil {
+			log.Fatal(err)
 		}
 	}
 
 	return c
+}
+
+const (
+	deprecatedParseTorrentFileKey = "parseTorrentFile"
+	deprecatedParseTorrentFileEnv = "SEASONPACKARR__PARSE_TORRENT_FILE"
+	deprecatedPreImportPathKey    = "preImportPath"
+	deprecatedPreImportPathEnv    = "PREIMPORTPATH"
+)
+
+// validateDeprecatedConfigInputs hard-fails when removed config keys or env vars
+// are still present, so operators are told to migrate instead of silently
+// getting the old behavior. parseTorrentFile and preImportPath were removed:
+// torrent parsing is always on and the import destination now comes from the
+// per-client import policy.
+func validateDeprecatedConfigInputs(k *koanf.Koanf, lookupEnv func(string) (string, bool)) error {
+	if k != nil && k.Exists(deprecatedParseTorrentFileKey) {
+		return fmt.Errorf("deprecated config detected: %s was removed; torrent parsing is always enabled now — remove the key, add the new per-client import section (see the example config / README) and update your autobrr filter to use a single Webhook action",
+			deprecatedParseTorrentFileKey)
+	}
+
+	if lookupEnv != nil {
+		if value, ok := lookupEnv(deprecatedParseTorrentFileEnv); ok && strings.TrimSpace(value) != "" {
+			return fmt.Errorf("deprecated environment variable detected: %s was removed; torrent parsing is always enabled now — remove this env var, add the new per-client import section (see the example config / README) and update your autobrr filter to use a single Webhook action",
+				deprecatedParseTorrentFileEnv)
+		}
+	}
+
+	if k != nil {
+		for _, clientName := range k.MapKeys("clients") {
+			clientPreImportPathKey := fmt.Sprintf("clients.%s.%s", clientName, deprecatedPreImportPathKey)
+			if k.Exists(clientPreImportPathKey) {
+				return fmt.Errorf("deprecated config detected: %s was removed; use import.savePath or import.category as the final destination instead",
+					clientPreImportPathKey)
+			}
+		}
+	}
+
+	if lookupEnv != nil {
+		for _, env := range os.Environ() {
+			envKey, envValue, ok := strings.Cut(env, "=")
+			if !ok || strings.TrimSpace(envValue) == "" {
+				continue
+			}
+			if strings.HasPrefix(envKey, "SEASONPACKARR__CLIENTS_") && strings.HasSuffix(envKey, "_"+deprecatedPreImportPathEnv) {
+				return fmt.Errorf("deprecated environment variable detected: %s was removed; use the import save path/category environment variables instead",
+					envKey)
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateClientConfig enforces the per-client import policy: qBittorrent
+// clients need a category or savePath, transmission clients must not set the
+// qBittorrent-only fields, and any configured local paths must exist.
+func validateClientConfig(clientName string, client *domain.Client) error {
+	if client.Type != "" && client.Type != "qbittorrent" && client.Type != "transmission" {
+		return fmt.Errorf("type for client %q is invalid: %q — must be \"qbittorrent\" or \"transmission\"", clientName, client.Type)
+	}
+
+	imp := client.Import
+	isQbit := client.Type == "" || client.Type == "qbittorrent"
+
+	if isQbit {
+		if imp.Category == "" && imp.SavePath == "" {
+			return fmt.Errorf("client %q must configure import.category or import.savePath", clientName)
+		}
+	} else if imp.Category != "" || imp.DownloadPath != "" || imp.ContentLayout != "" {
+		return fmt.Errorf("client %q (transmission) must not set import.category, import.downloadPath or import.contentLayout — those are qBittorrent only", clientName)
+	}
+
+	if imp.SavePath != "" {
+		if _, err := os.Stat(imp.SavePath); errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("import.savePath for client %q doesn't exist, please make sure you entered the correct path", clientName)
+		}
+	}
+
+	if imp.DownloadPath != "" {
+		if _, err := os.Stat(imp.DownloadPath); errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("import.downloadPath for client %q doesn't exist, please make sure you entered the correct path", clientName)
+		}
+	}
+
+	return nil
 }
 
 func (c *AppConfig) defaults() {
@@ -403,7 +521,6 @@ func (c *AppConfig) defaults() {
 	c.Config.LogMaxBackups = 3
 	c.Config.SmartMode = false
 	c.Config.SmartModeThreshold = 0.75
-	c.Config.ParseTorrentFile = false
 	c.Config.FuzzyMatching = domain.FuzzyMatching{
 		SkipRepackCompare:  false,
 		SimplifyHdrCompare: false,
@@ -501,12 +618,6 @@ func (c *AppConfig) loadFromEnv() {
 						c.Config.SmartModeThreshold = float32(f)
 					}
 
-				// parse torrent file
-				case prefix + "PARSE_TORRENT_FILE":
-					if b, err := strconv.ParseBool(envValue); err == nil {
-						c.Config.ParseTorrentFile = b
-					}
-
 				// api token
 				case prefix + "API_TOKEN":
 					c.Config.APIToken = envValue
@@ -543,34 +654,51 @@ func (c *AppConfig) loadFromEnv() {
 				}
 
 				// client settings
-				if strings.HasPrefix(envKey, prefix+"CLIENTS_") {
-					parts := strings.Split(strings.TrimPrefix(envKey, prefix+"CLIENTS_"), "_")
-					if len(parts) == 2 {
-						clientName := strings.ToLower(parts[0])
-						setting := parts[1]
+				// Cut on the first underscore so multi-word settings such as
+				// IMPORT_SAVE_PATH survive; the old len==2 Split silently dropped
+				// them. Applies to clients defined purely via env vars too, since
+				// the client is lazily created here when absent.
+				if after, ok := strings.CutPrefix(envKey, prefix+"CLIENTS_"); ok {
+					clientName, setting, ok := strings.Cut(after, "_")
+					if !ok {
+						continue
+					}
+					clientName = strings.ToLower(clientName)
 
-						// initialize client if it doesn't exist
-						if c.Config.Clients[clientName] == nil {
-							c.Config.Clients[clientName] = &domain.Client{}
+					// initialize client if it doesn't exist
+					if c.Config.Clients[clientName] == nil {
+						c.Config.Clients[clientName] = &domain.Client{}
+					}
+
+					switch setting {
+					case "TYPE":
+						c.Config.Clients[clientName].Type = envValue
+					case "HOST":
+						c.Config.Clients[clientName].Host = envValue
+					case "PORT":
+						if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
+							c.Config.Clients[clientName].Port = int(i)
 						}
-
-						switch setting {
-						case "TYPE":
-							c.Config.Clients[clientName].Type = envValue
-						case "HOST":
-							c.Config.Clients[clientName].Host = envValue
-						case "PORT":
-							if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
-								c.Config.Clients[clientName].Port = int(i)
+					case "USERNAME":
+						c.Config.Clients[clientName].Username = envValue
+					case "PASSWORD":
+						c.Config.Clients[clientName].Password = envValue
+					case "APIKEY":
+						c.Config.Clients[clientName].APIKey = envValue
+					case "IMPORT_SAVE_PATH":
+						c.Config.Clients[clientName].Import.SavePath = envValue
+					case "IMPORT_CATEGORY":
+						c.Config.Clients[clientName].Import.Category = envValue
+					case "IMPORT_DOWNLOAD_PATH":
+						c.Config.Clients[clientName].Import.DownloadPath = envValue
+					case "IMPORT_CONTENT_LAYOUT":
+						c.Config.Clients[clientName].Import.ContentLayout = strings.ToLower(envValue)
+					case "IMPORT_TAGS":
+						c.Config.Clients[clientName].Import.Tags = c.Config.Clients[clientName].Import.Tags[:0]
+						for tag := range strings.SplitSeq(envValue, ",") {
+							if tag = strings.TrimSpace(tag); tag != "" {
+								c.Config.Clients[clientName].Import.Tags = append(c.Config.Clients[clientName].Import.Tags, tag)
 							}
-						case "USERNAME":
-							c.Config.Clients[clientName].Username = envValue
-						case "PASSWORD":
-							c.Config.Clients[clientName].Password = envValue
-						case "APIKEY":
-							c.Config.Clients[clientName].APIKey = envValue
-						case "PREIMPORTPATH":
-							c.Config.Clients[clientName].PreImportPath = envValue
 						}
 					}
 				}
@@ -659,10 +787,22 @@ func (c *AppConfig) DynamicReload(log logger.Logger) {
 			return
 		}
 
+		// refuse to apply a reload that still uses removed settings
+		if err := validateDeprecatedConfigInputs(k, os.LookupEnv); err != nil {
+			log.Error().Err(err).Msg("reloaded config uses a removed setting; keeping previous config")
+			return
+		}
+
 		// unmarshal the updated config into the Config struct
 		if err := k.Unmarshal("", c.Config); err != nil {
 			log.Error().Err(err).Msg("failed to unmarshal updated config")
 			return
+		}
+
+		for clientName, client := range c.Config.Clients {
+			if err := validateClientConfig(clientName, client); err != nil {
+				log.Error().Err(err).Msg("reloaded config is invalid; check the client import policy")
+			}
 		}
 
 		log.SetLogLevel(c.Config.LogLevel)

@@ -27,6 +27,18 @@ func Info(torrent []byte) (metainfo.Info, error) {
 	return metaInfo.UnmarshalInfo()
 }
 
+// InfoHash returns the hex-encoded v1 info hash of the given raw .torrent
+// bytes. It is used as the lookup/recheck/resume key after the torrent is added
+// back to the client on /api/parse.
+func InfoHash(torrent []byte) (string, error) {
+	metaInfo, err := metainfo.Load(bytes.NewReader(torrent))
+	if err != nil {
+		return "", err
+	}
+
+	return metaInfo.HashInfoBytes().HexString(), nil
+}
+
 func Episodes(info metainfo.Info) ([]Episode, error) {
 	if !info.IsDir() {
 		return []Episode{}, fmt.Errorf("not a directory")

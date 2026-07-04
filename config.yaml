@@ -59,12 +59,48 @@ clients:
     #
     apiKey: ""
 
-    # Pre Import Path for Sonarr
-    # Needs to be filled out correctly, e.g. "/data/torrents/tv-hd"
+    # Import Policy
+    # Controls how /api/parse re-imports the matched season pack back into the client
+    # after the local episodes have been hardlinked into place.
     #
-    # Default: ""
-    #
-    preImportPath: ""
+    import:
+      # Save Path
+      # Final import destination. Used both as the hardlink root and as the client's save directory.
+      # Optional for qBittorrent (falls back to the category save path, then the default save path)
+      # and for transmission (falls back to the session download dir). When set it must already exist.
+      # A qBittorrent client must configure either savePath or category.
+      #
+      # Default: ""
+      #
+      savePath: ""
+
+      # Tags
+      # Tags (qBittorrent) / labels (transmission) applied to the imported torrent.
+      #
+      # Optional
+      #
+      tags: [ "seasonpackarr" ]
+
+      # Category (qBittorrent only)
+      # Category to add the torrent with. Also used to resolve the import destination when savePath is empty.
+      #
+      # Default: ""
+      #
+      category: ""
+
+      # Download Path (qBittorrent only)
+      # Temporary (incomplete) download path. Never used as the final import destination.
+      #
+      # Optional
+      #
+      # downloadPath: ""
+
+      # Content Layout (qBittorrent only)
+      # Options: "subfolder", "nosubfolder", "original"; empty defers to the qBittorrent default.
+      #
+      # Optional
+      #
+      # contentLayout: "subfolder"
 
   # Below you can find an example on how to define a second qBittorrent client
   # If you want to define even more clients just copy this segment and adjust the values accordingly
@@ -82,10 +118,15 @@ clients:
   #
   #  apiKey: ""
   #
-  #  preImportPath: ""
+  #  import:
+  #    category: "tv-hd"
+  #    savePath: ""
+  #    tags: [ "seasonpackarr" ]
 
   # Example Transmission client configuration
   # Transmission listens on port 9091 by default, so set the port accordingly.
+  # Transmission has no categories or content layout, so configure import.savePath
+  # (or leave it empty to use the session download dir).
   #
   #transmission_example:
   #  type: "transmission"
@@ -98,7 +139,9 @@ clients:
   #
   #  password: ""
   #
-  #  preImportPath: ""
+  #  import:
+  #    savePath: "/data/torrents/tv-hd"
+  #    tags: [ "seasonpackarr" ]
 
 # seasonpackarr logs file
 # If not defined, logs to stdout
@@ -145,13 +188,6 @@ logLevel: "DEBUG"
 # Default: 0.75
 #
 # smartModeThreshold: 0.75
-
-# Parse Torrent File
-# Toggles torrent file parsing to get the correct folder name
-#
-# Default: false
-#
-# parseTorrentFile: false
 
 # Fuzzy Matching
 # You can decide for which criteria the matching should be less strict, e.g. repack status and HDR format

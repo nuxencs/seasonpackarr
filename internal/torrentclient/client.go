@@ -4,11 +4,14 @@
 package torrentclient
 
 import (
+	stderrors "errors"
 	"fmt"
 	"net"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/pkg/errors"
@@ -37,15 +40,104 @@ type File struct {
 	Size int64
 }
 
-// TorrentClient is the minimal surface the processor needs from a torrent client.
+// ImportRequest carries a parsed season pack to be (re-)imported into the
+// client on /api/parse. The processor has already hardlinked the matched local
+// episodes into SavePath before Import is called.
 //
-// Contract for implementations: the values returned must satisfy
+// SavePath MUST equal the value returned by ImportRoot for the same client, so
+// the client adds the torrent pointing at the directory that already contains
+// the hardlinks. Hash is the hex v1 info hash (see torrents.InfoHash) used to
+// look the torrent up after it is added.
+type ImportRequest struct {
+	TorrentBytes []byte
+	Hash         string
+	SavePath     string
+}
+
+// ImportStage identifies which step of Import failed so the caller can map it
+// to a domain.StatusCode without importing any client-specific type.
+type ImportStage int
+
+const (
+	ImportStageConfig  ImportStage = iota // resolving destination / building options
+	ImportStageAdd                        // adding the torrent to the client
+	ImportStageFind                       // locating the added torrent
+	ImportStageRecheck                    // rechecking / verifying local data
+	ImportStageResume                     // resuming the torrent
+)
+
+// ImportError tags an import failure with the stage it happened in.
+type ImportError struct {
+	Stage ImportStage
+	Err   error
+}
+
+func (e *ImportError) Error() string { return e.Err.Error() }
+func (e *ImportError) Unwrap() error { return e.Err }
+
+func importErr(stage ImportStage, err error) *ImportError {
+	return &ImportError{Stage: stage, Err: err}
+}
+
+// ImportStatusCode maps an error returned by ImportRoot or Import to the
+// domain.StatusCode the caller should report. Errors that aren't a stage-tagged
+// *ImportError fall back to StatusAddTorrentError.
+func ImportStatusCode(err error) domain.StatusCode {
+	if ie, ok := stderrors.AsType[*ImportError](err); ok {
+		switch ie.Stage {
+		case ImportStageConfig:
+			return domain.StatusImportConfigError
+		case ImportStageAdd:
+			return domain.StatusAddTorrentError
+		case ImportStageFind:
+			return domain.StatusFindTorrentError
+		case ImportStageRecheck:
+			return domain.StatusRecheckTorrentError
+		case ImportStageResume:
+			return domain.StatusResumeTorrentError
+		}
+	}
+	return domain.StatusAddTorrentError
+}
+
+// TorrentClient is the surface the processor needs from a torrent client.
+//
+// Read contract: the values returned by GetTorrents/GetFiles must satisfy
 // filepath.Join(Torrent.SavePath, File.Name) == the real absolute on-disk path
 // of the file, so it can be used directly as a hardlink source. The hash
 // returned by GetTorrents must be accepted as-is by GetFiles.
+//
+// Import contract: ImportRoot resolves the absolute directory the season pack
+// must be hardlinked into (and later added under). Import adds the pack,
+// ensures its already-present hardlinked data is accounted for (skip-check +
+// conditional recheck on qBittorrent, forced verify on transmission) and starts
+// it once the data has been (re)checked. Import failures are returned as
+// *ImportError.
 type TorrentClient interface {
 	GetTorrents() ([]Torrent, error)
 	GetFiles(hash string) ([]File, error)
+	ImportRoot() (string, error)
+	Import(req ImportRequest) error
+}
+
+// pollUntil invokes cond every interval until it reports done, cond returns an
+// error, or timeout elapses. It is shared by the client adapters to wait for a
+// torrent to appear or for a (re)check to settle.
+func pollUntil(interval, timeout time.Duration, cond func() (bool, error)) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		done, err := cond()
+		if err != nil {
+			return err
+		}
+		if done {
+			return nil
+		}
+		if !time.Now().Before(deadline) {
+			return errors.New("timed out")
+		}
+		time.Sleep(interval)
+	}
 }
 
 func New(client *domain.Client) (TorrentClient, error) {
@@ -57,6 +149,12 @@ func New(client *domain.Client) (TorrentClient, error) {
 	default:
 		return nil, fmt.Errorf("unknown client type: %s", client.Type)
 	}
+}
+
+// normalizePath cleans and normalizes a client-reported destination path so it
+// can be used consistently as a hardlink root.
+func normalizePath(path string) string {
+	return filepath.Clean(filepath.FromSlash(strings.TrimSpace(path)))
 }
 
 func buildHost(client *domain.Client) (string, error) {

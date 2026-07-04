@@ -45,10 +45,6 @@
       "type": "number",
       "default": 0.75
     },
-    "parseTorrentFile": {
-      "type": "boolean",
-      "default": false
-    },
     "fuzzyMatching": {
       "$ref": "#/$defs/fuzzyMatching"
     },
@@ -105,15 +101,48 @@
           "type": "string",
           "default": ""
         },
-        "preImportPath": {
-          "type": "string",
-          "default": ""
+        "import": {
+          "$ref": "#/$defs/import"
         }
       },
       "required": [
-        "host",
-        "preImportPath"
+        "host"
       ]
+    },
+    "import": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "savePath": {
+          "type": "string",
+          "default": ""
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "seasonpackarr"
+          ]
+        },
+        "category": {
+          "type": "string",
+          "default": ""
+        },
+        "downloadPath": {
+          "type": "string",
+          "default": ""
+        },
+        "contentLayout": {
+          "type": "string",
+          "enum": [
+            "subfolder",
+            "nosubfolder",
+            "original"
+          ]
+        }
+      }
     },
     "fuzzyMatching": {
       "type": "object",

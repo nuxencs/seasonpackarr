@@ -4,11 +4,20 @@
 package http
 
 import (
+	"encoding/base64"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/nuxencs/seasonpackarr/internal/config"
+	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
+	"github.com/nuxencs/seasonpackarr/internal/torrents"
+
+	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/stretchr/testify/require"
 )
 
 // mockTorrentClient is a configurable in-memory torrentclient.TorrentClient for
@@ -16,9 +25,16 @@ import (
 type mockTorrentClient struct {
 	torrents    []torrentclient.Torrent
 	torrentsErr error
-	files       []torrentclient.File
+	files       []torrentclient.File            // returned for any hash when filesByHash is nil
+	filesByHash map[string][]torrentclient.File // per-hash file lists
 	filesErr    error
 	gotHash     string
+
+	importRoot    string
+	importRootErr error
+	importErr     error
+	importCalled  bool
+	importReq     torrentclient.ImportRequest
 }
 
 func (m *mockTorrentClient) GetTorrents() ([]torrentclient.Torrent, error) {
@@ -27,7 +43,23 @@ func (m *mockTorrentClient) GetTorrents() ([]torrentclient.Torrent, error) {
 
 func (m *mockTorrentClient) GetFiles(hash string) ([]torrentclient.File, error) {
 	m.gotHash = hash
-	return m.files, m.filesErr
+	if m.filesErr != nil {
+		return nil, m.filesErr
+	}
+	if m.filesByHash != nil {
+		return m.filesByHash[hash], nil
+	}
+	return m.files, nil
+}
+
+func (m *mockTorrentClient) ImportRoot() (string, error) {
+	return m.importRoot, m.importRootErr
+}
+
+func (m *mockTorrentClient) Import(req torrentclient.ImportRequest) error {
+	m.importCalled = true
+	m.importReq = req
+	return m.importErr
 }
 
 func newTestProcessor(client torrentclient.TorrentClient) *processor {
@@ -122,4 +154,170 @@ func TestGetFilesPropagatesClientError(t *testing.T) {
 	if _, _, err := p.getFiles("h"); !errors.Is(err, errBoom) {
 		t.Fatalf("getFiles error = %v, want it to wrap errBoom", err)
 	}
+}
+
+func resetProcessorGlobals() {
+	clientMap = xsync.NewMapOf[string, torrentclient.TorrentClient]()
+	entryMap = xsync.NewMapOf[string, *entryCache]()
+}
+
+func newImportProcessor() *processor {
+	cfg := &config.AppConfig{Config: &domain.Config{
+		Clients: map[string]*domain.Client{
+			"default": {Type: "qbittorrent", Import: domain.ImportPolicy{Category: "tv-hd"}},
+		},
+	}}
+	return newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil, nil)
+}
+
+func writeEpisode(t *testing.T, path string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(path, []byte("0"), 0o644))
+}
+
+// TestProcessSeasonPackIsGateOnly locks in that /api/pack is a pure match gate:
+// it reports a successful match without importing or hardlinking anything.
+func TestProcessSeasonPackIsGateOnly(t *testing.T) {
+	resetProcessorGlobals()
+
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	importDir := filepath.Join(tempDir, "import")
+	require.NoError(t, os.MkdirAll(sourceDir, 0o755))
+	require.NoError(t, os.MkdirAll(importDir, 0o755))
+
+	epName := "Series.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"
+	writeEpisode(t, filepath.Join(sourceDir, epName))
+
+	mock := &mockTorrentClient{
+		torrents: []torrentclient.Torrent{
+			{Name: "Series.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
+		},
+		filesByHash: map[string][]torrentclient.File{
+			"ep1": {{Name: epName, Size: 1}},
+		},
+		importRoot: importDir,
+	}
+
+	p := newImportProcessor()
+	p.req = &request{Name: "Series.S01.1080p.WEB-DL.H.264-RlsGrp", Client: mock, ClientName: "default"}
+
+	statusCode, err := p.processSeasonPack()
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
+	require.False(t, mock.importCalled, "gate must not import")
+	require.NoFileExists(t, filepath.Join(importDir, "Series.S01.1080p.WEB-DL.H.264-RlsGrp", epName))
+}
+
+// TestParseTorrentImportsAndPassesResolvedRoot verifies the /api/parse flow
+// resolves the import root, hardlinks the matched episodes under it, and hands
+// the decoded torrent + info hash + resolved root to the client's Import.
+func TestParseTorrentImportsAndPassesResolvedRoot(t *testing.T) {
+	resetProcessorGlobals()
+
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	importDir := filepath.Join(tempDir, "import")
+	require.NoError(t, os.MkdirAll(sourceDir, 0o755))
+	require.NoError(t, os.MkdirAll(importDir, 0o755))
+
+	releaseName := "ParseImport.S01.1080p.WEB-DL.H.264-RlsGrp"
+	torrentBytes, err := torrents.TorrentFromRls(releaseName, 2)
+	require.NoError(t, err)
+	infoHash, err := torrents.InfoHash(torrentBytes)
+	require.NoError(t, err)
+
+	ep1 := "ParseImport.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"
+	ep2 := "ParseImport.S01E02.1080p.WEB-DL.H.264-RlsGrp.mkv"
+	writeEpisode(t, filepath.Join(sourceDir, ep1))
+	writeEpisode(t, filepath.Join(sourceDir, ep2))
+
+	mock := &mockTorrentClient{
+		torrents: []torrentclient.Torrent{
+			{Name: "ParseImport.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
+			{Name: "ParseImport.S01E02.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep2", SavePath: sourceDir},
+		},
+		filesByHash: map[string][]torrentclient.File{
+			"ep1": {{Name: ep1, Size: 1}},
+			"ep2": {{Name: ep2, Size: 1}},
+		},
+		importRoot: importDir,
+	}
+
+	p := newImportProcessor()
+	p.req = &request{
+		Name:       releaseName,
+		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
+		Client:     mock,
+		ClientName: "default",
+	}
+
+	statusCode, err := p.parseTorrent()
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
+
+	require.True(t, mock.importCalled)
+	require.Equal(t, infoHash, mock.importReq.Hash)
+	require.Equal(t, importDir, mock.importReq.SavePath)
+	require.NotEmpty(t, mock.importReq.TorrentBytes)
+
+	require.FileExists(t, filepath.Join(importDir, releaseName, ep1))
+	require.FileExists(t, filepath.Join(importDir, releaseName, ep2))
+}
+
+// TestParseTorrentSkipsCrossSeedDuplicates ensures a target is hardlinked only
+// once even when multiple cross-seeded client torrents match the same episode.
+func TestParseTorrentSkipsCrossSeedDuplicates(t *testing.T) {
+	resetProcessorGlobals()
+
+	tempDir := t.TempDir()
+	sourceDir1 := filepath.Join(tempDir, "source1")
+	sourceDir2 := filepath.Join(tempDir, "source2")
+	importDir := filepath.Join(tempDir, "import")
+	require.NoError(t, os.MkdirAll(sourceDir1, 0o755))
+	require.NoError(t, os.MkdirAll(sourceDir2, 0o755))
+	require.NoError(t, os.MkdirAll(importDir, 0o755))
+
+	releaseName := "CrossSeed.S01.1080p.WEB-DL.H.264-RlsGrp"
+	torrentBytes, err := torrents.TorrentFromRls(releaseName, 2)
+	require.NoError(t, err)
+
+	ep1 := "CrossSeed.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"
+	ep2 := "CrossSeed.S01E02.1080p.WEB-DL.H.264-RlsGrp.mkv"
+	for _, dir := range []string{sourceDir1, sourceDir2} {
+		writeEpisode(t, filepath.Join(dir, ep1))
+		writeEpisode(t, filepath.Join(dir, ep2))
+	}
+
+	mock := &mockTorrentClient{
+		torrents: []torrentclient.Torrent{
+			{Name: "CrossSeed.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1a", SavePath: sourceDir1},
+			{Name: "CrossSeed.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1b", SavePath: sourceDir2},
+			{Name: "CrossSeed.S01E02.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep2a", SavePath: sourceDir1},
+			{Name: "CrossSeed.S01E02.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep2b", SavePath: sourceDir2},
+		},
+		filesByHash: map[string][]torrentclient.File{
+			"ep1a": {{Name: ep1, Size: 1}},
+			"ep1b": {{Name: ep1, Size: 1}},
+			"ep2a": {{Name: ep2, Size: 1}},
+			"ep2b": {{Name: ep2, Size: 1}},
+		},
+		importRoot: importDir,
+	}
+
+	p := newImportProcessor()
+	p.req = &request{
+		Name:       releaseName,
+		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
+		Client:     mock,
+		ClientName: "default",
+	}
+
+	statusCode, err := p.parseTorrent()
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
+
+	require.FileExists(t, filepath.Join(importDir, releaseName, ep1))
+	require.FileExists(t, filepath.Join(importDir, releaseName, ep2))
+	require.True(t, mock.importCalled)
 }

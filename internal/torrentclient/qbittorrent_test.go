@@ -1,0 +1,270 @@
+// Copyright (c) 2023 - 2025, nuxen and the seasonpackarr contributors.
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+package torrentclient
+
+import (
+	stderrors "errors"
+	"maps"
+	"testing"
+	"time"
+
+	"github.com/autobrr/go-qbittorrent"
+	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/stretchr/testify/require"
+)
+
+type stubQbitAPI struct {
+	addOptions map[string]string
+	addBytes   []byte
+
+	categories  map[string]qbittorrent.Category
+	defaultSave string
+	categoryErr error
+	defaultErr  error
+
+	lookupSeq []qbittorrent.Torrent
+	lookupIdx int
+
+	recheckCalls [][]string
+	resumeCalls  [][]string
+}
+
+func (s *stubQbitAPI) GetTorrents(o qbittorrent.TorrentFilterOptions) ([]qbittorrent.Torrent, error) {
+	if len(o.Hashes) == 0 || len(s.lookupSeq) == 0 {
+		return nil, nil
+	}
+	idx := s.lookupIdx
+	if idx >= len(s.lookupSeq) {
+		idx = len(s.lookupSeq) - 1
+	}
+	s.lookupIdx++
+	return []qbittorrent.Torrent{s.lookupSeq[idx]}, nil
+}
+
+func (s *stubQbitAPI) GetFilesInformation(string) (*qbittorrent.TorrentFiles, error) {
+	return &qbittorrent.TorrentFiles{}, nil
+}
+
+func (s *stubQbitAPI) AddTorrentFromMemory(buf []byte, options map[string]string) (*qbittorrent.TorrentAddResponse, error) {
+	s.addBytes = append([]byte(nil), buf...)
+	s.addOptions = make(map[string]string, len(options))
+	maps.Copy(s.addOptions, options)
+	return &qbittorrent.TorrentAddResponse{}, nil
+}
+
+func (s *stubQbitAPI) GetCategories() (map[string]qbittorrent.Category, error) {
+	return s.categories, s.categoryErr
+}
+
+func (s *stubQbitAPI) GetDefaultSavePath() (string, error) {
+	return s.defaultSave, s.defaultErr
+}
+
+func (s *stubQbitAPI) Recheck(hashes []string) error {
+	s.recheckCalls = append(s.recheckCalls, append([]string(nil), hashes...))
+	return nil
+}
+
+func (s *stubQbitAPI) Resume(hashes []string) error {
+	s.resumeCalls = append(s.resumeCalls, append([]string(nil), hashes...))
+	return nil
+}
+
+func newTestQbitClient(stub *stubQbitAPI, policy domain.ImportPolicy) *qbitClient {
+	return &qbitClient{
+		c:              stub,
+		policy:         policy,
+		findTimeout:    time.Second,
+		recheckTimeout: time.Second,
+		pollInterval:   time.Millisecond,
+	}
+}
+
+func TestQbitBuildTorrentAddOptions(t *testing.T) {
+	t.Run("omits unset overrides and always adds paused with skip check", func(t *testing.T) {
+		q := newTestQbitClient(&stubQbitAPI{}, domain.ImportPolicy{Category: "tv-hd"})
+		opts, err := q.buildTorrentAddOptions()
+		require.NoError(t, err)
+
+		prepared := opts.Prepare()
+		require.Equal(t, "tv-hd", prepared["category"])
+		require.Equal(t, "true", prepared["paused"])
+		require.Equal(t, "true", prepared["stopped"])
+		require.Equal(t, "true", prepared["skip_checking"])
+		_, hasSave := prepared["savepath"]
+		require.False(t, hasSave)
+		_, hasLayout := prepared["contentLayout"]
+		require.False(t, hasLayout)
+	})
+
+	t.Run("uses explicit content layout", func(t *testing.T) {
+		q := newTestQbitClient(&stubQbitAPI{}, domain.ImportPolicy{Category: "tv-hd", ContentLayout: "subfolder"})
+		opts, err := q.buildTorrentAddOptions()
+		require.NoError(t, err)
+		require.Equal(t, string(qbittorrent.ContentLayoutSubfolderCreate), opts.Prepare()["contentLayout"])
+	})
+
+	t.Run("sets download path", func(t *testing.T) {
+		q := newTestQbitClient(&stubQbitAPI{}, domain.ImportPolicy{Category: "tv-hd", DownloadPath: "/data/incomplete"})
+		opts, err := q.buildTorrentAddOptions()
+		require.NoError(t, err)
+		prepared := opts.Prepare()
+		require.Equal(t, "/data/incomplete", prepared["downloadPath"])
+		require.Equal(t, "true", prepared["useDownloadPath"])
+	})
+
+	t.Run("joins tags", func(t *testing.T) {
+		q := newTestQbitClient(&stubQbitAPI{}, domain.ImportPolicy{Category: "tv-hd", Tags: []string{" a ", "", "b"}})
+		opts, err := q.buildTorrentAddOptions()
+		require.NoError(t, err)
+		require.Equal(t, "a,b", opts.Prepare()["tags"])
+	})
+
+	t.Run("rejects invalid layout", func(t *testing.T) {
+		q := newTestQbitClient(&stubQbitAPI{}, domain.ImportPolicy{Category: "tv-hd", ContentLayout: "bad"})
+		_, err := q.buildTorrentAddOptions()
+		require.Error(t, err)
+		require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
+	})
+}
+
+func TestQbitImportRoot(t *testing.T) {
+	tests := []struct {
+		name        string
+		policy      domain.ImportPolicy
+		categories  map[string]qbittorrent.Category
+		defaultSave string
+		categoryErr error
+		defaultErr  error
+		want        string
+		wantErr     bool
+	}{
+		{
+			name:   "explicit save path wins",
+			policy: domain.ImportPolicy{SavePath: "/data/tv-hd"},
+			want:   normalizePath("/data/tv-hd"),
+		},
+		{
+			name:       "absolute category save path",
+			policy:     domain.ImportPolicy{Category: "tv-hd"},
+			categories: map[string]qbittorrent.Category{"tv-hd": {Name: "tv-hd", SavePath: "/data/tv-hd"}},
+			want:       normalizePath("/data/tv-hd"),
+		},
+		{
+			name:        "empty category save path falls back to default",
+			policy:      domain.ImportPolicy{Category: "tv-hd"},
+			categories:  map[string]qbittorrent.Category{"tv-hd": {Name: "tv-hd", SavePath: ""}},
+			defaultSave: "/downloads",
+			want:        normalizePath("/downloads"),
+		},
+		{
+			name:        "relative category save path joined onto default",
+			policy:      domain.ImportPolicy{Category: "tv-hd"},
+			categories:  map[string]qbittorrent.Category{"tv-hd": {Name: "tv-hd", SavePath: "tv-hd"}},
+			defaultSave: "/downloads",
+			want:        normalizePath("/downloads/tv-hd"),
+		},
+		{
+			name:        "category read error",
+			policy:      domain.ImportPolicy{Category: "tv-hd"},
+			categoryErr: stderrors.New("boom"),
+			wantErr:     true,
+		},
+		{
+			name:       "missing category",
+			policy:     domain.ImportPolicy{Category: "tv-hd"},
+			categories: map[string]qbittorrent.Category{},
+			wantErr:    true,
+		},
+		{
+			name:       "empty resolved destination",
+			policy:     domain.ImportPolicy{Category: "tv-hd"},
+			categories: map[string]qbittorrent.Category{"tv-hd": {Name: "tv-hd", SavePath: ""}},
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q := newTestQbitClient(&stubQbitAPI{
+				categories:  tt.categories,
+				defaultSave: tt.defaultSave,
+				categoryErr: tt.categoryErr,
+				defaultErr:  tt.defaultErr,
+			}, tt.policy)
+
+			got, err := q.ImportRoot()
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestQbitImportRechecksMissingFilesThenResumes(t *testing.T) {
+	const hash = "abcdef"
+	stub := &stubQbitAPI{
+		lookupSeq: []qbittorrent.Torrent{
+			{Hash: hash, InfohashV1: hash, State: qbittorrent.TorrentStateMissingFiles},
+			{Hash: hash, InfohashV1: hash, State: qbittorrent.TorrentStateCheckingDl},
+			{Hash: hash, InfohashV1: hash, State: qbittorrent.TorrentStatePausedDl},
+		},
+	}
+	q := newTestQbitClient(stub, domain.ImportPolicy{Category: "tv-hd", Tags: []string{"seasonpackarr"}})
+
+	err := q.Import(ImportRequest{TorrentBytes: []byte("torrent"), Hash: hash, SavePath: "/data/tv-hd"})
+	require.NoError(t, err)
+
+	require.NotEmpty(t, stub.addBytes)
+	require.Equal(t, "true", stub.addOptions["skip_checking"])
+	require.Equal(t, "true", stub.addOptions["paused"])
+	require.Equal(t, "tv-hd", stub.addOptions["category"])
+	require.Equal(t, "seasonpackarr", stub.addOptions["tags"])
+	require.Len(t, stub.recheckCalls, 1)
+	require.Equal(t, []string{hash}, stub.recheckCalls[0])
+	require.Len(t, stub.resumeCalls, 1)
+	require.Equal(t, []string{hash}, stub.resumeCalls[0])
+}
+
+// TestQbitImportWaitsForCheckingToSettle is the regression guard for the bug the
+// live partial-pack test surfaced: after a paused skip-check add, qBittorrent
+// reports checkingResumeData (with a misleading 100% progress) before flipping
+// to missingFiles. waitForTorrent must skip the transient checking state and
+// observe missingFiles, so the recheck actually runs.
+func TestQbitImportWaitsForCheckingToSettle(t *testing.T) {
+	const hash = "abcdef"
+	stub := &stubQbitAPI{
+		lookupSeq: []qbittorrent.Torrent{
+			{Hash: hash, InfohashV1: hash, State: qbittorrent.TorrentStateCheckingResumeData},
+			{Hash: hash, InfohashV1: hash, State: qbittorrent.TorrentStateMissingFiles},
+			{Hash: hash, InfohashV1: hash, State: qbittorrent.TorrentStateCheckingDl},
+			{Hash: hash, InfohashV1: hash, State: qbittorrent.TorrentStatePausedDl},
+		},
+	}
+	q := newTestQbitClient(stub, domain.ImportPolicy{Category: "tv-hd"})
+
+	err := q.Import(ImportRequest{TorrentBytes: []byte("torrent"), Hash: hash, SavePath: "/data/tv-hd"})
+	require.NoError(t, err)
+	require.Len(t, stub.recheckCalls, 1, "recheck must run once missingFiles is observed")
+	require.Len(t, stub.resumeCalls, 1)
+}
+
+func TestQbitImportSkipsResumeWhenAlreadyActive(t *testing.T) {
+	const hash = "abcdef"
+	stub := &stubQbitAPI{
+		lookupSeq: []qbittorrent.Torrent{
+			{Hash: hash, InfohashV1: hash, State: qbittorrent.TorrentStateDownloading},
+		},
+	}
+	q := newTestQbitClient(stub, domain.ImportPolicy{Category: "tv-hd"})
+
+	err := q.Import(ImportRequest{TorrentBytes: []byte("torrent"), Hash: hash, SavePath: "/data/tv-hd"})
+	require.NoError(t, err)
+	require.Empty(t, stub.recheckCalls)
+	require.Empty(t, stub.resumeCalls, "already-active torrent must not be resumed")
+}

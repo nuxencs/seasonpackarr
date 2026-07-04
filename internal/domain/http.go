@@ -36,6 +36,11 @@ const (
 	StatusDecodeTorrentBytesError  StatusCode = 466
 	StatusParseTorrentInfoError    StatusCode = 465
 	StatusGetEpisodesError         StatusCode = 464
+	StatusAddTorrentError          StatusCode = 463
+	StatusFindTorrentError         StatusCode = 462
+	StatusRecheckTorrentError      StatusCode = 461
+	StatusResumeTorrentError       StatusCode = 460
+	StatusImportConfigError        StatusCode = 459
 	StatusEpisodeCountError        StatusCode = 450
 )
 
@@ -95,6 +100,16 @@ func (s StatusCode) String() string {
 		return "could not parse torrent info"
 	case StatusGetEpisodesError:
 		return "could not get episodes"
+	case StatusAddTorrentError:
+		return "could not add torrent to client"
+	case StatusFindTorrentError:
+		return "could not find added torrent in client"
+	case StatusRecheckTorrentError:
+		return "could not recheck torrent in client"
+	case StatusResumeTorrentError:
+		return "could not resume torrent in client"
+	case StatusImportConfigError:
+		return "invalid import config"
 	case StatusEpisodeCountError:
 		return "could not get episode count"
 	default:
@@ -140,6 +155,11 @@ var NotificationStatusMap = map[string][]StatusCode{
 		StatusDecodeTorrentBytesError,
 		StatusParseTorrentInfoError,
 		StatusGetEpisodesError,
+		StatusAddTorrentError,
+		StatusFindTorrentError,
+		StatusRecheckTorrentError,
+		StatusResumeTorrentError,
+		StatusImportConfigError,
 		StatusEpisodeCountError,
 	},
 }
