@@ -20,20 +20,54 @@ func newTVMaze() provider {
 	return &tvmazeClient{}
 }
 
-// episodesInSeason returns the number of episodes in a season of a show.
-func (t *tvmazeClient) episodesInSeason(release rls.Release) (int, error) {
+// findShow tries to find a show on tvmaze, first with the given title, then
+// with its normalized form, and finally with shortened title variants.
+func (t *tvmazeClient) findShow(title string) (*tvmaze.Show, error) {
 	// try finding the show with the parsed title first
-	show, showErr := tvmaze.DefaultClient.GetShow(release.Title)
-	if showErr != nil {
-		if showErr.Error() != errNotFound {
-			return 0, fmt.Errorf("failed to find show %q on tvmaze: %w", release.Title, showErr)
+	show, showErr := tvmaze.DefaultClient.GetShow(title)
+	if showErr == nil {
+		return show, nil
+	}
+	if showErr.Error() != errNotFound {
+		return nil, showErr
+	}
+
+	// retry with the normalized title if the parsed title fails
+	normTitle := rls.MustNormalize(title)
+	show, showErr = tvmaze.DefaultClient.GetShow(normTitle)
+	if showErr == nil {
+		return show, nil
+	}
+	if showErr.Error() != errNotFound {
+		return nil, showErr
+	}
+
+	// tvmaze often doesn't list localized titles, e.g. when a release name
+	// carries a localized subtitle after the actual show title; retry with
+	// shortened title variants and only accept a show whose name matches the
+	// leading words of the original title
+	for _, shortTitle := range shortenedTitles(normTitle) {
+		show, err := tvmaze.DefaultClient.GetShow(shortTitle)
+		if err != nil {
+			if err.Error() == errNotFound {
+				continue
+			}
+			return nil, err
 		}
 
-		// retry with the normalized title if the parsed title fails
-		show, showErr = tvmaze.DefaultClient.GetShow(rls.MustNormalize(release.Title))
-		if showErr != nil {
-			return 0, fmt.Errorf("failed to find show %q on tvmaze: %w", release.Title, showErr)
+		if matchesTitle(normTitle, show.Name) {
+			return show, nil
 		}
+	}
+
+	return nil, showErr
+}
+
+// episodesInSeason returns the number of episodes in a season of a show.
+func (t *tvmazeClient) episodesInSeason(release rls.Release) (int, error) {
+	show, showErr := t.findShow(release.Title)
+	if showErr != nil {
+		return 0, fmt.Errorf("failed to find show %q on tvmaze: %w", release.Title, showErr)
 	}
 
 	episodes, err := show.GetEpisodes()
