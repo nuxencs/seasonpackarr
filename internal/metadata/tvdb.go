@@ -221,7 +221,7 @@ func (t *tvdbClient) search(title string, year int) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("failed to find show %q on tvdb", title)
+	return "", fmt.Errorf("no matching search results")
 }
 
 // episodesInSeason returns the number of episodes in a season of a show.

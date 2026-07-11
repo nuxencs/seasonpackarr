@@ -32,14 +32,17 @@ func (t *tvmazeClient) findShow(title string) (*tvmaze.Show, error) {
 		return nil, showErr
 	}
 
-	// retry with the normalized title if the parsed title fails
+	// retry with the normalized title if the parsed title fails and
+	// normalizing actually changes it
 	normTitle := rls.MustNormalize(title)
-	show, showErr = tvmaze.DefaultClient.GetShow(normTitle)
-	if showErr == nil {
-		return show, nil
-	}
-	if showErr.Error() != errNotFound {
-		return nil, showErr
+	if normTitle != title {
+		show, showErr = tvmaze.DefaultClient.GetShow(normTitle)
+		if showErr == nil {
+			return show, nil
+		}
+		if showErr.Error() != errNotFound {
+			return nil, showErr
+		}
 	}
 
 	// tvmaze often doesn't list localized titles, e.g. when a release name

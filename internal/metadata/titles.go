@@ -36,7 +36,9 @@ func shortenedTitles(normTitle string) []string {
 
 // matchesTitle reports whether any of the candidate names matches the normalized
 // release title, either exactly or as its leading words. This guards shortened
-// title searches against matching an unrelated show.
+// title searches against matching an unrelated show. A prefix match requires at
+// least two candidate words; a single leading word is too generic to vouch for
+// the show.
 func matchesTitle(normTitle string, candidates ...string) bool {
 	for _, candidate := range candidates {
 		normCandidate := rls.MustNormalize(candidate)
@@ -44,7 +46,11 @@ func matchesTitle(normTitle string, candidates ...string) bool {
 			continue
 		}
 
-		if normCandidate == normTitle || strings.HasPrefix(normTitle, normCandidate+" ") {
+		if normCandidate == normTitle {
+			return true
+		}
+
+		if strings.Contains(normCandidate, " ") && strings.HasPrefix(normTitle, normCandidate+" ") {
 			return true
 		}
 	}

@@ -92,6 +92,18 @@ func Test_MatchesTitle(t *testing.T) {
 			want:       false,
 		},
 		{
+			name:       "single_word_prefix_does_not_match",
+			normTitle:  "nippon sangoku die drei nationen der roten sonne",
+			candidates: []string{"Nippon"},
+			want:       false,
+		},
+		{
+			name:       "single_word_exact_match",
+			normTitle:  "halo",
+			candidates: []string{"Halo"},
+			want:       true,
+		},
+		{
 			name:       "empty_candidate",
 			normTitle:  "some show",
 			candidates: []string{""},
