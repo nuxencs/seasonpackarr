@@ -48,6 +48,7 @@
 - Implemented in `internal/metadata/`
 - Providers: TVDB and TVMaze
 - Purpose: estimate total episodes for smart-mode decisions and cross-check provider disagreement
+- Lookup strategy: search with the parsed release title first, then retry with progressively shortened title variants (guarded by name/alias/translation matching), because provider searches often miss long or localized titles
 
 ### File Operations
 
@@ -89,6 +90,8 @@ Current explicit test coverage exists in:
 
 - `internal/release/release_test.go`
 - `internal/format/format_test.go`
+- `internal/metadata/titles_test.go`
+- `internal/metadata/tvdb_test.go` (requires `TVDB_API_KEY` env var, skipped otherwise)
 - `internal/metadata/tvmaze_test.go`
 - `internal/slices/slices_test.go`
 
