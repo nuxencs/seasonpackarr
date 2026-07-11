@@ -80,8 +80,17 @@ func (m *Provider) EpisodesInSeason(release rls.Release) (int, error) {
 			return 0, err
 		}
 
+		// sweep expired entries while holding the lock for the store, so the
+		// cache never grows beyond the keys seen in the last TTL window; the
+		// read path stays iteration-free
 		m.cacheMu.Lock()
-		m.cache[key] = cacheEntry{episodes: episodes, expiresAt: time.Now().Add(episodeCacheTTL)}
+		now := time.Now()
+		for k, e := range m.cache {
+			if now.After(e.expiresAt) {
+				delete(m.cache, k)
+			}
+		}
+		m.cache[key] = cacheEntry{episodes: episodes, expiresAt: now.Add(episodeCacheTTL)}
 		m.cacheMu.Unlock()
 
 		return episodes, nil
