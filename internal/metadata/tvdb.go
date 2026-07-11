@@ -36,10 +36,12 @@ type loginResponse struct {
 type searchResponse struct {
 	Status string `json:"status"`
 	Data   []struct {
-		Name      string `json:"name"`
-		TvdbID    string `json:"tvdb_id"`
-		Year      string `json:"year"`
-		RemoteIds []struct {
+		Name         string            `json:"name"`
+		TvdbID       string            `json:"tvdb_id"`
+		Year         string            `json:"year"`
+		Aliases      []string          `json:"aliases,omitempty"`
+		Translations map[string]string `json:"translations,omitempty"`
+		RemoteIds    []struct {
 			ID         string `json:"id"`
 			Type       int    `json:"type"`
 			SourceName string `json:"sourceName"`
@@ -167,26 +169,59 @@ func (t *tvdbClient) makeAPIRequest(endpoint string) ([]byte, error) {
 	return body, nil
 }
 
-func (t *tvdbClient) search(title string, year int) (string, error) {
-	resp, err := t.makeAPIRequest(fmt.Sprintf("/search?query=%s&type=series&year=%d", url.QueryEscape(rls.MustNormalize(title)), year))
+func (t *tvdbClient) searchSeries(query string, year int) (searchResponse, error) {
+	resp, err := t.makeAPIRequest(fmt.Sprintf("/search?query=%s&type=series&year=%d", url.QueryEscape(query), year))
 	if err != nil {
-		return "", err
+		return searchResponse{}, err
 	}
 
 	var searchResp searchResponse
 	if err := json.NewDecoder(bytes.NewReader(resp)).Decode(&searchResp); err != nil {
-		return "", err
+		return searchResponse{}, err
 	}
 
 	if searchResp.Status != "success" {
-		return "", fmt.Errorf("failed to get data from tvdb")
+		return searchResponse{}, fmt.Errorf("failed to get data from tvdb")
 	}
 
-	if len(searchResp.Data) == 0 {
-		return "", fmt.Errorf("failed to find show %q on tvdb", title)
+	return searchResp, nil
+}
+
+func (t *tvdbClient) search(title string, year int) (string, error) {
+	normTitle := rls.MustNormalize(title)
+
+	searchResp, err := t.searchSeries(normTitle, year)
+	if err != nil {
+		return "", err
 	}
 
-	return searchResp.Data[0].TvdbID, nil
+	if len(searchResp.Data) > 0 {
+		return searchResp.Data[0].TvdbID, nil
+	}
+
+	// the tvdb search endpoint regularly returns no results for long titles,
+	// even when they exactly match a registered translation of a show; retry
+	// with shortened title variants and only accept a show whose name, alias
+	// or translation matches the original title
+	for _, shortTitle := range shortenedTitles(normTitle) {
+		searchResp, err = t.searchSeries(shortTitle, year)
+		if err != nil {
+			return "", err
+		}
+
+		for _, result := range searchResp.Data {
+			candidates := append([]string{result.Name}, result.Aliases...)
+			for _, translation := range result.Translations {
+				candidates = append(candidates, translation)
+			}
+
+			if matchesTitle(normTitle, candidates...) {
+				return result.TvdbID, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("no matching search results")
 }
 
 // episodesInSeason returns the number of episodes in a season of a show.
