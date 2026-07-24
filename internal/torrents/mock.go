@@ -2,13 +2,15 @@ package torrents
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
-	"github.com/anacrolix/torrent/bencode"
-	"github.com/anacrolix/torrent/metainfo"
+	"github.com/autobrr/go-torrent/bencode"
+	"github.com/autobrr/go-torrent/metainfo"
 	regexp "github.com/dlclark/regexp2"
 )
 
@@ -39,6 +41,52 @@ func mockEpisodes(dir string, numEpisodes int) error {
 	return nil
 }
 
+// buildInfoFromPath fills in the name and file list of info by walking root.
+// Piece hashes are left empty since mock torrents are only ever parsed, never
+// handed to a torrent client.
+func buildInfoFromPath(info *metainfo.Info, root string) error {
+	info.Name = filepath.Base(root)
+	info.Files = nil
+
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+
+		fileInfo, err := entry.Info()
+		if err != nil {
+			return err
+		}
+
+		// A single file torrent carries its length on the info dict itself.
+		if path == root {
+			info.Length = fileInfo.Size()
+			return nil
+		}
+
+		relPath, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+
+		info.Files = append(info.Files, metainfo.FileInfo{
+			Path:   strings.Split(relPath, string(filepath.Separator)),
+			Length: fileInfo.Size(),
+		})
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	slices.SortFunc(info.Files, func(a, b metainfo.FileInfo) int {
+		return cmp.Compare(strings.Join(a.BestPath(), "/"), strings.Join(b.BestPath(), "/"))
+	})
+
+	return nil
+}
+
 func torrentFromFolder(folderPath string) ([]byte, error) {
 	mi := metainfo.MetaInfo{
 		AnnounceList: [][]string{},
@@ -48,7 +96,7 @@ func torrentFromFolder(folderPath string) ([]byte, error) {
 		PieceLength: 256 * 1024,
 	}
 
-	err := info.BuildFromFilePath(folderPath)
+	err := buildInfoFromPath(&info, folderPath)
 	if err != nil {
 		return nil, err
 	}
