@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"text/template"
+	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
@@ -756,6 +757,16 @@ func (c *AppConfig) Snapshot() domain.Config {
 }
 
 func (c *AppConfig) reload() (*domain.Config, error) {
+	if !c.disableConfigFile {
+		contents, err := os.ReadFile(c.configFile)
+		if err != nil {
+			return nil, fmt.Errorf("reading config file %s: %w", c.configFile, err)
+		}
+		if len(bytes.TrimSpace(contents)) == 0 {
+			return nil, fmt.Errorf("config file %s is empty", c.configFile)
+		}
+	}
+
 	snapshot, err := c.loadSnapshot()
 	if err != nil {
 		return nil, err
@@ -763,6 +774,8 @@ func (c *AppConfig) reload() (*domain.Config, error) {
 	c.current.Store(snapshot)
 	return snapshot, nil
 }
+
+const configReloadSettleDelay = 10 * time.Millisecond
 
 func (c *AppConfig) DynamicReload(log logger.Logger) (<-chan struct{}, error) {
 	if c.disableConfigFile {
@@ -779,6 +792,11 @@ func (c *AppConfig) DynamicReload(log logger.Logger) (<-chan struct{}, error) {
 			log.Error().Err(watchErr).Msg("error watching config file")
 			return
 		}
+
+		// On Linux, a direct write can emit a truncate event before the new
+		// contents are available. Let the write settle before loading it. Slower
+		// writes remain protected by reload's empty-file check.
+		time.Sleep(configReloadSettleDelay)
 
 		snapshot, err := c.reload()
 		if err != nil {

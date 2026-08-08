@@ -4,6 +4,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -259,10 +260,19 @@ clients:
 		require.NoError(t, cfg.watcher.Unwatch())
 	})
 
-	done := make(chan struct{})
+	readerResult := make(chan error, 1)
 	go func() {
-		defer close(done)
-		for cfg.Snapshot().Clients["default"].Import.Category != "after" {
+		for {
+			snapshot := cfg.Snapshot()
+			client, ok := snapshot.Clients["default"]
+			if !ok || client == nil {
+				readerResult <- fmt.Errorf("published snapshot has no default client")
+				return
+			}
+			if client.Import.Category == "after" {
+				readerResult <- nil
+				return
+			}
 		}
 	}()
 
@@ -280,9 +290,66 @@ logLevel: INFO
 		t.Fatal("timed out waiting for config reload")
 	}
 	select {
-	case <-done:
+	case err := <-readerResult:
+		require.NoError(t, err)
 	case <-time.After(3 * time.Second):
 		t.Fatal("concurrent snapshot reader did not observe reload")
+	}
+	require.Equal(t, "after", cfg.Snapshot().Clients["default"].Import.Category)
+}
+
+func TestDynamicReloadKeepsSnapshotWhileConfigWriteIsIncomplete(t *testing.T) {
+	previousLogLevel := zerolog.GlobalLevel()
+	t.Cleanup(func() {
+		zerolog.SetGlobalLevel(previousLogLevel)
+	})
+
+	cfg, configFile := newTestAppConfig(t, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: before
+`)
+	snapshot := cfg.Snapshot()
+	reloads, err := cfg.DynamicReload(logger.New(&snapshot))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NotNil(t, cfg.watcher)
+		require.NoError(t, cfg.watcher.Unwatch())
+	})
+
+	configWriter, err := os.OpenFile(configFile, os.O_WRONLY|os.O_TRUNC, 0)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = configWriter.Close()
+	})
+
+	select {
+	case <-reloads:
+		t.Fatal("published a reload while the config file was empty")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	before := cfg.Snapshot()
+	require.Contains(t, before.Clients, "default")
+	require.NotNil(t, before.Clients["default"])
+	require.Equal(t, "before", before.Clients["default"].Import.Category)
+
+	_, err = configWriter.WriteString(`
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: after
+`)
+	require.NoError(t, err)
+	require.NoError(t, configWriter.Close())
+
+	select {
+	case <-reloads:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for completed config reload")
 	}
 	require.Equal(t, "after", cfg.Snapshot().Clients["default"].Import.Category)
 }

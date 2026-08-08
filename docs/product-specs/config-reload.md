@@ -42,6 +42,7 @@ These changes require a process restart.
 ## Acceptance Bar
 
 - invalid YAML or invalid client settings keep the last valid config active
+- truncate-first file writes never publish an empty intermediate snapshot
 - environment values keep precedence after every reload
 - omitted optional keys return to built-in defaults
 - concurrent readers do not race with reload publication
