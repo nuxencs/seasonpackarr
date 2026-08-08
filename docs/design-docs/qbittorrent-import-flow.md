@@ -139,9 +139,9 @@ Deluge 1.3 and 2 receive the torrent through their version-specific native
 daemon RPC protocols with `add_paused` and an explicit `download_location`.
 The adapter adds the torrent paused, applies its optional label, then resumes
 it into Deluge/libtorrent's normal initial check. It polls until the torrent is
-no longer paused, checking, allocating, or moving. Docker-backed local tests
+no longer paused, checking, allocating, or moving. Environment-gated live tests
 against Deluge 1.3.15 and 2.1.2 verify that complete packs seed and partial
 packs account for present bytes before they download missing pieces. The tests
-are environment-gated and are not part of CI. The adapter currently requires a
-v1 or hybrid torrent because seasonpackarr uses the legacy info hash as the
-daemon torrent ID.
+require externally managed daemons and are not part of CI. The adapter currently
+requires a v1 or hybrid torrent because seasonpackarr uses the legacy info hash
+as the daemon torrent ID.

@@ -9,10 +9,11 @@ Seasonpackarr selects `deluge-v1` or `deluge-v2` explicitly and keeps
 optional Label plugin. It imports go-deluge v1.4.0 as a normal Go module
 dependency. No dependency source is copied into the seasonpackarr repository.
 
-Environment-gated local tests build real Deluge 1.3.15 and 2.1.2 daemons. Both
-entries run complete and partial imports, path and file reads, initial checks,
-resume, missing-label creation, and label assignment. These tests are not part
-of CI.
+Environment-gated local tests connect to real Deluge 1.3.15 and 2.1.2 daemons.
+Both entries run complete and partial imports, path and file reads, initial
+checks, resume, missing-label creation, and label assignment. Daemon fixtures
+and test data are not stored in this repository. These tests are not part of
+CI.
 
 ## Inspected revisions
 
@@ -298,23 +299,30 @@ The inspected `go-deluge` GitHub workflow does not run its real-daemon integrati
 
 Source: [`.github/workflows/go.yml` lines 32-70](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/.github/workflows/go.yml#L32-L70). Local path: `/Users/nuxen/dev/oss/go-deluge/.github/workflows/go.yml:32`.
 
-Run the complete local matrix from the repository root:
+Run each live-test matrix entry from the repository root after starting the
+matching daemon and setting its connection environment:
 
 ```sh
-internal/torrentclient/testdata/deluge/run-integration.sh
+SEASONPACKARR_TEST_DELUGE_TYPE=deluge-v1 \
+SEASONPACKARR_TEST_DELUGE_HOST=127.0.0.1 \
+SEASONPACKARR_TEST_DELUGE_PORT=58846 \
+SEASONPACKARR_TEST_DELUGE_USER=seasonpackarr \
+SEASONPACKARR_TEST_DELUGE_PASS=integration \
+SEASONPACKARR_TEST_IMPORT_DIR=/path/shared/with/deluge \
+go test -v -count=1 -run TestDelugeImportLive ./internal/torrentclient
 ```
 
-The runner builds both pinned daemon images, selects unused host ports, mounts
-an isolated import directory, waits for daemon initialization, and runs
-`TestDelugeImportLive` once with `deluge-v1` and once with `deluge-v2`. It does
-not modify a CI workflow.
+Repeat with `SEASONPACKARR_TEST_DELUGE_TYPE=deluge-v2` against a Deluge 2
+daemon. The repository does not provide daemon images, static torrent data, or
+a fixture runner.
 
-## Integration fixture log classification
+## Fresh-daemon log classification
 
 Fresh daemon config directories produce warnings for missing `core.conf`,
 session state, DHT state, torrent state, fast-resume state, and Label config.
 These files do not exist on the first start. Deluge creates them as it saves
-state. The minimal fixtures also omit the optional GeoIP database.
+state. A minimal test daemon configuration can also omit the optional GeoIP
+database.
 
 Deluge 1.3 logs an error when its first state save tries to back up a state
 file that does not exist yet. The save that follows succeeds. This is a

@@ -14,7 +14,7 @@ import guarantees.
 - add Deluge config validation, schema, examples, and operator documentation
 - add unit tests for connection construction, torrent mapping, destination
   resolution, and stopped-add/check/start import behavior
-- add Docker-backed integration tests against real Deluge 1.3.15 and 2.x
+- add environment-gated integration tests against real Deluge 1.3.15 and 2.x
   daemons, including label creation and assignment
 - update architecture and client import documentation
 
@@ -37,7 +37,7 @@ import guarantees.
 - [x] Inspect issue 72, the existing adapter seam, and `autobrr/go-deluge`.
 - [x] Audit Deluge V1, Deluge V2, go-deluge, and Autobrr source behavior.
 - [x] Add V1/V2 selection and single-label support with test seams.
-- [x] Add reproducible Deluge V1/V2 daemon fixtures and integration tests.
+- [x] Add environment-gated Deluge V1/V2 integration tests.
 - [x] Run both integration suites against real daemons.
 - [x] Keep the environment-gated integration tests out of CI for this change.
 - [x] Update config validation, schema, examples, and docs.
@@ -62,15 +62,16 @@ import guarantees.
   seasonpackarr's request-level gate.
 - 2026-08-08: Use go-deluge v1.4.0 only as a normal Go module dependency. Do
   not copy or extend its source in this repository.
+- 2026-08-08: Keep daemon setup and fixture data outside the repository. The
+  live test connects to operator-supplied V1 and V2 endpoints through
+  environment variables.
 
 ## Verification notes
 
-- Docker-backed `TestDelugeImportLive` against Deluge 1.3.15: passed.
-- Docker-backed `TestDelugeImportLive` against Deluge 2.1.2: passed.
+- `TestDelugeImportLive` against Deluge 1.3.15: passed.
+- `TestDelugeImportLive` against Deluge 2.1.2: passed.
 - Both live suites verified complete and partial initial checks, resume state,
   paths, files, missing-label creation, and label assignment.
-- `internal/torrentclient/testdata/deluge/run-integration.sh`: passed for the
-  complete V1/V2 matrix. The runner is local only and is not wired into CI.
 - `go test -v ./...`: passed.
 - `go build ./...`: passed.
 - `go test -race ./internal/torrentclient ./internal/config`: passed.

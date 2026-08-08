@@ -91,7 +91,7 @@ If a change starts pushing transport concerns into matching logic or file ops, s
 
 Current explicit test coverage exists in:
 
-- `internal/torrentclient/*_test.go` (unit tests plus Docker-backed Deluge V1/V2 integration coverage)
+- `internal/torrentclient/*_test.go` (unit tests plus environment-gated Deluge V1/V2 live coverage)
 - `internal/release/release_test.go`
 - `internal/format/format_test.go`
 - `internal/metadata/metadata_test.go`
