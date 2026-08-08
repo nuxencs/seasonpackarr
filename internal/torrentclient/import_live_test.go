@@ -177,6 +177,85 @@ func TestQbitImportLive(t *testing.T) {
 	requireQbitStarted(t, c, hashes.Legacy)
 }
 
+// TestQbitImportDestinationPreferencesLive verifies the category-only path
+// matrix against a real qBittorrent preferences and categories API.
+func TestQbitImportDestinationPreferencesLive(t *testing.T) {
+	host := os.Getenv("SEASONPACKARR_TEST_QBIT_HOST")
+	importDir := os.Getenv("SEASONPACKARR_TEST_IMPORT_DIR")
+	if host == "" || importDir == "" {
+		t.Skip("SEASONPACKARR_TEST_QBIT_HOST / SEASONPACKARR_TEST_IMPORT_DIR not set - skipping live destination test")
+	}
+
+	categoryName := fmt.Sprintf("seasonpackarr-live-%d", time.Now().UnixNano())
+	categoryPath := filepath.Join(importDir, "category")
+	c, err := newQbitClient(&domain.Client{
+		Host:     host,
+		Username: os.Getenv("SEASONPACKARR_TEST_QBIT_USER"),
+		Password: os.Getenv("SEASONPACKARR_TEST_QBIT_PASS"),
+		Import: domain.ImportPolicy{
+			Category:      categoryName,
+			ContentLayout: "subfolder",
+		},
+	})
+	if err != nil {
+		t.Fatalf("newQbitClient: %v", err)
+	}
+
+	raw := c.c.(*qbittorrent.Client)
+	original, err := raw.GetAppPreferences()
+	if err != nil {
+		t.Fatalf("get original preferences: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := raw.SetPreferences(map[string]interface{}{
+			"auto_tmm_enabled":                  original.AutoTmmEnabled,
+			"use_category_paths_in_manual_mode": original.UseCategoryPathsInManualMode,
+			"save_path":                         original.SavePath,
+		}); err != nil {
+			t.Errorf("restore preferences: %v", err)
+		}
+		if err := raw.RemoveCategories([]string{categoryName}); err != nil {
+			t.Errorf("remove category: %v", err)
+		}
+	})
+
+	if err := raw.SetPreferences(map[string]interface{}{"save_path": importDir}); err != nil {
+		t.Fatalf("set default save path: %v", err)
+	}
+	if err := raw.CreateCategory(categoryName, categoryPath); err != nil {
+		t.Fatalf("create category: %v", err)
+	}
+
+	tests := []struct {
+		name               string
+		autoTMM            bool
+		manualCategoryPath bool
+		want               string
+	}{
+		{name: "automatic management", autoTMM: true, want: categoryPath},
+		{name: "manual global path", want: importDir},
+		{name: "manual category path", manualCategoryPath: true, want: categoryPath},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := raw.SetPreferences(map[string]interface{}{
+				"auto_tmm_enabled":                  tt.autoTMM,
+				"use_category_paths_in_manual_mode": tt.manualCategoryPath,
+			}); err != nil {
+				t.Fatalf("set preferences: %v", err)
+			}
+
+			destination, err := c.ImportDestination()
+			if err != nil {
+				t.Fatalf("ImportDestination: %v", err)
+			}
+			if got := destination.SavePath(); got != normalizePath(tt.want) {
+				t.Fatalf("destination=%q want=%q", got, normalizePath(tt.want))
+			}
+		})
+	}
+}
+
 // TestTransmissionImportLive drives transmissionClient.Import against a real
 // Transmission (add paused -> verify -> poll -> start).
 func TestTransmissionImportLive(t *testing.T) {

@@ -152,8 +152,8 @@ The per-client `import` block controls how seasonpackarr imports a matched seaso
 fields work for both client types:
 
 - **savePath**: The final import destination. Matched episodes are hardlinked into the season pack folder beneath it,
-  and the torrent is added to the client with this save path. Optional: qBittorrent falls back to the category save
-  path and then to its default save path, while Transmission falls back to its session download directory. When set,
+  and the torrent is added to the client with this save path. Optional: qBittorrent follows its automatic-management
+  and manual category-path preferences, while Transmission falls back to its session download directory. When set,
   the directory must already exist.
 - **tags**: qBittorrent tags or Transmission labels added to imported torrents. Defaults to `["seasonpackarr"]`.
 
@@ -164,7 +164,8 @@ The following fields are qBittorrent-only and are rejected at startup when set o
 
 - **category**: The category to add the torrent with; also resolves the import destination when `savePath` is empty.
   When no save or download path is set, seasonpackarr sends only the category and leaves path selection and Auto TMM
-  to qBittorrent.
+  to qBittorrent. seasonpackarr reads the same qBittorrent preferences before it creates hardlinks, so both programs
+  use the same destination.
 - **downloadPath**: A temporary path for incomplete downloads only; never the final destination.
 - **contentLayout**: One of `"subfolder"`, `"nosubfolder"` or `"original"`; leave it empty to defer to qBittorrent's
   default.

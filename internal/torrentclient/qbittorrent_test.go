@@ -146,6 +146,8 @@ func TestQbitImportDestination(t *testing.T) {
 		defaultSave string
 		categoryErr error
 		defaultErr  error
+		preferences qbittorrent.AppPreferences
+		prefsErr    error
 		want        string
 		wantErr     bool
 	}{
@@ -158,21 +160,58 @@ func TestQbitImportDestination(t *testing.T) {
 			name:       "absolute category save path",
 			policy:     domain.ImportPolicy{Category: "tv-hd"},
 			categories: map[string]qbittorrent.Category{"tv-hd": {Name: "tv-hd", SavePath: "/data/tv-hd"}},
-			want:       normalizePath("/data/tv-hd"),
+			preferences: qbittorrent.AppPreferences{
+				AutoTmmEnabled: true,
+			},
+			want: normalizePath("/data/tv-hd"),
 		},
 		{
-			name:        "empty category save path falls back to default",
+			name:        "empty category save path uses implicit category directory",
 			policy:      domain.ImportPolicy{Category: "tv-hd"},
 			categories:  map[string]qbittorrent.Category{"tv-hd": {Name: "tv-hd", SavePath: ""}},
 			defaultSave: "/downloads",
-			want:        normalizePath("/downloads"),
+			preferences: qbittorrent.AppPreferences{
+				AutoTmmEnabled: true,
+			},
+			want: normalizePath("/downloads/tv-hd"),
+		},
+		{
+			name:   "implicit subcategory path uses parent category path",
+			policy: domain.ImportPolicy{Category: "tv/hd"},
+			categories: map[string]qbittorrent.Category{
+				"tv":    {Name: "tv", SavePath: "/downloads/television"},
+				"tv/hd": {Name: "tv/hd", SavePath: ""},
+			},
+			preferences: qbittorrent.AppPreferences{
+				AutoTmmEnabled: true,
+			},
+			want: normalizePath("/downloads/television/hd"),
 		},
 		{
 			name:        "relative category save path joined onto default",
 			policy:      domain.ImportPolicy{Category: "tv-hd"},
 			categories:  map[string]qbittorrent.Category{"tv-hd": {Name: "tv-hd", SavePath: "tv-hd"}},
 			defaultSave: "/downloads",
-			want:        normalizePath("/downloads/tv-hd"),
+			preferences: qbittorrent.AppPreferences{
+				AutoTmmEnabled: true,
+			},
+			want: normalizePath("/downloads/tv-hd"),
+		},
+		{
+			name:        "manual mode uses default save path",
+			policy:      domain.ImportPolicy{Category: "tv-hd"},
+			categories:  map[string]qbittorrent.Category{"tv-hd": {Name: "tv-hd", SavePath: "/data/tv-hd"}},
+			defaultSave: "/downloads",
+			want:        normalizePath("/downloads"),
+		},
+		{
+			name:       "manual mode can use category save path",
+			policy:     domain.ImportPolicy{Category: "tv-hd"},
+			categories: map[string]qbittorrent.Category{"tv-hd": {Name: "tv-hd", SavePath: "/data/tv-hd"}},
+			preferences: qbittorrent.AppPreferences{
+				UseCategoryPathsInManualMode: true,
+			},
+			want: normalizePath("/data/tv-hd"),
 		},
 		{
 			name:        "category read error",
@@ -192,6 +231,20 @@ func TestQbitImportDestination(t *testing.T) {
 			categories: map[string]qbittorrent.Category{"tv-hd": {Name: "tv-hd", SavePath: ""}},
 			wantErr:    true,
 		},
+		{
+			name:       "default save path read error",
+			policy:     domain.ImportPolicy{Category: "tv-hd"},
+			categories: map[string]qbittorrent.Category{"tv-hd": {Name: "tv-hd", SavePath: "/data/tv-hd"}},
+			defaultErr: stderrors.New("boom"),
+			wantErr:    true,
+		},
+		{
+			name:       "preference read error",
+			policy:     domain.ImportPolicy{Category: "tv-hd", ContentLayout: "subfolder"},
+			categories: map[string]qbittorrent.Category{"tv-hd": {Name: "tv-hd", SavePath: "/data/tv-hd"}},
+			prefsErr:   stderrors.New("boom"),
+			wantErr:    true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -201,6 +254,8 @@ func TestQbitImportDestination(t *testing.T) {
 				defaultSave: tt.defaultSave,
 				categoryErr: tt.categoryErr,
 				defaultErr:  tt.defaultErr,
+				preferences: tt.preferences,
+				prefsErr:    tt.prefsErr,
 			}, tt.policy)
 
 			destination, err := q.ImportDestination()

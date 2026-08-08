@@ -71,8 +71,9 @@ abstraction and drove raw `go-qbittorrent` types from inside `internal/http`.
 - 2026-07-04: per-stage `ImportError` → status codes 459–463 (config/add/find/
   recheck/resume), mapped by `torrentclient.ImportStatusCode`.
 - 2026-08-08: the destination now includes the expected rooted or flat file
-  layout. qBittorrent imports are pinned to the resolved save path, and an
-  omitted `contentLayout` is read from qBittorrent preferences.
+  layout. Explicit-path qBittorrent imports are pinned to the resolved save
+  path. Category-only imports follow qBittorrent path-management preferences.
+  An omitted `contentLayout` is read from qBittorrent preferences.
 - 2026-08-08: hardlink creation is idempotent only when the existing target is
   the same inode as the source. This lets a failed client import be retried
   without accepting an unrelated file at the target path.

@@ -24,8 +24,8 @@ type Client struct {
 type ImportPolicy struct {
 	// SavePath is the final import destination. When set it is used both as the
 	// hardlink root and as the client's save/download directory. Optional for
-	// qBittorrent (falls back to the category save path, then the default save
-	// path) and for transmission (falls back to the session download dir).
+	// qBittorrent (follows its automatic-management and manual category-path
+	// preferences) and for transmission (falls back to the session download dir).
 	SavePath string `yaml:"savePath"`
 	// Tags are applied to the imported torrent (qBittorrent tags / transmission
 	// labels).

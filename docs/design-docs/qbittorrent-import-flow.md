@@ -44,6 +44,8 @@ Any step that fails returns a stage-tagged `*ImportError` (`config` / `add` /
 
 Category-only policy sends the category without `savepath` or `autoTMM`, so
 qBittorrent keeps its own path-selection and automatic-management behavior.
+Before creating hardlinks, seasonpackarr reads the same global Auto TMM and
+manual category-path preferences to select the destination qBittorrent will use.
 An explicit save or download path also sends the resolved final save path,
 which opts that torrent out of Auto TMM.
 

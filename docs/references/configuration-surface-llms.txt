@@ -8,7 +8,7 @@ seasonpackarr configuration surface reference
 - client-neutral import fields: import.savePath (final destination, hardlink root + client save dir; must exist when set), import.tags (qBittorrent tags / Transmission labels, default ["seasonpackarr"])
 - a correctly imported torrent is always added stopped (so the present files can be rechecked/verified first) and always started once the data checks out
 - qBittorrent-only import fields (rejected at startup on a transmission client): import.category (also resolves the import root when savePath is empty), import.downloadPath (temporary/incomplete path only, never the final destination), import.contentLayout ("subfolder" | "nosubfolder" | "original"; empty defers to qBittorrent's default)
-- qBittorrent clients must set import.savePath or import.category; savePath falls back to the category save path then the qBittorrent default save path
+- qBittorrent clients must set import.savePath or import.category; without savePath, the destination follows qBittorrent automatic-management and manual category-path preferences
 - Transmission has no categories or content layout; empty import.savePath falls back to the session download dir; Transmission always hash-checks existing data on add, so imports verify before starting
 - parseTorrentFile and clients.<name>.preImportPath are removed; startup hard-fails with a migration message if they (or their env vars) are still present
 - high-signal settings:

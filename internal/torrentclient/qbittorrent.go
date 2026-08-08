@@ -97,10 +97,22 @@ func (q *qbitClient) GetFiles(hash string) ([]File, error) {
 	return files, nil
 }
 
-// ImportDestination resolves the final import destination for this qBittorrent client:
-// an explicit savePath wins, otherwise the configured category's save path,
-// falling back to (or joined onto) the qBittorrent default save path.
+// ImportDestination resolves the final import destination for this qBittorrent client.
+// An explicit savePath wins. Category-only policy follows qBittorrent's Auto TMM
+// and manual category-path preferences.
 func (q *qbitClient) ImportDestination() (ImportDestination, error) {
+	categoryOnly := strings.TrimSpace(q.policy.SavePath) == "" && strings.TrimSpace(q.policy.DownloadPath) == ""
+	contentLayout := strings.TrimSpace(q.policy.ContentLayout)
+
+	var preferences qbittorrent.AppPreferences
+	if categoryOnly || contentLayout == "" {
+		var err error
+		preferences, err = q.c.GetAppPreferences()
+		if err != nil {
+			return ImportDestination{}, importErr(ImportStageConfig, errors.Wrap(err, "could not read qbittorrent preferences"))
+		}
+	}
+
 	var actualPath string
 	if q.policy.SavePath != "" {
 		actualPath = q.policy.SavePath
@@ -110,21 +122,23 @@ func (q *qbitClient) ImportDestination() (ImportDestination, error) {
 			return ImportDestination{}, importErr(ImportStageConfig, errors.Wrap(err, "could not read qbittorrent categories"))
 		}
 
-		category, ok := categories[q.policy.Category]
+		_, ok := categories[q.policy.Category]
 		if !ok {
 			return ImportDestination{}, importErr(ImportStageConfig, errors.New("qbit category %q was not found in qbittorrent", q.policy.Category))
 		}
 
-		actualPath = strings.TrimSpace(category.SavePath)
-		if actualPath == "" || !filepath.IsAbs(filepath.FromSlash(actualPath)) {
+		useCategoryPath := !categoryOnly || preferences.AutoTmmEnabled || preferences.UseCategoryPathsInManualMode
+		if !useCategoryPath {
 			defaultSavePath, err := q.c.GetDefaultSavePath()
 			if err != nil {
 				return ImportDestination{}, importErr(ImportStageConfig, errors.Wrap(err, "could not read qbittorrent default save path"))
 			}
-			if actualPath == "" {
-				actualPath = defaultSavePath
-			} else {
-				actualPath = filepath.Join(defaultSavePath, actualPath)
+			actualPath = defaultSavePath
+		} else {
+			var err error
+			actualPath, err = q.resolveCategorySavePath(q.policy.Category, categories)
+			if err != nil {
+				return ImportDestination{}, err
 			}
 		}
 	}
@@ -133,12 +147,7 @@ func (q *qbitClient) ImportDestination() (ImportDestination, error) {
 		return ImportDestination{}, importErr(ImportStageConfig, errors.New("resolved qbittorrent destination is empty"))
 	}
 
-	contentLayout := q.policy.ContentLayout
-	if strings.TrimSpace(contentLayout) == "" {
-		preferences, err := q.c.GetAppPreferences()
-		if err != nil {
-			return ImportDestination{}, importErr(ImportStageConfig, errors.Wrap(err, "could not read qbittorrent content layout"))
-		}
+	if contentLayout == "" {
 		contentLayout = preferences.TorrentContentLayout
 	}
 
@@ -153,6 +162,49 @@ func (q *qbitClient) ImportDestination() (ImportDestination, error) {
 	}
 
 	return NewRootedImportDestination(root), nil
+}
+
+func (q *qbitClient) resolveCategorySavePath(categoryName string, categories map[string]qbittorrent.Category) (string, error) {
+	defaultSavePath := func() (string, error) {
+		path, err := q.c.GetDefaultSavePath()
+		if err != nil {
+			return "", importErr(ImportStageConfig, errors.Wrap(err, "could not read qbittorrent default save path"))
+		}
+		return path, nil
+	}
+
+	var resolve func(string) (string, error)
+	resolve = func(name string) (string, error) {
+		if name == "" {
+			return defaultSavePath()
+		}
+
+		categorySavePath := strings.TrimSpace(categories[name].SavePath)
+		if categorySavePath != "" {
+			if filepath.IsAbs(filepath.FromSlash(categorySavePath)) {
+				return categorySavePath, nil
+			}
+			basePath, err := defaultSavePath()
+			if err != nil {
+				return "", err
+			}
+			return filepath.Join(basePath, categorySavePath), nil
+		}
+
+		parent, child := "", name
+		if separator := strings.LastIndex(name, "/"); separator >= 0 {
+			parent = name[:separator]
+			child = name[separator+1:]
+		}
+
+		basePath, err := resolve(parent)
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(basePath, child), nil
+	}
+
+	return resolve(categoryName)
 }
 
 // Import adds the parsed season pack back to qBittorrent with the hash check
