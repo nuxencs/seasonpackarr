@@ -223,6 +223,7 @@ func TestQbitImportRechecksMissingFilesThenResumes(t *testing.T) {
 	require.NotEmpty(t, stub.addBytes)
 	require.Equal(t, "true", stub.addOptions["skip_checking"])
 	require.Equal(t, "true", stub.addOptions["paused"])
+	require.Equal(t, "/data/tv-hd", stub.addOptions["savepath"])
 	require.Equal(t, "tv-hd", stub.addOptions["category"])
 	require.Equal(t, "seasonpackarr", stub.addOptions["tags"])
 	require.Len(t, stub.recheckCalls, 1)
