@@ -207,7 +207,7 @@ func TestQbitImportDestinationPreferencesLive(t *testing.T) {
 		t.Fatalf("get original preferences: %v", err)
 	}
 	t.Cleanup(func() {
-		if err := raw.SetPreferences(map[string]interface{}{
+		if err := raw.SetPreferences(map[string]any{
 			"auto_tmm_enabled":                  original.AutoTmmEnabled,
 			"use_category_paths_in_manual_mode": original.UseCategoryPathsInManualMode,
 			"save_path":                         original.SavePath,
@@ -219,7 +219,7 @@ func TestQbitImportDestinationPreferencesLive(t *testing.T) {
 		}
 	})
 
-	if err := raw.SetPreferences(map[string]interface{}{"save_path": importDir}); err != nil {
+	if err := raw.SetPreferences(map[string]any{"save_path": importDir}); err != nil {
 		t.Fatalf("set default save path: %v", err)
 	}
 	if err := raw.CreateCategory(categoryName, categoryPath); err != nil {
@@ -238,7 +238,7 @@ func TestQbitImportDestinationPreferencesLive(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := raw.SetPreferences(map[string]interface{}{
+			if err := raw.SetPreferences(map[string]any{
 				"auto_tmm_enabled":                  tt.autoTMM,
 				"use_category_paths_in_manual_mode": tt.manualCategoryPath,
 			}); err != nil {
