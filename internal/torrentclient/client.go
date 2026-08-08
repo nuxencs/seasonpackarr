@@ -46,12 +46,14 @@ type File struct {
 //
 // SavePath MUST equal ImportDestination.SavePath for the same client, so the
 // client adds the torrent pointing at the directory that already contains the
-// hardlinks. Hash is the hex v1 info hash (see torrents.InfoHash) used to look
-// the torrent up after it is added.
+// hardlinks. LegacyHash is the SHA-1 client identifier. V2Hash is the BEP 52
+// SHA-256 identity. HasV1 distinguishes hybrid torrents from pure v2 torrents.
 type ImportRequest struct {
 	TorrentBytes []byte
-	Hash         string
 	SavePath     string
+	LegacyHash   string
+	V2Hash       string
+	HasV1        bool
 }
 
 // ImportDestination describes both the client save path and the on-disk file

@@ -21,7 +21,7 @@ import (
 // buildPartialPack writes a full N-episode pack, builds the .torrent describing
 // all N, then deletes all but the first episode from disk so the import faces a
 // genuinely partial dataset (the real seasonpackarr scenario).
-func buildPartialPack(t *testing.T, importDir, packName string, episodes int) (string, []byte, string) {
+func buildPartialPack(t *testing.T, importDir, packName string, episodes int) (string, []byte, torrents.Hashes) {
 	t.Helper()
 	packDir := filepath.Join(importDir, packName)
 	if err := os.MkdirAll(packDir, 0o755); err != nil {
@@ -40,9 +40,9 @@ func buildPartialPack(t *testing.T, importDir, packName string, episodes int) (s
 		}
 	}
 	torrentBytes := torrentBytesFromFolder(t, packDir)
-	hash, err := torrents.InfoHash(torrentBytes)
+	hashes, err := torrents.InfoHashes(torrentBytes)
 	if err != nil {
-		t.Fatalf("InfoHash: %v", err)
+		t.Fatalf("InfoHashes: %v", err)
 	}
 	// delete all but the first episode to simulate a partial pack
 	for _, ep := range names[1:] {
@@ -50,7 +50,7 @@ func buildPartialPack(t *testing.T, importDir, packName string, episodes int) (s
 			t.Fatalf("remove: %v", err)
 		}
 	}
-	return packName, torrentBytes, hash
+	return packName, torrentBytes, hashes
 }
 
 // TestQbitPartialRawBehaviorLive answers the load-bearing question: does real
@@ -77,8 +77,8 @@ func TestQbitPartialRawBehaviorLive(t *testing.T) {
 		t.Fatalf("login: %v", err)
 	}
 
-	packName, torrentBytes, hash := buildPartialPack(t, importDir, "RawPartial.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
-	t.Logf("partial pack %q hash=%s (1 of 3 episodes on disk)", packName, hash)
+	packName, torrentBytes, hashes := buildPartialPack(t, importDir, "RawPartial.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
+	t.Logf("partial pack %q hash=%s (1 of 3 episodes on disk)", packName, hashes.Legacy)
 
 	opts := (&qbittorrent.TorrentAddOptions{SkipHashCheck: true, Paused: true, SavePath: importDir}).Prepare()
 	if _, err := c.AddTorrentFromMemory(torrentBytes, opts); err != nil {
@@ -89,7 +89,7 @@ func TestQbitPartialRawBehaviorLive(t *testing.T) {
 	// while the torrent is still paused
 	sawMissingWhilePaused := false
 	for i := range 20 {
-		ts, err := c.GetTorrents(qbittorrent.TorrentFilterOptions{Hashes: []string{hash}})
+		ts, err := c.GetTorrents(qbittorrent.TorrentFilterOptions{Hashes: []string{hashes.Legacy}})
 		if err != nil {
 			t.Fatalf("get: %v", err)
 		}
@@ -105,7 +105,7 @@ func TestQbitPartialRawBehaviorLive(t *testing.T) {
 	t.Logf("RESULT: qbit reports missingFiles for a paused skip-checked partial torrent = %v", sawMissingWhilePaused)
 
 	// cleanup
-	_ = c.DeleteTorrents([]string{hash}, false)
+	_ = c.DeleteTorrents([]string{hashes.Legacy}, false)
 }
 
 // TestQbitImportPartialLive runs the actual adapter Import against a partial pack
@@ -128,15 +128,15 @@ func TestQbitImportPartialLive(t *testing.T) {
 		t.Fatalf("newQbitClient: %v", err)
 	}
 
-	_, torrentBytes, hash := buildPartialPack(t, importDir, "AdapterPartialQbit.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
-	if err := c.Import(ImportRequest{TorrentBytes: torrentBytes, Hash: hash, SavePath: importDir}); err != nil {
+	_, torrentBytes, hashes := buildPartialPack(t, importDir, "AdapterPartialQbit.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
+	if err := c.Import(ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
 		t.Fatalf("Import: %v", err)
 	}
 
 	// poll for a few seconds so the post-recheck resume takes effect, then report
 	var tor qbittorrent.Torrent
 	for i := range 20 {
-		found, ok, err := c.lookupTorrent(hash)
+		found, ok, err := c.lookupTorrent(hashes.Legacy)
 		if err != nil || !ok {
 			t.Fatalf("lookup after import: ok=%v err=%v", ok, err)
 		}
@@ -157,7 +157,7 @@ func TestQbitImportPartialLive(t *testing.T) {
 	if !isActiveTorrentState(tor.State) {
 		t.Errorf("torrent not active after import (state=%s) — resume did not start it downloading the missing episodes", tor.State)
 	}
-	_ = c.c.(*qbittorrent.Client).DeleteTorrents([]string{hash}, false)
+	_ = c.c.(*qbittorrent.Client).DeleteTorrents([]string{hashes.Legacy}, false)
 }
 
 // TestTransmissionImportPartialLive runs the adapter against a partial pack and
@@ -179,14 +179,14 @@ func TestTransmissionImportPartialLive(t *testing.T) {
 		t.Fatalf("newTransmissionClient: %v", err)
 	}
 
-	packName, torrentBytes, hash := buildPartialPack(t, importDir, "AdapterPartialTr.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
-	if err := c.Import(ImportRequest{TorrentBytes: torrentBytes, Hash: hash, SavePath: importDir}); err != nil {
+	packName, torrentBytes, hashes := buildPartialPack(t, importDir, "AdapterPartialTr.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
+	if err := c.Import(ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
 		t.Fatalf("Import: %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), transmissionTimeout)
 	defer cancel()
-	ts, err := c.c.TorrentGetHashes(ctx, []string{"name", "status", "percentDone", "errorString"}, []string{hash})
+	ts, err := c.c.TorrentGetHashes(ctx, []string{"name", "status", "percentDone", "errorString"}, []string{hashes.Legacy})
 	if err != nil || len(ts) == 0 {
 		t.Fatalf("get after import: err=%v n=%d", err, len(ts))
 	}

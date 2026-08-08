@@ -449,7 +449,7 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 		p.log.Debug().Msgf("found episode in pack: name(%s), size(%d)", torrentEp.Path, torrentEp.Size)
 	}
 
-	hash, err := torrents.InfoHash(p.req.Torrent)
+	hashes, err := torrents.InfoHashes(p.req.Torrent)
 	if err != nil {
 		return domain.StatusParseTorrentInfoError, fmt.Errorf("%s: %w", domain.StatusParseTorrentInfoError, err)
 	}
@@ -508,8 +508,10 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 
 	if err := p.req.Client.Import(torrentclient.ImportRequest{
 		TorrentBytes: p.req.Torrent,
-		Hash:         hash,
 		SavePath:     importRoot,
+		LegacyHash:   hashes.Legacy,
+		V2Hash:       hashes.V2,
+		HasV1:        hashes.HasV1,
 	}); err != nil {
 		statusCode := torrentclient.ImportStatusCode(err)
 		return statusCode, fmt.Errorf("%s: %w", statusCode, err)

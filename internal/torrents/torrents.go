@@ -11,6 +11,7 @@ import (
 	"slices"
 
 	"github.com/anacrolix/torrent/metainfo"
+	infohash_v2 "github.com/anacrolix/torrent/types/infohash-v2"
 )
 
 type Episode struct {
@@ -27,16 +28,36 @@ func Info(torrent []byte) (metainfo.Info, error) {
 	return metaInfo.UnmarshalInfo()
 }
 
-// InfoHash returns the hex-encoded v1 info hash of the given raw .torrent
-// bytes. It is used as the lookup/recheck/resume key after the torrent is added
-// back to the client on /api/parse.
-func InfoHash(torrent []byte) (string, error) {
+type Hashes struct {
+	Legacy string
+	V2     string
+	HasV1  bool
+}
+
+// InfoHashes returns the client identifiers derived from the raw info bytes.
+// Legacy is the SHA-1 identifier used by v1 torrents and Transmission's
+// hashString. V2 is the BEP 52 SHA-256 identity when the torrent has v2 data.
+func InfoHashes(torrent []byte) (Hashes, error) {
 	metaInfo, err := metainfo.Load(bytes.NewReader(torrent))
 	if err != nil {
-		return "", err
+		return Hashes{}, err
 	}
 
-	return metaInfo.HashInfoBytes().HexString(), nil
+	info, err := metaInfo.UnmarshalInfo()
+	if err != nil {
+		return Hashes{}, err
+	}
+
+	hashes := Hashes{
+		Legacy: metaInfo.HashInfoBytes().HexString(),
+		HasV1:  info.HasV1(),
+	}
+	if info.HasV2() {
+		v2Hash := infohash_v2.HashBytes(metaInfo.InfoBytes)
+		hashes.V2 = v2Hash.HexString()
+	}
+
+	return hashes, nil
 }
 
 func Episodes(info metainfo.Info) ([]Episode, error) {

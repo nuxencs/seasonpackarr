@@ -164,6 +164,10 @@ func (t *transmissionClient) ImportDestination() (ImportDestination, error) {
 // 4.1.3), so the import always verifies. Only the genuinely missing pieces are
 // downloaded once started.
 func (t *transmissionClient) Import(req ImportRequest) error {
+	if strings.TrimSpace(req.LegacyHash) == "" {
+		return importErr(ImportStageConfig, errors.New("resolved transmission info hash is empty"))
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), t.verifyTimeout)
 	defer cancel()
 
@@ -184,16 +188,16 @@ func (t *transmissionClient) Import(req ImportRequest) error {
 		return importErr(ImportStageAdd, errors.Wrap(err, "failed to add torrent to transmission"))
 	}
 
-	if err := t.c.TorrentVerifyHashes(ctx, []string{req.Hash}); err != nil {
+	if err := t.c.TorrentVerifyHashes(ctx, []string{req.LegacyHash}); err != nil {
 		return importErr(ImportStageRecheck, errors.Wrap(err, "failed to verify torrent"))
 	}
 
-	if err := t.waitForVerify(ctx, req.Hash); err != nil {
+	if err := t.waitForVerify(ctx, req.LegacyHash); err != nil {
 		return importErr(ImportStageRecheck, err)
 	}
 
 	// a correctly imported torrent always starts once verification has settled
-	if err := t.c.TorrentStartHashes(ctx, []string{req.Hash}); err != nil {
+	if err := t.c.TorrentStartHashes(ctx, []string{req.LegacyHash}); err != nil {
 		return importErr(ImportStageResume, errors.Wrap(err, "failed to start torrent"))
 	}
 

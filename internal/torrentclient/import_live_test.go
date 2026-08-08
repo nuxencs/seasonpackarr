@@ -42,9 +42,9 @@ func torrentBytesFromFolder(t *testing.T, folderPath string) []byte {
 }
 
 // buildLivePack writes a complete season pack under importDir and returns the
-// pack name, its .torrent bytes, and its info hash. The data is left on disk so
+// pack name, its .torrent bytes, and its info hashes. The data is left on disk so
 // the client can verify it as an already-present import.
-func buildLivePack(t *testing.T, importDir, packName string, episodes int) (string, []byte, string) {
+func buildLivePack(t *testing.T, importDir, packName string, episodes int) (string, []byte, torrents.Hashes) {
 	t.Helper()
 
 	packDir := filepath.Join(importDir, packName)
@@ -59,11 +59,11 @@ func buildLivePack(t *testing.T, importDir, packName string, episodes int) (stri
 	}
 
 	torrentBytes := torrentBytesFromFolder(t, packDir)
-	hash, err := torrents.InfoHash(torrentBytes)
+	hashes, err := torrents.InfoHashes(torrentBytes)
 	if err != nil {
-		t.Fatalf("InfoHash: %v", err)
+		t.Fatalf("InfoHashes: %v", err)
 	}
-	return packName, torrentBytes, hash
+	return packName, torrentBytes, hashes
 }
 
 // requireQbitStarted polls until the torrent is active and asserts a correct
@@ -139,13 +139,13 @@ func TestQbitImportLive(t *testing.T) {
 		t.Fatalf("newQbitClient: %v", err)
 	}
 
-	packName, torrentBytes, hash := buildLivePack(t, importDir, "LiveQbit.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
-	t.Logf("importing pack %q hash=%s", packName, hash)
+	packName, torrentBytes, hashes := buildLivePack(t, importDir, "LiveQbit.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
+	t.Logf("importing pack %q hash=%s", packName, hashes.Legacy)
 
-	if err := c.Import(ImportRequest{TorrentBytes: torrentBytes, Hash: hash, SavePath: importDir}); err != nil {
+	if err := c.Import(ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
 		t.Fatalf("qbit Import: %v", err)
 	}
-	requireQbitStarted(t, c, hash)
+	requireQbitStarted(t, c, hashes.Legacy)
 }
 
 // TestTransmissionImportLive drives transmissionClient.Import against a real
@@ -168,11 +168,11 @@ func TestTransmissionImportLive(t *testing.T) {
 		t.Fatalf("newTransmissionClient: %v", err)
 	}
 
-	packName, torrentBytes, hash := buildLivePack(t, importDir, "LiveTransmission.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
-	t.Logf("importing pack %q hash=%s", packName, hash)
+	packName, torrentBytes, hashes := buildLivePack(t, importDir, "LiveTransmission.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
+	t.Logf("importing pack %q hash=%s", packName, hashes.Legacy)
 
-	if err := c.Import(ImportRequest{TorrentBytes: torrentBytes, Hash: hash, SavePath: importDir}); err != nil {
+	if err := c.Import(ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
 		t.Fatalf("transmission Import: %v", err)
 	}
-	requireTransmissionStarted(t, c, hash)
+	requireTransmissionStarted(t, c, hashes.Legacy)
 }

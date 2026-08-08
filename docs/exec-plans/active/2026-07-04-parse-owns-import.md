@@ -45,7 +45,7 @@ abstraction and drove raw `go-qbittorrent` types from inside `internal/http`.
 
 ## steps
 
-1. Domain + abstraction: `ImportPolicy`, status codes 459–463, `torrents.InfoHash`,
+1. Domain + abstraction: `ImportPolicy`, status codes 459–463, `torrents.InfoHashes`,
    `TorrentClient.ImportDestination/Import`, `ImportError`, `pollUntil`. [done]
 2. Adapters: qBittorrent add/recheck/resume + import-root resolution;
    Transmission add/verify/poll/start. [done]
@@ -76,6 +76,9 @@ abstraction and drove raw `go-qbittorrent` types from inside `internal/http`.
 - 2026-08-08: hardlink creation is idempotent only when the existing target is
   the same inode as the source. This lets a failed client import be retried
   without accepting an unrelated file at the target path.
+- 2026-08-08: torrent identity carries both the legacy SHA-1 identifier and the
+  BEP 52 SHA-256 identifier. qBittorrent uses SHA-256 for pure v2 torrents and
+  SHA-1 for v1 or hybrid torrents. Transmission uses its SHA-1 `hashString`.
 
 ## verification notes
 

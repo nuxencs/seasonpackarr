@@ -179,7 +179,15 @@ func (q *qbitClient) Import(req ImportRequest) error {
 		return importErr(ImportStageAdd, errors.Wrap(err, "failed to add torrent to qbittorrent"))
 	}
 
-	added, err := q.waitForTorrent(req.Hash)
+	lookupHash := req.LegacyHash
+	if !req.HasV1 {
+		lookupHash = req.V2Hash
+	}
+	if strings.TrimSpace(lookupHash) == "" {
+		return importErr(ImportStageConfig, errors.New("resolved qbittorrent info hash is empty"))
+	}
+
+	added, err := q.waitForTorrent(lookupHash)
 	if err != nil {
 		return importErr(ImportStageFind, err)
 	}
@@ -329,7 +337,7 @@ func (q *qbitClient) lookupTorrent(hash string) (qbittorrent.Torrent, bool, erro
 	}
 
 	for _, t := range torrents {
-		if strings.EqualFold(t.Hash, hash) || strings.EqualFold(t.InfohashV1, hash) {
+		if strings.EqualFold(t.Hash, hash) || strings.EqualFold(t.InfohashV1, hash) || strings.EqualFold(t.InfohashV2, hash) {
 			return t, true, nil
 		}
 	}

@@ -231,7 +231,7 @@ func TestParseTorrentImportsAndPassesResolvedRoot(t *testing.T) {
 	releaseName := "ParseImport.S01.1080p.WEB-DL.H.264-RlsGrp"
 	torrentBytes, err := torrents.TorrentFromRls(releaseName, 2)
 	require.NoError(t, err)
-	infoHash, err := torrents.InfoHash(torrentBytes)
+	infoHashes, err := torrents.InfoHashes(torrentBytes)
 	require.NoError(t, err)
 
 	ep1 := "ParseImport.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"
@@ -264,7 +264,9 @@ func TestParseTorrentImportsAndPassesResolvedRoot(t *testing.T) {
 	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
 
 	require.True(t, mock.importCalled)
-	require.Equal(t, infoHash, mock.importReq.Hash)
+	require.Equal(t, infoHashes.Legacy, mock.importReq.LegacyHash)
+	require.Equal(t, infoHashes.V2, mock.importReq.V2Hash)
+	require.Equal(t, infoHashes.HasV1, mock.importReq.HasV1)
 	require.Equal(t, importDir, mock.importReq.SavePath)
 	require.NotEmpty(t, mock.importReq.TorrentBytes)
 
