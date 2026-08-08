@@ -17,18 +17,19 @@ type Client struct {
 // ImportPolicy controls how /api/parse re-imports a matched season pack back
 // into the torrent client after the local episodes have been hardlinked.
 //
-// SavePath and Tags are client-neutral. Category, DownloadPath and
-// ContentLayout are qBittorrent-only and are rejected on transmission clients
-// during config validation. A correctly imported torrent is always started once
-// its data has been (re)checked.
+// SavePath is shared by all clients. Tags apply to qBittorrent and Transmission.
+// Deluge accepts at most one tag as its Label plugin label. Category,
+// DownloadPath and ContentLayout are qBittorrent-only. A correctly imported
+// torrent is always started once its data has been checked.
 type ImportPolicy struct {
 	// SavePath is the final import destination. When set it is used both as the
 	// hardlink root and as the client's save/download directory. Optional for
 	// qBittorrent (follows its automatic-management and manual category-path
-	// preferences) and for transmission (falls back to the session download dir).
+	// preferences) and for Transmission (falls back to the session download
+	// dir). Deluge requires an explicit path.
 	SavePath string `yaml:"savePath"`
-	// Tags are applied to the imported torrent (qBittorrent tags / transmission
-	// labels).
+	// Tags are applied to the imported torrent (qBittorrent tags / Transmission
+	// labels). Deluge accepts at most one entry as its Label plugin label.
 	Tags []string `yaml:"tags"`
 
 	// Category is the qBittorrent category to add the torrent with; also used to

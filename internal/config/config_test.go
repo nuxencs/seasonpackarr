@@ -402,8 +402,64 @@ func TestValidateClientConfig(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("invalid type", func(t *testing.T) {
+	t.Run("deluge requires savePath", func(t *testing.T) {
+		err := validateClientConfig("default", &domain.Client{Type: "deluge"})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "import.savePath")
+	})
+
+	t.Run("deluge with savePath is valid", func(t *testing.T) {
 		err := validateClientConfig("default", &domain.Client{Type: "deluge", Import: domain.ImportPolicy{SavePath: t.TempDir()}})
+		require.NoError(t, err)
+	})
+
+	t.Run("deluge accepts one label", func(t *testing.T) {
+		err := validateClientConfig("default", &domain.Client{
+			Type: "deluge-v1",
+			Import: domain.ImportPolicy{
+				SavePath: t.TempDir(),
+				Tags:     []string{"seasonpackarr"},
+			},
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("deluge rejects multiple labels", func(t *testing.T) {
+		err := validateClientConfig("default", &domain.Client{
+			Type: "deluge-v2",
+			Import: domain.ImportPolicy{
+				SavePath: t.TempDir(),
+				Tags:     []string{"seasonpackarr", "tv"},
+			},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "at most one")
+	})
+
+	t.Run("deluge rejects invalid label characters", func(t *testing.T) {
+		err := validateClientConfig("default", &domain.Client{
+			Type: "deluge",
+			Import: domain.ImportPolicy{
+				SavePath: t.TempDir(),
+				Tags:     []string{"tv shows"},
+			},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "is invalid")
+	})
+
+	t.Run("deluge rejects qbittorrent api key", func(t *testing.T) {
+		err := validateClientConfig("default", &domain.Client{
+			Type:   "deluge",
+			APIKey: "secret",
+			Import: domain.ImportPolicy{SavePath: t.TempDir()},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "apiKey")
+	})
+
+	t.Run("invalid type", func(t *testing.T) {
+		err := validateClientConfig("default", &domain.Client{Type: "notarealclient", Import: domain.ImportPolicy{SavePath: t.TempDir()}})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "is invalid")
 	})

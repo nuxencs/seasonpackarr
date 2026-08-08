@@ -3,6 +3,7 @@ module github.com/nuxencs/seasonpackarr
 go 1.26.3
 
 require (
+	github.com/autobrr/go-deluge v1.4.0
 	github.com/autobrr/go-qbittorrent v1.16.0
 	github.com/autobrr/go-torrent v1.1.0
 	github.com/dlclark/regexp2 v1.11.5
@@ -27,6 +28,7 @@ require (
 require (
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/fatih/structs v1.1.0 // indirect
+	github.com/gdm85/go-rencode v0.1.8 // indirect
 	github.com/goccy/go-yaml v1.19.1 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hekmon/cunits/v2 v2.1.0 // indirect

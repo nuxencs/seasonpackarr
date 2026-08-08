@@ -51,7 +51,8 @@ clients:
   #
   default:
     # Client type
-    # Supported values: "qbittorrent" (default), "transmission"
+    # Supported values: "qbittorrent" (default), "transmission", "deluge-v1", "deluge-v2"
+    # "deluge" is an alias for "deluge-v2".
     #
     # Default: "qbittorrent"
     #
@@ -64,7 +65,7 @@ clients:
     host: "127.0.0.1"
 
     # Port
-    # qBittorrent listens on 8080 by default, Transmission on 9091
+    # qBittorrent listens on 8080 by default, Transmission on 9091, Deluge daemon RPC on 58846
     #
     # Default: 8080
     #
@@ -97,15 +98,16 @@ clients:
       # Save Path
       # Final import destination. Used both as the hardlink root and as the client's save directory.
       # Optional for qBittorrent (follows its automatic-management and manual category-path preferences)
-      # and for transmission (falls back to the session download dir). When set it must already exist.
-      # A qBittorrent client must configure either savePath or category.
+      # and for transmission (falls back to the session download dir). Required for Deluge.
+      # When set it must already exist. A qBittorrent client must configure either savePath or category.
       #
       # Default: ""
       #
       savePath: ""
 
       # Tags
-      # Tags (qBittorrent) / labels (transmission) applied to the imported torrent.
+      # Tags (qBittorrent) / labels (Transmission) applied to the imported torrent.
+      # Deluge accepts at most one entry through its optional Label plugin.
       #
       # Optional
       #
@@ -168,6 +170,25 @@ clients:
   #  username: ""
   #
   #  password: ""
+  #
+  #  import:
+  #    savePath: "/data/torrents/tv-hd"
+  #    tags: [ "seasonpackarr" ]
+
+  # Example Deluge 2 client configuration. Use "deluge-v1" for Deluge 1.3.
+  # Connects to the native daemon RPC port, not the Deluge Web port.
+  # import.savePath is required. Enable Deluge's Label plugin to apply import.tags.
+  #
+  #deluge_example:
+  #  type: "deluge-v2"
+  #
+  #  host: "127.0.0.1"
+  #
+  #  port: 58846
+  #
+  #  username: "localclient"
+  #
+  #  password: "change-me"
   #
   #  import:
   #    savePath: "/data/torrents/tv-hd"
@@ -468,18 +489,16 @@ func validateDeprecatedConfigInputs(k *koanf.Koanf, lookupEnv func(string) (stri
 	return nil
 }
 
-// validateClientConfig enforces the per-client import policy: qBittorrent
-// clients need a category or savePath, transmission clients must not set the
-// qBittorrent-only fields, and any configured local paths must exist.
+// validateClientConfig enforces each client's import policy and verifies that
+// configured local paths exist.
 func validateClientConfig(clientName string, client *domain.Client) error {
-	if client.Type != "" && client.Type != "qbittorrent" && client.Type != "transmission" {
-		return fmt.Errorf("type for client %q is invalid: %q - must be \"qbittorrent\" or \"transmission\"", clientName, client.Type)
+	if client.Type != "" && client.Type != "qbittorrent" && client.Type != "transmission" && client.Type != "deluge" && client.Type != "deluge-v1" && client.Type != "deluge-v2" {
+		return fmt.Errorf("type for client %q is invalid: %q - must be \"qbittorrent\", \"transmission\", \"deluge\", \"deluge-v1\" or \"deluge-v2\"", clientName, client.Type)
 	}
 
 	imp := client.Import
-	isQbit := client.Type == "" || client.Type == "qbittorrent"
-
-	if isQbit {
+	switch client.Type {
+	case "", "qbittorrent":
 		if imp.Category == "" && imp.SavePath == "" {
 			return fmt.Errorf("client %q must configure import.category or import.savePath", clientName)
 		}
@@ -488,8 +507,26 @@ func validateClientConfig(clientName string, client *domain.Client) error {
 		default:
 			return fmt.Errorf("import.contentLayout for client %q is invalid: %q; use subfolder, nosubfolder or original", clientName, imp.ContentLayout)
 		}
-	} else if imp.Category != "" || imp.DownloadPath != "" || imp.ContentLayout != "" {
-		return fmt.Errorf("client %q (transmission) must not set import.category, import.downloadPath or import.contentLayout - those are qBittorrent only", clientName)
+	case "transmission":
+		if imp.Category != "" || imp.DownloadPath != "" || imp.ContentLayout != "" {
+			return fmt.Errorf("client %q (transmission) must not set import.category, import.downloadPath or import.contentLayout - those are qBittorrent only", clientName)
+		}
+	case "deluge", "deluge-v1", "deluge-v2":
+		if imp.SavePath == "" {
+			return fmt.Errorf("client %q (deluge) must configure import.savePath", clientName)
+		}
+		if len(imp.Tags) > 1 {
+			return fmt.Errorf("client %q (deluge) supports at most one import.tags entry", clientName)
+		}
+		if len(imp.Tags) == 1 && !validDelugeLabel(imp.Tags[0]) {
+			return fmt.Errorf("client %q (deluge) import label %q is invalid - use letters, digits, underscores or hyphens", clientName, imp.Tags[0])
+		}
+		if imp.Category != "" || imp.DownloadPath != "" || imp.ContentLayout != "" {
+			return fmt.Errorf("client %q (deluge) must not set import.category, import.downloadPath or import.contentLayout", clientName)
+		}
+		if client.APIKey != "" {
+			return fmt.Errorf("client %q (deluge) must not set apiKey", clientName)
+		}
 	}
 
 	if imp.SavePath != "" {
@@ -505,6 +542,20 @@ func validateClientConfig(clientName string, client *domain.Client) error {
 	}
 
 	return nil
+}
+
+func validDelugeLabel(label string) bool {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return false
+	}
+	for _, r := range label {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func defaultConfig(version, configFile string, disableConfigFile bool) domain.Config {
