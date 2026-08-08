@@ -27,18 +27,21 @@ var startCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		// read config
 		cfg := config.New(configPath, buildinfo.Version)
+		snapshot := cfg.Snapshot()
 
 		// init new logger
-		log := logger.New(cfg.Config)
+		log := logger.New(&snapshot)
 
 		// init dynamic config
-		cfg.DynamicReload(log)
+		if _, err := cfg.DynamicReload(log); err != nil {
+			log.Fatal().Err(err).Msg("failed to start config reload watcher")
+		}
 
 		// init notification sender
 		noti := notification.NewDiscordSender(log, cfg)
 
 		// init metadata providers
-		metadata := metadata.NewMetadataProvider(log, cfg.Config.Metadata)
+		metadata := metadata.NewMetadataProvider(log, snapshot.Metadata)
 
 		srv := http.NewServer(log, cfg, noti, metadata)
 
@@ -46,7 +49,7 @@ var startCmd = &cobra.Command{
 		log.Info().Msgf("Version: %s", buildinfo.Version)
 		log.Info().Msgf("Commit: %s", buildinfo.Commit)
 		log.Info().Msgf("Build date: %s", buildinfo.Date)
-		log.Info().Msgf("Log-level: %s", cfg.Config.LogLevel)
+		log.Info().Msgf("Log-level: %s", snapshot.LogLevel)
 
 		errorChannel := make(chan error)
 		go func() {

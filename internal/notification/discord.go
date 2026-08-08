@@ -23,7 +23,7 @@ import (
 )
 
 type DiscordMessage struct {
-	Content interface{}     `json:"content"`
+	Content any             `json:"content"`
 	Embeds  []DiscordEmbeds `json:"embeds,omitempty"`
 }
 
@@ -51,12 +51,12 @@ const (
 
 type discordSender struct {
 	log zerolog.Logger
-	cfg *config.AppConfig
+	cfg config.Provider
 
 	httpClient *http.Client
 }
 
-func NewDiscordSender(log logger.Logger, config *config.AppConfig) domain.Sender {
+func NewDiscordSender(log logger.Logger, config config.Provider) domain.Sender {
 	return &discordSender{
 		log: log.With().Str("sender", "discord").Logger(),
 		cfg: config,
@@ -71,12 +71,13 @@ func (s *discordSender) Name() string {
 }
 
 func (s *discordSender) Send(statusCode domain.StatusCode, payload domain.NotificationPayload) error {
-	if !s.isEnabled() {
+	notifications := s.cfg.Snapshot().Notifications
+	if !s.isEnabled(notifications) {
 		s.log.Debug().Msg("no webhook defined, skipping notification")
 		return nil
 	}
 
-	if !s.shouldSend(statusCode) {
+	if !s.shouldSend(statusCode, notifications) {
 		s.log.Debug().Msg("no notification wanted for this status, skipping notification")
 		return nil
 	}
@@ -91,7 +92,7 @@ func (s *discordSender) Send(statusCode domain.StatusCode, payload domain.Notifi
 		return errors.Wrap(err, "could not marshal json request for status: %v payload: %v", statusCode, payload)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, s.cfg.Config.Notifications.Discord, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest(http.MethodPost, notifications.Discord, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return errors.Wrap(err, "could not create request for status: %v payload: %v", statusCode, payload)
 	}
@@ -123,18 +124,18 @@ func (s *discordSender) Send(statusCode domain.StatusCode, payload domain.Notifi
 	return nil
 }
 
-func (s *discordSender) isEnabled() bool {
-	return len(s.cfg.Config.Notifications.Discord) != 0
+func (s *discordSender) isEnabled(notifications domain.Notifications) bool {
+	return len(notifications.Discord) != 0
 }
 
-func (s *discordSender) shouldSend(statusCode domain.StatusCode) bool {
-	if len(s.cfg.Config.Notifications.NotificationLevel) == 0 {
+func (s *discordSender) shouldSend(statusCode domain.StatusCode, notifications domain.Notifications) bool {
+	if len(notifications.NotificationLevel) == 0 {
 		return false
 	}
 
 	statusCodes := make(map[domain.StatusCode]struct{})
 
-	for _, level := range s.cfg.Config.Notifications.NotificationLevel {
+	for _, level := range notifications.NotificationLevel {
 		if codes, ok := domain.NotificationStatusMap[level]; ok {
 			for _, code := range codes {
 				statusCodes[code] = struct{}{}

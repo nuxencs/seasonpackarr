@@ -25,14 +25,14 @@ var ErrServerClosed = http.ErrServerClosed
 
 type Server struct {
 	log  logger.Logger
-	cfg  *config.AppConfig
+	cfg  config.Provider
 	noti domain.Sender
 	meta *metadata.Provider
 
 	httpServer http.Server
 }
 
-func NewServer(log logger.Logger, config *config.AppConfig, notification domain.Sender, metadata *metadata.Provider) *Server {
+func NewServer(log logger.Logger, config config.Provider, notification domain.Sender, metadata *metadata.Provider) *Server {
 	return &Server{
 		log:  log,
 		cfg:  config,
@@ -43,7 +43,8 @@ func NewServer(log logger.Logger, config *config.AppConfig, notification domain.
 
 func (s *Server) Open() error {
 	var err error
-	addr := fmt.Sprintf("%s:%d", s.cfg.Config.Host, s.cfg.Config.Port)
+	snapshot := s.cfg.Snapshot()
+	addr := fmt.Sprintf("%s:%d", snapshot.Host, snapshot.Port)
 
 	for _, proto := range []string{"tcp", "tcp4", "tcp6"} {
 		if err = s.tryToServe(addr, proto); err == nil {

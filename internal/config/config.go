@@ -10,11 +10,11 @@ import (
 	"io/fs"
 	"log"
 	"os"
-	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"text/template"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
@@ -374,14 +374,16 @@ func (c *AppConfig) writeConfig(configPath string, configFile string) error {
 	return nil
 }
 
-type Config interface {
-	DynamicReload(log logger.Logger)
+type Provider interface {
+	Snapshot() domain.Config
 }
 
 type AppConfig struct {
-	Config *domain.Config
-	m      *sync.Mutex
-	k      *koanf.Koanf
+	current           atomic.Pointer[domain.Config]
+	configFile        string
+	version           string
+	disableConfigFile bool
+	watcher           *file.File
 }
 
 func New(configPath string, version string) *AppConfig {
@@ -392,34 +394,24 @@ func New(configPath string, version string) *AppConfig {
 			"The only difference between the old and the new config is, that the qbit client info is now stored in an array to allow for multiple clients to be configured.")
 	}
 
-	// init app config
 	c := &AppConfig{
-		Config: &domain.Config{
-			Version:    version,
-			ConfigPath: configPath,
-		},
-		m: new(sync.Mutex),
-		k: koanf.New("."),
+		version:           version,
+		disableConfigFile: os.Getenv("SEASONPACKARR__DISABLE_CONFIG_FILE") == "true",
 	}
 
-	c.defaults()
-	c.Config.DisableConfigFile = os.Getenv("SEASONPACKARR__DISABLE_CONFIG_FILE") == "true"
-
-	if !c.Config.DisableConfigFile {
-		c.load()
-	}
-
-	if err := validateDeprecatedConfigInputs(c.k, os.LookupEnv); err != nil {
-		log.Fatal(err)
-	}
-
-	c.loadFromEnv()
-
-	for clientName, client := range c.Config.Clients {
-		if err := validateClientConfig(clientName, client); err != nil {
+	if !c.disableConfigFile {
+		configFile, err := c.resolveConfigFile(configPath)
+		if err != nil {
 			log.Fatal(err)
 		}
+		c.configFile = configFile
 	}
+
+	snapshot, err := c.loadSnapshot()
+	if err != nil {
+		log.Fatal(err)
+	}
+	c.current.Store(snapshot)
 
 	return c
 }
@@ -514,55 +506,31 @@ func validateClientConfig(clientName string, client *domain.Client) error {
 	return nil
 }
 
-func (c *AppConfig) defaults() {
-	// Set default values
-	c.Config.DisableConfigFile = false
-	c.Config.Host = "0.0.0.0"
-	c.Config.Port = 42069
-	c.Config.Clients = make(map[string]*domain.Client)
-	c.Config.LogPath = ""
-	c.Config.LogLevel = "DEBUG"
-	c.Config.LogMaxSize = 50
-	c.Config.LogMaxBackups = 3
-	c.Config.SmartMode = false
-	c.Config.SmartModeThreshold = 0.75
-	c.Config.FuzzyMatching = domain.FuzzyMatching{
-		SkipRepackCompare:  false,
-		SimplifyHdrCompare: false,
-		SimplifyWebCompare: false,
-	}
-	c.Config.Metadata = domain.Metadata{
-		TVDBAPIKey: "",
-		TVDBPIN:    "",
-		// SonarrHost:   "",
-		// SonarrPort:   0,
-		// SonarrAPIKey: "",
-	}
-	c.Config.APIToken = ""
-	c.Config.Notifications = domain.Notifications{
-		NotificationLevel: []string{"MATCH", "ERROR"},
-		Discord:           "",
+func defaultConfig(version, configFile string, disableConfigFile bool) domain.Config {
+	configPath := ""
+	if configFile != "" {
+		configPath = filepath.Dir(configFile)
 	}
 
-	// load default values into koanf
-	if err := c.k.Load(structs.Provider(c.Config, "yaml"), nil); err != nil {
-		log.Fatalf("could not load default values into config: %q", err)
+	return domain.Config{
+		Version:            version,
+		ConfigPath:         configPath,
+		DisableConfigFile:  disableConfigFile,
+		Host:               "0.0.0.0",
+		Port:               42069,
+		Clients:            make(map[string]*domain.Client),
+		LogLevel:           "DEBUG",
+		LogMaxSize:         50,
+		LogMaxBackups:      3,
+		SmartModeThreshold: 0.75,
+		Notifications: domain.Notifications{
+			NotificationLevel: []string{"MATCH", "ERROR"},
+		},
 	}
 }
 
-func (c *AppConfig) loadFromEnv() {
-	prefix := "SEASONPACKARR__"
-
-	logLevel := c.Config.LogLevel
-	if envLogLevel := os.Getenv(prefix + "LOG_LEVEL"); envLogLevel != "" {
-		logLevel = envLogLevel
-	}
-
-	// create a temporary logger with the detected log level
-	zLog := logger.New(&domain.Config{
-		LogLevel: logLevel,
-		Version:  c.Config.Version,
-	})
+func applyEnvironment(cfg *domain.Config) {
+	const prefix = "SEASONPACKARR__"
 
 	envs := os.Environ()
 	for _, env := range envs {
@@ -570,92 +538,79 @@ func (c *AppConfig) loadFromEnv() {
 			envPair := strings.SplitN(env, "=", 2)
 			envKey, envValue := envPair[0], envPair[1]
 
-			// Determine if this is a sensitive value that should be redacted in logs
-			sensitiveKeys := []string{"PASSWORD", "API_TOKEN", "APIKEY", "DISCORD"}
-			logValue := envValue
-
-			for _, sensitive := range sensitiveKeys {
-				if strings.Contains(envKey, sensitive) {
-					logValue = "**REDACTED**"
-					break
-				}
-			}
-
-			zLog.Trace().Msgf("processing environment variable: %s=%s", envKey, logValue)
-
 			if envValue != "" {
 				switch envKey {
 				// disable config file
 				case prefix + "DISABLE_CONFIG_FILE":
 					if b, err := strconv.ParseBool(envValue); err == nil {
-						c.Config.DisableConfigFile = b
+						cfg.DisableConfigFile = b
 					}
 
 				// server settings
 				case prefix + "HOST":
-					c.Config.Host = envValue
+					cfg.Host = envValue
 				case prefix + "PORT":
 					if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
-						c.Config.Port = int(i)
+						cfg.Port = int(i)
 					}
 
 				// log settings
 				case prefix + "LOG_LEVEL":
-					c.Config.LogLevel = envValue
+					cfg.LogLevel = envValue
 				case prefix + "LOG_PATH":
-					c.Config.LogPath = envValue
+					cfg.LogPath = envValue
 				case prefix + "LOG_MAX_SIZE":
 					if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
-						c.Config.LogMaxSize = int(i)
+						cfg.LogMaxSize = int(i)
 					}
 				case prefix + "LOG_MAX_BACKUPS":
 					if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
-						c.Config.LogMaxBackups = int(i)
+						cfg.LogMaxBackups = int(i)
 					}
 
 				// smart mode settings
 				case prefix + "SMART_MODE":
 					if b, err := strconv.ParseBool(envValue); err == nil {
-						c.Config.SmartMode = b
+						cfg.SmartMode = b
 					}
 				case prefix + "SMART_MODE_THRESHOLD":
 					if f, _ := strconv.ParseFloat(envValue, 32); f > 0 {
-						c.Config.SmartModeThreshold = float32(f)
+						cfg.SmartModeThreshold = float32(f)
 					}
 
 				// api token
 				case prefix + "API_TOKEN":
-					c.Config.APIToken = envValue
+					cfg.APIToken = envValue
 
 				// fuzzy matching settings
 				case prefix + "FUZZY_MATCHING_SKIP_REPACK_COMPARE":
 					if b, err := strconv.ParseBool(envValue); err == nil {
-						c.Config.FuzzyMatching.SkipRepackCompare = b
+						cfg.FuzzyMatching.SkipRepackCompare = b
 					}
 				case prefix + "FUZZY_MATCHING_SIMPLIFY_HDR_COMPARE":
 					if b, err := strconv.ParseBool(envValue); err == nil {
-						c.Config.FuzzyMatching.SimplifyHdrCompare = b
+						cfg.FuzzyMatching.SimplifyHdrCompare = b
 					}
 				case prefix + "FUZZY_MATCHING_SIMPLIFY_WEB_COMPARE":
 					if b, err := strconv.ParseBool(envValue); err == nil {
-						c.Config.FuzzyMatching.SimplifyWebCompare = b
+						cfg.FuzzyMatching.SimplifyWebCompare = b
 					}
 
 				// metadata settings
 				case prefix + "METADATA_TVDB_API_KEY":
-					c.Config.Metadata.TVDBAPIKey = envValue
+					cfg.Metadata.TVDBAPIKey = envValue
 				case prefix + "METADATA_TVDB_PIN":
-					c.Config.Metadata.TVDBPIN = envValue
+					cfg.Metadata.TVDBPIN = envValue
 
 				// notifications settings
 				case prefix + "NOTIFICATIONS_DISCORD":
-					c.Config.Notifications.Discord = envValue
+					cfg.Notifications.Discord = envValue
 				case prefix + "NOTIFICATIONS_NOTIFICATION_LEVEL":
 					levels := strings.Split(envValue, ",")
 					for i, level := range levels {
 						levels[i] = strings.TrimSpace(level)
 					}
-					c.Config.Notifications.NotificationLevel = levels
+					cfg.Notifications.NotificationLevel = levels
 				}
 
 				// client settings
@@ -671,38 +626,38 @@ func (c *AppConfig) loadFromEnv() {
 					clientName = strings.ToLower(clientName)
 
 					// initialize client if it doesn't exist
-					if c.Config.Clients[clientName] == nil {
-						c.Config.Clients[clientName] = &domain.Client{}
+					if cfg.Clients[clientName] == nil {
+						cfg.Clients[clientName] = &domain.Client{}
 					}
 
 					switch setting {
 					case "TYPE":
-						c.Config.Clients[clientName].Type = envValue
+						cfg.Clients[clientName].Type = envValue
 					case "HOST":
-						c.Config.Clients[clientName].Host = envValue
+						cfg.Clients[clientName].Host = envValue
 					case "PORT":
 						if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
-							c.Config.Clients[clientName].Port = int(i)
+							cfg.Clients[clientName].Port = int(i)
 						}
 					case "USERNAME":
-						c.Config.Clients[clientName].Username = envValue
+						cfg.Clients[clientName].Username = envValue
 					case "PASSWORD":
-						c.Config.Clients[clientName].Password = envValue
+						cfg.Clients[clientName].Password = envValue
 					case "APIKEY":
-						c.Config.Clients[clientName].APIKey = envValue
+						cfg.Clients[clientName].APIKey = envValue
 					case "IMPORT_SAVE_PATH":
-						c.Config.Clients[clientName].Import.SavePath = envValue
+						cfg.Clients[clientName].Import.SavePath = envValue
 					case "IMPORT_CATEGORY":
-						c.Config.Clients[clientName].Import.Category = envValue
+						cfg.Clients[clientName].Import.Category = envValue
 					case "IMPORT_DOWNLOAD_PATH":
-						c.Config.Clients[clientName].Import.DownloadPath = envValue
+						cfg.Clients[clientName].Import.DownloadPath = envValue
 					case "IMPORT_CONTENT_LAYOUT":
-						c.Config.Clients[clientName].Import.ContentLayout = strings.ToLower(envValue)
+						cfg.Clients[clientName].Import.ContentLayout = strings.ToLower(envValue)
 					case "IMPORT_TAGS":
-						c.Config.Clients[clientName].Import.Tags = c.Config.Clients[clientName].Import.Tags[:0]
+						cfg.Clients[clientName].Import.Tags = cfg.Clients[clientName].Import.Tags[:0]
 						for tag := range strings.SplitSeq(envValue, ",") {
 							if tag = strings.TrimSpace(tag); tag != "" {
-								c.Config.Clients[clientName].Import.Tags = append(c.Config.Clients[clientName].Import.Tags, tag)
+								cfg.Clients[clientName].Import.Tags = append(cfg.Clients[clientName].Import.Tags, tag)
 							}
 						}
 					}
@@ -710,108 +665,138 @@ func (c *AppConfig) loadFromEnv() {
 			}
 		}
 	}
-
-	// load parsed env variables into koanf
-	if err := c.k.Load(structs.Provider(c.Config, "yaml"), nil); err != nil {
-		log.Fatalf("could not load env vars into config: %q", err)
-	}
 }
 
-func (c *AppConfig) load() {
-	// clean trailing slash from c.Config.ConfigPath
-	configPath := path.Clean(c.Config.ConfigPath)
-
-	var configFile string
-
+func (c *AppConfig) resolveConfigFile(configPath string) (string, error) {
 	if configPath != "" {
-		// check if path and file exists
-		// if not, create path and file
+		configPath = filepath.Clean(configPath)
 		if err := c.writeConfig(configPath, "config.yaml"); err != nil {
-			log.Printf("config write error: %q", err)
+			return "", fmt.Errorf("writing config file: %w", err)
 		}
+		return filepath.Join(configPath, "config.yaml"), nil
+	}
 
-		configFile = path.Join(configPath, "config.yaml")
-	} else {
-		// try to find config in standard locations
-		locations := []string{
-			"./config.yaml",
-			"$HOME/.config/seasonpackarr/config.yaml",
-			"$HOME/.seasonpackarr/config.yaml",
-		}
-
-		for _, loc := range locations {
-			expandedLoc := os.ExpandEnv(loc)
-			if _, err := os.Stat(expandedLoc); err == nil {
-				configFile = expandedLoc
-				break
-			}
-		}
-
-		if configFile == "" {
-			log.Fatalf("could not find config file")
+	locations := []string{
+		"./config.yaml",
+		"$HOME/.config/seasonpackarr/config.yaml",
+		"$HOME/.seasonpackarr/config.yaml",
+	}
+	for _, location := range locations {
+		configFile := os.ExpandEnv(location)
+		if info, err := os.Stat(configFile); err == nil && !info.IsDir() {
+			return configFile, nil
 		}
 	}
 
-	// load the config file
-	if err := c.k.Load(file.Provider(configFile), yaml.Parser()); err != nil {
-		log.Fatalf("config read error: %q", err)
-	}
-
-	// unmarshal the config into the Config struct
-	if err := c.k.Unmarshal("", c.Config); err != nil {
-		log.Fatalf("could not unmarshal config file: %v: err %q", configFile, err)
-	}
+	return "", fmt.Errorf("could not find config file")
 }
 
-func (c *AppConfig) DynamicReload(log logger.Logger) {
-	if c.Config.DisableConfigFile {
-		return
+func (c *AppConfig) loadSnapshot() (*domain.Config, error) {
+	cfg := defaultConfig(c.version, c.configFile, c.disableConfigFile)
+	k := koanf.New(".")
+	if err := k.Load(structs.Provider(&cfg, "yaml"), nil); err != nil {
+		return nil, fmt.Errorf("loading config defaults: %w", err)
 	}
 
-	configFile := path.Join(c.Config.ConfigPath, "config.yaml")
+	if !c.disableConfigFile {
+		if err := k.Load(file.Provider(c.configFile), yaml.Parser()); err != nil {
+			return nil, fmt.Errorf("reading config file %s: %w", c.configFile, err)
+		}
+	}
+	if err := validateDeprecatedConfigInputs(k, os.LookupEnv); err != nil {
+		return nil, fmt.Errorf("validating config file %s: %w", c.configFile, err)
+	}
+	if err := k.Unmarshal("", &cfg); err != nil {
+		return nil, fmt.Errorf("decoding config file %s: %w", c.configFile, err)
+	}
+
+	applyEnvironment(&cfg)
+	if err := validateConfig(cfg); err != nil {
+		return nil, fmt.Errorf("validating config file %s: %w", c.configFile, err)
+	}
+
+	snapshot := cloneConfig(cfg)
+	return &snapshot, nil
+}
+
+func validateConfig(cfg domain.Config) error {
+	for clientName, client := range cfg.Clients {
+		if client == nil {
+			return fmt.Errorf("client %q cannot be null", clientName)
+		}
+		if err := validateClientConfig(clientName, client); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func cloneConfig(cfg domain.Config) domain.Config {
+	clone := cfg
+	clone.Clients = make(map[string]*domain.Client, len(cfg.Clients))
+	for name, client := range cfg.Clients {
+		if client == nil {
+			clone.Clients[name] = nil
+			continue
+		}
+		clientClone := *client
+		clientClone.Import.Tags = slices.Clone(client.Import.Tags)
+		clone.Clients[name] = &clientClone
+	}
+	clone.Notifications.NotificationLevel = slices.Clone(cfg.Notifications.NotificationLevel)
+	return clone
+}
+
+func (c *AppConfig) Snapshot() domain.Config {
+	snapshot := c.current.Load()
+	if snapshot == nil {
+		return domain.Config{}
+	}
+	return cloneConfig(*snapshot)
+}
+
+func (c *AppConfig) reload() (*domain.Config, error) {
+	snapshot, err := c.loadSnapshot()
+	if err != nil {
+		return nil, err
+	}
+	c.current.Store(snapshot)
+	return snapshot, nil
+}
+
+func (c *AppConfig) DynamicReload(log logger.Logger) (<-chan struct{}, error) {
+	if c.disableConfigFile {
+		return nil, nil
+	}
 
 	// use koanf's built-in file watcher
-	f := file.Provider(configFile)
+	f := file.Provider(c.configFile)
+	reloaded := make(chan struct{}, 1)
 
 	// watch the config file for changes
-	f.Watch(func(event any, err error) {
+	err := f.Watch(func(_ any, watchErr error) {
+		if watchErr != nil {
+			log.Error().Err(watchErr).Msg("error watching config file")
+			return
+		}
+
+		snapshot, err := c.reload()
 		if err != nil {
-			log.Error().Err(err).Msg("error watching config file")
+			log.Error().Err(err).Msg("config reload rejected; keeping previous config")
 			return
 		}
 
-		c.m.Lock()
-		defer c.m.Unlock()
-
-		// create a new koanf instance for reloading
-		k := koanf.New(".")
-
-		// load the config file
-		if err := k.Load(f, yaml.Parser()); err != nil {
-			log.Error().Err(err).Msg("failed to reload config file")
-			return
+		log.SetLogLevel(snapshot.LogLevel)
+		select {
+		case reloaded <- struct{}{}:
+		default:
 		}
-
-		// refuse to apply a reload that still uses removed settings
-		if err := validateDeprecatedConfigInputs(k, os.LookupEnv); err != nil {
-			log.Error().Err(err).Msg("reloaded config uses a removed setting; keeping previous config")
-			return
-		}
-
-		// unmarshal the updated config into the Config struct
-		if err := k.Unmarshal("", c.Config); err != nil {
-			log.Error().Err(err).Msg("failed to unmarshal updated config")
-			return
-		}
-
-		for clientName, client := range c.Config.Clients {
-			if err := validateClientConfig(clientName, client); err != nil {
-				log.Error().Err(err).Msg("reloaded config is invalid; check the client import policy")
-			}
-		}
-
-		log.SetLogLevel(c.Config.LogLevel)
-
-		log.Debug().Msg("config file reloaded!")
+		log.Debug().Msg("config file reloaded")
 	})
+	if err != nil {
+		return nil, fmt.Errorf("watching config file %s: %w", c.configFile, err)
+	}
+	c.watcher = f
+
+	return reloaded, nil
 }

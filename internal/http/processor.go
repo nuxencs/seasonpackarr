@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	stdslices "slices"
 	"sync"
 	"time"
 
@@ -30,7 +31,7 @@ import (
 
 type processor struct {
 	log  zerolog.Logger
-	cfg  *config.AppConfig
+	cfg  config.Provider
 	noti domain.Sender
 	meta *metadata.Provider
 	req  *request
@@ -49,10 +50,12 @@ type entry struct {
 }
 
 type entryCache struct {
-	entriesMap  map[string][]entry
-	rlsMap      map[string]rls.Release
-	lastUpdated time.Time
-	mu          sync.Mutex
+	entriesMap    map[string][]entry
+	rlsMap        map[string]rls.Release
+	clientConfig  domain.Client
+	fuzzyMatching domain.FuzzyMatching
+	lastUpdated   time.Time
+	mu            sync.Mutex
 }
 
 type matchInfo struct {
@@ -60,12 +63,17 @@ type matchInfo struct {
 	clientEpSize int64
 }
 
+type cachedTorrentClient struct {
+	config domain.Client
+	client torrentclient.TorrentClient
+}
+
 var (
-	clientMap = xsync.NewMapOf[string, torrentclient.TorrentClient]()
+	clientMap = xsync.NewMapOf[string, cachedTorrentClient]()
 	entryMap  = xsync.NewMapOf[string, *entryCache]()
 )
 
-func newProcessor(log logger.Logger, config *config.AppConfig, notification domain.Sender, metadata *metadata.Provider) *processor {
+func newProcessor(log logger.Logger, config config.Provider, notification domain.Sender, metadata *metadata.Provider) *processor {
 	return &processor{
 		log:  log.With().Str("module", "processor").Logger(),
 		cfg:  config,
@@ -80,29 +88,56 @@ func (p *processor) getClient(client *domain.Client, clientName string) error {
 		return nil
 	}
 
-	c, ok := clientMap.Load(clientName)
-	if !ok {
-		var err error
-		c, err = torrentclient.New(client)
-		if err != nil {
-			return errors.Wrap(err, "failed to create torrent client")
-		}
-
-		clientMap.Store(clientName, c)
+	if cached, ok := clientMap.Load(clientName); ok && clientConfigsEqual(cached.config, *client) {
+		p.req.Client = cached.client
+		return nil
 	}
 
+	c, err := torrentclient.New(client)
+	if err != nil {
+		return errors.Wrap(err, "failed to create torrent client")
+	}
+
+	clientMap.Store(clientName, cachedTorrentClient{
+		config: cloneClientConfig(*client),
+		client: c,
+	})
 	p.req.Client = c
 	return nil
 }
 
-func (p *processor) getAllTorrents(clientName string) (map[string][]entry, error) {
+func cloneClientConfig(client domain.Client) domain.Client {
+	clone := client
+	clone.Import.Tags = stdslices.Clone(client.Import.Tags)
+	return clone
+}
+
+func clientConfigsEqual(a, b domain.Client) bool {
+	return a.Type == b.Type &&
+		a.Host == b.Host &&
+		a.Port == b.Port &&
+		a.Username == b.Username &&
+		a.Password == b.Password &&
+		a.APIKey == b.APIKey &&
+		a.Import.SavePath == b.Import.SavePath &&
+		stdslices.Equal(a.Import.Tags, b.Import.Tags) &&
+		a.Import.Category == b.Import.Category &&
+		a.Import.DownloadPath == b.Import.DownloadPath &&
+		a.Import.ContentLayout == b.Import.ContentLayout
+}
+
+func (p *processor) getAllTorrents(clientName string, clientConfig *domain.Client, fuzzyMatching domain.FuzzyMatching) (map[string][]entry, error) {
 	f := func() *entryCache {
 		tre, ok := entryMap.Load(clientName)
-		if ok {
+		if ok && clientConfigsEqual(tre.clientConfig, *clientConfig) && tre.fuzzyMatching == fuzzyMatching {
 			return tre
 		}
 
-		entries := &entryCache{rlsMap: make(map[string]rls.Release)}
+		entries := &entryCache{
+			rlsMap:        make(map[string]rls.Release),
+			clientConfig:  cloneClientConfig(*clientConfig),
+			fuzzyMatching: fuzzyMatching,
+		}
 		entryMap.Store(clientName, entries)
 		return entries
 	}
@@ -116,7 +151,6 @@ func (p *processor) getAllTorrents(clientName string) (map[string][]entry, error
 	entries.mu.Lock()
 	defer entries.mu.Unlock()
 
-	entries = f()
 	if entries.lastUpdated.After(cur) {
 		return entries.entriesMap, nil
 	}
@@ -127,21 +161,32 @@ func (p *processor) getAllTorrents(clientName string) (map[string][]entry, error
 	}
 
 	after := time.Now()
-	entries = &entryCache{entriesMap: make(map[string][]entry), lastUpdated: after.Add(after.Sub(cur)), rlsMap: entries.rlsMap}
-
-	for _, t := range ts {
-		r, ok := entries.rlsMap[t.Name]
-		if !ok {
-			r = rls.ParseString(t.Name)
-			entries.rlsMap[t.Name] = r
-		}
-
-		comparableTitle := format.ComparableTitle(r, p.cfg.Config.FuzzyMatching)
-		entries.entriesMap[comparableTitle] = append(entries.entriesMap[comparableTitle], entry{torrent: t, release: r})
+	refreshed := &entryCache{
+		entriesMap:    make(map[string][]entry),
+		rlsMap:        entries.rlsMap,
+		clientConfig:  cloneClientConfig(*clientConfig),
+		fuzzyMatching: fuzzyMatching,
+		lastUpdated:   after.Add(after.Sub(cur)),
 	}
 
-	entryMap.Store(clientName, entries)
-	return entries.entriesMap, nil
+	for _, t := range ts {
+		r, ok := refreshed.rlsMap[t.Name]
+		if !ok {
+			r = rls.ParseString(t.Name)
+			refreshed.rlsMap[t.Name] = r
+		}
+
+		comparableTitle := format.ComparableTitle(r, fuzzyMatching)
+		refreshed.entriesMap[comparableTitle] = append(refreshed.entriesMap[comparableTitle], entry{torrent: t, release: r})
+	}
+
+	entryMap.Compute(clientName, func(current *entryCache, loaded bool) (*entryCache, bool) {
+		if loaded && current != entries {
+			return current, false
+		}
+		return refreshed, false
+	})
+	return refreshed.entriesMap, nil
 }
 
 func (p *processor) getFiles(hash string) (string, int64, error) {
@@ -234,18 +279,19 @@ func (p *processor) ProcessSeasonPackHandler(c *gin.Context) {
 // effects - hardlinking and importing happen on /api/parse.
 func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 	clientName := p.getClientName()
+	snapshot := p.cfg.Snapshot()
 
 	p.log.UpdateContext(func(c zerolog.Context) zerolog.Context {
 		return c.Str("release", p.req.Name).Str("clientname", clientName)
 	})
 
-	clientCfg, ok := p.cfg.Config.Clients[clientName]
+	clientCfg, ok := snapshot.Clients[clientName]
 	if !ok {
 		return domain.StatusClientNotFound, domain.StatusClientNotFound.Error()
 	}
 	p.log.Info().Msgf("using %s client", clientName)
 
-	if _, statusCode, err := p.collectMatches(clientName, clientCfg); err != nil {
+	if _, statusCode, err := p.collectMatches(clientName, clientCfg, snapshot); err != nil {
 		return statusCode, err
 	}
 
@@ -255,7 +301,7 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 // collectMatches resolves the announced release against the episodes currently
 // in the client and returns the deduped set of matched client episodes. It is
 // shared by /api/pack (gate) and /api/parse (import) so the two never disagree.
-func (p *processor) collectMatches(clientName string, clientCfg *domain.Client) ([]matchInfo, domain.StatusCode, error) {
+func (p *processor) collectMatches(clientName string, clientCfg *domain.Client, cfg domain.Config) ([]matchInfo, domain.StatusCode, error) {
 	if len(p.req.Name) == 0 {
 		return nil, domain.StatusAnnounceNameError, domain.StatusAnnounceNameError.Error()
 	}
@@ -264,20 +310,20 @@ func (p *processor) collectMatches(clientName string, clientCfg *domain.Client) 
 		return nil, domain.StatusGetClientError, fmt.Errorf("%s: %w", domain.StatusGetClientError, err)
 	}
 
-	entries, err := p.getAllTorrents(clientName)
+	entries, err := p.getAllTorrents(clientName, clientCfg, cfg.FuzzyMatching)
 	if err != nil {
 		return nil, domain.StatusGetTorrentsError, fmt.Errorf("%s: %w", domain.StatusGetTorrentsError, err)
 	}
 
 	requestRls := rls.ParseString(p.req.Name)
-	filteredEntries, ok := entries[format.ComparableTitle(requestRls, p.cfg.Config.FuzzyMatching)]
+	filteredEntries, ok := entries[format.ComparableTitle(requestRls, cfg.FuzzyMatching)]
 	if !ok {
 		return nil, domain.StatusNoMatches, domain.StatusNoMatches.Error()
 	}
 
 	comparisons := make([]domain.CompareInfo, len(filteredEntries))
 	for i, filteredEntry := range filteredEntries {
-		compareInfo := release.CheckCandidates(requestRls, filteredEntry.release, p.cfg.Config.FuzzyMatching)
+		compareInfo := release.CheckCandidates(requestRls, filteredEntry.release, cfg.FuzzyMatching)
 		comparisons[i] = compareInfo
 		switch compareInfo.StatusCode {
 		case domain.StatusAlreadyInClient, domain.StatusNotASeasonPack:
@@ -326,7 +372,7 @@ func (p *processor) collectMatches(clientName string, clientCfg *domain.Client) 
 		return nil, domain.StatusNoMatches, domain.StatusNoMatches.Error()
 	}
 
-	if p.cfg.Config.SmartMode {
+	if cfg.SmartMode {
 		totalEps, err := p.meta.EpisodesInSeason(requestRls)
 		if err != nil {
 			return nil, domain.StatusEpisodeCountError, fmt.Errorf("%s: %w", domain.StatusEpisodeCountError, err)
@@ -337,7 +383,7 @@ func (p *processor) collectMatches(clientName string, clientCfg *domain.Client) 
 
 		p.log.Info().Msgf("found %d/%d (%.2f%%) episodes in client", foundEps, totalEps, percentEps*100)
 
-		if percentEps < p.cfg.Config.SmartModeThreshold {
+		if percentEps < cfg.SmartModeThreshold {
 			return nil, domain.StatusBelowThreshold, domain.StatusBelowThreshold.Error()
 		}
 	}
@@ -397,12 +443,13 @@ func (p *processor) ParseTorrentHandler(c *gin.Context) {
 // folder, then imports the season pack back into the client.
 func (p *processor) parseTorrent() (domain.StatusCode, error) {
 	clientName := p.getClientName()
+	snapshot := p.cfg.Snapshot()
 
 	p.log.UpdateContext(func(c zerolog.Context) zerolog.Context {
 		return c.Str("release", p.req.Name).Str("clientname", clientName)
 	})
 
-	clientCfg, ok := p.cfg.Config.Clients[clientName]
+	clientCfg, ok := snapshot.Clients[clientName]
 	if !ok {
 		return domain.StatusClientNotFound, domain.StatusClientNotFound.Error()
 	}
@@ -424,7 +471,7 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 	importRoot := importDestination.SavePath()
 	p.log.Debug().Msgf("resolved import root: %s", importRoot)
 
-	matches, statusCode, err := p.collectMatches(clientName, clientCfg)
+	matches, statusCode, err := p.collectMatches(clientName, clientCfg, snapshot)
 	if err != nil {
 		return statusCode, err
 	}

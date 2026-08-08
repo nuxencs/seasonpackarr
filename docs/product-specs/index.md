@@ -6,6 +6,7 @@ Product specs define user-visible behavior and operator expectations.
 
 | Doc | Audience | Scope | Status |
 | --- | --- | --- | --- |
+| `config-reload.md` | Operators and maintainers | Live reload guarantees and restart-only settings | Active |
 | `new-user-onboarding.md` | New operators | First setup and first successful run | Active |
 | `webhook-contract.md` | Integrators and maintainers | Authenticated API behavior and integration expectations | Active |
 

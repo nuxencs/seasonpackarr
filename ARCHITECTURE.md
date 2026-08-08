@@ -19,7 +19,9 @@
 ### Configuration
 
 - Implemented in `internal/config/` and `internal/domain/config.go`
-- Concerns: defaults, config file discovery, dynamic reload, validation, config rendering
+- Concerns: defaults, config file discovery, validated immutable snapshots, dynamic reload, config rendering
+- Runtime readers acquire one snapshot per request or operation. Reload publishes a candidate only after file parsing,
+  environment overrides, and validation succeed.
 - Durable contract surfaces: `config.yaml`, `schemas/config-schema.json`, README config docs
 
 ### HTTP/API

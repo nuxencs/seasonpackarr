@@ -124,6 +124,30 @@ will need to adjust the created config file to your needs and start the containe
 You can configure a decent part of the features seasonpackarr provides. I will explain the most important ones here in
 more detail.
 
+### Config Reload
+
+seasonpackarr watches the active `config.yaml` file. It loads each change into a new snapshot, reapplies
+`SEASONPACKARR__...` environment overrides, and validates the complete result before it becomes active. An invalid or
+partially written file is rejected. The last valid config stays active.
+
+These settings reload while seasonpackarr runs:
+
+- torrent client connections and import policies
+- API token
+- smart mode and fuzzy matching
+- Discord webhook and notification levels
+- log level
+
+These settings configure components that start once and require a restart:
+
+- server host and port
+- metadata provider credentials
+- log path, maximum size, and backup count
+- `disableConfigFile`
+
+The restart after the first generated config edit is still required because the initial process exits when its client
+configuration is incomplete.
+
 ### Torrent Client Configuration
 
 Each entry under `clients` connects seasonpackarr to one torrent client instance. Set the `type` field to either
