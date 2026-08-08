@@ -4,5 +4,5 @@ seasonpackarr autobrr integration reference
 - filter priority matters; seasonpackarr should run before ordinary TV-download filters when the goal is to intercept season packs
 - /api/pack is the announce-driven match gate (external webhook filter); it has no filesystem side effects and adds nothing to the client
 - /api/parse is the torrent-aware hardlink + client import path: it recomputes matches, hardlinks episodes under the client's import root, and adds the torrent back to the client
-- the filter needs only a single Webhook action for /api/parse; do not add a separate qBittorrent or Transmission action, seasonpackarr adds the torrent to the client itself
+- the filter needs only a single Webhook action for /api/parse; do not add a separate torrent-client action, seasonpackarr adds the torrent to the client itself
 - changes that alter webhook expectations should update product specs and README

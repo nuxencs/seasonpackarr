@@ -2,7 +2,7 @@
 
 ## User Goal
 
-Get `seasonpackarr` running with autobrr and a torrent client (qBittorrent or Transmission) so season packs reuse already-downloaded episodes.
+Get `seasonpackarr` running with autobrr and a supported torrent client so season packs reuse already-downloaded episodes.
 
 ## Happy Path
 
@@ -12,8 +12,9 @@ Get `seasonpackarr` running with autobrr and a torrent client (qBittorrent or Tr
 4. Configure one or more torrent clients with the matching `type` and an `import` policy:
    - `qbittorrent` (default): username/password credentials, a qBittorrent 5.2.0+ `apiKey`, or a qui reverse-proxy host with client auth left blank; must set either `import.savePath` or `import.category`.
    - `transmission`: username/password credentials (no `apiKey`); the RPC protocol version is auto-negotiated; set `import.savePath` or leave it empty to use the session download directory.
+   - `deluge-v1` or `deluge-v2`: matching native daemon RPC credentials (not Deluge Web); `deluge` is a V2 alias; port `58846` is used when unset; `import.savePath` is required; omit `apiKey` and qBittorrent-only fields; use at most one `import.tags` entry and enable Deluge's Label plugin if it must be applied.
 5. Tune matching options such as smart mode and fuzzy matching.
-6. Add an autobrr filter with an external webhook check on `/api/pack` (match gate) and a single Webhook action on `/api/parse` (hardlink + client import); no separate qBittorrent/Transmission action.
+6. Add an autobrr filter with an external webhook check on `/api/pack` (match gate) and a single Webhook action on `/api/parse` (hardlink + client import); no separate torrent-client action.
 7. Run a smoke test with the CLI helper commands.
 
 ## First Success Criteria
@@ -33,5 +34,7 @@ Get `seasonpackarr` running with autobrr and a torrent client (qBittorrent or Tr
 - torrent client credentials/connectivity failure
 - qui reverse-proxy URL entered without its `/proxy/...` path
 - client import or verification failure
-- a leftover autobrr qBittorrent/Transmission action adding the torrent a second time
+- a Deluge Web port or HTTP URL used instead of the native daemon RPC endpoint
+- a pure BitTorrent v2 pack sent to the current seasonpackarr Deluge adapter
+- a leftover autobrr torrent-client action adding the torrent a second time
 - overly strict or overly loose fuzzy matching

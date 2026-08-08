@@ -1,15 +1,18 @@
 seasonpackarr configuration surface reference
 
 - config contract spans internal defaults, config.yaml, runtime loading, and schemas/config-schema.json
-- clients support two types via clients.<name>.type: "qbittorrent" (default) or "transmission"
+- clients support qBittorrent, Transmission, and explicit Deluge protocol types via clients.<name>.type: "qbittorrent" (default), "transmission", "deluge-v1", or "deluge-v2"; "deluge" aliases "deluge-v2"
 - qBittorrent clients can point host at a qui reverse-proxy URL; with qui proxy auth, leave username/password/apiKey empty
 - Transmission clients use username/password only (no apiKey); set port explicitly (Transmission listens on 9091 by default); speaks the legacy Transmission RPC protocol via github.com/hekmon/transmissionrpc/v3
+- Deluge clients use version-specific native daemon RPC through github.com/autobrr/go-deluge, not Deluge Web; host is a hostname/IP without a URL scheme; port defaults to 58846 when unset; import.savePath is required; the current seasonpackarr adapter rejects pure BitTorrent v2 imports because it uses the legacy hash as the torrent ID
 - each client carries a clients.<name>.import policy that controls how season packs are imported back into the client
-- client-neutral import fields: import.savePath (final destination, hardlink root + client save dir; must exist when set), import.tags (qBittorrent tags / Transmission labels, default ["seasonpackarr"])
-- a correctly imported torrent is always added stopped (so the present files can be rechecked/verified first) and always started once the data checks out
-- qBittorrent-only import fields (rejected at startup on a transmission client): import.category (also resolves the import root when savePath is empty), import.downloadPath (temporary/incomplete path only, never the final destination), import.contentLayout ("subfolder" | "nosubfolder" | "original"; empty defers to qBittorrent's default)
+- import.savePath is the final destination and hardlink root; it must exist when set and is required for Deluge
+- import.tags maps to qBittorrent tags or Transmission labels; Deluge accepts at most one entry for its optional Label plugin, stores it in lower case, and creates it if missing when the plugin is enabled
+- a correctly imported torrent is added stopped and is not left paused; qBittorrent and Transmission explicitly verify before resume, while Deluge resumes into its normal initial data check
+- qBittorrent-only import fields (rejected at startup on Transmission and Deluge): import.category (also resolves the import root when savePath is empty), import.downloadPath (temporary/incomplete path only, never the final destination), import.contentLayout ("subfolder" | "nosubfolder" | "original"; empty defers to qBittorrent's default)
 - qBittorrent clients must set import.savePath or import.category; without savePath, the destination follows qBittorrent automatic-management and manual category-path preferences
 - Transmission has no categories or content layout; empty import.savePath falls back to the session download dir; Transmission always hash-checks existing data on add, so imports verify before starting
+- Deluge requires import.savePath; it adds stopped, applies its optional label, resumes into Deluge/libtorrent's normal initial check, and waits until it is no longer paused or checking
 - parseTorrentFile and clients.<name>.preImportPath are removed; startup hard-fails with a migration message if they (or their env vars) are still present
 - config reload builds a new immutable snapshot, reapplies SEASONPACKARR__ environment overrides, validates it, and publishes it atomically; invalid reloads keep the last valid snapshot
 - live reload applies client connections/import policies, apiToken, smart/fuzzy matching, notifications, and logLevel

@@ -81,7 +81,7 @@ If a change starts pushing transport concerns into matching logic or file ops, s
 ## External Dependencies
 
 - autobrr webhook integration
-- qBittorrent and Transmission API access
+- qBittorrent, Transmission, and Deluge 1.3/2 native RPC access
 - TVDB API
 - TVMaze API
 - filesystem hardlink support
@@ -91,6 +91,7 @@ If a change starts pushing transport concerns into matching logic or file ops, s
 
 Current explicit test coverage exists in:
 
+- `internal/torrentclient/*_test.go` (unit tests plus Docker-backed Deluge V1/V2 integration coverage)
 - `internal/release/release_test.go`
 - `internal/format/format_test.go`
 - `internal/metadata/metadata_test.go`

@@ -7,9 +7,9 @@ the rest still need downloading - the normal seasonpackarr case).
 
 See [season-pack-lifecycle.md](season-pack-lifecycle.md) for the end-to-end
 request flow; this doc zooms into the client-side import handled by
-`internal/torrentclient` (`qbitClient.ImportDestination` / `qbitClient.Import`). The
-Transmission adapter reaches the same outcome differently - see
-[the contrast below](#transmission-contrast).
+`internal/torrentclient` (`qbitClient.ImportDestination` / `qbitClient.Import`).
+The Transmission and Deluge adapters reach the same outcome differently. See
+[the client contrasts below](#transmission-contrast).
 
 ## The algorithm
 
@@ -132,3 +132,16 @@ stopped, forces a `TorrentVerify`, polls until the check leaves the checking
 states, then starts. The outcome matches qBittorrent: complete → seeding at
 `percentDone 1.00`; partial → `percentDone 0.33`, downloading only the missing
 episodes.
+
+## Deluge contrast
+
+Deluge 1.3 and 2 receive the torrent through their version-specific native
+daemon RPC protocols with `add_paused` and an explicit `download_location`.
+The adapter adds the torrent paused, applies its optional label, then resumes
+it into Deluge/libtorrent's normal initial check. It polls until the torrent is
+no longer paused, checking, allocating, or moving. Docker-backed local tests
+against Deluge 1.3.15 and 2.1.2 verify that complete packs seed and partial
+packs account for present bytes before they download missing pieces. The tests
+are environment-gated and are not part of CI. The adapter currently requires a
+v1 or hybrid torrent because seasonpackarr uses the legacy info hash as the
+daemon torrent ID.

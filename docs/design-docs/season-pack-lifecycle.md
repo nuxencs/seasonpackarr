@@ -18,8 +18,8 @@ Describe the normal path from webhook hit to hardlink creation and client import
    contents to derive stable target naming.
 10. The client's import destination is resolved, matches are recomputed, and matching episode files are hardlinked in
     the rooted or flat layout that the client will use.
-11. The torrent is added to the client, verified/rechecked so the present files are recognised, and resumed (unless
-    configured to stay paused). See [qbittorrent-import-flow.md](qbittorrent-import-flow.md) for the complete-vs-partial
+11. The torrent is added to the client, checked so the present files are recognised, and not left paused. See
+    [qbittorrent-import-flow.md](qbittorrent-import-flow.md) for the complete-vs-partial
     client import flow with diagrams.
 12. Logs and notifications communicate outcome.
 
