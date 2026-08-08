@@ -170,10 +170,12 @@ func (q *qbitClient) Import(req ImportRequest) error {
 		return importErr(ImportStageConfig, errors.New("resolved qbittorrent save path is empty"))
 	}
 
-	// Always pin the add to the same resolved root where the processor created
-	// hardlinks. Passing only a category lets qBittorrent's global torrent-
-	// management settings choose a different save path.
-	opts.SavePath = resolvedSavePath
+	// Category-only policy leaves path selection and Auto TMM to qBittorrent.
+	// An explicit save or download path opts into a pinned destination and the
+	// client's normal Auto TMM opt-out behavior.
+	if strings.TrimSpace(q.policy.SavePath) != "" || strings.TrimSpace(q.policy.DownloadPath) != "" {
+		opts.SavePath = resolvedSavePath
+	}
 
 	if _, err := q.c.AddTorrentFromMemory(req.TorrentBytes, opts.Prepare()); err != nil {
 		return importErr(ImportStageAdd, errors.Wrap(err, "failed to add torrent to qbittorrent"))

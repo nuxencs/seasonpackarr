@@ -259,13 +259,65 @@ func TestQbitImportRechecksMissingFilesThenResumes(t *testing.T) {
 	require.NotEmpty(t, stub.addBytes)
 	require.Equal(t, "true", stub.addOptions["skip_checking"])
 	require.Equal(t, "true", stub.addOptions["paused"])
-	require.Equal(t, "/data/tv-hd", stub.addOptions["savepath"])
+	_, hasSavePath := stub.addOptions["savepath"]
+	require.False(t, hasSavePath)
 	require.Equal(t, "tv-hd", stub.addOptions["category"])
 	require.Equal(t, "seasonpackarr", stub.addOptions["tags"])
 	require.Len(t, stub.recheckCalls, 1)
 	require.Equal(t, []string{hash}, stub.recheckCalls[0])
 	require.Len(t, stub.resumeCalls, 1)
 	require.Equal(t, []string{hash}, stub.resumeCalls[0])
+}
+
+func TestQbitImportAutomaticManagementOption(t *testing.T) {
+	const hash = "abcdef"
+	tests := []struct {
+		name            string
+		policy          domain.ImportPolicy
+		wantSavePath    string
+		wantSavePresent bool
+		wantAutoTMM     string
+		wantAutoPresent bool
+	}{
+		{
+			name:   "category only leaves path and management to qbittorrent",
+			policy: domain.ImportPolicy{Category: "tv-hd"},
+		},
+		{
+			name:            "explicit save path disables automatic management",
+			policy:          domain.ImportPolicy{Category: "tv-hd", SavePath: "/data/tv-hd"},
+			wantSavePath:    "/data/tv-hd",
+			wantSavePresent: true,
+			wantAutoTMM:     "false",
+			wantAutoPresent: true,
+		},
+		{
+			name:            "explicit download path pins final path and disables automatic management",
+			policy:          domain.ImportPolicy{Category: "tv-hd", DownloadPath: "/data/incomplete"},
+			wantSavePath:    "/data/tv-hd",
+			wantSavePresent: true,
+			wantAutoTMM:     "false",
+			wantAutoPresent: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stub := &stubQbitAPI{
+				lookupSeq: []qbittorrent.Torrent{{Hash: hash, InfohashV1: hash, State: qbittorrent.TorrentStateDownloading}},
+			}
+			q := newTestQbitClient(stub, tt.policy)
+
+			err := q.Import(ImportRequest{TorrentBytes: []byte("torrent"), LegacyHash: hash, HasV1: true, SavePath: "/data/tv-hd"})
+			require.NoError(t, err)
+			gotSavePath, savePresent := stub.addOptions["savepath"]
+			require.Equal(t, tt.wantSavePresent, savePresent)
+			require.Equal(t, tt.wantSavePath, gotSavePath)
+			gotAutoTMM, autoPresent := stub.addOptions["autoTMM"]
+			require.Equal(t, tt.wantAutoPresent, autoPresent)
+			require.Equal(t, tt.wantAutoTMM, gotAutoTMM)
+		})
+	}
 }
 
 // TestQbitImportWaitsForCheckingToSettle is the regression guard for the bug the

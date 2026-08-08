@@ -23,7 +23,7 @@ flowchart TD
     A["POST /api/parse<br/>processor.parseTorrent"] --> B["ImportDestination()<br/>save path + rooted or flat file layout"]
     B --> C["collectMatches()<br/>episodes already in the client that match the announce"]
     C --> D["hardlink matched episodes<br/>in the resolved client layout"]
-    D --> E["qbitClient.Import(bytes, hash, savePath = importRoot)"]
+    D --> E["qbitClient.Import(bytes, hash, resolved import root)"]
 
     E --> F["buildTorrentAddOptions()<br/>SkipHashCheck = true, Paused = true"]
     F --> G["AddTorrentFromMemory"]
@@ -41,6 +41,11 @@ flowchart TD
 Any step that fails returns a stage-tagged `*ImportError` (`config` / `add` /
 `find` / `recheck` / `resume`) which the processor maps to a status code
 (459–463) without ever seeing a qBittorrent type.
+
+Category-only policy sends the category without `savepath` or `autoTMM`, so
+qBittorrent keeps its own path-selection and automatic-management behavior.
+An explicit save or download path also sends the resolved final save path,
+which opts that torrent out of Auto TMM.
 
 ## Complete vs partial, step by step
 

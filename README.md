@@ -163,6 +163,8 @@ always starts it once the data checks out - a correctly imported pack is never l
 The following fields are qBittorrent-only and are rejected at startup when set on a Transmission client:
 
 - **category**: The category to add the torrent with; also resolves the import destination when `savePath` is empty.
+  When no save or download path is set, seasonpackarr sends only the category and leaves path selection and Auto TMM
+  to qBittorrent.
 - **downloadPath**: A temporary path for incomplete downloads only; never the final destination.
 - **contentLayout**: One of `"subfolder"`, `"nosubfolder"` or `"original"`; leave it empty to defer to qBittorrent's
   default.
