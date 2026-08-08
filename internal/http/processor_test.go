@@ -9,8 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
-	"github.com/nuxencs/seasonpackarr/internal/config"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
@@ -23,12 +23,13 @@ import (
 // mockTorrentClient is a configurable in-memory torrentclient.TorrentClient for
 // exercising the processor without a live torrent client.
 type mockTorrentClient struct {
-	torrents    []torrentclient.Torrent
-	torrentsErr error
-	files       []torrentclient.File            // returned for any hash when filesByHash is nil
-	filesByHash map[string][]torrentclient.File // per-hash file lists
-	filesErr    error
-	gotHash     string
+	torrents     []torrentclient.Torrent
+	torrentsErr  error
+	torrentCalls int
+	files        []torrentclient.File            // returned for any hash when filesByHash is nil
+	filesByHash  map[string][]torrentclient.File // per-hash file lists
+	filesErr     error
+	gotHash      string
 
 	importRoot    string
 	importRootErr error
@@ -38,7 +39,18 @@ type mockTorrentClient struct {
 	importReq     torrentclient.ImportRequest
 }
 
+type staticConfig struct {
+	config domain.Config
+}
+
+var clientConfigsEqualSink bool
+
+func (c staticConfig) Snapshot() domain.Config {
+	return c.config
+}
+
 func (m *mockTorrentClient) GetTorrents() ([]torrentclient.Torrent, error) {
+	m.torrentCalls++
 	return m.torrents, m.torrentsErr
 }
 
@@ -164,12 +176,89 @@ func TestGetFilesPropagatesClientError(t *testing.T) {
 }
 
 func resetProcessorGlobals() {
-	clientMap = xsync.NewMapOf[string, torrentclient.TorrentClient]()
+	clientMap = xsync.NewMapOf[string, cachedTorrentClient]()
 	entryMap = xsync.NewMapOf[string, *entryCache]()
 }
 
+func TestClientConfigsEqualCoversEveryField(t *testing.T) {
+	base := domain.Client{
+		Type:     "qbittorrent",
+		Host:     "localhost",
+		Port:     8080,
+		Username: "user",
+		Password: "password",
+		APIKey:   "api-key",
+		Import: domain.ImportPolicy{
+			SavePath:      "/save",
+			Tags:          []string{"one", "two"},
+			Category:      "category",
+			DownloadPath:  "/download",
+			ContentLayout: "subfolder",
+		},
+	}
+	require.True(t, clientConfigsEqual(base, cloneClientConfig(base)))
+
+	tests := map[string]func(*domain.Client){
+		"type":           func(client *domain.Client) { client.Type = "transmission" },
+		"host":           func(client *domain.Client) { client.Host = "other" },
+		"port":           func(client *domain.Client) { client.Port++ },
+		"username":       func(client *domain.Client) { client.Username = "other" },
+		"password":       func(client *domain.Client) { client.Password = "other" },
+		"api key":        func(client *domain.Client) { client.APIKey = "other" },
+		"save path":      func(client *domain.Client) { client.Import.SavePath = "/other" },
+		"tags":           func(client *domain.Client) { client.Import.Tags[0] = "other" },
+		"category":       func(client *domain.Client) { client.Import.Category = "other" },
+		"download path":  func(client *domain.Client) { client.Import.DownloadPath = "/other" },
+		"content layout": func(client *domain.Client) { client.Import.ContentLayout = "original" },
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			changed := cloneClientConfig(base)
+			mutate(&changed)
+			require.False(t, clientConfigsEqual(base, changed))
+		})
+	}
+
+	withoutTags := cloneClientConfig(base)
+	withoutTags.Import.Tags = nil
+	emptyTags := cloneClientConfig(base)
+	emptyTags.Import.Tags = []string{}
+	require.True(t, clientConfigsEqual(withoutTags, emptyTags), "nil and empty tags have the same policy")
+
+	allocations := testing.AllocsPerRun(1000, func() {
+		clientConfigsEqualSink = clientConfigsEqual(base, base)
+	})
+	require.Zero(t, allocations, "config equality is on the request path")
+}
+
+func TestTorrentEntryCacheIsScopedToClientAndFuzzyConfig(t *testing.T) {
+	resetProcessorGlobals()
+	mock := &mockTorrentClient{torrents: []torrentclient.Torrent{{Name: "Series.S01E01.1080p.WEB-DL-GRP"}}}
+	p := newTestProcessor(mock)
+	client := &domain.Client{Type: "qbittorrent", Import: domain.ImportPolicy{Category: "one"}}
+
+	_, err := p.getAllTorrents("default", client, domain.FuzzyMatching{})
+	require.NoError(t, err)
+	cached, ok := entryMap.Load("default")
+	require.True(t, ok)
+	cached.lastUpdated = time.Now().Add(time.Minute)
+	_, err = p.getAllTorrents("default", client, domain.FuzzyMatching{})
+	require.NoError(t, err)
+	require.Equal(t, 1, mock.torrentCalls, "unchanged config should reuse cached entries")
+
+	changedClient := cloneClientConfig(*client)
+	changedClient.Import.Category = "two"
+	_, err = p.getAllTorrents("default", &changedClient, domain.FuzzyMatching{})
+	require.NoError(t, err)
+	require.Equal(t, 2, mock.torrentCalls, "client config change should refresh cached entries")
+
+	_, err = p.getAllTorrents("default", &changedClient, domain.FuzzyMatching{SkipYearCompare: true})
+	require.NoError(t, err)
+	require.Equal(t, 3, mock.torrentCalls, "fuzzy config change should refresh cached entries")
+}
+
 func newImportProcessor() *processor {
-	cfg := &config.AppConfig{Config: &domain.Config{
+	cfg := staticConfig{config: domain.Config{
 		Clients: map[string]*domain.Client{
 			"default": {Type: "qbittorrent", Import: domain.ImportPolicy{Category: "tv-hd"}},
 		},

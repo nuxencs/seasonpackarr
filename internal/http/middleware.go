@@ -17,22 +17,24 @@ import (
 
 func (s *Server) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		apiToken := s.cfg.Snapshot().APIToken
+
 		// Allow access if apiToken value is set to an empty string
-		if s.cfg.Config.APIToken == "" {
+		if apiToken == "" {
 			c.Next()
 			return
 		}
 
 		// Check the X-API-Token header
 		if token := c.GetHeader("X-API-Token"); token != "" {
-			if token != s.cfg.Config.APIToken {
+			if token != apiToken {
 				s.log.Error().Msgf("unauthorized access attempt with incorrect API token in header from IP: %s", c.ClientIP())
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 				return
 			}
 		} else if key := c.Query("apikey"); key != "" {
 			// Check the query parameter ?apikey=TOKEN
-			if key != s.cfg.Config.APIToken {
+			if key != apiToken {
 				s.log.Error().Msgf("unauthorized access attempt with incorrect API token in query parameters from IP: %s", c.ClientIP())
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 				return
@@ -78,7 +80,7 @@ func LoggerMiddleware(logger logger.Logger) gin.HandlerFunc {
 				log.Trace().
 					Str("type", "access").
 					Timestamp().
-					Fields(map[string]interface{}{
+					Fields(map[string]any{
 						"remote_ip":  c.ClientIP(),
 						"url":        c.Request.URL.Path,
 						"proto":      c.Request.Proto,

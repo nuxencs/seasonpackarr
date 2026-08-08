@@ -16,6 +16,8 @@ Reliable does not mean perfect acceptance. It means predictable outcomes when de
 - API token middleware
 - health endpoints
 - structured logging
+- validated, immutable config snapshots that keep the last valid config after a rejected reload
+- environment precedence reapplied on every config reload
 - TVDB/TVMaze fallback strategy
 - release comparison gates
 - hardlink creation isolated from matching logic

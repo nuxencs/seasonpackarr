@@ -4,49 +4,47 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/logger"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMissingOptionalConfigKeysUseDefaults(t *testing.T) {
-	cfg := &AppConfig{
-		Config: &domain.Config{},
-		k:      koanf.New("."),
-	}
-	cfg.defaults()
-
 	configFile := writeTestConfig(t, `
 host: "127.0.0.1"
 port: 42069
 clients: {}
 logLevel: "INFO"
 `)
+	cfg := &AppConfig{configFile: configFile, version: "test"}
+	snapshot, err := cfg.loadSnapshot()
+	require.NoError(t, err)
 
-	require.NoError(t, cfg.k.Load(file.Provider(configFile), yaml.Parser()))
-	require.NoError(t, cfg.k.Unmarshal("", cfg.Config))
-
-	require.Equal(t, "INFO", cfg.Config.LogLevel)
-	require.Equal(t, "", cfg.Config.LogPath)
-	require.Equal(t, 50, cfg.Config.LogMaxSize)
-	require.Equal(t, 3, cfg.Config.LogMaxBackups)
-	require.False(t, cfg.Config.SmartMode)
-	require.Equal(t, float32(0.75), cfg.Config.SmartModeThreshold)
-	require.False(t, cfg.Config.FuzzyMatching.SkipRepackCompare)
-	require.False(t, cfg.Config.FuzzyMatching.SimplifyHdrCompare)
-	require.False(t, cfg.Config.FuzzyMatching.SimplifyWebCompare)
-	require.False(t, cfg.Config.FuzzyMatching.SkipYearCompare)
-	require.Equal(t, "", cfg.Config.Metadata.TVDBAPIKey)
-	require.Equal(t, "", cfg.Config.Metadata.TVDBPIN)
-	require.Equal(t, "", cfg.Config.APIToken)
-	require.Equal(t, []string{"MATCH", "ERROR"}, cfg.Config.Notifications.NotificationLevel)
-	require.Equal(t, "", cfg.Config.Notifications.Discord)
+	require.Equal(t, "INFO", snapshot.LogLevel)
+	require.Equal(t, "", snapshot.LogPath)
+	require.Equal(t, 50, snapshot.LogMaxSize)
+	require.Equal(t, 3, snapshot.LogMaxBackups)
+	require.False(t, snapshot.SmartMode)
+	require.Equal(t, float32(0.75), snapshot.SmartModeThreshold)
+	require.False(t, snapshot.FuzzyMatching.SkipRepackCompare)
+	require.False(t, snapshot.FuzzyMatching.SimplifyHdrCompare)
+	require.False(t, snapshot.FuzzyMatching.SimplifyWebCompare)
+	require.False(t, snapshot.FuzzyMatching.SkipYearCompare)
+	require.Equal(t, "", snapshot.Metadata.TVDBAPIKey)
+	require.Equal(t, "", snapshot.Metadata.TVDBPIN)
+	require.Equal(t, "", snapshot.APIToken)
+	require.Equal(t, []string{"MATCH", "ERROR"}, snapshot.Notifications.NotificationLevel)
+	require.Equal(t, "", snapshot.Notifications.Discord)
 }
 
 func writeTestConfig(t *testing.T, content string) string {
@@ -117,18 +115,258 @@ func TestLoadFromEnvParsesMultiWordClientSettings(t *testing.T) {
 	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_IMPORT_CATEGORY", "tv-hd")
 	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_IMPORT_TAGS", "a, b")
 
-	cfg := &AppConfig{
-		Config: &domain.Config{Clients: map[string]*domain.Client{}},
-		k:      koanf.New("."),
-	}
-	cfg.loadFromEnv()
+	cfg := domain.Config{Clients: map[string]*domain.Client{}}
+	applyEnvironment(&cfg)
 
-	client, ok := cfg.Config.Clients["envonly"]
+	client, ok := cfg.Clients["envonly"]
 	require.True(t, ok, "env-only client should be lazily created")
 	require.Equal(t, "qbittorrent", client.Type)
 	require.Equal(t, "/data/tv-hd", client.Import.SavePath)
 	require.Equal(t, "tv-hd", client.Import.Category)
 	require.Equal(t, []string{"a", "b"}, client.Import.Tags)
+}
+
+func TestReloadRejectsInvalidConfigAndKeepsLastSnapshot(t *testing.T) {
+	previousLogLevel := zerolog.GlobalLevel()
+	zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	t.Cleanup(func() {
+		zerolog.SetGlobalLevel(previousLogLevel)
+	})
+
+	cfg, configFile := newTestAppConfig(t, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: tv-hd
+logLevel: INFO
+`)
+	before := cfg.Snapshot()
+
+	writeConfigFile(t, configFile, `
+clients:
+  default:
+    type: transmission
+    import:
+      category: tv-hd
+logLevel: TRACE
+`)
+	_, err := cfg.reload()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "qBittorrent only")
+	require.Equal(t, before, cfg.Snapshot())
+	require.Equal(t, zerolog.WarnLevel, zerolog.GlobalLevel())
+}
+
+func TestReloadReappliesEnvironmentOverrides(t *testing.T) {
+	t.Setenv("SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_CATEGORY", "from-env")
+	cfg, configFile := newTestAppConfig(t, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: from-file-before
+`)
+	require.Equal(t, "from-env", cfg.Snapshot().Clients["default"].Import.Category)
+
+	writeConfigFile(t, configFile, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: from-file-after
+`)
+	_, err := cfg.reload()
+	require.NoError(t, err)
+	require.Equal(t, "from-env", cfg.Snapshot().Clients["default"].Import.Category)
+}
+
+func TestReloadRestoresDefaultsForOmittedKeys(t *testing.T) {
+	cfg, configFile := newTestAppConfig(t, `
+clients: {}
+logMaxSize: 99
+`)
+	require.Equal(t, 99, cfg.Snapshot().LogMaxSize)
+
+	writeConfigFile(t, configFile, "clients: {}\n")
+	_, err := cfg.reload()
+	require.NoError(t, err)
+	require.Equal(t, 50, cfg.Snapshot().LogMaxSize)
+}
+
+func TestResolveConfigFileReturnsDiscoveredFile(t *testing.T) {
+	originalWorkingDir, err := os.Getwd()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, os.Chdir(originalWorkingDir))
+	})
+
+	workingDir := t.TempDir()
+	homeDir := t.TempDir()
+	configFile := filepath.Join(homeDir, ".config", "seasonpackarr", "config.yaml")
+	require.NoError(t, os.MkdirAll(filepath.Dir(configFile), 0o755))
+	writeConfigFile(t, configFile, "clients: {}\n")
+	require.NoError(t, os.Chdir(workingDir))
+	t.Setenv("HOME", homeDir)
+
+	cfg := &AppConfig{}
+	got, err := cfg.resolveConfigFile("")
+	require.NoError(t, err)
+	require.Equal(t, configFile, got)
+}
+
+func TestSnapshotCannotMutateStoredConfig(t *testing.T) {
+	cfg, _ := newTestAppConfig(t, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: tv-hd
+      tags: [one, two]
+notifications:
+  notificationLevel: [MATCH, ERROR]
+`)
+
+	snapshot := cfg.Snapshot()
+	snapshot.Clients["default"].Import.Category = "changed"
+	snapshot.Clients["default"].Import.Tags[0] = "changed"
+	snapshot.Notifications.NotificationLevel[0] = "changed"
+	delete(snapshot.Clients, "default")
+
+	stored := cfg.Snapshot()
+	require.Equal(t, "tv-hd", stored.Clients["default"].Import.Category)
+	require.Equal(t, []string{"one", "two"}, stored.Clients["default"].Import.Tags)
+	require.Equal(t, []string{"MATCH", "ERROR"}, stored.Notifications.NotificationLevel)
+}
+
+func TestDynamicReloadPublishesSnapshotForConcurrentReaders(t *testing.T) {
+	previousLogLevel := zerolog.GlobalLevel()
+	t.Cleanup(func() {
+		zerolog.SetGlobalLevel(previousLogLevel)
+	})
+
+	cfg, configFile := newTestAppConfig(t, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: before
+`)
+	snapshot := cfg.Snapshot()
+	reloads, err := cfg.DynamicReload(logger.New(&snapshot))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NotNil(t, cfg.watcher)
+		require.NoError(t, cfg.watcher.Unwatch())
+	})
+
+	readerResult := make(chan error, 1)
+	go func() {
+		for {
+			snapshot := cfg.Snapshot()
+			client, ok := snapshot.Clients["default"]
+			if !ok || client == nil {
+				readerResult <- fmt.Errorf("published snapshot has no default client")
+				return
+			}
+			if client.Import.Category == "after" {
+				readerResult <- nil
+				return
+			}
+		}
+	}()
+
+	writeConfigFile(t, configFile, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: after
+logLevel: INFO
+`)
+	select {
+	case <-reloads:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for config reload")
+	}
+	select {
+	case err := <-readerResult:
+		require.NoError(t, err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("concurrent snapshot reader did not observe reload")
+	}
+	require.Equal(t, "after", cfg.Snapshot().Clients["default"].Import.Category)
+}
+
+func TestDynamicReloadKeepsSnapshotWhileConfigWriteIsIncomplete(t *testing.T) {
+	previousLogLevel := zerolog.GlobalLevel()
+	t.Cleanup(func() {
+		zerolog.SetGlobalLevel(previousLogLevel)
+	})
+
+	cfg, configFile := newTestAppConfig(t, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: before
+`)
+	snapshot := cfg.Snapshot()
+	reloads, err := cfg.DynamicReload(logger.New(&snapshot))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NotNil(t, cfg.watcher)
+		require.NoError(t, cfg.watcher.Unwatch())
+	})
+
+	configWriter, err := os.OpenFile(configFile, os.O_WRONLY|os.O_TRUNC, 0)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = configWriter.Close()
+	})
+
+	select {
+	case <-reloads:
+		t.Fatal("published a reload while the config file was empty")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	before := cfg.Snapshot()
+	require.Contains(t, before.Clients, "default")
+	require.NotNil(t, before.Clients["default"])
+	require.Equal(t, "before", before.Clients["default"].Import.Category)
+
+	_, err = configWriter.WriteString(`
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: after
+`)
+	require.NoError(t, err)
+	require.NoError(t, configWriter.Close())
+
+	select {
+	case <-reloads:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for completed config reload")
+	}
+	require.Equal(t, "after", cfg.Snapshot().Clients["default"].Import.Category)
+}
+
+func newTestAppConfig(t *testing.T, contents string) (*AppConfig, string) {
+	t.Helper()
+	configFile := writeTestConfig(t, contents)
+	cfg := &AppConfig{configFile: configFile, version: "test"}
+	snapshot, err := cfg.loadSnapshot()
+	require.NoError(t, err)
+	cfg.current.Store(snapshot)
+	return cfg, configFile
+}
+
+func writeConfigFile(t *testing.T, configFile, contents string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(configFile, []byte(contents), 0o644))
 }
 
 func TestValidateClientConfig(t *testing.T) {

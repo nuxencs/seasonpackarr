@@ -14,12 +14,12 @@ import (
 
 type webhookHandler struct {
 	log  logger.Logger
-	cfg  *config.AppConfig
+	cfg  config.Provider
 	noti domain.Sender
 	meta *metadata.Provider
 }
 
-func newWebhookHandler(log logger.Logger, cfg *config.AppConfig, notification domain.Sender, metadata *metadata.Provider) *webhookHandler {
+func newWebhookHandler(log logger.Logger, cfg config.Provider, notification domain.Sender, metadata *metadata.Provider) *webhookHandler {
 	return &webhookHandler{
 		log:  log,
 		cfg:  cfg,
