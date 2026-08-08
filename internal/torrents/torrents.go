@@ -1,4 +1,4 @@
-// Copyright (c) 2023 - 2025, nuxen and the seasonpackarr contributors.
+// Copyright (c) 2023 - 2026, nuxen and the seasonpackarr contributors.
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 package torrents
@@ -10,8 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/anacrolix/torrent/metainfo"
-	infohash_v2 "github.com/anacrolix/torrent/types/infohash-v2"
+	"github.com/autobrr/go-torrent/metainfo"
 )
 
 type Episode struct {
@@ -53,7 +52,7 @@ func InfoHashes(torrent []byte) (Hashes, error) {
 		HasV1:  info.HasV1(),
 	}
 	if info.HasV2() {
-		v2Hash := infohash_v2.HashBytes(metaInfo.InfoBytes)
+		v2Hash := metainfo.HashV2Bytes(metaInfo.InfoBytes)
 		hashes.V2 = v2Hash.HexString()
 	}
 

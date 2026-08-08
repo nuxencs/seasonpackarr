@@ -6,6 +6,7 @@ package torrentclient
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,32 +14,60 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anacrolix/torrent/bencode"
-	"github.com/anacrolix/torrent/metainfo"
 	"github.com/autobrr/go-qbittorrent"
+	"github.com/autobrr/go-torrent/bencode"
+	"github.com/autobrr/go-torrent/metainfo"
 	"github.com/hekmon/transmissionrpc/v3"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 )
 
-// torrentBytesFromFolder builds an in-memory .torrent for an on-disk folder
-// without touching its files, so the pack data can stay in place for the client
-// to verify as an already-present import.
+// torrentBytesFromFolder builds a valid v1 torrent for the flat test pack.
+// It includes piece hashes so a real client can verify the files on disk.
 func torrentBytesFromFolder(t *testing.T, folderPath string) []byte {
 	t.Helper()
-	info := metainfo.Info{PieceLength: 256 * 1024}
-	if err := info.BuildFromFilePath(folderPath); err != nil {
-		t.Fatalf("BuildFromFilePath: %v", err)
+
+	const pieceLength = 256 * 1024
+	info := metainfo.Info{
+		Name:        filepath.Base(folderPath),
+		PieceLength: pieceLength,
 	}
+	var content []byte
+
+	entries, err := os.ReadDir(folderPath)
+	if err != nil {
+		t.Fatalf("read pack directory: %v", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(folderPath, entry.Name()))
+		if err != nil {
+			t.Fatalf("read pack file: %v", err)
+		}
+		info.Files = append(info.Files, metainfo.FileInfo{
+			Path:   []string{entry.Name()},
+			Length: int64(len(data)),
+		})
+		content = append(content, data...)
+	}
+
+	for offset := 0; offset < len(content); offset += pieceLength {
+		end := min(offset+pieceLength, len(content))
+		hash := sha1.Sum(content[offset:end])
+		info.Pieces = append(info.Pieces, hash[:]...)
+	}
+
 	infoBytes, err := bencode.Marshal(info)
 	if err != nil {
-		t.Fatalf("bencode info: %v", err)
+		t.Fatalf("encode torrent info: %v", err)
 	}
-	var buf bytes.Buffer
-	if err := (&metainfo.MetaInfo{InfoBytes: infoBytes}).Write(&buf); err != nil {
-		t.Fatalf("write metainfo: %v", err)
+	var torrentBytes bytes.Buffer
+	if err := (&metainfo.MetaInfo{InfoBytes: infoBytes}).Write(&torrentBytes); err != nil {
+		t.Fatalf("encode torrent: %v", err)
 	}
-	return buf.Bytes()
+	return torrentBytes.Bytes()
 }
 
 // buildLivePack writes a complete season pack under importDir and returns the

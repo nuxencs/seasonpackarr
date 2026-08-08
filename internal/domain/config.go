@@ -1,4 +1,4 @@
-// Copyright (c) 2021 - 2025, Ludvig Lundgren and the autobrr contributors.
+// Copyright (c) 2021 - 2026, Ludvig Lundgren and the autobrr contributors.
 // Code is modified for use with seasonpackarr
 // SPDX-License-Identifier: GPL-2.0-or-later
 
