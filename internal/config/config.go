@@ -438,13 +438,13 @@ const (
 // per-client import policy.
 func validateDeprecatedConfigInputs(k *koanf.Koanf, lookupEnv func(string) (string, bool)) error {
 	if k != nil && k.Exists(deprecatedParseTorrentFileKey) {
-		return fmt.Errorf("deprecated config detected: %s was removed; torrent parsing is always enabled now — remove the key, add the new per-client import section (see the example config / README) and update your autobrr filter to use a single Webhook action",
+		return fmt.Errorf("deprecated config detected: %s was removed; torrent parsing is always enabled now - remove the key, add the new per-client import section (see the example config / README) and update your autobrr filter to use a single Webhook action",
 			deprecatedParseTorrentFileKey)
 	}
 
 	if lookupEnv != nil {
 		if value, ok := lookupEnv(deprecatedParseTorrentFileEnv); ok && strings.TrimSpace(value) != "" {
-			return fmt.Errorf("deprecated environment variable detected: %s was removed; torrent parsing is always enabled now — remove this env var, add the new per-client import section (see the example config / README) and update your autobrr filter to use a single Webhook action",
+			return fmt.Errorf("deprecated environment variable detected: %s was removed; torrent parsing is always enabled now - remove this env var, add the new per-client import section (see the example config / README) and update your autobrr filter to use a single Webhook action",
 				deprecatedParseTorrentFileEnv)
 		}
 	}
@@ -480,7 +480,7 @@ func validateDeprecatedConfigInputs(k *koanf.Koanf, lookupEnv func(string) (stri
 // qBittorrent-only fields, and any configured local paths must exist.
 func validateClientConfig(clientName string, client *domain.Client) error {
 	if client.Type != "" && client.Type != "qbittorrent" && client.Type != "transmission" {
-		return fmt.Errorf("type for client %q is invalid: %q — must be \"qbittorrent\" or \"transmission\"", clientName, client.Type)
+		return fmt.Errorf("type for client %q is invalid: %q - must be \"qbittorrent\" or \"transmission\"", clientName, client.Type)
 	}
 
 	imp := client.Import
@@ -496,7 +496,7 @@ func validateClientConfig(clientName string, client *domain.Client) error {
 			return fmt.Errorf("import.contentLayout for client %q is invalid: %q; use subfolder, nosubfolder or original", clientName, imp.ContentLayout)
 		}
 	} else if imp.Category != "" || imp.DownloadPath != "" || imp.ContentLayout != "" {
-		return fmt.Errorf("client %q (transmission) must not set import.category, import.downloadPath or import.contentLayout — those are qBittorrent only", clientName)
+		return fmt.Errorf("client %q (transmission) must not set import.category, import.downloadPath or import.contentLayout - those are qBittorrent only", clientName)
 	}
 
 	if imp.SavePath != "" {

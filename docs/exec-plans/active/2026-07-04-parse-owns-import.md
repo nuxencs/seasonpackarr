@@ -31,7 +31,7 @@ abstraction and drove raw `go-qbittorrent` types from inside `internal/http`.
 ## risks
 
 - **Breaking release.** The deprecation guards brick existing configs on
-  upgrade until migrated — needs a major-version tag and a loud migration note.
+  upgrade until migrated - needs a major-version tag and a loud migration note.
 - **Transmission verify cost.** Transmission has no skip-hash-check in its RPC
   (verified against 4.0.6 and 4.1.3), so every import hash-checks; timeouts are
   minutes, not seconds. The add auto-verifies; we force a verify and poll until
@@ -59,12 +59,12 @@ abstraction and drove raw `go-qbittorrent` types from inside `internal/http`.
 ## decision log
 
 - 2026-07-04: import is a first-class capability on `TorrentClient` (both
-  clients implement it), config block named neutral `import:` — chosen over a
+  clients implement it), config block named neutral `import:` - chosen over a
   qbit-only optional `Importer` to avoid a second migration when Transmission
   import shipped.
 - 2026-07-04: no `pausedOnAdd` config knob. Both adapters always add the torrent
   stopped so the recheck/verify runs first, then always start it once the data
-  checks out — a correct import is never left stopped, and adding it un-stopped
+  checks out - a correct import is never left stopped, and adding it un-stopped
   would race the recheck. (Initially shipped as a `pausedOnAdd`="leave stopped"
   option; removed after live-proving always-start is safe for both clients on
   complete and partial packs.)
@@ -85,14 +85,14 @@ abstraction and drove raw `go-qbittorrent` types from inside `internal/http`.
 
 ## verification notes
 
-- `gofumpt -w .`, `go fix ./...`, `go vet ./...` — clean
-- `go test -race ./...` — all packages pass (adapter import machines tested
+- `gofumpt -w .`, `go fix ./...`, `go vet ./...` - clean
+- `go test -race ./...` - all packages pass (adapter import machines tested
   against stub `qbitAPI` / `transmissionAPI` with millisecond timeouts;
   processor gate-only + parse-imports + cross-seed dedupe; config deprecation +
   env-parser + client validation)
-- `govulncheck ./...` — no vulnerabilities in our code
-- `go mod tidy` — no dependency changes
-- `deadcode ./...` — only pre-existing unreachable funcs remain
+- `govulncheck ./...` - no vulnerabilities in our code
+- `go mod tidy` - no dependency changes
+- `deadcode ./...` - only pre-existing unreachable funcs remain
   (`internal/http/health.go:writeUnhealthy`, `pkg/errors:Sentinel`,
   `pkg/errors:RecoverPanic`)
 - Transmission add/verify semantics traced in Transmission 4.0.6 and 4.1.3
@@ -104,7 +104,7 @@ abstraction and drove raw `go-qbittorrent` types from inside `internal/http`.
   - complete pack: qbit `stalledUP progress=1.00`, transmission
     `status=seed percentDone=1.00`, no errors.
   - partial pack (1 of 3 episodes present): qbit `stalledDL progress=0.33`,
-    transmission `status=download percentDone=0.33`, no errors — only the
+    transmission `status=download percentDone=0.33`, no errors - only the
     missing episodes are downloaded.
 - BUG found and fixed via the live partial-pack test (had escaped both PR #218's
   and this port's stub tests): after a paused skip-check add, qBittorrent sits in

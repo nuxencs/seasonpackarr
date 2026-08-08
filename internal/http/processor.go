@@ -231,7 +231,7 @@ func (p *processor) ProcessSeasonPackHandler(c *gin.Context) {
 
 // processSeasonPack is the /api/pack gate: it only decides whether the announced
 // season pack matches existing client episodes. It has no filesystem side
-// effects — hardlinking and importing happen on /api/parse.
+// effects - hardlinking and importing happen on /api/parse.
 func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 	clientName := p.getClientName()
 
@@ -275,8 +275,11 @@ func (p *processor) collectMatches(clientName string, clientCfg *domain.Client) 
 		return nil, domain.StatusNoMatches, domain.StatusNoMatches.Error()
 	}
 
-	for _, filteredEntry := range filteredEntries {
-		switch compareInfo := release.CheckCandidates(requestRls, filteredEntry.release, p.cfg.Config.FuzzyMatching); compareInfo.StatusCode {
+	comparisons := make([]domain.CompareInfo, len(filteredEntries))
+	for i, filteredEntry := range filteredEntries {
+		compareInfo := release.CheckCandidates(requestRls, filteredEntry.release, p.cfg.Config.FuzzyMatching)
+		comparisons[i] = compareInfo
+		switch compareInfo.StatusCode {
 		case domain.StatusAlreadyInClient, domain.StatusNotASeasonPack:
 			return nil, compareInfo.StatusCode, compareInfo.StatusCode.Error()
 		}
@@ -286,11 +289,9 @@ func (p *processor) collectMatches(clientName string, clientCfg *domain.Client) 
 	epsSet := make(map[int]struct{})
 	matches := make([]matchInfo, 0, len(filteredEntries))
 
-	for _, filteredEntry := range filteredEntries {
-		switch compareInfo := release.CheckCandidates(requestRls, filteredEntry.release, p.cfg.Config.FuzzyMatching); compareInfo.StatusCode {
-		case domain.StatusAlreadyInClient, domain.StatusNotASeasonPack:
-			return nil, compareInfo.StatusCode, compareInfo.StatusCode.Error()
-
+	for i, filteredEntry := range filteredEntries {
+		compareInfo := comparisons[i]
+		switch compareInfo.StatusCode {
 		case domain.StatusResolutionMismatch, domain.StatusSourceMismatch, domain.StatusRlsGrpMismatch,
 			domain.StatusCutMismatch, domain.StatusEditionMismatch, domain.StatusRepackStatusMismatch,
 			domain.StatusHdrMismatch, domain.StatusStreamingServiceMismatch:

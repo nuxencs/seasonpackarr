@@ -149,13 +149,13 @@ func TestQbitImportPartialLive(t *testing.T) {
 	}
 	t.Logf("FINAL qbit state=%s progress=%.2f (want: downloading/stalledDL with progress ~0.33, NOT missingFiles/1.00/stopped)", tor.State, tor.Progress)
 	if tor.State == qbittorrent.TorrentStateMissingFiles {
-		t.Errorf("torrent left in missingFiles after import — recheck path did not recover it")
+		t.Errorf("torrent left in missingFiles after import - recheck path did not recover it")
 	}
 	if tor.Progress >= 0.99 {
-		t.Errorf("progress %.2f — a 1-of-3 partial pack should not read as complete", tor.Progress)
+		t.Errorf("progress %.2f - a 1-of-3 partial pack should not read as complete", tor.Progress)
 	}
 	if !isActiveTorrentState(tor.State) {
-		t.Errorf("torrent not active after import (state=%s) — resume did not start it downloading the missing episodes", tor.State)
+		t.Errorf("torrent not active after import (state=%s) - resume did not start it downloading the missing episodes", tor.State)
 	}
 	_ = c.c.(*qbittorrent.Client).DeleteTorrents([]string{hashes.Legacy}, false)
 }
@@ -204,7 +204,7 @@ func TestTransmissionImportPartialLive(t *testing.T) {
 		t.Errorf("transmission reported error after import: %q", es)
 	}
 	if pd >= 1.0 {
-		t.Errorf("percentDone=%.2f — expected partial (only 1 of 3 episodes present)", pd)
+		t.Errorf("percentDone=%.2f - expected partial (only 1 of 3 episodes present)", pd)
 	}
 	_, _ = packName, cancel
 }

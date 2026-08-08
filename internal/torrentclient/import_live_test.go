@@ -84,7 +84,7 @@ func requireQbitStarted(t *testing.T, c *qbitClient, hash string) {
 	}
 	t.Logf("FINAL qbit state=%s progress=%.2f", final.State, final.Progress)
 	if !isActiveTorrentState(final.State) {
-		t.Errorf("import left the torrent stopped (state=%s) — a correct import must always start", final.State)
+		t.Errorf("import left the torrent stopped (state=%s) - a correct import must always start", final.State)
 	}
 }
 
@@ -109,7 +109,7 @@ func requireTransmissionStarted(t *testing.T, c *transmissionClient, hash string
 	}
 	t.Logf("FINAL transmission status=%d percentDone=%.2f error=%q", status, pd, derefString(tr.ErrorString))
 	if status == transmissionrpc.TorrentStatusStopped {
-		t.Errorf("import left the torrent stopped — a correct import must always start")
+		t.Errorf("import left the torrent stopped - a correct import must always start")
 	}
 	if es := derefString(tr.ErrorString); es != "" {
 		t.Errorf("transmission reported error after import: %q", es)
@@ -125,7 +125,7 @@ func TestQbitImportLive(t *testing.T) {
 	host := os.Getenv("SEASONPACKARR_TEST_QBIT_HOST")
 	importDir := os.Getenv("SEASONPACKARR_TEST_IMPORT_DIR")
 	if host == "" || importDir == "" {
-		t.Skip("SEASONPACKARR_TEST_QBIT_HOST / SEASONPACKARR_TEST_IMPORT_DIR not set — skipping live import test")
+		t.Skip("SEASONPACKARR_TEST_QBIT_HOST / SEASONPACKARR_TEST_IMPORT_DIR not set - skipping live import test")
 	}
 
 	policy := domain.ImportPolicy{SavePath: importDir, Tags: []string{"seasonpackarr"}}
@@ -154,7 +154,7 @@ func TestTransmissionImportLive(t *testing.T) {
 	host := os.Getenv("SEASONPACKARR_TEST_TRANSMISSION_HOST")
 	importDir := os.Getenv("SEASONPACKARR_TEST_IMPORT_DIR")
 	if host == "" || importDir == "" {
-		t.Skip("SEASONPACKARR_TEST_TRANSMISSION_HOST / SEASONPACKARR_TEST_IMPORT_DIR not set — skipping live import test")
+		t.Skip("SEASONPACKARR_TEST_TRANSMISSION_HOST / SEASONPACKARR_TEST_IMPORT_DIR not set - skipping live import test")
 	}
 
 	policy := domain.ImportPolicy{SavePath: importDir, Tags: []string{"seasonpackarr"}}

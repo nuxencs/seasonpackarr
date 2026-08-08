@@ -3,12 +3,12 @@
 How `/api/parse` re-imports a matched season pack into qBittorrent, and how the
 same code path behaves when the pack is **complete on disk** (every episode was
 already hardlinked) versus **partial on disk** (only some episodes were present,
-the rest still need downloading — the normal seasonpackarr case).
+the rest still need downloading - the normal seasonpackarr case).
 
 See [season-pack-lifecycle.md](season-pack-lifecycle.md) for the end-to-end
 request flow; this doc zooms into the client-side import handled by
 `internal/torrentclient` (`qbitClient.ImportDestination` / `qbitClient.Import`). The
-Transmission adapter reaches the same outcome differently — see
+Transmission adapter reaches the same outcome differently - see
 [the contrast below](#transmission-contrast).
 
 ## The algorithm
@@ -33,7 +33,7 @@ flowchart TD
     J --> K["waitForRecheck(hash)<br/>poll until not checking and not missingFiles"]
     K --> L{"already active ?"}
     I -- "no (data present)" --> L
-    L -- "yes" --> M(["done — started"])
+    L -- "yes" --> M(["done - started"])
     L -- "no" --> N["Resume(hash)"]
     N --> M
 ```
@@ -52,13 +52,13 @@ sequenceDiagram
 
     P->>A: Import(bytes, hash, importRoot)
     A->>Q: AddTorrentFromMemory (SkipHashCheck, Paused)
-    loop waitForTorrent — until settled
+    loop waitForTorrent - until settled
         A->>Q: GetTorrents{hash}
         Q-->>A: state (ignore transient checkingResumeData)
     end
     alt partial on disk → state == missingFiles
         A->>Q: Recheck(hash)
-        loop waitForRecheck — until not checking / not missingFiles
+        loop waitForRecheck - until not checking / not missingFiles
             A->>Q: GetTorrents{hash}
             Q-->>A: state (progress reflects present episodes)
         end
@@ -81,7 +81,7 @@ The single difference between the two runs is whether the added torrent lands in
 | `waitForTorrent` settles to | `stoppedUP` (100%) | `checkingResumeData` (misleading 100%) → **`missingFiles`** (0%) |
 | `missingFiles` branch | skipped | **`Recheck` → `waitForRecheck`** → `stoppedDL` at ~0.33 |
 | resume decision | not active → **`Resume`** | not active → **`Resume`** |
-| **final state (live-observed)** | **`stalledUP`, progress `1.00`** — seeding, nothing downloaded | **`stalledDL`, progress `0.33`** — downloading only the missing episodes |
+| **final state (live-observed)** | **`stalledUP`, progress `1.00`** - seeding, nothing downloaded | **`stalledDL`, progress `0.33`** - downloading only the missing episodes |
 
 (The `stalled*` states just mean "no peers" in the test rig; against a live
 swarm the partial torrent is `downloading`.)
@@ -112,7 +112,7 @@ set (`isCheckingState`: `checkingResumeData`, `checkingDL`, `checkingUP`,
 
 The torrent is **always added stopped** so the recheck happens before anything
 runs, and a correctly imported torrent is **always started** once its data has
-been accounted for — it is never left stopped. The only reason `Import` skips
+been accounted for - it is never left stopped. The only reason `Import` skips
 the final `Resume` is if the torrent is already active (`isActiveTorrentState`),
 which is a no-op anyway. There is no config knob for this: leaving a correct
 import stopped is never desired, and adding it un-stopped would race the recheck.

@@ -158,7 +158,7 @@ fields work for both client types:
 - **tags**: qBittorrent tags or Transmission labels added to imported torrents. Defaults to `["seasonpackarr"]`.
 
 seasonpackarr always adds the torrent in a stopped state so the present files can be rechecked/verified first, and
-always starts it once the data checks out — a correctly imported pack is never left stopped.
+always starts it once the data checks out - a correctly imported pack is never left stopped.
 
 The following fields are qBittorrent-only and are rejected at startup when set on a Transmission client:
 
@@ -320,7 +320,7 @@ The external filter you just created will be disabled by default. To avoid unwan
 The only action your filter needs is the Webhook action described below. When it hits `/api/parse`, seasonpackarr
 parses the torrent file, hardlinks the matching episodes into the correct season pack folder, adds the torrent to your
 torrent client, rechecks it so the already present files are recognised, and starts it. Do **not** add a separate
-qBittorrent or Transmission action to the filter — seasonpackarr owns adding the torrent to the client, and a client
+qBittorrent or Transmission action to the filter - seasonpackarr owns adding the torrent to the client, and a client
 action would add it a second time.
 
 > [!WARNING]
@@ -355,7 +355,7 @@ Finally, complete the `Payload (JSON)` field as shown below. Ensure that the val
 }
 ```
 
-Where the season pack ends up and how it is added — save path, category, tags, paused state — is controlled by the
+Where the season pack ends up and how it is added - save path, category, tags, paused state - is controlled by the
 per-client [Import Policy](#import-policy) in your seasonpackarr config, not by autobrr.
 
 ## Credits
