@@ -167,6 +167,18 @@ func TestValidateClientConfig(t *testing.T) {
 		require.Contains(t, err.Error(), "is invalid")
 	})
 
+	t.Run("qbittorrent rejects invalid content layout", func(t *testing.T) {
+		err := validateClientConfig("default", &domain.Client{
+			Type: "qbittorrent",
+			Import: domain.ImportPolicy{
+				SavePath:      t.TempDir(),
+				ContentLayout: "flat",
+			},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "contentLayout")
+	})
+
 	t.Run("nonexistent savePath", func(t *testing.T) {
 		err := validateClientConfig("default", &domain.Client{Type: "qbittorrent", Import: domain.ImportPolicy{SavePath: "/nope/does/not/exist"}})
 		require.Error(t, err)

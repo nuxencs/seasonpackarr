@@ -110,6 +110,82 @@
       },
       "required": [
         "host"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "transmission"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "import": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/import"
+                  },
+                  {
+                    "properties": {
+                      "category": {
+                        "maxLength": 0
+                      },
+                      "downloadPath": {
+                        "maxLength": 0
+                      },
+                      "contentLayout": {
+                        "maxLength": 0
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "else": {
+            "required": [
+              "import"
+            ],
+            "properties": {
+              "import": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/import"
+                  },
+                  {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "savePath"
+                        ],
+                        "properties": {
+                          "savePath": {
+                            "minLength": 1
+                          }
+                        }
+                      },
+                      {
+                        "required": [
+                          "category"
+                        ],
+                        "properties": {
+                          "category": {
+                            "minLength": 1
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
       ]
     },
     "import": {
@@ -140,6 +216,7 @@
         "contentLayout": {
           "type": "string",
           "enum": [
+            "",
             "subfolder",
             "nosubfolder",
             "original"

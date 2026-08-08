@@ -490,6 +490,11 @@ func validateClientConfig(clientName string, client *domain.Client) error {
 		if imp.Category == "" && imp.SavePath == "" {
 			return fmt.Errorf("client %q must configure import.category or import.savePath", clientName)
 		}
+		switch imp.ContentLayout {
+		case "", "subfolder", "nosubfolder", "original":
+		default:
+			return fmt.Errorf("import.contentLayout for client %q is invalid: %q; use subfolder, nosubfolder or original", clientName, imp.ContentLayout)
+		}
 	} else if imp.Category != "" || imp.DownloadPath != "" || imp.ContentLayout != "" {
 		return fmt.Errorf("client %q (transmission) must not set import.category, import.downloadPath or import.contentLayout — those are qBittorrent only", clientName)
 	}

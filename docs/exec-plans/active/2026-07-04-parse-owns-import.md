@@ -79,6 +79,9 @@ abstraction and drove raw `go-qbittorrent` types from inside `internal/http`.
 - 2026-08-08: torrent identity carries both the legacy SHA-1 identifier and the
   BEP 52 SHA-256 identifier. qBittorrent uses SHA-256 for pure v2 torrents and
   SHA-1 for v1 or hybrid torrents. Transmission uses its SHA-1 `hashString`.
+- 2026-08-08: startup validation rejects unsupported qBittorrent content
+  layouts. The JSON schema now expresses the same qBittorrent destination and
+  Transmission-only field constraints as runtime validation.
 
 ## verification notes
 
