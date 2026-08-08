@@ -4,6 +4,7 @@
 package http
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/autobrr/go-torrent/bencode"
+	"github.com/autobrr/go-torrent/metainfo"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
@@ -361,6 +364,57 @@ func TestParseTorrentImportsAndPassesResolvedRoot(t *testing.T) {
 
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep1))
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep2))
+}
+
+func TestParseTorrentRejectsArchivePackWithSampleVideos(t *testing.T) {
+	resetProcessorGlobals()
+
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	importDir := filepath.Join(tempDir, "import")
+	require.NoError(t, os.MkdirAll(sourceDir, 0o755))
+	require.NoError(t, os.MkdirAll(importDir, 0o755))
+
+	releaseName := "ArchivePack.S01.1080p.WEB.h264-RlsGrp"
+	episodeName := "ArchivePack.S01E01.1080p.WEB.h264-RlsGrp.mkv"
+	writeEpisode(t, filepath.Join(sourceDir, episodeName))
+
+	infoBytes, err := bencode.Marshal(metainfo.Info{
+		Name:        releaseName,
+		PieceLength: 256 * 1024,
+		Files: []metainfo.FileInfo{
+			{Path: []string{"Episode 01", "episode01.rar"}, Length: 1},
+			{Path: []string{"Episode 01", "Sample", "ArchivePack.S01E01.1080p.WEB.h264-RlsGrp-SAMPLE.mkv"}, Length: 1},
+		},
+	})
+	require.NoError(t, err)
+
+	var torrent bytes.Buffer
+	require.NoError(t, (&metainfo.MetaInfo{InfoBytes: infoBytes}).Write(&torrent))
+
+	mock := &mockTorrentClient{
+		torrents: []torrentclient.Torrent{
+			{Name: "ArchivePack.S01E01.1080p.WEB.h264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
+		},
+		filesByHash: map[string][]torrentclient.File{
+			"ep1": {{Name: episodeName, Size: 1}},
+		},
+		importRoot: importDir,
+	}
+
+	p := newImportProcessor()
+	p.req = &request{
+		Name:       releaseName,
+		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrent.Bytes())),
+		Client:     mock,
+		ClientName: "default",
+	}
+
+	statusCode, err := p.parseTorrent()
+	require.EqualError(t, err, domain.StatusFailedMatchToTorrentEps.String())
+	require.Equal(t, domain.StatusFailedMatchToTorrentEps, statusCode)
+	require.False(t, mock.importCalled, "rejected archive pack must not be imported")
+	require.NoFileExists(t, filepath.Join(importDir, releaseName, episodeName))
 }
 
 func TestParseTorrentUsesFlatImportDestination(t *testing.T) {
