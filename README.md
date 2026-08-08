@@ -150,9 +150,10 @@ configuration is incomplete.
 
 ### Torrent Client Configuration
 
-Each entry under `clients` connects seasonpackarr to one torrent client instance. Set the `type` field to either
-`"qbittorrent"` (default) or `"transmission"` to select the client type. Each client also carries an `import` block
-that controls how season packs are imported back into it, see [Import Policy](#import-policy).
+Each entry under `clients` connects seasonpackarr to one torrent client instance. Set the `type` field to
+`"qbittorrent"` (default), `"transmission"`, `"deluge-v1"`, or `"deluge-v2"` to select the client type. `"deluge"`
+is an alias for `"deluge-v2"`. Each client also carries an `import` block that controls how season packs are imported
+back into it, see [Import Policy](#import-policy).
 
 #### qBittorrent
 
@@ -170,21 +171,43 @@ For Transmission clients, set `type: "transmission"` and provide `username` and 
 interface (no `apiKey` field). Transmission listens on port `9091` by default, so set `port: 9091` (seasonpackarr does
 not assume a port if it is left unset).
 
+#### Deluge
+
+Deluge support uses the native daemon RPC interface through
+[`autobrr/go-deluge`](https://github.com/autobrr/go-deluge). Set `type: "deluge-v1"` for Deluge 1.3 or
+`type: "deluge-v2"` for Deluge 2. The two protocol generations have different wire formats, so the type must match
+the daemon. `"deluge"` remains a V2 alias. Use a daemon account from Deluge's `auth` file as `username` and `password`.
+The default native RPC port is `58846` when `port` is left unset. Enter a hostname or IP address in `host`, not an HTTP
+URL, and do not use the Deluge Web port.
+
+Deluge requires `import.savePath`. It accepts zero or one `import.tags` entry as the torrent's Label plugin label.
+Enable Deluge's optional Label plugin to apply it. When enabled, seasonpackarr creates a missing label and assigns it.
+Deluge does not support `apiKey` or the qBittorrent-only import fields. The adapter adds the torrent stopped, applies
+its optional label, then resumes it. Deluge and libtorrent perform the initial data check before transferring pieces.
+Seasonpackarr waits until the torrent is no longer paused or checking. The current adapter requires a v1 or hybrid
+torrent because it identifies the torrent by its legacy info hash. This is an adapter limitation, not a general claim
+about current Deluge releases.
+
+The [Deluge primary-source audit](docs/references/deluge-primary-source-audit.md) records the exact Autobrr,
+go-deluge, Deluge 1.3.15, and Deluge 2 revisions that support these protocol, label, path, duplicate, and checking
+decisions.
+
 #### Import Policy
 
-The per-client `import` block controls how seasonpackarr imports a matched season pack back into the client. These
-fields work for both client types:
+The per-client `import` block controls how seasonpackarr imports a matched season pack back into the client:
 
 - **savePath**: The final import destination. Matched episodes are hardlinked into the season pack folder beneath it,
-  and the torrent is added to the client with this save path. Optional: qBittorrent follows its automatic-management
-  and manual category-path preferences, while Transmission falls back to its session download directory. When set,
-  the directory must already exist.
-- **tags**: qBittorrent tags or Transmission labels added to imported torrents. Defaults to `["seasonpackarr"]`.
+  and the torrent is added to the client with this save path. It is required for Deluge. It is optional for
+  qBittorrent, which follows its automatic-management and manual category-path preferences, and Transmission, which
+  falls back to its session download directory. When set, the directory must already exist.
+- **tags**: qBittorrent tags or Transmission labels added to imported torrents. Deluge accepts at most one entry as
+  its optional Label plugin label. Labels use letters, digits, underscores, or hyphens and are stored in lower case.
+  Defaults to `["seasonpackarr"]`.
 
-seasonpackarr always adds the torrent in a stopped state so the present files can be rechecked/verified first, and
-always starts it once the data checks out - a correctly imported pack is never left stopped.
+seasonpackarr adds the torrent in a stopped state. qBittorrent and Transmission complete their explicit verification
+before resume. Deluge resumes into its normal initial check. A correctly imported pack is never left stopped.
 
-The following fields are qBittorrent-only and are rejected at startup when set on a Transmission client:
+The following fields are qBittorrent-only and are rejected at startup when set on a Transmission or Deluge client:
 
 - **category**: The category to add the torrent with; also resolves the import destination when `savePath` is empty.
   When no save or download path is set, seasonpackarr sends only the category and leaves path selection and Auto TMM
@@ -195,9 +218,9 @@ The following fields are qBittorrent-only and are rejected at startup when set o
   default.
 
 A qBittorrent client must set either `import.savePath` or `import.category`. Transmission has no categories and no
-content layout, so configure `import.savePath` or leave it empty to use the session download directory. Transmission
-always hash-checks existing data when a torrent is added, so the import verifies before starting and only genuinely
-missing episodes get downloaded.
+content layout, so configure `import.savePath` or leave it empty to use the session download directory. Deluge requires
+`import.savePath`. Transmission forces a hash check after add. Deluge uses its normal initial check before transferring
+pieces. Both clients account for present data, so only genuinely missing episodes get downloaded.
 
 ### Smart Mode
 
@@ -346,13 +369,13 @@ The external filter you just created will be disabled by default. To avoid unwan
 
 The only action your filter needs is the Webhook action described below. When it hits `/api/parse`, seasonpackarr
 parses the torrent file, hardlinks the matching episodes into the correct season pack folder, adds the torrent to your
-torrent client, rechecks it so the already present files are recognised, and starts it. Do **not** add a separate
-qBittorrent or Transmission action to the filter - seasonpackarr owns adding the torrent to the client, and a client
-action would add it a second time.
+torrent client, checks it so the already present files are recognised, and starts it. Do **not** add a separate
+torrent-client action to the filter. seasonpackarr owns adding the torrent to the client, and another client action
+would add it a second time.
 
 > [!WARNING]
 > Breaking change when upgrading from an older version:
-> 1. Remove the qBittorrent or Transmission action from your seasonpackarr filter and keep only the Webhook action.
+> 1. Remove the torrent-client action from your seasonpackarr filter and keep only the Webhook action.
 > 2. Replace `preImportPath` in your config with the per-client [Import Policy](#import-policy); hardlinks now land
 >    under the import destination resolved from the client.
 > 3. Remove `parseTorrentFile` from your config; torrent parsing is now always on.

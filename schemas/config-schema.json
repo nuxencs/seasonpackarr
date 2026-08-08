@@ -81,7 +81,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["", "qbittorrent", "transmission"],
+          "enum": ["", "qbittorrent", "transmission", "deluge", "deluge-v1", "deluge-v2"],
           "default": "qbittorrent"
         },
         "host": {
@@ -146,8 +146,74 @@
                 ]
               }
             }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": ["deluge", "deluge-v1", "deluge-v2"]
+              }
+            },
+            "required": [
+              "type"
+            ]
           },
-          "else": {
+          "then": {
+            "properties": {
+              "apiKey": {
+                "maxLength": 0
+              },
+              "import": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/import"
+                  },
+                  {
+                    "required": [
+                      "savePath"
+                    ],
+                    "properties": {
+                      "savePath": {
+                        "minLength": 1
+                      },
+                      "tags": {
+                        "maxItems": 1,
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]+$"
+                        }
+                      },
+                      "category": {
+                        "maxLength": 0
+                      },
+                      "downloadPath": {
+                        "maxLength": 0
+                      },
+                      "contentLayout": {
+                        "maxLength": 0
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "import"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "not": {
+                  "enum": ["transmission", "deluge", "deluge-v1", "deluge-v2"]
+                }
+              }
+            }
+          },
+          "then": {
             "required": [
               "import"
             ],

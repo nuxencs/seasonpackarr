@@ -140,9 +140,9 @@ func ImportStatusCode(err error) domain.StatusCode {
 // Import contract: ImportDestination resolves the absolute directory and file
 // layout the season pack must use. Import adds the pack,
 // ensures its already-present hardlinked data is accounted for (skip-check +
-// conditional recheck on qBittorrent, forced verify on transmission) and starts
-// it once the data has been (re)checked. Import failures are returned as
-// *ImportError.
+// conditional recheck on qBittorrent, forced verify on Transmission, Deluge's
+// normal initial check) and starts it without leaving the import paused.
+// Import failures are returned as *ImportError.
 type TorrentClient interface {
 	GetTorrents() ([]Torrent, error)
 	GetFiles(hash string) ([]File, error)
@@ -176,6 +176,8 @@ func New(client *domain.Client) (TorrentClient, error) {
 		return newQbitClient(client)
 	case "transmission":
 		return newTransmissionClient(client)
+	case "deluge", "deluge-v1", "deluge-v2":
+		return newDelugeClient(client)
 	default:
 		return nil, fmt.Errorf("unknown client type: %s", client.Type)
 	}

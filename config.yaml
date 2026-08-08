@@ -21,7 +21,8 @@ clients:
   #
   default:
     # Client type
-    # Supported values: "qbittorrent" (default), "transmission"
+    # Supported values: "qbittorrent" (default), "transmission", "deluge-v1", "deluge-v2"
+    # "deluge" is an alias for "deluge-v2".
     #
     # Default: "qbittorrent"
     #
@@ -34,7 +35,7 @@ clients:
     host: "127.0.0.1"
 
     # Port
-    # qBittorrent listens on 8080 by default, Transmission on 9091
+    # qBittorrent listens on 8080 by default, Transmission on 9091, Deluge daemon RPC on 58846
     #
     # Default: 8080
     #
@@ -67,15 +68,16 @@ clients:
       # Save Path
       # Final import destination. Used both as the hardlink root and as the client's save directory.
       # Optional for qBittorrent (follows its automatic-management and manual category-path preferences)
-      # and for transmission (falls back to the session download dir). When set it must already exist.
-      # A qBittorrent client must configure either savePath or category.
+      # and for transmission (falls back to the session download dir). Required for Deluge.
+      # When set it must already exist. A qBittorrent client must configure either savePath or category.
       #
       # Default: ""
       #
       savePath: ""
 
       # Tags
-      # Tags (qBittorrent) / labels (transmission) applied to the imported torrent.
+      # Tags (qBittorrent) / labels (Transmission) applied to the imported torrent.
+      # Deluge accepts at most one entry through its optional Label plugin.
       #
       # Optional
       #
@@ -138,6 +140,25 @@ clients:
   #  username: ""
   #
   #  password: ""
+  #
+  #  import:
+  #    savePath: "/data/torrents/tv-hd"
+  #    tags: [ "seasonpackarr" ]
+
+  # Example Deluge 2 client configuration. Use "deluge-v1" for Deluge 1.3.
+  # Connects to the native daemon RPC port, not the Deluge Web port.
+  # import.savePath is required. Enable Deluge's Label plugin to apply import.tags.
+  #
+  #deluge_example:
+  #  type: "deluge-v2"
+  #
+  #  host: "127.0.0.1"
+  #
+  #  port: 58846
+  #
+  #  username: "localclient"
+  #
+  #  password: "change-me"
   #
   #  import:
   #    savePath: "/data/torrents/tv-hd"
