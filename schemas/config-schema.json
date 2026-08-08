@@ -45,15 +45,14 @@
       "type": "number",
       "default": 0.75
     },
-    "parseTorrentFile": {
-      "type": "boolean",
-      "default": false
-    },
     "fuzzyMatching": {
       "$ref": "#/$defs/fuzzyMatching"
     },
     "notifications": {
       "$ref": "#/$defs/notifications"
+    },
+    "metadata": {
+      "$ref": "#/$defs/metadata"
     },
     "apiToken": {
       "type": "string",
@@ -71,7 +70,7 @@
       "type": "object",
       "additionalProperties": false,
       "patternProperties": {
-        "^[a-z0-9]+$": {
+        "^[a-zA-Z0-9_-]+$": {
           "$ref": "#/$defs/client"
         }
       }
@@ -105,15 +104,125 @@
           "type": "string",
           "default": ""
         },
-        "preImportPath": {
-          "type": "string",
-          "default": ""
+        "import": {
+          "$ref": "#/$defs/import"
         }
       },
       "required": [
-        "host",
-        "preImportPath"
+        "host"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "transmission"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "import": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/import"
+                  },
+                  {
+                    "properties": {
+                      "category": {
+                        "maxLength": 0
+                      },
+                      "downloadPath": {
+                        "maxLength": 0
+                      },
+                      "contentLayout": {
+                        "maxLength": 0
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "else": {
+            "required": [
+              "import"
+            ],
+            "properties": {
+              "import": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/import"
+                  },
+                  {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "savePath"
+                        ],
+                        "properties": {
+                          "savePath": {
+                            "minLength": 1
+                          }
+                        }
+                      },
+                      {
+                        "required": [
+                          "category"
+                        ],
+                        "properties": {
+                          "category": {
+                            "minLength": 1
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
       ]
+    },
+    "import": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "savePath": {
+          "type": "string",
+          "default": ""
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "seasonpackarr"
+          ]
+        },
+        "category": {
+          "type": "string",
+          "default": ""
+        },
+        "downloadPath": {
+          "type": "string",
+          "default": ""
+        },
+        "contentLayout": {
+          "type": "string",
+          "enum": [
+            "",
+            "subfolder",
+            "nosubfolder",
+            "original"
+          ]
+        }
+      }
     },
     "fuzzyMatching": {
       "type": "object",

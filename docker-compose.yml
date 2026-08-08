@@ -22,7 +22,6 @@ services:
       # Feature settings
       SEASONPACKARR__SMART_MODE: false
       SEASONPACKARR__SMART_MODE_THRESHOLD: 0.75
-      SEASONPACKARR__PARSE_TORRENT_FILE: false
 
       # Fuzzy matching settings
       SEASONPACKARR__FUZZY_MATCHING_SKIP_REPACK_COMPARE: false
@@ -33,12 +32,19 @@ services:
       SEASONPACKARR__NOTIFICATIONS_NOTIFICATION_LEVEL: MATCH,ERROR
 
       # Client settings (can have multiple clients by changing DEFAULT to another name)
+      SEASONPACKARR__CLIENTS_DEFAULT_TYPE: qbittorrent # "qbittorrent" or "transmission"
       SEASONPACKARR__CLIENTS_DEFAULT_HOST: 127.0.0.1
       SEASONPACKARR__CLIENTS_DEFAULT_PORT: 8080
       SEASONPACKARR__CLIENTS_DEFAULT_USERNAME: admin
       SEASONPACKARR__CLIENTS_DEFAULT_PASSWORD: adminadmin
       SEASONPACKARR__CLIENTS_DEFAULT_APIKEY:
-      SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH:
+
+      # Import policy (how /api/parse re-imports the season pack into the client)
+      SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_SAVE_PATH: # final import destination; required for qBittorrent unless IMPORT_CATEGORY is set
+      SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_CATEGORY: # qBittorrent only
+      SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_TAGS: seasonpackarr
+      # SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_DOWNLOAD_PATH: # qBittorrent only
+      # SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_CONTENT_LAYOUT: subfolder # qBittorrent only
     volumes:
       - ${DOCKERCONFDIR}/seasonpackarr:/config # location of the config file
       - /data/torrents:/data/torrents # your torrent data directory

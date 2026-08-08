@@ -27,6 +27,38 @@ func Info(torrent []byte) (metainfo.Info, error) {
 	return metaInfo.UnmarshalInfo()
 }
 
+type Hashes struct {
+	Legacy string
+	V2     string
+	HasV1  bool
+}
+
+// InfoHashes returns the client identifiers derived from the raw info bytes.
+// Legacy is the SHA-1 identifier used by v1 torrents and Transmission's
+// hashString. V2 is the BEP 52 SHA-256 identity when the torrent has v2 data.
+func InfoHashes(torrent []byte) (Hashes, error) {
+	metaInfo, err := metainfo.Load(bytes.NewReader(torrent))
+	if err != nil {
+		return Hashes{}, err
+	}
+
+	info, err := metaInfo.UnmarshalInfo()
+	if err != nil {
+		return Hashes{}, err
+	}
+
+	hashes := Hashes{
+		Legacy: metaInfo.HashInfoBytes().HexString(),
+		HasV1:  info.HasV1(),
+	}
+	if info.HasV2() {
+		v2Hash := metainfo.HashV2Bytes(metaInfo.InfoBytes)
+		hashes.V2 = v2Hash.HexString()
+	}
+
+	return hashes, nil
+}
+
 func Episodes(info metainfo.Info) ([]Episode, error) {
 	if !info.IsDir() {
 		return []Episode{}, fmt.Errorf("not a directory")

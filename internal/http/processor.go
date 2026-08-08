@@ -56,14 +56,12 @@ type entryCache struct {
 }
 
 type matchInfo struct {
-	clientEpPath    string
-	clientEpSize    int64
-	announcedEpPath string
+	clientEpPath string
+	clientEpSize int64
 }
 
 var (
 	clientMap = xsync.NewMapOf[string, torrentclient.TorrentClient]()
-	matchMap  = xsync.NewMapOf[string, []matchInfo]()
 	entryMap  = xsync.NewMapOf[string, *entryCache]()
 )
 
@@ -77,6 +75,11 @@ func newProcessor(log logger.Logger, config *config.AppConfig, notification doma
 }
 
 func (p *processor) getClient(client *domain.Client, clientName string) error {
+	// allow tests (and repeated calls within a request) to inject/keep a client
+	if p.req.Client != nil {
+		return nil
+	}
+
 	c, ok := clientMap.Load(clientName)
 	if !ok {
 		var err error
@@ -226,6 +229,9 @@ func (p *processor) ProcessSeasonPackHandler(c *gin.Context) {
 	c.String(statusCode.Code(), statusCode.String())
 }
 
+// processSeasonPack is the /api/pack gate: it only decides whether the announced
+// season pack matches existing client episodes. It has no filesystem side
+// effects - hardlinking and importing happen on /api/parse.
 func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 	clientName := p.getClientName()
 
@@ -233,38 +239,49 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 		return c.Str("release", p.req.Name).Str("clientname", clientName)
 	})
 
-	if len(p.req.Name) == 0 {
-		return domain.StatusAnnounceNameError, domain.StatusAnnounceNameError.Error()
-	}
-
 	clientCfg, ok := p.cfg.Config.Clients[clientName]
 	if !ok {
 		return domain.StatusClientNotFound, domain.StatusClientNotFound.Error()
 	}
 	p.log.Info().Msgf("using %s client", clientName)
 
+	if _, statusCode, err := p.collectMatches(clientName, clientCfg); err != nil {
+		return statusCode, err
+	}
+
+	return domain.StatusSuccessfulMatch, nil
+}
+
+// collectMatches resolves the announced release against the episodes currently
+// in the client and returns the deduped set of matched client episodes. It is
+// shared by /api/pack (gate) and /api/parse (import) so the two never disagree.
+func (p *processor) collectMatches(clientName string, clientCfg *domain.Client) ([]matchInfo, domain.StatusCode, error) {
+	if len(p.req.Name) == 0 {
+		return nil, domain.StatusAnnounceNameError, domain.StatusAnnounceNameError.Error()
+	}
+
 	if err := p.getClient(clientCfg, clientName); err != nil {
-		return domain.StatusGetClientError, fmt.Errorf("%s: %w", domain.StatusGetClientError, err)
+		return nil, domain.StatusGetClientError, fmt.Errorf("%s: %w", domain.StatusGetClientError, err)
 	}
 
 	entries, err := p.getAllTorrents(clientName)
 	if err != nil {
-		return domain.StatusGetTorrentsError, fmt.Errorf("%s: %w", domain.StatusGetTorrentsError, err)
+		return nil, domain.StatusGetTorrentsError, fmt.Errorf("%s: %w", domain.StatusGetTorrentsError, err)
 	}
 
 	requestRls := rls.ParseString(p.req.Name)
 	filteredEntries, ok := entries[format.ComparableTitle(requestRls, p.cfg.Config.FuzzyMatching)]
 	if !ok {
-		return domain.StatusNoMatches, domain.StatusNoMatches.Error()
+		return nil, domain.StatusNoMatches, domain.StatusNoMatches.Error()
 	}
 
-	announcedPackName := format.CleanAnnounceTitle(requestRls)
-	p.log.Debug().Msgf("formatted season pack name: %s", announcedPackName)
-
-	for _, filteredEntry := range filteredEntries {
-		switch compareInfo := release.CheckCandidates(requestRls, filteredEntry.release, p.cfg.Config.FuzzyMatching); compareInfo.StatusCode {
+	comparisons := make([]domain.CompareInfo, len(filteredEntries))
+	for i, filteredEntry := range filteredEntries {
+		compareInfo := release.CheckCandidates(requestRls, filteredEntry.release, p.cfg.Config.FuzzyMatching)
+		comparisons[i] = compareInfo
+		switch compareInfo.StatusCode {
 		case domain.StatusAlreadyInClient, domain.StatusNotASeasonPack:
-			return compareInfo.StatusCode, compareInfo.StatusCode.Error()
+			return nil, compareInfo.StatusCode, compareInfo.StatusCode.Error()
 		}
 	}
 
@@ -272,11 +289,9 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 	epsSet := make(map[int]struct{})
 	matches := make([]matchInfo, 0, len(filteredEntries))
 
-	for _, filteredEntry := range filteredEntries {
-		switch compareInfo := release.CheckCandidates(requestRls, filteredEntry.release, p.cfg.Config.FuzzyMatching); compareInfo.StatusCode {
-		case domain.StatusAlreadyInClient, domain.StatusNotASeasonPack:
-			return compareInfo.StatusCode, compareInfo.StatusCode.Error()
-
+	for i, filteredEntry := range filteredEntries {
+		compareInfo := comparisons[i]
+		switch compareInfo.StatusCode {
 		case domain.StatusResolutionMismatch, domain.StatusSourceMismatch, domain.StatusRlsGrpMismatch,
 			domain.StatusCutMismatch, domain.StatusEditionMismatch, domain.StatusRepackStatusMismatch,
 			domain.StatusHdrMismatch, domain.StatusStreamingServiceMismatch:
@@ -294,32 +309,27 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 			}
 
 			clientEpPath := filepath.Join(filteredEntry.torrent.SavePath, fileName)
-			announcedEpPath := filepath.Join(clientCfg.PreImportPath, announcedPackName, filepath.Base(fileName))
 
 			epsSet[filteredEntry.release.Episode] = struct{}{}
-
-			// append current matchInfo to matches slice
 			matches = append(matches, matchInfo{
-				clientEpPath:    clientEpPath,
-				clientEpSize:    size,
-				announcedEpPath: announcedEpPath,
+				clientEpPath: clientEpPath,
+				clientEpSize: size,
 			})
 
 			p.log.Debug().Msgf("matched torrent from client: name(%s), size(%d), hash(%s)",
 				filteredEntry.torrent.Name, size, filteredEntry.torrent.Hash)
 			codeSet[compareInfo.StatusCode] = true
-			continue
 		}
 	}
 
 	if !codeSet[domain.StatusSuccessfulMatch] {
-		return domain.StatusNoMatches, domain.StatusNoMatches.Error()
+		return nil, domain.StatusNoMatches, domain.StatusNoMatches.Error()
 	}
 
 	if p.cfg.Config.SmartMode {
 		totalEps, err := p.meta.EpisodesInSeason(requestRls)
 		if err != nil {
-			return domain.StatusEpisodeCountError, fmt.Errorf("%s: %w", domain.StatusEpisodeCountError, err)
+			return nil, domain.StatusEpisodeCountError, fmt.Errorf("%s: %w", domain.StatusEpisodeCountError, err)
 		}
 
 		foundEps := len(epsSet)
@@ -328,34 +338,11 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 		p.log.Info().Msgf("found %d/%d (%.2f%%) episodes in client", foundEps, totalEps, percentEps*100)
 
 		if percentEps < p.cfg.Config.SmartModeThreshold {
-			return domain.StatusBelowThreshold, domain.StatusBelowThreshold.Error()
+			return nil, domain.StatusBelowThreshold, domain.StatusBelowThreshold.Error()
 		}
 	}
 
-	// dedupe matches and store in matchMap
-	matches = slices.Dedupe(matches)
-	matchMap.Store(p.req.Name, matches)
-
-	if p.cfg.Config.ParseTorrentFile {
-		return domain.StatusSuccessfulMatch, nil
-	}
-
-	successfulHardlink := false
-
-	for _, match := range matches {
-		if err := files.CreateHardlink(match.clientEpPath, match.announcedEpPath); err != nil {
-			p.log.Error().Err(err).Msgf("error creating hardlink: %s", match.clientEpPath)
-			continue
-		}
-		p.log.Info().Msgf("created hardlink: source(%s), target(%s)", match.clientEpPath, match.announcedEpPath)
-		successfulHardlink = true
-	}
-
-	if !successfulHardlink {
-		return domain.StatusFailedHardlink, domain.StatusFailedHardlink.Error()
-	}
-
-	return domain.StatusSuccessfulHardlink, nil
+	return slices.Dedupe(matches), domain.StatusSuccessfulMatch, nil
 }
 
 func (p *processor) ParseTorrentHandler(c *gin.Context) {
@@ -401,10 +388,13 @@ func (p *processor) ParseTorrentHandler(c *gin.Context) {
 		}
 	}()
 
-	p.log.Info().Msg("successfully parsed torrent and hardlinked episodes")
+	p.log.Info().Msg("successfully parsed torrent, hardlinked episodes, and imported the season pack")
 	c.String(statusCode.Code(), statusCode.String())
 }
 
+// parseTorrent is the /api/parse path: it resolves the client's import root,
+// recomputes the matches, hardlinks the matched episodes into the parsed pack
+// folder, then imports the season pack back into the client.
 func (p *processor) parseTorrent() (domain.StatusCode, error) {
 	clientName := p.getClientName()
 
@@ -418,12 +408,25 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 	}
 	p.log.Info().Msgf("using %s client", clientName)
 
-	if len(p.req.Name) == 0 {
-		return domain.StatusAnnounceNameError, domain.StatusAnnounceNameError.Error()
-	}
-
 	if len(p.req.Torrent) == 0 {
 		return domain.StatusTorrentBytesError, domain.StatusTorrentBytesError.Error()
+	}
+
+	if err := p.getClient(clientCfg, clientName); err != nil {
+		return domain.StatusGetClientError, fmt.Errorf("%s: %w", domain.StatusGetClientError, err)
+	}
+
+	importDestination, err := p.req.Client.ImportDestination()
+	if err != nil {
+		statusCode := torrentclient.ImportStatusCode(err)
+		return statusCode, fmt.Errorf("%s: %w", statusCode, err)
+	}
+	importRoot := importDestination.SavePath()
+	p.log.Debug().Msgf("resolved import root: %s", importRoot)
+
+	matches, statusCode, err := p.collectMatches(clientName, clientCfg)
+	if err != nil {
+		return statusCode, err
 	}
 
 	torrentBytes, err := torrents.DecodeTorrentBytes(p.req.Torrent)
@@ -447,23 +450,19 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 		p.log.Debug().Msgf("found episode in pack: name(%s), size(%d)", torrentEp.Path, torrentEp.Size)
 	}
 
-	matches, ok := matchMap.Load(p.req.Name)
-	if !ok {
-		return domain.StatusNoMatches, domain.StatusNoMatches.Error()
+	hashes, err := torrents.InfoHashes(p.req.Torrent)
+	if err != nil {
+		return domain.StatusParseTorrentInfoError, fmt.Errorf("%s: %w", domain.StatusParseTorrentInfoError, err)
 	}
 
 	successfulEpMatch := false
-	successfulHardlink := false
-
-	var matchedEpPath string
-	var compareInfo domain.CompareInfo
-
-	targetPackDir := filepath.Join(clientCfg.PreImportPath, parsedPackName)
+	linkedTargets := make(map[string]struct{})
 
 	for _, match := range matches {
-		for _, torrentEp := range torrentEps {
-			var targetEpPath string
+		matchedEpPath := ""
+		var compareInfo domain.CompareInfo
 
+		for _, torrentEp := range torrentEps {
 			matchedEpPath, compareInfo = release.MatchEpToSeasonPackEp(match.clientEpPath, match.clientEpSize,
 				torrentEp.Path, torrentEp.Size)
 			if len(matchedEpPath) == 0 {
@@ -471,31 +470,52 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 					filepath.Base(match.clientEpPath), compareInfo.RejectValueA, torrentEp.Path, compareInfo.RejectValueB)
 				continue
 			}
-			targetEpPath = filepath.Join(targetPackDir, matchedEpPath)
+
+			targetEpPath := importDestination.TargetPath(parsedPackName, matchedEpPath)
 			successfulEpMatch = true
+
+			// cross-seeded torrents can match the same target from different
+			// sources; only hardlink each target once
+			if _, linked := linkedTargets[targetEpPath]; linked {
+				p.log.Debug().Msgf("skipping already linked target: %s", targetEpPath)
+				break
+			}
 
 			if err = files.CreateHardlink(match.clientEpPath, targetEpPath); err != nil {
 				p.log.Error().Err(err).Msgf("error creating hardlink: %s", match.clientEpPath)
 				continue
 			}
 			p.log.Info().Msgf("created hardlink: source(%s), target(%s)", match.clientEpPath, targetEpPath)
-			successfulHardlink = true
+			linkedTargets[targetEpPath] = struct{}{}
 
 			break
 		}
+
 		if len(matchedEpPath) == 0 {
 			p.log.Error().Msgf("error matching episode to file in pack, skipping hardlink: %s",
 				filepath.Base(match.clientEpPath))
-			continue
 		}
 	}
+
+	p.log.Info().Msgf("hardlinked %d/%d episodes from pack", len(linkedTargets), len(torrentEps))
 
 	if !successfulEpMatch {
 		return domain.StatusFailedMatchToTorrentEps, domain.StatusFailedMatchToTorrentEps.Error()
 	}
 
-	if !successfulHardlink {
+	if len(linkedTargets) == 0 {
 		return domain.StatusFailedHardlink, domain.StatusFailedHardlink.Error()
+	}
+
+	if err := p.req.Client.Import(torrentclient.ImportRequest{
+		TorrentBytes: p.req.Torrent,
+		SavePath:     importRoot,
+		LegacyHash:   hashes.Legacy,
+		V2Hash:       hashes.V2,
+		HasV1:        hashes.HasV1,
+	}); err != nil {
+		statusCode := torrentclient.ImportStatusCode(err)
+		return statusCode, fmt.Errorf("%s: %w", statusCode, err)
 	}
 
 	return domain.StatusSuccessfulHardlink, nil

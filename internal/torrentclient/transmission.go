@@ -5,8 +5,10 @@ package torrentclient
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/hekmon/transmissionrpc/v3"
@@ -16,8 +18,24 @@ import (
 
 const transmissionTimeout = 60 * time.Second
 
+// transmissionAPI is the subset of *transmissionrpc.Client the adapter uses. It
+// exists so the import machinery can be unit-tested against a stub.
+type transmissionAPI interface {
+	TorrentGet(ctx context.Context, fields []string, ids []int64) ([]transmissionrpc.Torrent, error)
+	TorrentGetHashes(ctx context.Context, fields []string, hashes []string) ([]transmissionrpc.Torrent, error)
+	TorrentAdd(ctx context.Context, payload transmissionrpc.TorrentAddPayload) (transmissionrpc.Torrent, error)
+	TorrentVerifyHashes(ctx context.Context, hashes []string) error
+	TorrentStartHashes(ctx context.Context, hashes []string) error
+	SessionArgumentsGetAll(ctx context.Context) (transmissionrpc.SessionArguments, error)
+}
+
 type transmissionClient struct {
-	c *transmissionrpc.Client
+	c      transmissionAPI
+	policy domain.ImportPolicy
+
+	// timeouts are fields so tests can shrink them to milliseconds.
+	verifyTimeout time.Duration
+	pollInterval  time.Duration
 }
 
 func newTransmissionClient(client *domain.Client) (*transmissionClient, error) {
@@ -38,7 +56,12 @@ func newTransmissionClient(client *domain.Client) (*transmissionClient, error) {
 		return nil, errors.Wrap(err, "failed to connect to transmission")
 	}
 
-	return &transmissionClient{c: c}, nil
+	return &transmissionClient{
+		c:             c,
+		policy:        client.Import,
+		verifyTimeout: 10 * time.Minute,
+		pollInterval:  500 * time.Millisecond,
+	}, nil
 }
 
 // buildTransmissionURL builds the Transmission RPC endpoint URL. Basic auth
@@ -109,9 +132,123 @@ func (t *transmissionClient) GetFiles(hash string) ([]File, error) {
 	return files, nil
 }
 
+// ImportDestination resolves the final import destination for this transmission client:
+// an explicit savePath wins, otherwise the session's default download dir.
+func (t *transmissionClient) ImportDestination() (ImportDestination, error) {
+	if t.policy.SavePath != "" {
+		return NewRootedImportDestination(normalizePath(t.policy.SavePath)), nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), transmissionTimeout)
+	defer cancel()
+
+	args, err := t.c.SessionArgumentsGetAll(ctx)
+	if err != nil {
+		return ImportDestination{}, importErr(ImportStageConfig, errors.Wrap(err, "could not read transmission session"))
+	}
+
+	downloadDir := strings.TrimSpace(derefString(args.DownloadDir))
+	if downloadDir == "" {
+		return ImportDestination{}, importErr(ImportStageConfig, errors.New("transmission download dir is empty; set import.savePath"))
+	}
+
+	return NewRootedImportDestination(normalizePath(downloadDir)), nil
+}
+
+// Import adds the parsed season pack to transmission (paused, into the resolved
+// import root that already holds the hardlinked episodes), forces a hash
+// verification so the present pieces are recognised, waits for it to settle,
+// then starts the torrent.
+//
+// Transmission has no skip-hash-check equivalent (verified against 4.0.6 and
+// 4.1.3), so the import always verifies. Only the genuinely missing pieces are
+// downloaded once started.
+func (t *transmissionClient) Import(req ImportRequest) error {
+	if strings.TrimSpace(req.LegacyHash) == "" {
+		return importErr(ImportStageConfig, errors.New("resolved transmission info hash is empty"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), t.verifyTimeout)
+	defer cancel()
+
+	metaInfo := base64.StdEncoding.EncodeToString(req.TorrentBytes)
+	downloadDir := req.SavePath
+	paused := true
+
+	payload := transmissionrpc.TorrentAddPayload{
+		MetaInfo:    &metaInfo,
+		DownloadDir: &downloadDir,
+		Paused:      &paused,
+	}
+	if labels := trimStrings(t.policy.Tags); len(labels) > 0 {
+		payload.Labels = labels
+	}
+
+	if _, err := t.c.TorrentAdd(ctx, payload); err != nil {
+		return importErr(ImportStageAdd, errors.Wrap(err, "failed to add torrent to transmission"))
+	}
+
+	if err := t.c.TorrentVerifyHashes(ctx, []string{req.LegacyHash}); err != nil {
+		return importErr(ImportStageRecheck, errors.Wrap(err, "failed to verify torrent"))
+	}
+
+	if err := t.waitForVerify(ctx, req.LegacyHash); err != nil {
+		return importErr(ImportStageRecheck, err)
+	}
+
+	// a correctly imported torrent always starts once verification has settled
+	if err := t.c.TorrentStartHashes(ctx, []string{req.LegacyHash}); err != nil {
+		return importErr(ImportStageResume, errors.Wrap(err, "failed to start torrent"))
+	}
+
+	return nil
+}
+
+// waitForVerify polls until the torrent leaves the checking states. Because the
+// torrent was added paused, it settles back to stopped once verification
+// finishes. Completion is detected by "no longer checking" rather than by an
+// observed CHECK state, since a small partial verify can pass through checking
+// faster than the poll interval.
+func (t *transmissionClient) waitForVerify(ctx context.Context, hash string) error {
+	return pollUntil(t.pollInterval, t.verifyTimeout, func() (bool, error) {
+		ts, err := t.c.TorrentGetHashes(ctx, []string{"status", "percentDone", "recheckProgress", "errorString"}, []string{hash})
+		if err != nil {
+			return false, err
+		}
+		if len(ts) == 0 {
+			return false, nil
+		}
+
+		tr := ts[0]
+		if es := strings.TrimSpace(derefString(tr.ErrorString)); es != "" {
+			return false, errors.New("transmission reported error: %s", es)
+		}
+
+		if tr.Status == nil {
+			return false, nil
+		}
+		switch *tr.Status {
+		case transmissionrpc.TorrentStatusCheckWait, transmissionrpc.TorrentStatusCheck:
+			return false, nil
+		default:
+			return true, nil
+		}
+	})
+}
+
 func derefString(s *string) string {
 	if s == nil {
 		return ""
 	}
 	return *s
+}
+
+func trimStrings(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if s := strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }

@@ -4,15 +4,22 @@ seasonpackarr configuration surface reference
 - clients support two types via clients.<name>.type: "qbittorrent" (default) or "transmission"
 - qBittorrent clients can point host at a qui reverse-proxy URL; with qui proxy auth, leave username/password/apiKey empty
 - Transmission clients use username/password only (no apiKey); set port explicitly (Transmission listens on 9091 by default); speaks the legacy Transmission RPC protocol via github.com/hekmon/transmissionrpc/v3
-- preImportPath works identically for both client types
+- each client carries a clients.<name>.import policy that controls how season packs are imported back into the client
+- client-neutral import fields: import.savePath (final destination, hardlink root + client save dir; must exist when set), import.tags (qBittorrent tags / Transmission labels, default ["seasonpackarr"])
+- a correctly imported torrent is always added stopped (so the present files can be rechecked/verified first) and always started once the data checks out
+- qBittorrent-only import fields (rejected at startup on a transmission client): import.category (also resolves the import root when savePath is empty), import.downloadPath (temporary/incomplete path only, never the final destination), import.contentLayout ("subfolder" | "nosubfolder" | "original"; empty defers to qBittorrent's default)
+- qBittorrent clients must set import.savePath or import.category; without savePath, the destination follows qBittorrent automatic-management and manual category-path preferences
+- Transmission has no categories or content layout; empty import.savePath falls back to the session download dir; Transmission always hash-checks existing data on add, so imports verify before starting
+- parseTorrentFile and clients.<name>.preImportPath are removed; startup hard-fails with a migration message if they (or their env vars) are still present
 - high-signal settings:
   - host
   - port
   - apiToken
-  - clients.<name>.type/host/port/username/password/apiKey/preImportPath
+  - clients.<name>.type/host/port/username/password/apiKey
+  - clients.<name>.import.savePath/tags
+  - clients.<name>.import.category/downloadPath/contentLayout (qBittorrent only)
   - smartMode
   - smartModeThreshold
-  - parseTorrentFile
   - fuzzyMatching.skipRepackCompare
   - fuzzyMatching.simplifyHdrCompare
   - metadata.tvdbAPIKey

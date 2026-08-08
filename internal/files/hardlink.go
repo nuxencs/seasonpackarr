@@ -4,6 +4,8 @@
 package files
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -16,9 +18,24 @@ func CreateHardlink(sourcePath, targetPath string) error {
 		return err
 	}
 
-	// link source path to target path
+	// Link the source to the target. A prior successful attempt is also success,
+	// but an unrelated file at the target remains a conflict.
 	if err := os.Link(sourcePath, targetPath); err != nil {
-		return err
+		if !errors.Is(err, fs.ErrExist) {
+			return err
+		}
+
+		sourceInfo, sourceErr := os.Stat(sourcePath)
+		if sourceErr != nil {
+			return sourceErr
+		}
+		targetInfo, targetErr := os.Stat(targetPath)
+		if targetErr != nil {
+			return targetErr
+		}
+		if !os.SameFile(sourceInfo, targetInfo) {
+			return err
+		}
 	}
 
 	return nil

@@ -4,13 +4,53 @@
 package torrents
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/autobrr/go-torrent/bencode"
+	"github.com/autobrr/go-torrent/metainfo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestInfoHashesUsesV2IdentityForPureV2Torrent(t *testing.T) {
+	infoBytes, err := bencode.Marshal(metainfo.Info{
+		Name:        "PureV2.S01",
+		PieceLength: 16 * 1024,
+		MetaVersion: 2,
+	})
+	require.NoError(t, err)
+
+	var torrentBytes bytes.Buffer
+	require.NoError(t, (&metainfo.MetaInfo{InfoBytes: infoBytes}).Write(&torrentBytes))
+
+	hashes, err := InfoHashes(torrentBytes.Bytes())
+	require.NoError(t, err)
+	require.False(t, hashes.HasV1)
+	require.Equal(t, metainfo.HashBytes(infoBytes).HexString(), hashes.Legacy)
+	require.Equal(t, metainfo.HashV2Bytes(infoBytes).HexString(), hashes.V2)
+}
+
+func TestInfoHashesMarksHybridTorrentAsV1Capable(t *testing.T) {
+	infoBytes, err := bencode.Marshal(metainfo.Info{
+		Name:        "Hybrid.S01",
+		PieceLength: 16 * 1024,
+		MetaVersion: 2,
+		Pieces:      make([]byte, 20),
+	})
+	require.NoError(t, err)
+
+	var torrentBytes bytes.Buffer
+	require.NoError(t, (&metainfo.MetaInfo{InfoBytes: infoBytes}).Write(&torrentBytes))
+
+	hashes, err := InfoHashes(torrentBytes.Bytes())
+	require.NoError(t, err)
+	require.True(t, hashes.HasV1)
+	require.NotEmpty(t, hashes.Legacy)
+	require.NotEmpty(t, hashes.V2)
+}
 
 // mustTorrentWithFiles builds a torrent for a release named name. Without any
 // paths it describes a single file, otherwise a directory holding those paths.
