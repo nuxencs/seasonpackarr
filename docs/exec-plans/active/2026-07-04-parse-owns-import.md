@@ -73,6 +73,9 @@ abstraction and drove raw `go-qbittorrent` types from inside `internal/http`.
 - 2026-08-08: the destination now includes the expected rooted or flat file
   layout. qBittorrent imports are pinned to the resolved save path, and an
   omitted `contentLayout` is read from qBittorrent preferences.
+- 2026-08-08: hardlink creation is idempotent only when the existing target is
+  the same inode as the source. This lets a failed client import be retried
+  without accepting an unrelated file at the target path.
 
 ## verification notes
 

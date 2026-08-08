@@ -314,6 +314,47 @@ func TestParseTorrentUsesFlatImportDestination(t *testing.T) {
 	require.NoFileExists(t, filepath.Join(importDir, releaseName, episodeName))
 }
 
+func TestParseTorrentRetryReusesExistingHardlinks(t *testing.T) {
+	resetProcessorGlobals()
+
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	importDir := filepath.Join(tempDir, "import")
+	require.NoError(t, os.MkdirAll(sourceDir, 0o755))
+	require.NoError(t, os.MkdirAll(importDir, 0o755))
+
+	releaseName := "RetryImport.S01.1080p.WEB-DL.H.264-RlsGrp"
+	torrentBytes, err := torrents.TorrentFromRls(releaseName, 1)
+	require.NoError(t, err)
+	encodedTorrent := []byte(base64.StdEncoding.EncodeToString(torrentBytes))
+
+	episodeName := "RetryImport.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"
+	writeEpisode(t, filepath.Join(sourceDir, episodeName))
+
+	mock := &mockTorrentClient{
+		torrents: []torrentclient.Torrent{
+			{Name: "RetryImport.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
+		},
+		filesByHash: map[string][]torrentclient.File{
+			"ep1": {{Name: episodeName, Size: 1}},
+		},
+		importRoot: importDir,
+	}
+
+	p := newImportProcessor()
+	p.req = &request{Name: releaseName, Client: mock, ClientName: "default"}
+
+	for attempt := range 2 {
+		p.req.Torrent = encodedTorrent
+		mock.importCalled = false
+
+		statusCode, err := p.parseTorrent()
+		require.NoError(t, err, "attempt %d", attempt+1)
+		require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
+		require.True(t, mock.importCalled, "attempt %d must reach client import", attempt+1)
+	}
+}
+
 // TestParseTorrentSkipsCrossSeedDuplicates ensures a target is hardlinked only
 // once even when multiple cross-seeded client torrents match the same episode.
 func TestParseTorrentSkipsCrossSeedDuplicates(t *testing.T) {
