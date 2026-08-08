@@ -6,6 +6,7 @@ package torrentclient
 import (
 	stderrors "errors"
 	"maps"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -22,6 +23,8 @@ type stubQbitAPI struct {
 	defaultSave string
 	categoryErr error
 	defaultErr  error
+	preferences qbittorrent.AppPreferences
+	prefsErr    error
 
 	lookupSeq []qbittorrent.Torrent
 	lookupIdx int
@@ -59,6 +62,10 @@ func (s *stubQbitAPI) GetCategories() (map[string]qbittorrent.Category, error) {
 
 func (s *stubQbitAPI) GetDefaultSavePath() (string, error) {
 	return s.defaultSave, s.defaultErr
+}
+
+func (s *stubQbitAPI) GetAppPreferences() (qbittorrent.AppPreferences, error) {
+	return s.preferences, s.prefsErr
 }
 
 func (s *stubQbitAPI) Recheck(hashes []string) error {
@@ -129,7 +136,7 @@ func TestQbitBuildTorrentAddOptions(t *testing.T) {
 	})
 }
 
-func TestQbitImportRoot(t *testing.T) {
+func TestQbitImportDestination(t *testing.T) {
 	tests := []struct {
 		name        string
 		policy      domain.ImportPolicy
@@ -194,16 +201,43 @@ func TestQbitImportRoot(t *testing.T) {
 				defaultErr:  tt.defaultErr,
 			}, tt.policy)
 
-			got, err := q.ImportRoot()
+			destination, err := q.ImportDestination()
 			if tt.wantErr {
 				require.Error(t, err)
 				require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, tt.want, got)
+			require.Equal(t, tt.want, destination.SavePath())
 		})
 	}
+}
+
+func TestQbitImportDestinationUsesConfiguredContentLayout(t *testing.T) {
+	q := newTestQbitClient(&stubQbitAPI{}, domain.ImportPolicy{
+		SavePath:      "/data/tv-hd",
+		ContentLayout: "nosubfolder",
+	})
+
+	destination, err := q.ImportDestination()
+	require.NoError(t, err)
+	require.Equal(t,
+		filepath.Join("/data/tv-hd", "Show.S01E01.mkv"),
+		destination.TargetPath("Show.S01", "Show.S01E01.mkv"),
+	)
+}
+
+func TestQbitImportDestinationUsesClientDefaultContentLayout(t *testing.T) {
+	q := newTestQbitClient(&stubQbitAPI{
+		preferences: qbittorrent.AppPreferences{TorrentContentLayout: "NoSubfolder"},
+	}, domain.ImportPolicy{SavePath: "/data/tv-hd"})
+
+	destination, err := q.ImportDestination()
+	require.NoError(t, err)
+	require.Equal(t,
+		filepath.Join("/data/tv-hd", "Show.S01E01.mkv"),
+		destination.TargetPath("Show.S01", "Show.S01E01.mkv"),
+	)
 }
 
 func TestQbitImportRechecksMissingFilesThenResumes(t *testing.T) {

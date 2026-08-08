@@ -7,7 +7,7 @@ the rest still need downloading — the normal seasonpackarr case).
 
 See [season-pack-lifecycle.md](season-pack-lifecycle.md) for the end-to-end
 request flow; this doc zooms into the client-side import handled by
-`internal/torrentclient` (`qbitClient.ImportRoot` / `qbitClient.Import`). The
+`internal/torrentclient` (`qbitClient.ImportDestination` / `qbitClient.Import`). The
 Transmission adapter reaches the same outcome differently — see
 [the contrast below](#transmission-contrast).
 
@@ -20,9 +20,9 @@ recheck if it reports missing files, and resumes it.
 
 ```mermaid
 flowchart TD
-    A["POST /api/parse<br/>processor.parseTorrent"] --> B["ImportRoot()<br/>savePath | category save path | default save path"]
+    A["POST /api/parse<br/>processor.parseTorrent"] --> B["ImportDestination()<br/>save path + rooted or flat file layout"]
     B --> C["collectMatches()<br/>episodes already in the client that match the announce"]
-    C --> D["hardlink matched episodes<br/>into importRoot / packName /"]
+    C --> D["hardlink matched episodes<br/>in the resolved client layout"]
     D --> E["qbitClient.Import(bytes, hash, savePath = importRoot)"]
 
     E --> F["buildTorrentAddOptions()<br/>SkipHashCheck = true, Paused = true"]
@@ -76,7 +76,7 @@ The single difference between the two runs is whether the added torrent lands in
 
 | | **complete on disk** | **partial on disk** |
 | --- | --- | --- |
-| step 3 hardlink | every episode lands in `importRoot/packName` | only the episodes we already had |
+| step 3 hardlink | every episode lands in the resolved rooted or flat layout | only the episodes we already had |
 | add (skip-check, paused) | qBittorrent trusts it is complete | qBittorrent trusts it is complete |
 | `waitForTorrent` settles to | `stoppedUP` (100%) | `checkingResumeData` (misleading 100%) → **`missingFiles`** (0%) |
 | `missingFiles` branch | skipped | **`Recheck` → `waitForRecheck`** → `stoppedDL` at ~0.33 |

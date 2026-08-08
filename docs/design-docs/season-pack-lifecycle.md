@@ -16,8 +16,8 @@ Describe the normal path from webhook hit to hardlink creation and client import
 8. Smart mode may consult metadata providers to decide whether a grab is worthwhile.
 9. `/api/pack` stops here: it only reports whether the pack matches. `/api/parse` continues by decoding the torrent
    contents to derive stable target naming.
-10. The client's import root is resolved, matches are recomputed, and matching episode files are hardlinked into the
-    season-pack directory beneath the import root.
+10. The client's import destination is resolved, matches are recomputed, and matching episode files are hardlinked in
+    the rooted or flat layout that the client will use.
 11. The torrent is added to the client, verified/rechecked so the present files are recognised, and resumed (unless
     configured to stay paused). See [qbittorrent-import-flow.md](qbittorrent-import-flow.md) for the complete-vs-partial
     client import flow with diagrams.

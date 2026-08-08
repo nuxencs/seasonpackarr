@@ -32,6 +32,7 @@ type mockTorrentClient struct {
 
 	importRoot    string
 	importRootErr error
+	flatImport    bool
 	importErr     error
 	importCalled  bool
 	importReq     torrentclient.ImportRequest
@@ -52,8 +53,14 @@ func (m *mockTorrentClient) GetFiles(hash string) ([]torrentclient.File, error) 
 	return m.files, nil
 }
 
-func (m *mockTorrentClient) ImportRoot() (string, error) {
-	return m.importRoot, m.importRootErr
+func (m *mockTorrentClient) ImportDestination() (torrentclient.ImportDestination, error) {
+	if m.importRootErr != nil {
+		return torrentclient.ImportDestination{}, m.importRootErr
+	}
+	if m.flatImport {
+		return torrentclient.NewFlatImportDestination(m.importRoot), nil
+	}
+	return torrentclient.NewRootedImportDestination(m.importRoot), nil
 }
 
 func (m *mockTorrentClient) Import(req torrentclient.ImportRequest) error {
@@ -263,6 +270,48 @@ func TestParseTorrentImportsAndPassesResolvedRoot(t *testing.T) {
 
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep1))
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep2))
+}
+
+func TestParseTorrentUsesFlatImportDestination(t *testing.T) {
+	resetProcessorGlobals()
+
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	importDir := filepath.Join(tempDir, "import")
+	require.NoError(t, os.MkdirAll(sourceDir, 0o755))
+	require.NoError(t, os.MkdirAll(importDir, 0o755))
+
+	releaseName := "FlatImport.S01.1080p.WEB-DL.H.264-RlsGrp"
+	torrentBytes, err := torrents.TorrentFromRls(releaseName, 1)
+	require.NoError(t, err)
+
+	episodeName := "FlatImport.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"
+	writeEpisode(t, filepath.Join(sourceDir, episodeName))
+
+	mock := &mockTorrentClient{
+		torrents: []torrentclient.Torrent{
+			{Name: "FlatImport.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
+		},
+		filesByHash: map[string][]torrentclient.File{
+			"ep1": {{Name: episodeName, Size: 1}},
+		},
+		importRoot: importDir,
+		flatImport: true,
+	}
+
+	p := newImportProcessor()
+	p.req = &request{
+		Name:       releaseName,
+		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
+		Client:     mock,
+		ClientName: "default",
+	}
+
+	statusCode, err := p.parseTorrent()
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
+	require.FileExists(t, filepath.Join(importDir, episodeName))
+	require.NoFileExists(t, filepath.Join(importDir, releaseName, episodeName))
 }
 
 // TestParseTorrentSkipsCrossSeedDuplicates ensures a target is hardlinked only

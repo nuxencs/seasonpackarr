@@ -44,14 +44,42 @@ type File struct {
 // client on /api/parse. The processor has already hardlinked the matched local
 // episodes into SavePath before Import is called.
 //
-// SavePath MUST equal the value returned by ImportRoot for the same client, so
-// the client adds the torrent pointing at the directory that already contains
-// the hardlinks. Hash is the hex v1 info hash (see torrents.InfoHash) used to
-// look the torrent up after it is added.
+// SavePath MUST equal ImportDestination.SavePath for the same client, so the
+// client adds the torrent pointing at the directory that already contains the
+// hardlinks. Hash is the hex v1 info hash (see torrents.InfoHash) used to look
+// the torrent up after it is added.
 type ImportRequest struct {
 	TorrentBytes []byte
 	Hash         string
 	SavePath     string
+}
+
+// ImportDestination describes both the client save path and the on-disk file
+// layout expected beneath it. Callers do not need to know which client-specific
+// option selected the layout.
+type ImportDestination struct {
+	root               string
+	includeTorrentRoot bool
+}
+
+func NewRootedImportDestination(root string) ImportDestination {
+	return ImportDestination{root: root, includeTorrentRoot: true}
+}
+
+func NewFlatImportDestination(root string) ImportDestination {
+	return ImportDestination{root: root}
+}
+
+func (d ImportDestination) SavePath() string {
+	return d.root
+}
+
+func (d ImportDestination) TargetPath(torrentName, torrentFilePath string) string {
+	if d.includeTorrentRoot {
+		return filepath.Join(d.root, torrentName, torrentFilePath)
+	}
+
+	return filepath.Join(d.root, torrentFilePath)
 }
 
 // ImportStage identifies which step of Import failed so the caller can map it
@@ -79,7 +107,7 @@ func importErr(stage ImportStage, err error) *ImportError {
 	return &ImportError{Stage: stage, Err: err}
 }
 
-// ImportStatusCode maps an error returned by ImportRoot or Import to the
+// ImportStatusCode maps an error returned by ImportDestination or Import to the
 // domain.StatusCode the caller should report. Errors that aren't a stage-tagged
 // *ImportError fall back to StatusAddTorrentError.
 func ImportStatusCode(err error) domain.StatusCode {
@@ -107,8 +135,8 @@ func ImportStatusCode(err error) domain.StatusCode {
 // of the file, so it can be used directly as a hardlink source. The hash
 // returned by GetTorrents must be accepted as-is by GetFiles.
 //
-// Import contract: ImportRoot resolves the absolute directory the season pack
-// must be hardlinked into (and later added under). Import adds the pack,
+// Import contract: ImportDestination resolves the absolute directory and file
+// layout the season pack must use. Import adds the pack,
 // ensures its already-present hardlinked data is accounted for (skip-check +
 // conditional recheck on qBittorrent, forced verify on transmission) and starts
 // it once the data has been (re)checked. Import failures are returned as
@@ -116,7 +144,7 @@ func ImportStatusCode(err error) domain.StatusCode {
 type TorrentClient interface {
 	GetTorrents() ([]Torrent, error)
 	GetFiles(hash string) ([]File, error)
-	ImportRoot() (string, error)
+	ImportDestination() (ImportDestination, error)
 	Import(req ImportRequest) error
 }
 

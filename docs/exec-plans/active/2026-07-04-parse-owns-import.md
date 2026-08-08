@@ -10,7 +10,7 @@ abstraction and drove raw `go-qbittorrent` types from inside `internal/http`.
 
 ## scope
 
-- extend `torrentclient.TorrentClient` with `ImportRoot()` and `Import(ImportRequest)`
+- extend `torrentclient.TorrentClient` with `ImportDestination()` and `Import(ImportRequest)`
   plus stage-tagged `ImportError`; implement both on the qBittorrent and
   Transmission adapters behind private `qbitAPI` / `transmissionAPI` test seams
 - replace per-client `preImportPath` with a neutral `import:` policy
@@ -40,13 +40,13 @@ abstraction and drove raw `go-qbittorrent` types from inside `internal/http`.
 - **Blocking import.** `/api/parse` blocks until the import settles; a slow
   verify can exceed autobrr's webhook timeout. Kept blocking for PR #218 parity
   and clean per-stage status codes; documented. Async is a possible follow-up.
-- **Type-assertion-free interface.** Both adapters implement `ImportRoot`/`Import`
+- **Type-assertion-free interface.** Both adapters implement `ImportDestination`/`Import`
   on the core interface; a future read-only client would need a capability split.
 
 ## steps
 
 1. Domain + abstraction: `ImportPolicy`, status codes 459–463, `torrents.InfoHash`,
-   `TorrentClient.ImportRoot/Import`, `ImportError`, `pollUntil`. [done]
+   `TorrentClient.ImportDestination/Import`, `ImportError`, `pollUntil`. [done]
 2. Adapters: qBittorrent add/recheck/resume + import-root resolution;
    Transmission add/verify/poll/start. [done]
 3. Config: policy, type-aware validation, deprecation guards, env `Cut` fix,
@@ -70,6 +70,9 @@ abstraction and drove raw `go-qbittorrent` types from inside `internal/http`.
   complete and partial packs.)
 - 2026-07-04: per-stage `ImportError` → status codes 459–463 (config/add/find/
   recheck/resume), mapped by `torrentclient.ImportStatusCode`.
+- 2026-08-08: the destination now includes the expected rooted or flat file
+  layout. qBittorrent imports are pinned to the resolved save path, and an
+  omitted `contentLayout` is read from qBittorrent preferences.
 
 ## verification notes
 

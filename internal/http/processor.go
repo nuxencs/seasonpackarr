@@ -415,11 +415,12 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 		return domain.StatusGetClientError, fmt.Errorf("%s: %w", domain.StatusGetClientError, err)
 	}
 
-	importRoot, err := p.req.Client.ImportRoot()
+	importDestination, err := p.req.Client.ImportDestination()
 	if err != nil {
 		statusCode := torrentclient.ImportStatusCode(err)
 		return statusCode, fmt.Errorf("%s: %w", statusCode, err)
 	}
+	importRoot := importDestination.SavePath()
 	p.log.Debug().Msgf("resolved import root: %s", importRoot)
 
 	matches, statusCode, err := p.collectMatches(clientName, clientCfg)
@@ -454,7 +455,6 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 	}
 
 	successfulEpMatch := false
-	targetPackDir := filepath.Join(importRoot, parsedPackName)
 	linkedTargets := make(map[string]struct{})
 
 	for _, match := range matches {
@@ -470,7 +470,7 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 				continue
 			}
 
-			targetEpPath := filepath.Join(targetPackDir, matchedEpPath)
+			targetEpPath := importDestination.TargetPath(parsedPackName, matchedEpPath)
 			successfulEpMatch = true
 
 			// cross-seeded torrents can match the same target from different

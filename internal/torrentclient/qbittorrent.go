@@ -21,6 +21,7 @@ type qbitAPI interface {
 	AddTorrentFromMemory(buf []byte, options map[string]string) (*qbittorrent.TorrentAddResponse, error)
 	GetCategories() (map[string]qbittorrent.Category, error)
 	GetDefaultSavePath() (string, error)
+	GetAppPreferences() (qbittorrent.AppPreferences, error)
 	Recheck(hashes []string) error
 	Resume(hashes []string) error
 }
@@ -96,42 +97,62 @@ func (q *qbitClient) GetFiles(hash string) ([]File, error) {
 	return files, nil
 }
 
-// ImportRoot resolves the final import destination for this qBittorrent client:
+// ImportDestination resolves the final import destination for this qBittorrent client:
 // an explicit savePath wins, otherwise the configured category's save path,
 // falling back to (or joined onto) the qBittorrent default save path.
-func (q *qbitClient) ImportRoot() (string, error) {
+func (q *qbitClient) ImportDestination() (ImportDestination, error) {
+	var actualPath string
 	if q.policy.SavePath != "" {
-		return normalizePath(q.policy.SavePath), nil
-	}
-
-	categories, err := q.c.GetCategories()
-	if err != nil {
-		return "", importErr(ImportStageConfig, errors.Wrap(err, "could not read qbittorrent categories"))
-	}
-
-	category, ok := categories[q.policy.Category]
-	if !ok {
-		return "", importErr(ImportStageConfig, errors.New("qbit category %q was not found in qbittorrent", q.policy.Category))
-	}
-
-	actualPath := strings.TrimSpace(category.SavePath)
-	if actualPath == "" || !filepath.IsAbs(filepath.FromSlash(actualPath)) {
-		defaultSavePath, err := q.c.GetDefaultSavePath()
+		actualPath = q.policy.SavePath
+	} else {
+		categories, err := q.c.GetCategories()
 		if err != nil {
-			return "", importErr(ImportStageConfig, errors.Wrap(err, "could not read qbittorrent default save path"))
+			return ImportDestination{}, importErr(ImportStageConfig, errors.Wrap(err, "could not read qbittorrent categories"))
 		}
-		if actualPath == "" {
-			actualPath = defaultSavePath
-		} else {
-			actualPath = filepath.Join(defaultSavePath, actualPath)
+
+		category, ok := categories[q.policy.Category]
+		if !ok {
+			return ImportDestination{}, importErr(ImportStageConfig, errors.New("qbit category %q was not found in qbittorrent", q.policy.Category))
+		}
+
+		actualPath = strings.TrimSpace(category.SavePath)
+		if actualPath == "" || !filepath.IsAbs(filepath.FromSlash(actualPath)) {
+			defaultSavePath, err := q.c.GetDefaultSavePath()
+			if err != nil {
+				return ImportDestination{}, importErr(ImportStageConfig, errors.Wrap(err, "could not read qbittorrent default save path"))
+			}
+			if actualPath == "" {
+				actualPath = defaultSavePath
+			} else {
+				actualPath = filepath.Join(defaultSavePath, actualPath)
+			}
 		}
 	}
 
 	if strings.TrimSpace(actualPath) == "" {
-		return "", importErr(ImportStageConfig, errors.New("resolved qbittorrent destination is empty"))
+		return ImportDestination{}, importErr(ImportStageConfig, errors.New("resolved qbittorrent destination is empty"))
 	}
 
-	return normalizePath(actualPath), nil
+	contentLayout := q.policy.ContentLayout
+	if strings.TrimSpace(contentLayout) == "" {
+		preferences, err := q.c.GetAppPreferences()
+		if err != nil {
+			return ImportDestination{}, importErr(ImportStageConfig, errors.Wrap(err, "could not read qbittorrent content layout"))
+		}
+		contentLayout = preferences.TorrentContentLayout
+	}
+
+	resolvedLayout, _, err := resolveContentLayout(contentLayout)
+	if err != nil {
+		return ImportDestination{}, importErr(ImportStageConfig, err)
+	}
+
+	root := normalizePath(actualPath)
+	if resolvedLayout == qbittorrent.ContentLayoutSubfolderNone {
+		return NewFlatImportDestination(root), nil
+	}
+
+	return NewRootedImportDestination(root), nil
 }
 
 // Import adds the parsed season pack back to qBittorrent with the hash check

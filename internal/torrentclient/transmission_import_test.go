@@ -120,24 +120,24 @@ func TestTransmissionImportFailsOnError(t *testing.T) {
 	require.Empty(t, stub.startCalls)
 }
 
-func TestTransmissionImportRoot(t *testing.T) {
+func TestTransmissionImportDestination(t *testing.T) {
 	t.Run("explicit save path wins", func(t *testing.T) {
 		tc := newTestTransmissionClient(&stubTransmissionAPI{sessionDir: "/downloads"}, domain.ImportPolicy{SavePath: "/data/tv"})
-		root, err := tc.ImportRoot()
+		destination, err := tc.ImportDestination()
 		require.NoError(t, err)
-		require.Equal(t, normalizePath("/data/tv"), root)
+		require.Equal(t, normalizePath("/data/tv"), destination.SavePath())
 	})
 
 	t.Run("falls back to session download dir", func(t *testing.T) {
 		tc := newTestTransmissionClient(&stubTransmissionAPI{sessionDir: "/downloads"}, domain.ImportPolicy{})
-		root, err := tc.ImportRoot()
+		destination, err := tc.ImportDestination()
 		require.NoError(t, err)
-		require.Equal(t, normalizePath("/downloads"), root)
+		require.Equal(t, normalizePath("/downloads"), destination.SavePath())
 	})
 
 	t.Run("errors when download dir empty", func(t *testing.T) {
 		tc := newTestTransmissionClient(&stubTransmissionAPI{sessionDir: ""}, domain.ImportPolicy{})
-		_, err := tc.ImportRoot()
+		_, err := tc.ImportDestination()
 		require.Error(t, err)
 		require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
 	})

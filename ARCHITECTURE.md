@@ -9,7 +9,7 @@
 1. `main.go` calls Cobra commands in `cmd/`.
 2. `cmd/start.go` loads config, logger, notifications, metadata providers, then starts the HTTP server.
 3. `internal/http/server.go` builds `/api/healthz`, `/api/pack`, and `/api/parse`.
-4. `internal/http/processor.go` orchestrates payload decode, auth-adjacent request handling, client inspection, metadata lookups, and release matching; `/api/pack` is match-only, while `/api/parse` resolves the client's import root (`internal/torrentclient` `ImportRoot`), hardlinks matched files, and imports the pack into the torrent client (`Import`). See [docs/design-docs/qbittorrent-import-flow.md](docs/design-docs/qbittorrent-import-flow.md) for the client-side import flow (complete vs partial pack, with diagrams).
+4. `internal/http/processor.go` orchestrates payload decode, auth-adjacent request handling, client inspection, metadata lookups, and release matching; `/api/pack` is match-only, while `/api/parse` resolves the client's import destination (`internal/torrentclient` `ImportDestination`), hardlinks matched files in the client-selected layout, and imports the pack into the torrent client (`Import`). See [docs/design-docs/qbittorrent-import-flow.md](docs/design-docs/qbittorrent-import-flow.md) for the client-side import flow (complete vs partial pack, with diagrams).
 5. `internal/release/` decides whether a client episode and announced season pack are compatible.
 6. `internal/files/` performs the hardlink operation.
 7. `internal/notification/` emits Discord notifications for notable events.

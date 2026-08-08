@@ -132,11 +132,11 @@ func (t *transmissionClient) GetFiles(hash string) ([]File, error) {
 	return files, nil
 }
 
-// ImportRoot resolves the final import destination for this transmission client:
+// ImportDestination resolves the final import destination for this transmission client:
 // an explicit savePath wins, otherwise the session's default download dir.
-func (t *transmissionClient) ImportRoot() (string, error) {
+func (t *transmissionClient) ImportDestination() (ImportDestination, error) {
 	if t.policy.SavePath != "" {
-		return normalizePath(t.policy.SavePath), nil
+		return NewRootedImportDestination(normalizePath(t.policy.SavePath)), nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), transmissionTimeout)
@@ -144,15 +144,15 @@ func (t *transmissionClient) ImportRoot() (string, error) {
 
 	args, err := t.c.SessionArgumentsGetAll(ctx)
 	if err != nil {
-		return "", importErr(ImportStageConfig, errors.Wrap(err, "could not read transmission session"))
+		return ImportDestination{}, importErr(ImportStageConfig, errors.Wrap(err, "could not read transmission session"))
 	}
 
 	downloadDir := strings.TrimSpace(derefString(args.DownloadDir))
 	if downloadDir == "" {
-		return "", importErr(ImportStageConfig, errors.New("transmission download dir is empty; set import.savePath"))
+		return ImportDestination{}, importErr(ImportStageConfig, errors.New("transmission download dir is empty; set import.savePath"))
 	}
 
-	return normalizePath(downloadDir), nil
+	return NewRootedImportDestination(normalizePath(downloadDir)), nil
 }
 
 // Import adds the parsed season pack to transmission (paused, into the resolved
