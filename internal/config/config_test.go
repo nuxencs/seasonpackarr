@@ -4,9 +4,11 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +20,44 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
+
+type synchronizedBuffer struct {
+	mu sync.Mutex
+	bytes.Buffer
+}
+
+func (b *synchronizedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.Buffer.Write(p)
+}
+
+func (b *synchronizedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.Buffer.String()
+}
+
+type captureLogger struct {
+	log zerolog.Logger
+}
+
+func newCaptureLogger(output *synchronizedBuffer) *captureLogger {
+	return &captureLogger{log: zerolog.New(output)}
+}
+
+func (l *captureLogger) Log() *zerolog.Event          { return l.log.Log() }
+func (l *captureLogger) Fatal() *zerolog.Event        { return l.log.Panic() }
+func (l *captureLogger) Err(err error) *zerolog.Event { return l.log.Err(err) }
+func (l *captureLogger) Error() *zerolog.Event        { return l.log.Error() }
+func (l *captureLogger) Warn() *zerolog.Event         { return l.log.Warn() }
+func (l *captureLogger) Info() *zerolog.Event         { return l.log.Info() }
+func (l *captureLogger) Trace() *zerolog.Event        { return l.log.Trace() }
+func (l *captureLogger) Debug() *zerolog.Event        { return l.log.Debug() }
+func (l *captureLogger) With() zerolog.Context        { return l.log.With() }
+func (l *captureLogger) SetLogLevel(string)           {}
 
 func TestMissingOptionalConfigKeysUseDefaults(t *testing.T) {
 	configFile := writeTestConfig(t, `
@@ -351,6 +391,67 @@ clients:
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for completed config reload")
 	}
+	require.Equal(t, "after", cfg.Snapshot().Clients["default"].Import.Category)
+}
+
+func TestDynamicReloadDebouncesTruncateFirstWrites(t *testing.T) {
+	previousLogLevel := zerolog.GlobalLevel()
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	t.Cleanup(func() {
+		zerolog.SetGlobalLevel(previousLogLevel)
+	})
+
+	cfg, configFile := newTestAppConfig(t, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: before
+logLevel: DEBUG
+`)
+	output := &synchronizedBuffer{}
+	reloads, err := cfg.DynamicReload(newCaptureLogger(output))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NotNil(t, cfg.watcher)
+		require.NoError(t, cfg.watcher.Unwatch())
+	})
+
+	writer, err := os.OpenFile(configFile, os.O_WRONLY|os.O_TRUNC, 0)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	time.Sleep(configReloadDebounceDelay / 4)
+
+	writer, err = os.OpenFile(configFile, os.O_WRONLY, 0)
+	require.NoError(t, err)
+	_, err = writer.WriteString(`
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: after
+logLevel: DEBUG
+`)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	time.Sleep(configReloadDebounceDelay / 4)
+
+	writer, err = os.OpenFile(configFile, os.O_WRONLY|os.O_APPEND, 0)
+	require.NoError(t, err)
+	_, err = writer.WriteString("\n")
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	select {
+	case <-reloads:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for config reload")
+	}
+	time.Sleep(2 * configReloadDebounceDelay)
+
+	logs := output.String()
+	require.NotContains(t, logs, "config reload rejected", logs)
+	require.Equal(t, 1, bytes.Count([]byte(logs), []byte("config file reloaded")), logs)
 	require.Equal(t, "after", cfg.Snapshot().Clients["default"].Import.Category)
 }
 

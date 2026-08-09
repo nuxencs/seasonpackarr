@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"text/template"
 	"time"
@@ -826,7 +827,7 @@ func (c *AppConfig) reload() (*domain.Config, error) {
 	return snapshot, nil
 }
 
-const configReloadSettleDelay = 10 * time.Millisecond
+const configReloadDebounceDelay = 100 * time.Millisecond
 
 func (c *AppConfig) DynamicReload(log logger.Logger) (<-chan struct{}, error) {
 	if c.disableConfigFile {
@@ -836,18 +837,21 @@ func (c *AppConfig) DynamicReload(log logger.Logger) (<-chan struct{}, error) {
 	// use koanf's built-in file watcher
 	f := file.Provider(c.configFile)
 	reloaded := make(chan struct{}, 1)
+	var (
+		reloadGeneration atomic.Uint64
+		reloadMu         sync.Mutex
+	)
 
-	// watch the config file for changes
-	err := f.Watch(func(_ any, watchErr error) {
-		if watchErr != nil {
-			log.Error().Err(watchErr).Msg("error watching config file")
+	reloadIfLatest := func(generation uint64) {
+		if generation != reloadGeneration.Load() {
 			return
 		}
 
-		// On Linux, a direct write can emit a truncate event before the new
-		// contents are available. Let the write settle before loading it. Slower
-		// writes remain protected by reload's empty-file check.
-		time.Sleep(configReloadSettleDelay)
+		reloadMu.Lock()
+		defer reloadMu.Unlock()
+		if generation != reloadGeneration.Load() {
+			return
+		}
 
 		snapshot, err := c.reload()
 		if err != nil {
@@ -861,6 +865,27 @@ func (c *AppConfig) DynamicReload(log logger.Logger) (<-chan struct{}, error) {
 		default:
 		}
 		log.Debug().Msg("config file reloaded")
+	}
+
+	scheduleReload := func() {
+		generation := reloadGeneration.Add(1)
+		time.AfterFunc(configReloadDebounceDelay, func() {
+			reloadIfLatest(generation)
+		})
+	}
+
+	// watch the config file for changes
+	err := f.Watch(func(_ any, watchErr error) {
+		if watchErr != nil {
+			reloadGeneration.Add(1)
+			log.Error().Err(watchErr).Msg("error watching config file")
+			return
+		}
+
+		// Editors and bind mounts can emit several write events for one save.
+		// Reload after the event burst becomes quiet so truncate-first writes do
+		// not produce a transient rejection or duplicate successful reloads.
+		scheduleReload()
 	})
 	if err != nil {
 		return nil, fmt.Errorf("watching config file %s: %w", c.configFile, err)
