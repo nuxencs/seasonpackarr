@@ -340,7 +340,7 @@ clients:
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NotNil(t, cfg.watcher)
-		require.NoError(t, cfg.watcher.Unwatch())
+		require.NoError(t, cfg.watcher.Close())
 	})
 
 	readerResult := make(chan error, 1)
@@ -399,7 +399,7 @@ clients:
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NotNil(t, cfg.watcher)
-		require.NoError(t, cfg.watcher.Unwatch())
+		require.NoError(t, cfg.watcher.Close())
 	})
 
 	configWriter, err := os.OpenFile(configFile, os.O_WRONLY|os.O_TRUNC, 0)
@@ -457,7 +457,7 @@ logLevel: DEBUG
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NotNil(t, cfg.watcher)
-		require.NoError(t, cfg.watcher.Unwatch())
+		require.NoError(t, cfg.watcher.Close())
 	})
 
 	writer, err := os.OpenFile(configFile, os.O_WRONLY|os.O_TRUNC, 0)
@@ -495,6 +495,123 @@ logLevel: DEBUG
 	logs := output.String()
 	require.NotContains(t, logs, "config reload rejected", logs)
 	require.Equal(t, 1, bytes.Count([]byte(logs), []byte("config file reloaded")), logs)
+	require.Equal(t, "after", cfg.Snapshot().Clients["default"].Import.Category)
+}
+
+func TestDynamicReloadSurvivesRenameAndRecreateSave(t *testing.T) {
+	previousLogLevel := zerolog.GlobalLevel()
+	t.Cleanup(func() {
+		zerolog.SetGlobalLevel(previousLogLevel)
+	})
+
+	cfg, configFile := newTestAppConfig(t, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: before
+`)
+	output := &synchronizedBuffer{}
+	reloads, err := cfg.DynamicReload(newCaptureLogger(output))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NotNil(t, cfg.watcher)
+		require.NoError(t, cfg.watcher.Close())
+	})
+
+	backupFile := configFile + ".backup"
+	require.NoError(t, os.Rename(configFile, backupFile))
+	time.Sleep(2 * configReloadDebounceDelay)
+	require.Contains(t, output.String(), "config reload rejected; keeping previous config")
+
+	writeConfigFile(t, configFile, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: after-first-save
+`)
+
+	select {
+	case <-reloads:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for reload after rename-and-recreate save")
+	}
+	require.Equal(t, "after-first-save", cfg.Snapshot().Clients["default"].Import.Category)
+
+	writeConfigFile(t, configFile, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: after-second-save
+`)
+
+	select {
+	case <-reloads:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for reload after the next save")
+	}
+	require.Equal(t, "after-second-save", cfg.Snapshot().Clients["default"].Import.Category)
+	require.NotContains(t, output.String(), "error watching config file")
+}
+
+func TestDynamicReloadFollowsReplacedConfigSymlink(t *testing.T) {
+	previousLogLevel := zerolog.GlobalLevel()
+	t.Cleanup(func() {
+		zerolog.SetGlobalLevel(previousLogLevel)
+	})
+
+	configDir := t.TempDir()
+	firstTarget := filepath.Join(configDir, "config-first.yaml")
+	secondTarget := filepath.Join(configDir, "config-second.yaml")
+	configFile := filepath.Join(configDir, "config.yaml")
+	writeConfigFile(t, firstTarget, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: before
+`)
+	writeConfigFile(t, secondTarget, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: after
+`)
+	if err := os.Symlink(firstTarget, configFile); err != nil {
+		t.Skipf("config symlinks are unavailable: %v", err)
+	}
+	nextSymlink := configFile + ".next"
+	require.NoError(t, os.Symlink(secondTarget, nextSymlink))
+
+	cfg := &AppConfig{configFile: configFile, version: "test"}
+	snapshot, err := cfg.loadSnapshot()
+	require.NoError(t, err)
+	cfg.current.Store(snapshot)
+	reloads, err := cfg.DynamicReload(logger.New(snapshot))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NotNil(t, cfg.watcher)
+		require.NoError(t, cfg.watcher.Close())
+	})
+
+	time.Sleep(configReloadDebounceDelay)
+	require.NoError(t, os.Rename(nextSymlink, configFile))
+	writeConfigFile(t, secondTarget, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: after
+`)
+
+	select {
+	case <-reloads:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for reload after config symlink replacement")
+	}
 	require.Equal(t, "after", cfg.Snapshot().Clients["default"].Import.Category)
 }
 
