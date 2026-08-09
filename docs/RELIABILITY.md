@@ -2,13 +2,13 @@
 
 ## What Reliable Means Here
 
-Reliable does not mean perfect acceptance. It means predictable outcomes when dealing with noisy release names, external APIs, and filesystem state.
+Reliable does not mean perfect acceptance. It means predictable outcomes when dealing with noisy release names, torrent-client state, and filesystem state.
 
 ## Reliability Priorities
 
 1. never create misleading hardlinks silently
 2. authenticate and reject malformed requests cleanly
-3. degrade safely when metadata providers fail
+3. fail closed when exact torrent coverage cannot be established
 4. keep config reload/startup behavior legible in logs
 
 ## Current Reliability Mechanisms
@@ -18,20 +18,24 @@ Reliable does not mean perfect acceptance. It means predictable outcomes when de
 - structured logging
 - validated, immutable config snapshots that keep the last valid config after a rejected reload
 - environment precedence reapplied on every config reload
-- TVDB/TVMaze fallback strategy
 - release comparison gates
+- a 30-second client inventory cache shared by candidate and pack checks
+- a 2-minute accepted-plan cache with safe recomputation on a miss
+- distinct torrent-target accounting that caps smart-mode coverage at 100 percent
 - hardlink creation isolated from matching logic
+- authenticated HTTP component coverage across candidate, pack, parse, cache invalidation, and filesystem failure paths
 
 ## Known Reliability Gaps
 
-- no explicit end-to-end test harness for real webhook payloads plus filesystem assertions
-- processor flow is the main complexity hotspot
+- no live autobrr-to-real-client end-to-end harness
+- expected filter rejections and operational errors do not have separate outcome classes
+- torrent-derived target paths do not enforce containment beneath the import root
 - no automated stale-doc detection for operational procedures
 
 ## Change Checklist
 
 - Did request validation stay strict?
 - Did matching become broader or narrower? Why?
-- What happens if TVDB and TVMaze disagree?
+- Can duplicate or unrelated client episodes broaden acceptance?
 - What log line would an operator use to debug this?
-- Can the new behavior be exercised with `go run . test pack` or `test parse`?
+- Can the new behavior be exercised with `go run . test candidate`, `test pack`, or `test parse`?

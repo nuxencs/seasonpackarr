@@ -14,7 +14,6 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/config"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
-	"github.com/nuxencs/seasonpackarr/internal/metadata"
 	"github.com/nuxencs/seasonpackarr/pkg/errors"
 
 	"github.com/gin-contrib/requestid"
@@ -27,17 +26,15 @@ type Server struct {
 	log  logger.Logger
 	cfg  config.Provider
 	noti domain.Sender
-	meta *metadata.Provider
 
 	httpServer http.Server
 }
 
-func NewServer(log logger.Logger, config config.Provider, notification domain.Sender, metadata *metadata.Provider) *Server {
+func NewServer(log logger.Logger, config config.Provider, notification domain.Sender) *Server {
 	return &Server{
 		log:  log,
 		cfg:  config,
 		noti: notification,
-		meta: metadata,
 	}
 }
 
@@ -102,7 +99,7 @@ func (s *Server) Handler() http.Handler {
 
 		api.Use(s.AuthMiddleware())
 		{
-			newWebhookHandler(s.log, s.cfg, s.noti, s.meta).Routes(api.Group("/"))
+			newWebhookHandler(s.log, s.cfg, s.noti).Routes(api.Group("/"))
 		}
 	}
 

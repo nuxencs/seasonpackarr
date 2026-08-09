@@ -5,76 +5,42 @@ package payload
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"text/template"
 	"time"
 )
 
-const payloadPack = `
-	{
-	  "name": "{{ .TorrentName }}",
-	  "clientname": "{{ .ClientName }}"
-	}`
-
-const payloadParse = `
-	{
-	  "name":"{{ .TorrentName }}",
-	  "torrent":"{{ .TorrentDataRawBytes }}",
-	  "clientname": "{{ .ClientName }}"
-	}`
-
-type packVars struct {
-	TorrentName string
-	ClientName  string
+type candidatePayload struct {
+	Name       string `json:"name"`
+	ClientName string `json:"clientname"`
 }
 
-type parseVars struct {
-	TorrentName         string
-	TorrentDataRawBytes []byte
-	ClientName          string
+type torrentPayload struct {
+	Name       string `json:"name"`
+	Torrent    []byte `json:"torrent"`
+	ClientName string `json:"clientname"`
 }
 
-func CompilePack(torrentName string, clientName string) (io.Reader, error) {
-	var buffer bytes.Buffer
+func CompileCandidate(torrentName string, clientName string) (io.Reader, error) {
+	return compile(candidatePayload{Name: torrentName, ClientName: clientName})
+}
 
-	tmplVars := packVars{
-		TorrentName: torrentName,
-		ClientName:  clientName,
-	}
-
-	tmpl, err := template.New("Request").Parse(payloadPack)
-	if err != nil {
-		return nil, err
-	}
-
-	if err = tmpl.Execute(&buffer, &tmplVars); err != nil {
-		return nil, err
-	}
-
-	return &buffer, nil
+func CompilePack(torrentName string, torrentBytes []byte, clientName string) (io.Reader, error) {
+	return compile(torrentPayload{Name: torrentName, Torrent: torrentBytes, ClientName: clientName})
 }
 
 func CompileParse(torrentName string, torrentBytes []byte, clientName string) (io.Reader, error) {
-	var buffer bytes.Buffer
+	return compile(torrentPayload{Name: torrentName, Torrent: torrentBytes, ClientName: clientName})
+}
 
-	tmplVars := parseVars{
-		TorrentName:         torrentName,
-		TorrentDataRawBytes: torrentBytes,
-		ClientName:          clientName,
-	}
-
-	tmpl, err := template.New("Request").Parse(payloadParse)
+func compile(payload any) (io.Reader, error) {
+	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
-
-	if err = tmpl.Execute(&buffer, &tmplVars); err != nil {
-		return nil, err
-	}
-
-	return &buffer, nil
+	return bytes.NewReader(data), nil
 }
 
 func Exec(url string, body io.Reader, apiToken string) error {
@@ -83,6 +49,7 @@ func Exec(url string, body io.Reader, apiToken string) error {
 		return err
 	}
 	req.Header.Set("X-API-Token", apiToken)
+	req.Header.Set("Content-Type", "application/json")
 
 	c := &http.Client{
 		Timeout: 30 * time.Second,

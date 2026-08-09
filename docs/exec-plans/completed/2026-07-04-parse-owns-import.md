@@ -54,7 +54,7 @@ abstraction and drove raw `go-qbittorrent` types from inside `internal/http`.
 4. Processor: `collectMatches`, gate-only `/api/pack`, parse-owns-import
    `/api/parse`; remove `format.CleanAnnounceTitle`. [done]
 5. Docs/schema/sample/compose. [done]
-6. Gates + live verify against qBittorrent + Transmission. [in progress]
+6. Gates + live verify against qBittorrent + Transmission. [done]
 
 ## decision log
 

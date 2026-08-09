@@ -5,6 +5,7 @@ package release
 
 import (
 	"path/filepath"
+	"strings"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/slices"
@@ -110,18 +111,22 @@ func compare(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatchi
 }
 
 func MatchEpToSeasonPackEp(clientEpPath string, clientEpSize int64, torrentEpPath string, torrentEpSize int64) (string, domain.CompareInfo) {
-	if clientEpSize != torrentEpSize {
+	clientEpRls := parseEpisodeFile(clientEpPath)
+	torrentEpRls := parseEpisodeFile(torrentEpPath)
+
+	switch {
+	case !strings.EqualFold(clientEpRls.Ext, torrentEpRls.Ext):
+		return "", domain.CompareInfo{
+			StatusCode:   domain.StatusContainerMismatch,
+			RejectValueA: clientEpRls.Ext,
+			RejectValueB: torrentEpRls.Ext,
+		}
+	case clientEpSize != torrentEpSize:
 		return "", domain.CompareInfo{
 			StatusCode:   domain.StatusSizeMismatch,
 			RejectValueA: clientEpSize,
 			RejectValueB: torrentEpSize,
 		}
-	}
-
-	clientEpRls := rls.ParseString(filepath.Base(clientEpPath))
-	torrentEpRls := rls.ParseString(filepath.Base(torrentEpPath))
-
-	switch {
 	case clientEpRls.Series != torrentEpRls.Series:
 		return "", domain.CompareInfo{
 			StatusCode:   domain.StatusSeasonMismatch,
@@ -160,10 +165,13 @@ func PercentOfTotalEpisodes(totalEps int, foundEps int) float32 {
 }
 
 func IsValidEpisodeFile(torrentFileName string) bool {
-	torrentFileRls := rls.ParseString(filepath.Base(torrentFileName))
+	torrentFileRls := parseEpisodeFile(torrentFileName)
 
 	// ignore non video files
-	if torrentFileRls.Ext != "mkv" {
+	if !strings.EqualFold(torrentFileRls.Ext, "mkv") && !strings.EqualFold(torrentFileRls.Ext, "mp4") {
+		return false
+	}
+	if torrentFileRls.Type != rls.Episode && len(torrentFileRls.SeriesEpisodes()) == 0 {
 		return false
 	}
 
@@ -173,6 +181,12 @@ func IsValidEpisodeFile(torrentFileName string) bool {
 	}
 
 	return true
+}
+
+func parseEpisodeFile(path string) rls.Release {
+	base := filepath.Base(path)
+	ext := filepath.Ext(base)
+	return rls.ParseString(strings.TrimSuffix(base, ext) + strings.ToLower(ext))
 }
 
 func simplifyWEB(source string) string {

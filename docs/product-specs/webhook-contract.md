@@ -2,6 +2,7 @@
 
 ## Endpoints
 
+- `POST /api/candidate`
 - `POST /api/pack`
 - `POST /api/parse`
 
@@ -11,8 +12,10 @@ Requests must include the configured API token. Unauthorized requests are reject
 
 ## Behavioral Intent
 
-- `/api/pack` is a pure match gate: it decides whether a season-pack announce matches episodes already in the client and returns a successful match; it has no filesystem side effects and adds nothing to the client
-- `/api/parse` owns the import: it decodes the torrent payload, recomputes the matches, resolves the client's import destination, hardlinks matched episodes in the client-selected content layout, and imports the torrent into the client via the per-client `import` policy (add stopped, account for present data through the client's check flow, and do not leave the import paused)
+- `/api/candidate` is an announce-only match gate. It reads torrent summaries but never requests torrent bytes or per-torrent file details.
+- `/api/pack` requires torrent bytes. It counts MKV and MP4 files that parse as episodes, excludes samples and extra videos, maps reusable client files to distinct same-container targets, applies smart-mode coverage, and caches an accepted import plan. It has no filesystem or client side effects.
+- `/api/parse` owns the import. It reuses the accepted plan when available and safely rebuilds it on a cache miss. It resolves the client destination, hardlinks matched episodes, and imports through the per-client policy. If achieved smart-mode coverage falls below the threshold, it does not import. Successful hardlinks remain for a safe retry; the service does not perform destructive cleanup.
+- The candidate and pack checks share a short-lived client inventory. A normal candidate, pack, parse sequence performs one inventory scan and one set of candidate file-detail reads.
 
 ## Contract Stability Rules
 

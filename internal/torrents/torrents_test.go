@@ -109,9 +109,9 @@ func Test_Info_InvalidBytes(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func Test_Episodes_SkipsNonMkvFiles(t *testing.T) {
+func Test_Episodes_ReturnsMkvAndMp4Files(t *testing.T) {
 	info, err := Info(mustTorrentWithFiles(t, "Series.S01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp",
-		"Series.S01E01.mkv", "Series.S01E01.nfo", "Sample/sample.mp4", "Series.S01E02.mkv"))
+		"Series.S01E01.mkv", "Series.S01E01.nfo", "Series.S01E02.mp4", "Series.S01E03.MP4"))
 	require.NoError(t, err)
 
 	episodes, err := Episodes(info)
@@ -119,17 +119,18 @@ func Test_Episodes_SkipsNonMkvFiles(t *testing.T) {
 
 	assert.Equal(t, []Episode{
 		{Path: "Series.S01E01.mkv", Size: 1},
-		{Path: "Series.S01E02.mkv", Size: 1},
+		{Path: "Series.S01E02.mp4", Size: 1},
+		{Path: "Series.S01E03.MP4", Size: 1},
 	}, episodes)
 }
 
-func Test_Episodes_NoMkvFiles(t *testing.T) {
+func Test_Episodes_NoSupportedVideoFiles(t *testing.T) {
 	info, err := Info(mustTorrentWithFiles(t, "Series.S01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp",
 		"Series.S01E01.nfo", "Series.S01E02.nfo"))
 	require.NoError(t, err)
 
 	_, err = Episodes(info)
-	assert.ErrorContains(t, err, "no .mkv files found")
+	assert.ErrorContains(t, err, "no supported video files found")
 }
 
 func Test_Episodes_NotADirectory(t *testing.T) {

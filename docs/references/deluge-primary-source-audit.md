@@ -192,16 +192,16 @@ Source: [`methods.go` lines 639-676](https://github.com/autobrr/go-qbittorrent/b
 
 The working tree inspected on 2026-08-08 has these paths:
 
-- Request-level duplicate gate: both `/api/pack` and `/api/parse` call
-  `collectMatches`. It checks the announced release against the cached torrent
-  map. If the same release is already present, it returns
+- Request-level duplicate gate: `/api/candidate` checks the announce against the
+  short-lived client inventory. `/api/pack` reuses that inventory while building
+  its exact plan. `/api/parse` reuses the accepted plan or safely rebuilds it.
+  If the same release is already present, processing returns
   `StatusAlreadyInClient` before file lookup, hardlink creation, or client
   import. The current wire status is `210`, a 2xx no-action response. An exact
   duplicate therefore does not reach any torrent-client duplicate-add path in
   the normal seasonpackarr flow. Local sources:
-  `/Users/nuxen/dev/seasonpackarr/internal/http/processor.go:291-331`,
-  `/Users/nuxen/dev/seasonpackarr/internal/http/processor.go:444-557`, and
-  `/Users/nuxen/dev/seasonpackarr/internal/release/release.go:101-108`.
+  `internal/http/processor_candidate.go`, `internal/http/processor_plan.go`, and
+  `internal/release/release.go`.
 - qBittorrent: build add options, call `AddTorrentFromMemory`, and return immediately on any library error. It only looks up the torrent after a successful library result. It rechecks only when the existing torrent state is `missingFiles`. It returns without a recheck when the existing torrent is active. Local source: `/Users/nuxen/dev/seasonpackarr/internal/torrentclient/qbittorrent.go:214-269`.
 - Deluge: add paused. A V1 empty result or V2 `already in session` error returns
   without mutation. A newly added torrent receives the optional label, resumes,
