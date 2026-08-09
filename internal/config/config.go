@@ -23,6 +23,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/pkg/errors"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/structs"
@@ -406,7 +407,7 @@ type AppConfig struct {
 	configFile        string
 	version           string
 	disableConfigFile bool
-	watcher           *file.File
+	watcher           *fsnotify.Watcher
 }
 
 func New(configPath string, version string) *AppConfig {
@@ -829,13 +830,70 @@ func (c *AppConfig) reload() (*domain.Config, error) {
 
 const configReloadDebounceDelay = 100 * time.Millisecond
 
+func (c *AppConfig) watchConfigFile(log logger.Logger, onChange func()) error {
+	watchedPath := filepath.Clean(c.configFile)
+	realPath, err := filepath.EvalSymlinks(watchedPath)
+	if err != nil {
+		return err
+	}
+	realPath = filepath.Clean(realPath)
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return err
+	}
+	if err := watcher.Add(filepath.Dir(watchedPath)); err != nil {
+		_ = watcher.Close()
+		return err
+	}
+	c.watcher = watcher
+
+	go func() {
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+
+				eventPath := filepath.Clean(event.Name)
+				currentRealPath, err := filepath.EvalSymlinks(watchedPath)
+				if err != nil {
+					if os.IsNotExist(err) {
+						onWatchedFile := eventPath == watchedPath || eventPath == realPath
+						if onWatchedFile && event.Has(fsnotify.Remove|fsnotify.Rename) {
+							onChange()
+						}
+					} else {
+						log.Error().Err(err).Msg("error resolving watched config file")
+					}
+					continue
+				}
+				currentRealPath = filepath.Clean(currentRealPath)
+
+				onWatchedFile := eventPath == watchedPath || eventPath == realPath
+				targetChanged := currentRealPath != realPath
+				if targetChanged || (onWatchedFile && event.Has(fsnotify.Create|fsnotify.Write)) {
+					realPath = currentRealPath
+					onChange()
+				}
+			case watchErr, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				log.Error().Err(watchErr).Msg("error watching config file")
+			}
+		}
+	}()
+
+	return nil
+}
+
 func (c *AppConfig) DynamicReload(log logger.Logger) (<-chan struct{}, error) {
 	if c.disableConfigFile {
 		return nil, nil
 	}
 
-	// use koanf's built-in file watcher
-	f := file.Provider(c.configFile)
 	reloaded := make(chan struct{}, 1)
 	var (
 		reloadGeneration atomic.Uint64
@@ -874,14 +932,7 @@ func (c *AppConfig) DynamicReload(log logger.Logger) (<-chan struct{}, error) {
 		})
 	}
 
-	// watch the config file for changes
-	err := f.Watch(func(_ any, watchErr error) {
-		if watchErr != nil {
-			reloadGeneration.Add(1)
-			log.Error().Err(watchErr).Msg("error watching config file")
-			return
-		}
-
+	err := c.watchConfigFile(log, func() {
 		// Editors and bind mounts can emit several write events for one save.
 		// Reload after the event burst becomes quiet so truncate-first writes do
 		// not produce a transient rejection or duplicate successful reloads.
@@ -890,7 +941,5 @@ func (c *AppConfig) DynamicReload(log logger.Logger) (<-chan struct{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("watching config file %s: %w", c.configFile, err)
 	}
-	c.watcher = f
-
 	return reloaded, nil
 }
