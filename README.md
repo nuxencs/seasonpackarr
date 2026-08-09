@@ -222,6 +222,40 @@ content layout, so configure `import.savePath` or leave it empty to use the sess
 `import.savePath`. Transmission forces a hash check after add. Deluge uses its normal initial check before transferring
 pieces. Both clients account for present data, so only genuinely missing episodes get downloaded.
 
+#### Use multiple Sonarr instances with one qBittorrent instance
+
+If multiple Sonarr instances share one qBittorrent instance, add that qBittorrent connection to seasonpackarr once for
+each Sonarr instance. Give each entry a unique name and the qBittorrent category used by that Sonarr instance:
+
+```yaml
+clients:
+  sonarr-hd:
+    type: "qbittorrent"
+    host: "127.0.0.1"
+    port: 8080
+    username: "admin"
+    password: "your-password"
+    import:
+      category: "tv-hd"
+
+  sonarr-uhd:
+    type: "qbittorrent"
+    host: "127.0.0.1"
+    port: 8080
+    username: "admin"
+    password: "your-password"
+    import:
+      category: "tv-uhd"
+```
+
+In qBittorrent, configure each category to save to the folder used by its Sonarr instance. Then create one autobrr
+filter for each seasonpackarr entry. Use `"clientname": "sonarr-hd"` in every seasonpackarr payload for the HD filter
+and `"clientname": "sonarr-uhd"` for the UHD filter. See [autobrr Filter setup](#autobrr-filter-setup) for the complete
+filter and webhook configuration.
+
+Both entries use the same qBittorrent torrent list. qBittorrent can store a torrent only once, so the same torrent
+cannot be added separately to both categories.
+
 ### Smart Mode
 
 Can be enabled in the config by setting `smartMode` to `true`. Works together with `smartModeThreshold` to determine if
