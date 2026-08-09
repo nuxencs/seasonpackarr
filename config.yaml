@@ -195,16 +195,15 @@ logLevel: "DEBUG"
 # logMaxBackups: 3
 
 # Smart Mode
-# Toggles smart mode to only download season packs that have a certain amount of episodes from a release group
-# already in the client
+# Toggles smart mode to accept only packs with enough reusable torrent episode files already in the client
 #
 # Default: false
 #
 # smartMode: false
 
 # Smart Mode Threshold
-# Sets the threshold for the percentage of episodes out of a season that must be present in the client
-# In this example 75% of the episodes in a season must be present in the client for it to be downloaded
+# Sets the minimum reusable share of distinct valid episode files in the announced torrent
+# In this example 75% of the torrent episode files must be reusable for the pack to be accepted
 #
 # Default: 0.75
 #
@@ -241,24 +240,6 @@ fuzzyMatching:
   # Default: false
   #
   skipYearCompare: false
-
-# Metadata
-# Here you can provide credentials for additional metadata providers
-#
-metadata:
-  # TVDB API Key
-  # Your TVDB API Key. If you have a user-subscription key, also provide your subscriber PIN in tvdbPIN.
-  #
-  # Optional
-  #
-  tvdbAPIKey: ""
-
-  # TVDB PIN
-  # Your TVDB Subscriber PIN.
-  #
-  # Optional
-  #
-  tvdbPIN: ""
 
 # API Token
 # If not defined, removes api authentication

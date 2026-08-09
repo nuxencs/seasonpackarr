@@ -7,6 +7,9 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,6 +22,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
+	"github.com/gin-gonic/gin"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/stretchr/testify/require"
 )
@@ -33,12 +37,14 @@ type mockTorrentClient struct {
 	filesByHash  map[string][]torrentclient.File // per-hash file lists
 	filesErr     error
 	gotHash      string
+	fileCalls    int
 
 	importRoot    string
 	importRootErr error
 	flatImport    bool
 	importErr     error
 	importCalled  bool
+	importCalls   int
 	importReq     torrentclient.ImportRequest
 }
 
@@ -58,6 +64,7 @@ func (m *mockTorrentClient) GetTorrents() ([]torrentclient.Torrent, error) {
 }
 
 func (m *mockTorrentClient) GetFiles(hash string) ([]torrentclient.File, error) {
+	m.fileCalls++
 	m.gotHash = hash
 	if m.filesErr != nil {
 		return nil, m.filesErr
@@ -66,6 +73,270 @@ func (m *mockTorrentClient) GetFiles(hash string) ([]torrentclient.File, error) 
 		return m.filesByHash[hash], nil
 	}
 	return m.files, nil
+}
+
+func TestCandidateSeasonPackUsesTorrentSummariesOnly(t *testing.T) {
+	resetProcessorGlobals()
+
+	mock := &mockTorrentClient{
+		torrents: []torrentclient.Torrent{
+			{Name: "Candidate.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: "/data/tv"},
+		},
+		filesByHash: map[string][]torrentclient.File{
+			"ep1": {{Name: "Candidate.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv", Size: 1}},
+		},
+	}
+
+	p := newImportProcessor()
+	p.req = &request{
+		Name:       "Candidate.S01.1080p.WEB-DL.H.264-RlsGrp",
+		Client:     mock,
+		ClientName: "default",
+	}
+
+	statusCode, err := p.candidateSeasonPack()
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
+	require.Equal(t, 1, mock.torrentCalls)
+	require.Zero(t, mock.fileCalls, "candidate evaluation must not request torrent file details")
+}
+
+func TestCandidateEndpointReturnsSuccessfulMatchWithoutFileReads(t *testing.T) {
+	resetProcessorGlobals()
+	gin.SetMode(gin.TestMode)
+
+	clientCfg := &domain.Client{Type: "qbittorrent", Import: domain.ImportPolicy{Category: "tv-hd"}}
+	mock := &mockTorrentClient{
+		torrents: []torrentclient.Torrent{
+			{Name: "Candidate.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: "/data/tv"},
+		},
+	}
+	clientMap.Store("default", cachedTorrentClient{config: cloneClientConfig(*clientCfg), client: mock})
+
+	cfg := staticConfig{config: domain.Config{Clients: map[string]*domain.Client{"default": clientCfg}}}
+	router := gin.New()
+	newWebhookHandler(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil).Routes(router.Group("/api"))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/candidate", bytes.NewBufferString(`{"name":"Candidate.S01.1080p.WEB-DL.H.264-RlsGrp","clientname":"default"}`))
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, req)
+
+	require.Equal(t, domain.StatusSuccessfulMatch.Code(), res.Code)
+	require.Zero(t, mock.fileCalls)
+}
+
+func TestCandidateAndPackShareOneClientInventory(t *testing.T) {
+	resetProcessorGlobals()
+	torrentBytes, err := torrents.TorrentFromRls("Inventory.S01.1080p.WEB-DL.H.264-RlsGrp", 1)
+	require.NoError(t, err)
+
+	mock := &mockTorrentClient{
+		torrents: []torrentclient.Torrent{
+			{Name: "Inventory.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: "/data/tv"},
+		},
+		filesByHash: map[string][]torrentclient.File{
+			"ep1": {{Name: "Inventory.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv", Size: 1}},
+		},
+	}
+	candidateProcessor := newImportProcessor()
+	candidateProcessor.req = &request{
+		Name:       "Inventory.S01.1080p.WEB-DL.H.264-RlsGrp",
+		Client:     mock,
+		ClientName: "default",
+	}
+
+	statusCode, err := candidateProcessor.candidateSeasonPack()
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
+
+	packProcessor := newImportProcessor()
+	packProcessor.req = &request{
+		Name:       "Inventory.S01.1080p.WEB-DL.H.264-RlsGrp",
+		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
+		Client:     mock,
+		ClientName: "default",
+	}
+	statusCode, err = packProcessor.processSeasonPack()
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
+	require.Equal(t, 1, mock.torrentCalls, "candidate and pack must share one inventory snapshot")
+}
+
+func TestProcessSeasonPackUsesTorrentEpisodeCoverage(t *testing.T) {
+	resetProcessorGlobals()
+
+	const releaseName = "Coverage.S01.1080p.WEB-DL.H.264-RlsGrp"
+	torrentBytes, err := torrents.TorrentFromRls(releaseName, 12)
+	require.NoError(t, err)
+
+	mock := &mockTorrentClient{filesByHash: make(map[string][]torrentclient.File)}
+	for episode := 1; episode <= 10; episode++ {
+		episodeName := fmt.Sprintf("Coverage.S01E%02d.1080p.WEB-DL.H.264-RlsGrp", episode)
+		hash := fmt.Sprintf("ep%d", episode)
+		mock.torrents = append(mock.torrents, torrentclient.Torrent{Name: episodeName, Hash: hash, SavePath: "/data/tv"})
+		mock.filesByHash[hash] = []torrentclient.File{{Name: episodeName + ".mkv", Size: 1}}
+	}
+
+	cfg := staticConfig{config: domain.Config{
+		Clients: map[string]*domain.Client{
+			"default": {Type: "qbittorrent", Import: domain.ImportPolicy{Category: "tv-hd"}},
+		},
+		SmartMode:          true,
+		SmartModeThreshold: 0.75,
+	}}
+	p := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil)
+	p.req = &request{
+		Name:       releaseName,
+		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
+		Client:     mock,
+		ClientName: "default",
+	}
+
+	statusCode, err := p.processSeasonPack()
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
+	require.False(t, mock.importCalled, "pack evaluation must remain side-effect free")
+}
+
+func TestProcessSeasonPackRejectsCoverageBelowTorrentThreshold(t *testing.T) {
+	resetProcessorGlobals()
+
+	const releaseName = "BelowThreshold.S01.1080p.WEB-DL.H.264-RlsGrp"
+	torrentBytes, err := torrents.TorrentFromRls(releaseName, 4)
+	require.NoError(t, err)
+
+	mock := &mockTorrentClient{filesByHash: make(map[string][]torrentclient.File)}
+	for episode := 1; episode <= 2; episode++ {
+		episodeName := fmt.Sprintf("BelowThreshold.S01E%02d.1080p.WEB-DL.H.264-RlsGrp", episode)
+		hash := fmt.Sprintf("ep%d", episode)
+		mock.torrents = append(mock.torrents, torrentclient.Torrent{Name: episodeName, Hash: hash, SavePath: "/data/tv"})
+		mock.filesByHash[hash] = []torrentclient.File{{Name: episodeName + ".mkv", Size: 1}}
+	}
+
+	cfg := staticConfig{config: domain.Config{
+		Clients: map[string]*domain.Client{
+			"default": {Type: "qbittorrent", Import: domain.ImportPolicy{Category: "tv-hd"}},
+		},
+		SmartMode:          true,
+		SmartModeThreshold: 0.75,
+	}}
+	p := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil)
+	p.req = &request{
+		Name:       releaseName,
+		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
+		Client:     mock,
+		ClientName: "default",
+	}
+
+	statusCode, err := p.processSeasonPack()
+	require.EqualError(t, err, domain.StatusBelowThreshold.String())
+	require.Equal(t, domain.StatusBelowThreshold, statusCode)
+	require.False(t, mock.importCalled)
+}
+
+func TestImportPlanCoverageCannotExceedTorrentEpisodeCount(t *testing.T) {
+	resetProcessorGlobals()
+
+	const releaseName = "CappedCoverage.S01.1080p.WEB-DL.H.264-RlsGrp"
+	torrentBytes, err := torrents.TorrentFromRls(releaseName, 6)
+	require.NoError(t, err)
+
+	mock := &mockTorrentClient{filesByHash: make(map[string][]torrentclient.File)}
+	for episode := 1; episode <= 10; episode++ {
+		episodeName := fmt.Sprintf("CappedCoverage.S01E%02d.1080p.WEB-DL.H.264-RlsGrp", episode)
+		hash := fmt.Sprintf("ep%d", episode)
+		mock.torrents = append(mock.torrents, torrentclient.Torrent{Name: episodeName, Hash: hash, SavePath: "/data/tv"})
+		mock.filesByHash[hash] = []torrentclient.File{{Name: episodeName + ".mkv", Size: 1}}
+	}
+	clientCfg := &domain.Client{Type: "qbittorrent", Import: domain.ImportPolicy{Category: "tv-hd"}}
+	cfg := staticConfig{config: domain.Config{Clients: map[string]*domain.Client{"default": clientCfg}}}
+	p := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil)
+	p.req = &request{
+		Name:       releaseName,
+		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
+		Client:     mock,
+		ClientName: "default",
+	}
+
+	plan, statusCode, err := p.buildImportPlan("default", clientCfg, cfg.Snapshot())
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
+	require.Equal(t, 6, plan.totalEps)
+	require.Len(t, plan.links, 6, "client episodes outside the torrent cannot increase coverage")
+}
+
+func TestParseTorrentReusesAcceptedPlanWithoutClientReads(t *testing.T) {
+	resetProcessorGlobals()
+
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	importDir := filepath.Join(tempDir, "import")
+	require.NoError(t, os.MkdirAll(sourceDir, 0o755))
+	require.NoError(t, os.MkdirAll(importDir, 0o755))
+
+	const releaseName = "PlanReuse.S01.1080p.WEB-DL.H.264-RlsGrp"
+	torrentBytes, err := torrents.TorrentFromRls(releaseName, 2)
+	require.NoError(t, err)
+	encodedTorrent := []byte(base64.StdEncoding.EncodeToString(torrentBytes))
+
+	ep1 := "PlanReuse.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"
+	ep2 := "PlanReuse.S01E02.1080p.WEB-DL.H.264-RlsGrp.mkv"
+	writeEpisode(t, filepath.Join(sourceDir, ep1))
+	writeEpisode(t, filepath.Join(sourceDir, ep2))
+
+	mock := &mockTorrentClient{
+		torrents: []torrentclient.Torrent{
+			{Name: "PlanReuse.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
+			{Name: "PlanReuse.S01E02.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep2", SavePath: sourceDir},
+		},
+		filesByHash: map[string][]torrentclient.File{
+			"ep1": {{Name: ep1, Size: 1}},
+			"ep2": {{Name: ep2, Size: 1}},
+		},
+		importRoot: importDir,
+	}
+	cfg := staticConfig{config: domain.Config{
+		Clients: map[string]*domain.Client{
+			"default": {Type: "qbittorrent", Import: domain.ImportPolicy{Category: "tv-hd"}},
+		},
+		SmartMode:          true,
+		SmartModeThreshold: 0.75,
+	}}
+	packProcessor := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil)
+	packProcessor.req = &request{Name: releaseName, Torrent: encodedTorrent, Client: mock, ClientName: "default"}
+
+	statusCode, err := packProcessor.processSeasonPack()
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
+	require.Equal(t, 1, mock.torrentCalls)
+	require.Equal(t, 2, mock.fileCalls)
+
+	parseProcessor := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil)
+	parseProcessor.req = &request{Name: releaseName, Torrent: encodedTorrent, Client: mock, ClientName: "default"}
+	statusCode, err = parseProcessor.parseTorrent()
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
+	require.Equal(t, 1, mock.torrentCalls, "parse must reuse the accepted inventory")
+	require.Equal(t, 2, mock.fileCalls, "parse must reuse the accepted import plan")
+	require.FileExists(t, filepath.Join(importDir, releaseName, ep1))
+	require.FileExists(t, filepath.Join(importDir, releaseName, ep2))
+}
+
+func TestStoreImportPlanSweepsExpiredPlans(t *testing.T) {
+	resetProcessorGlobals()
+
+	expiredKey := importPlanKey("default", torrents.Hashes{HasV1: true, Legacy: "expired"})
+	planMap.Store(expiredKey, cachedImportPlan{expiresAt: time.Now().Add(-time.Second)})
+	p := newImportProcessor()
+	p.req = &request{Name: "Current.S01.1080p.WEB-DL.H.264-RlsGrp"}
+	p.storeImportPlan("default", domain.Client{}, domain.FuzzyMatching{}, importPlan{
+		hashes: torrents.Hashes{HasV1: true, Legacy: "current"},
+	})
+
+	_, expiredExists := planMap.Load(expiredKey)
+	require.False(t, expiredExists)
+	require.Equal(t, 1, planMap.Size())
 }
 
 func (m *mockTorrentClient) ImportDestination() (torrentclient.ImportDestination, error) {
@@ -80,6 +351,7 @@ func (m *mockTorrentClient) ImportDestination() (torrentclient.ImportDestination
 
 func (m *mockTorrentClient) Import(req torrentclient.ImportRequest) error {
 	m.importCalled = true
+	m.importCalls++
 	m.importReq = req
 	return m.importErr
 }
@@ -181,6 +453,7 @@ func TestGetFilesPropagatesClientError(t *testing.T) {
 func resetProcessorGlobals() {
 	clientMap = xsync.NewMapOf[string, cachedTorrentClient]()
 	entryMap = xsync.NewMapOf[string, *entryCache]()
+	planMap = xsync.NewMapOf[importPlanCacheKey, cachedImportPlan]()
 }
 
 func TestClientConfigsEqualCoversEveryField(t *testing.T) {
@@ -244,7 +517,7 @@ func TestTorrentEntryCacheIsScopedToClientAndFuzzyConfig(t *testing.T) {
 	require.NoError(t, err)
 	cached, ok := entryMap.Load("default")
 	require.True(t, ok)
-	cached.lastUpdated = time.Now().Add(time.Minute)
+	cached.expiresAt = time.Now().Add(time.Minute)
 	_, err = p.getAllTorrents("default", client, domain.FuzzyMatching{})
 	require.NoError(t, err)
 	require.Equal(t, 1, mock.torrentCalls, "unchanged config should reuse cached entries")
@@ -266,7 +539,7 @@ func newImportProcessor() *processor {
 			"default": {Type: "qbittorrent", Import: domain.ImportPolicy{Category: "tv-hd"}},
 		},
 	}}
-	return newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil, nil)
+	return newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil)
 }
 
 func writeEpisode(t *testing.T, path string) {
@@ -287,6 +560,8 @@ func TestProcessSeasonPackIsGateOnly(t *testing.T) {
 
 	epName := "Series.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"
 	writeEpisode(t, filepath.Join(sourceDir, epName))
+	torrentBytes, err := torrents.TorrentFromRls("Series.S01.1080p.WEB-DL.H.264-RlsGrp", 1)
+	require.NoError(t, err)
 
 	mock := &mockTorrentClient{
 		torrents: []torrentclient.Torrent{
@@ -299,7 +574,12 @@ func TestProcessSeasonPackIsGateOnly(t *testing.T) {
 	}
 
 	p := newImportProcessor()
-	p.req = &request{Name: "Series.S01.1080p.WEB-DL.H.264-RlsGrp", Client: mock, ClientName: "default"}
+	p.req = &request{
+		Name:       "Series.S01.1080p.WEB-DL.H.264-RlsGrp",
+		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
+		Client:     mock,
+		ClientName: "default",
+	}
 
 	statusCode, err := p.processSeasonPack()
 	require.NoError(t, err)

@@ -10,13 +10,12 @@ import (
 )
 
 var (
-	configPath  string
-	rlsName     string
-	torrentFile string
-	clientName  string
-	host        string
-	port        int
-	apiKey      string
+	configPath string
+	rlsName    string
+	clientName string
+	host       string
+	port       int
+	apiKey     string
 )
 
 var rootCmd = &cobra.Command{
@@ -42,7 +41,7 @@ func init() {
 	testCmd.PersistentFlags().StringVarP(&apiKey, "api", "a", "", "api key used by seasonpackarr")
 
 	rootCmd.AddCommand(genTokenCmd, startCmd, testCmd, versionCmd)
-	testCmd.AddCommand(packCmd, parseCmd)
+	testCmd.AddCommand(candidateCmd, packCmd, parseCmd)
 }
 
 func Execute() {

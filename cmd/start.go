@@ -13,7 +13,6 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/config"
 	"github.com/nuxencs/seasonpackarr/internal/http"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
-	"github.com/nuxencs/seasonpackarr/internal/metadata"
 	"github.com/nuxencs/seasonpackarr/internal/notification"
 	"github.com/nuxencs/seasonpackarr/pkg/errors"
 
@@ -40,10 +39,7 @@ var startCmd = &cobra.Command{
 		// init notification sender
 		noti := notification.NewDiscordSender(log, cfg)
 
-		// init metadata providers
-		metadata := metadata.NewMetadataProvider(log, snapshot.Metadata)
-
-		srv := http.NewServer(log, cfg, noti, metadata)
+		srv := http.NewServer(log, cfg, noti)
 
 		log.Info().Msgf("Starting seasonpackarr")
 		log.Info().Msgf("Version: %s", buildinfo.Version)

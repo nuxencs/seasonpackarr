@@ -27,6 +27,10 @@ announced and adds the pack back to your torrent client, eliminating the need fo
 > #seasonpackarr channel on the TRaSH-Guides [Discord server](https://trash-guides.info/discord) or create a new issue
 > on GitHub, so I can fix them.
 
+> [!IMPORTANT]
+> Upgrading from v0.16.0? The configuration and autobrr webhook setup changed. Follow the
+> [v0.16.0 to v1.0.0 upgrade guide](docs/product-specs/v1-upgrade.md) before replacing the service.
+
 ## Installation
 
 ### Linux
@@ -141,7 +145,6 @@ These settings reload while seasonpackarr runs:
 These settings configure components that start once and require a restart:
 
 - server host and port
-- metadata provider credentials
 - log path, maximum size, and backup count
 - `disableConfigFile`
 
@@ -258,13 +261,14 @@ cannot be added separately to both categories.
 
 ### Smart Mode
 
-Can be enabled in the config by setting `smartMode` to `true`. Works together with `smartModeThreshold` to determine if
-a season pack should get grabbed or not. Here's an example that explains it pretty well:
+Enable smart mode by setting `smartMode` to `true`. `smartModeThreshold` defines the minimum reusable share of the
+announced torrent. seasonpackarr counts distinct valid episode files in the torrent and compares them with exact
+target files that it can reuse from the client. MKV and MP4 episodes are supported. Samples, extra videos, and
+container mismatches do not count. It does not use an external episode-count provider.
 
-Let's say you have 8 episodes of a season in your client released by `RlsGrpA`. You also have 12 episodes of the same
-season in your client released by `RlsGrpB` and there are a total of 12 episodes in that season. If you have smart
-mode enabled with a threshold set to `0.75`, only the season pack from `RlsGrpB` will get grabbed, because `8/12 = 0.67`
-which is below the threshold.
+For example, if the torrent contains 12 episode files and the client can reuse 8, the coverage is `8/12 = 0.67`.
+A threshold of `0.75` rejects that pack. A client can contain more episodes than the pack, but duplicate or unrelated
+episodes cannot increase coverage above 100 percent.
 
 ### Parse Torrent
 
@@ -279,9 +283,9 @@ Using the announce name would create the wrong folder and would lead to all the 
 again. The issue in the given example is the additional `A` after `DDP` which is not present in the folder name. By
 using the parsed folder name the files will be hardlinked into the exact folder that is being used in the torrent.
 
-Parsing happens on `POST /api/parse`, which is also the endpoint that hardlinks the matched episodes and imports the
-season pack back into your torrent client. You can take a look at the [Webhook](#webhook) section to see what you need
-to add in your autobrr filter.
+Parsing first happens on `POST /api/pack`. That endpoint builds and caches an exact import plan without changing the
+filesystem or torrent client. `POST /api/parse` reuses the accepted plan, hardlinks the matched episodes, and imports
+the season pack. If the short-lived plan is unavailable after a restart or delay, `/api/parse` safely rebuilds it.
 
 ### Fuzzy Matching
 
@@ -299,6 +303,10 @@ In this section, you can toggle comparing rules. I will explain each of them in 
    - Announce name: `Show.S01.2160p.WEB-DL.DDPA5.1.DV.HDR10+.H.265-RlsGrp`
    - Episode name: `Show.S01E01.2160p.WEB-DL.DDPA5.1.DV.HDR.H.265-RlsGrp`
 
+3. **simplifyWebCompare**: If set to `true`, this option treats `WEB-DL` and `WEB` as the same source.
+
+4. **skipYearCompare**: If set to `true`, this option allows a release without a year to match one that includes a year.
+
 ### Recommended options
 
 Keep in mind, these settings are suggestions based on my own use case so feel free to adjust them according to your
@@ -307,8 +315,9 @@ specific needs.
 ```yaml
 smartMode: true
 smartModeThreshold: 0.75
-skipRepackCompare: true
-simplifyHdrCompare: false
+fuzzyMatching:
+  skipRepackCompare: true
+  simplifyHdrCompare: false
 ```
 
 These will filter out most unwanted season packs and prevent mismatches, while still making sure that
@@ -316,10 +325,8 @@ renamed season packs and episodes can get matched.
 
 ## autobrr Filter setup
 
-Support for multiple Sonarr and torrent client instances with different import destinations was added with v0.4.0, so
-you will need to run multiple instances of seasonpackarr and create multiple filters to achieve the same functionality
-in lower versions. If you are running v0.4.0 or above you just need to set up your filters according to [External Filters](#external-filters).
-The following is a simple example filter that only allows 1080p season packs to be matched.
+Configure one dedicated autobrr filter for each seasonpackarr client and import destination. The following example
+allows 1080p season packs and uses the current webhook flow.
 
 ### Create Filter
 
@@ -349,15 +356,16 @@ have a `cross-seed` filter positioned above the `seasonpackarr` filter.
 
 ### External Filters
 
-After adding the filter, you need to head to the `External` tab of the filter, click on `Add new` and select `Webhook`
-in the `Type` field. The `Endpoint` field should look like this, with `host` and `port` taken from your config:
+Add two ordered Webhook entries in the `External` tab. Both use `POST` and expect HTTP status `250`.
+autobrr shows the up and down reorder arrows only after the filter has multiple external entries.
+
+The first entry is a cheap announce-only candidate check. Its endpoint is:
 
 ```
-http://host:port/api/pack
+http://host:port/api/candidate
 ```
 
-`HTTP Method` needs to be set to `POST`, `Expected HTTP status` has to be set to `250` and the `Data (JSON)` field needs
-to look like this:
+Its `Data (JSON)` is:
 
 ```json
 {
@@ -366,13 +374,33 @@ to look like this:
 }
 ```
 
-Replace the `clientname` value, in this case `default`, with the name you gave your desired torrent client in your
-config under the `clients` section. If you don't specify a `clientname` in the JSON payload, seasonpackarr will try to
-use the `default` client; if you renamed or removed the `default` client the request will fail.
+The second entry is the exact torrent-aware check. Its endpoint is:
 
-This external filter acts purely as a match gate: `/api/pack` only decides whether the announced season pack matches
-episodes that are already in your client and returns a successful match. It doesn't touch the filesystem and doesn't
-add anything to the client; the hardlinking and import happen in the [Webhook](#webhook) action.
+```
+http://host:port/api/pack
+```
+
+Its `Data (JSON)` includes the torrent bytes:
+
+```json
+{
+  "name": "{{ .TorrentName }}",
+  "torrent": "{{ .TorrentDataRawBytes | js }}",
+  "clientname": "default"
+}
+```
+
+Replace the `clientname` value, in this case `default`, with the name you gave your desired torrent client in your
+config under the `clients` section. Use the same value in both entries. If you omit `clientname`, seasonpackarr tries
+the `default` client. The request fails if that client does not exist.
+
+autobrr runs the entries in order. A rejected announce stops at `/api/candidate`, so autobrr does not download its
+torrent file. A candidate that passes continues to `/api/pack`, where seasonpackarr checks the actual torrent and
+builds the import plan. Both endpoints are match gates. They do not change the filesystem or torrent client.
+
+After you save the filter, reload it and confirm that `/api/candidate` is displayed above `/api/pack`. The persisted
+top-to-bottom display order is the execution order. If necessary, use the arrows beside the entries to correct it,
+then save and reload again.
 
 #### API Authentication
 
@@ -383,18 +411,18 @@ generate a token for you that you can copy and paste into your config:
 seasonpackarr gen-token
 ```
 
-After you've set the API token in your config, you'll need to either include it in the `Endpoint` field or pass it
-along in the `HTTP Request Headers` of your autobrr request; if not, the request will be rejected. I recommend using
-headers to pass the API token, but I'll explain both options here.
+After you set the API token, include it on both external webhook entries and the `/api/parse` action. Use the
+`X-API-Token` request header for the two external entries. The autobrr Webhook action has no request-header field, so
+put the token in the `/api/parse` endpoint as a query parameter.
 
-1. **Header**: Edit the `HTTP Request Headers` field and replace `api_token` with the token you set in your config.
+1. **External entries**: Edit `HTTP Request Headers` on both entries and replace `api_token` with the token from your
+   config.
     ```
     X-API-Token=api_token
     ```
-2. **Query Parameter**: Append `?apikey=api_token` at the end of your `Endpoint` field and replace `api_token` with the
-   token you've set in your config.
+2. **Parse action**: Append `?apikey=api_token` to its endpoint.
     ```
-    http://host:port/api/pack?apikey=api_token
+    http://host:port/api/parse?apikey=api_token
     ```
 
 The external filter you just created will be disabled by default. To avoid unwanted downloads, make sure to enable it!
@@ -406,16 +434,6 @@ parses the torrent file, hardlinks the matching episodes into the correct season
 torrent client, checks it so the already present files are recognised, and starts it. Do **not** add a separate
 torrent-client action to the filter. seasonpackarr owns adding the torrent to the client, and another client action
 would add it a second time.
-
-> [!WARNING]
-> Breaking change when upgrading from an older version:
-> 1. Remove the torrent-client action from your seasonpackarr filter and keep only the Webhook action.
-> 2. Replace `preImportPath` in your config with the per-client [Import Policy](#import-policy); hardlinks now land
->    under the import destination resolved from the client.
-> 3. Remove `parseTorrentFile` from your config; torrent parsing is now always on.
->
-> seasonpackarr refuses to start while `parseTorrentFile` or `preImportPath` (or their environment variables) are
-> still present and tells you to migrate.
 
 #### Webhook
 
@@ -439,7 +457,7 @@ Finally, complete the `Payload (JSON)` field as shown below. Ensure that the val
 }
 ```
 
-Where the season pack ends up and how it is added - save path, category, tags, paused state - is controlled by the
+Where the season pack ends up and how it is added - save path, category, tags, and content layout - is controlled by the
 per-client [Import Policy](#import-policy) in your seasonpackarr config, not by autobrr.
 
 ## Credits
@@ -447,6 +465,5 @@ per-client [Import Policy](#import-policy) in your seasonpackarr config, not by 
 Huge credit goes to [upgraderr](https://github.com/KyleSanderson/upgraderr) and specifically [@KyleSanderson](https://github.com/KyleSanderson), whose
 project provided great functions that I could make use of. Additionally, I would also like to mention [@zze0s](https://github.com/zze0s), who was
 really helpful regarding any question I had as well as providing me with a lot of the structure this project has now.
-Credits also go to the [TVmaze API](https://www.tvmaze.com/api) and [TheTVDB API](https://thetvdb.com/api-information) for providing comprehensive
-data on the total number of episodes for a show in a specific season. Last but not least, a big thank you to [JetBrains](http://www.jetbrains.com/)
+Last but not least, a big thank you to [JetBrains](http://www.jetbrains.com/)
 for providing me with free licenses to their great tools, in this case [GoLand](https://www.jetbrains.com/go/).
