@@ -6,6 +6,7 @@ package torrentclient
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"testing"
 	"time"
 
@@ -15,10 +16,16 @@ import (
 )
 
 type stubDelugeAPI struct {
-	torrents map[string]*deluge.TorrentStatus
-	status   *deluge.TorrentStatus
-	statuses []*deluge.TorrentStatus
-	statusAt int
+	torrents      map[string]*deluge.TorrentStatus
+	torrentsErr   error
+	torrentCalls  int
+	gotTorrentIDs []string
+	sessionHashes []string
+	sessionErr    error
+	sessionCalls  int
+	status        *deluge.TorrentStatus
+	statuses      []*deluge.TorrentStatus
+	statusAt      int
 
 	addedName    string
 	addedContent string
@@ -48,8 +55,15 @@ func (s *stubDelugeLabelAPI) AddLabel(_ context.Context, label string) error {
 
 func (s *stubDelugeAPI) Connect(context.Context) error { return nil }
 
-func (s *stubDelugeAPI) TorrentsStatus(context.Context, deluge.TorrentState, []string) (map[string]*deluge.TorrentStatus, error) {
-	return s.torrents, nil
+func (s *stubDelugeAPI) SessionState(context.Context) ([]string, error) {
+	s.sessionCalls++
+	return s.sessionHashes, s.sessionErr
+}
+
+func (s *stubDelugeAPI) TorrentsStatus(_ context.Context, _ deluge.TorrentState, ids []string) (map[string]*deluge.TorrentStatus, error) {
+	s.torrentCalls++
+	s.gotTorrentIDs = append([]string(nil), ids...)
+	return s.torrents, s.torrentsErr
 }
 
 func (s *stubDelugeAPI) TorrentStatus(context.Context, string) (*deluge.TorrentStatus, error) {
@@ -158,12 +172,16 @@ func TestDelugeGetTorrentsAndFiles(t *testing.T) {
 	stub := &stubDelugeAPI{
 		torrents: map[string]*deluge.TorrentStatus{
 			"bbbb": {Hash: "bbbb", Name: "Show.S01E02", DownloadLocation: "/downloads"},
-			"aaaa": {Name: "Show.S01E01", SavePath: "/legacy-downloads"},
+			"aaaa": {
+				Hash:     "aaaa",
+				Name:     "Show.S01E01",
+				SavePath: "/legacy-downloads",
+				Files: []deluge.File{
+					{Path: "Show.S01/Show.S01E01.mkv", Size: 100},
+					{Path: "Show.S01/Show.S01E02.mkv", Size: 200},
+				},
+			},
 		},
-		status: &deluge.TorrentStatus{Files: []deluge.File{
-			{Path: "Show.S01/Show.S01E01.mkv", Size: 100},
-			{Path: "Show.S01/Show.S01E02.mkv", Size: 200},
-		}},
 	}
 	client := newTestDelugeClient(stub, domain.ImportPolicy{})
 
@@ -174,12 +192,66 @@ func TestDelugeGetTorrentsAndFiles(t *testing.T) {
 		{Hash: "bbbb", Name: "Show.S01E02", SavePath: "/downloads"},
 	}, torrents)
 
-	files, err := client.GetFiles("aaaa")
-	require.NoError(t, err)
+	results := client.GetFiles([]string{"AAAA", "missing"})
+	require.Len(t, results, 2)
+	require.NoError(t, results[0].Err)
+	require.Equal(t, "AAAA", results[0].Hash)
 	require.Equal(t, []File{
 		{Name: "Show.S01/Show.S01E01.mkv", Size: 100},
 		{Name: "Show.S01/Show.S01E02.mkv", Size: 200},
-	}, files)
+	}, results[0].Files)
+	require.Error(t, results[1].Err)
+	require.Equal(t, 2, stub.torrentCalls, "GetTorrents and GetFiles each use one status call")
+	require.Equal(t, []string{"AAAA", "missing"}, stub.gotTorrentIDs)
+}
+
+func TestDelugeGetFilesExpandsWholeCallError(t *testing.T) {
+	t.Parallel()
+
+	errBoom := errors.New("boom")
+	client := newTestDelugeClient(&stubDelugeAPI{torrentsErr: errBoom}, domain.ImportPolicy{})
+	results := client.GetFiles([]string{"one", "two"})
+
+	require.Len(t, results, 2)
+	for index, hash := range []string{"one", "two"} {
+		require.Equal(t, hash, results[index].Hash)
+		require.ErrorIs(t, results[index].Err, errBoom)
+	}
+}
+
+func TestDelugeGetFilesRejectsEmptyV1Status(t *testing.T) {
+	t.Parallel()
+
+	client := newTestDelugeClient(&stubDelugeAPI{
+		torrents: map[string]*deluge.TorrentStatus{"missing": {}},
+	}, domain.ImportPolicy{})
+
+	results := client.GetFiles([]string{"missing"})
+	require.Len(t, results, 1)
+	require.Error(t, results[0].Err)
+}
+
+func TestDelugeV1GetFilesFiltersUnknownAndDuplicateHashes(t *testing.T) {
+	t.Parallel()
+
+	stub := &stubDelugeAPI{
+		sessionHashes: []string{"known"},
+		torrents: map[string]*deluge.TorrentStatus{
+			"known": {Hash: "known", Files: []deluge.File{{Path: "episode.mkv", Size: 100}}},
+		},
+	}
+	client := newTestDelugeClient(stub, domain.ImportPolicy{})
+	client.v1 = true
+
+	results := client.GetFiles([]string{"KNOWN", "known", "missing"})
+
+	require.Len(t, results, 3)
+	require.NoError(t, results[0].Err)
+	require.NoError(t, results[1].Err)
+	require.Error(t, results[2].Err)
+	require.Equal(t, 1, stub.sessionCalls)
+	require.Equal(t, 1, stub.torrentCalls)
+	require.Equal(t, []string{"KNOWN"}, stub.gotTorrentIDs)
 }
 
 func TestDelugeImportDestination(t *testing.T) {

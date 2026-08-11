@@ -7,6 +7,7 @@ import (
 	stderrors "errors"
 	"maps"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,6 +33,13 @@ type stubQbitAPI struct {
 
 	recheckCalls [][]string
 	resumeCalls  [][]string
+
+	fileMu         sync.Mutex
+	filesByHash    map[string]qbittorrent.TorrentFiles
+	fileErrByHash  map[string]error
+	fileDelay      time.Duration
+	activeFileRead int
+	maxFileReads   int
 }
 
 func (s *stubQbitAPI) GetTorrents(o qbittorrent.TorrentFilterOptions) ([]qbittorrent.Torrent, error) {
@@ -47,8 +55,24 @@ func (s *stubQbitAPI) GetTorrents(o qbittorrent.TorrentFilterOptions) ([]qbittor
 	return []qbittorrent.Torrent{s.lookupSeq[idx]}, nil
 }
 
-func (s *stubQbitAPI) GetFilesInformation(string) (*qbittorrent.TorrentFiles, error) {
-	return &qbittorrent.TorrentFiles{}, nil
+func (s *stubQbitAPI) GetFilesInformation(hash string) (*qbittorrent.TorrentFiles, error) {
+	s.fileMu.Lock()
+	s.activeFileRead++
+	s.maxFileReads = max(s.maxFileReads, s.activeFileRead)
+	files := s.filesByHash[hash]
+	err := s.fileErrByHash[hash]
+	delay := s.fileDelay
+	s.fileMu.Unlock()
+
+	time.Sleep(delay)
+
+	s.fileMu.Lock()
+	s.activeFileRead--
+	s.fileMu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return &files, nil
 }
 
 func (s *stubQbitAPI) AddTorrentFromMemory(buf []byte, options map[string]string) (*qbittorrent.TorrentAddResponse, error) {
@@ -88,6 +112,33 @@ func newTestQbitClient(stub *stubQbitAPI, policy domain.ImportPolicy) *qbitClien
 		recheckTimeout: time.Second,
 		pollInterval:   time.Millisecond,
 	}
+}
+
+func TestQbitGetFilesUsesBoundedOrderedReads(t *testing.T) {
+	t.Parallel()
+
+	stub := &stubQbitAPI{
+		filesByHash: map[string]qbittorrent.TorrentFiles{
+			"one":   {{Name: "one.mkv", Size: 1}},
+			"two":   {{Name: "two.mkv", Size: 2}},
+			"three": {{Name: "three.mkv", Size: 3}},
+			"five":  {{Name: "five.mkv", Size: 5}},
+			"six":   {{Name: "six.mkv", Size: 6}},
+		},
+		fileErrByHash: map[string]error{"four": stderrors.New("not found")},
+		fileDelay:     10 * time.Millisecond,
+	}
+	client := newTestQbitClient(stub, domain.ImportPolicy{})
+	hashes := []string{"one", "two", "three", "four", "five", "six"}
+
+	results := client.GetFiles(hashes)
+	require.Len(t, results, len(hashes))
+	for index, hash := range hashes {
+		require.Equal(t, hash, results[index].Hash)
+	}
+	require.Equal(t, []File{{Name: "one.mkv", Size: 1}}, results[0].Files)
+	require.Error(t, results[3].Err)
+	require.Equal(t, qbitFileReadWorkers, stub.maxFileReads)
 }
 
 func TestQbitBuildTorrentAddOptions(t *testing.T) {

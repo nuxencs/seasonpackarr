@@ -6,12 +6,15 @@ package torrentclient
 import (
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/autobrr/go-qbittorrent"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/pkg/errors"
 )
+
+const qbitFileReadWorkers = 4
 
 // qbitAPI is the subset of *qbittorrent.Client the adapter uses. It exists so
 // the import machinery can be unit-tested against a stub without a live client.
@@ -80,21 +83,42 @@ func (q *qbitClient) GetTorrents() ([]Torrent, error) {
 	return torrents, nil
 }
 
-func (q *qbitClient) GetFiles(hash string) ([]File, error) {
+func (q *qbitClient) GetFiles(hashes []string) []FileResult {
+	results := make([]FileResult, len(hashes))
+	if len(hashes) == 0 {
+		return results
+	}
+
+	jobs := make(chan int)
+	var workers sync.WaitGroup
+	for range min(qbitFileReadWorkers, len(hashes)) {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for index := range jobs {
+				results[index] = q.getFiles(hashes[index])
+			}
+		}()
+	}
+	for index := range hashes {
+		jobs <- index
+	}
+	close(jobs)
+	workers.Wait()
+	return results
+}
+
+func (q *qbitClient) getFiles(hash string) FileResult {
 	torrentFiles, err := q.c.GetFilesInformation(hash)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get files")
+		return FileResult{Hash: hash, Err: errors.Wrap(err, "failed to get files")}
 	}
 
 	files := make([]File, 0, len(*torrentFiles))
-	for _, f := range *torrentFiles {
-		files = append(files, File{
-			Name: f.Name,
-			Size: f.Size,
-		})
+	for _, file := range *torrentFiles {
+		files = append(files, File{Name: file.Name, Size: file.Size})
 	}
-
-	return files, nil
+	return FileResult{Hash: hash, Files: files}
 }
 
 // ImportDestination resolves the final import destination for this qBittorrent client.
