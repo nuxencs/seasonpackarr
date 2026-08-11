@@ -190,8 +190,8 @@ func TestExpectedPackRejectionIsNotLoggedAsError(t *testing.T) {
 
 	res := f.postJSON(t, "/api/pack", f.packPayload())
 
-	require.Equal(t, domain.StatusNoMatches.Code(), res.Code)
-	require.JSONEq(t, `{"statusCode":200,"error":"no matching releases in client"}`, res.Body.String())
+	require.Equal(t, stdhttp.StatusUnprocessableEntity, res.Code)
+	require.JSONEq(t, `{"outcome":"rejection","reason":"no_matches","message":"no matching releases in client"}`, res.Body.String())
 	require.NotContains(t, logs.String(), `"level":"error"`)
 	require.Contains(t, logs.String(), `"level":"info"`)
 	require.Contains(t, logs.String(), `"message":"season pack rejected"`)
@@ -211,10 +211,12 @@ func TestExactPackMismatchIsNotLoggedAsError(t *testing.T) {
 
 	res := f.postJSON(t, "/api/pack", f.packPayload())
 
-	require.Equal(t, domain.StatusFailedMatchToTorrentEps.Code(), res.Code)
+	require.Equal(t, stdhttp.StatusUnprocessableEntity, res.Code)
+	require.JSONEq(t, `{"outcome":"rejection","reason":"torrent_mismatch","message":"could not match episodes to files in pack"}`, res.Body.String())
 	require.NotContains(t, logs.String(), `"level":"error"`)
 	require.Contains(t, logs.String(), `"outcome":"rejection"`)
-	require.Contains(t, logs.String(), `"status_code":445`)
+	require.Contains(t, logs.String(), `"reason":"torrent_mismatch"`)
+	require.Contains(t, logs.String(), `"http_status":422`)
 	require.Contains(t, logs.String(), `"message":"season pack rejected"`)
 }
 
@@ -229,11 +231,13 @@ func TestCandidateFileLookupFailureUsesFailureOutcome(t *testing.T) {
 
 	res := f.postJSON(t, "/api/pack", f.packPayload())
 
-	require.Equal(t, domain.StatusFailedMatchToTorrentEps.Code(), res.Code)
-	require.JSONEq(t, `{"statusCode":445,"error":"could not match episodes to files in pack"}`, res.Body.String())
+	require.Equal(t, stdhttp.StatusBadGateway, res.Code)
+	require.JSONEq(t, `{"outcome":"failure","reason":"client_file_inspection_failed","message":"could not inspect client episode files"}`, res.Body.String())
 	require.Contains(t, logs.String(), `"level":"error"`)
 	require.Contains(t, logs.String(), `"outcome":"failure"`)
-	require.Contains(t, logs.String(), `"status_code":445`)
+	require.Contains(t, logs.String(), `"reason":"client_file_inspection_failed"`)
+	require.Contains(t, logs.String(), `"fault_class":"dependency"`)
+	require.Contains(t, logs.String(), `"http_status":502`)
 	require.Contains(t, logs.String(), "client file lookup failed")
 }
 
@@ -247,10 +251,11 @@ func TestExpectedParseRejectionIsNotLoggedAsError(t *testing.T) {
 
 	res := f.postJSON(t, "/api/parse", f.packPayload())
 
-	require.Equal(t, domain.StatusNoMatches.Code(), res.Code)
+	require.Equal(t, stdhttp.StatusUnprocessableEntity, res.Code)
 	require.NotContains(t, logs.String(), `"level":"error"`)
 	require.Contains(t, logs.String(), `"outcome":"rejection"`)
-	require.Contains(t, logs.String(), `"status_code":200`)
+	require.Contains(t, logs.String(), `"reason":"no_matches"`)
+	require.Contains(t, logs.String(), `"http_status":422`)
 	require.Contains(t, logs.String(), `"message":"season pack import rejected"`)
 }
 
@@ -267,11 +272,13 @@ func TestProcessingFailureRemainsAnErrorLog(t *testing.T) {
 		"clientname": "default",
 	})
 
-	require.Equal(t, domain.StatusTorrentBytesError.Code(), res.Code)
-	require.JSONEq(t, `{"statusCode":467,"error":"could not get torrent bytes"}`, res.Body.String())
+	require.Equal(t, stdhttp.StatusBadRequest, res.Code)
+	require.JSONEq(t, `{"outcome":"failure","reason":"missing_torrent","message":"could not get torrent bytes"}`, res.Body.String())
 	require.Contains(t, logs.String(), `"level":"error"`)
 	require.Contains(t, logs.String(), `"outcome":"failure"`)
-	require.Contains(t, logs.String(), `"status_code":467`)
+	require.Contains(t, logs.String(), `"reason":"missing_torrent"`)
+	require.Contains(t, logs.String(), `"fault_class":"request"`)
+	require.Contains(t, logs.String(), `"http_status":400`)
 	require.Contains(t, logs.String(), `"error":"could not get torrent bytes"`)
 	require.Contains(t, logs.String(), `"message":"error processing season pack"`)
 }
@@ -287,7 +294,7 @@ func TestInvalidProcessingOutcomeFailsSafely(t *testing.T) {
 	})
 
 	require.Equal(t, stdhttp.StatusInternalServerError, response.Code)
-	require.JSONEq(t, `{"statusCode":500,"error":"internal processing error"}`, response.Body.String())
+	require.JSONEq(t, `{"outcome":"failure","reason":"internal_error","message":"internal processing error"}`, response.Body.String())
 	require.Contains(t, logs.String(), `"level":"error"`)
 	require.Contains(t, logs.String(), `"message":"processing returned an invalid outcome"`)
 }
@@ -326,23 +333,23 @@ func TestAuthenticatedHTTPLifecycleReusesAcceptedPlan(t *testing.T) {
 		"name":       f.releaseName,
 		"clientname": "default",
 	})
-	require.Equal(t, domain.StatusSuccessfulMatch.Code(), candidate.Code)
-	require.Equal(t, domain.StatusSuccessfulMatch.String(), candidate.Body.String())
+	require.Equal(t, stdhttp.StatusOK, candidate.Code)
+	require.JSONEq(t, `{"outcome":"success","reason":"matched","message":"season pack matched"}`, candidate.Body.String())
 	require.Equal(t, 1, f.mock.torrentCalls)
 	require.Zero(t, f.mock.fileCalls)
 	require.Zero(t, f.mock.importCalls)
 
 	pack := f.postJSON(t, "/api/pack", f.packPayload())
-	require.Equal(t, domain.StatusSuccessfulMatch.Code(), pack.Code)
-	require.Equal(t, domain.StatusSuccessfulMatch.String(), pack.Body.String())
+	require.Equal(t, stdhttp.StatusOK, pack.Code)
+	require.JSONEq(t, `{"outcome":"success","reason":"matched","message":"season pack matched"}`, pack.Body.String())
 	require.Equal(t, 1, f.mock.torrentCalls, "pack must reuse the candidate inventory")
 	require.Equal(t, 2, f.mock.fileCalls)
 	require.Zero(t, f.mock.importCalls)
 	require.NoDirExists(t, filepath.Join(f.importDir, f.releaseName))
 
 	parse := f.postJSON(t, "/api/parse", f.packPayload())
-	require.Equal(t, domain.StatusSuccessfulHardlink.Code(), parse.Code)
-	require.Equal(t, domain.StatusSuccessfulHardlink.String(), parse.Body.String())
+	require.Equal(t, stdhttp.StatusOK, parse.Code)
+	require.JSONEq(t, `{"outcome":"success","reason":"imported","message":"season pack imported"}`, parse.Body.String())
 	require.Equal(t, 1, f.mock.torrentCalls, "parse must not reread the inventory on a plan hit")
 	require.Equal(t, 2, f.mock.fileCalls, "parse must not reread file details on a plan hit")
 	require.Equal(t, 1, f.mock.importCalls)
@@ -374,12 +381,12 @@ func TestPackCoverageAcceptsMp4EpisodesAndIgnoresExtraVideos(t *testing.T) {
 	f.torrent = torrent.Bytes()
 
 	res := f.postJSON(t, "/api/pack", f.packPayload())
-	require.Equal(t, domain.StatusSuccessfulMatch.Code(), res.Code)
+	require.Equal(t, stdhttp.StatusOK, res.Code)
 	require.Equal(t, 1, f.mock.fileCalls)
 	require.Zero(t, f.mock.importCalls)
 
 	res = f.postJSON(t, "/api/parse", f.packPayload())
-	require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
+	require.Equal(t, stdhttp.StatusOK, res.Code)
 	require.Equal(t, 1, f.mock.importCalls)
 	require.FileExists(t, filepath.Join(f.importDir, f.releaseName, episodeFile))
 	require.NoFileExists(t, filepath.Join(f.importDir, f.releaseName, "Extras", "Interview.1080p.WEB-DL.mp4"))
@@ -397,7 +404,8 @@ func TestHTTPFailureContractsDoNotMutateClientOrFilesystem(t *testing.T) {
 	t.Run("invalid JSON", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
 		res := f.postRaw(t, "/api/pack", []byte(`{"name":`), processorTestToken)
-		require.Equal(t, domain.StatusDecodingError.Code(), res.Code)
+		require.Equal(t, stdhttp.StatusBadRequest, res.Code)
+		require.JSONEq(t, `{"outcome":"failure","reason":"request_decode_failed","message":"error decoding request"}`, res.Body.String())
 		require.Zero(t, f.mock.torrentCalls)
 		require.Zero(t, f.mock.importCalls)
 	})
@@ -407,7 +415,7 @@ func TestHTTPFailureContractsDoNotMutateClientOrFilesystem(t *testing.T) {
 		payload := f.packPayload()
 		payload["clientname"] = "missing"
 		res := f.postJSON(t, "/api/pack", payload)
-		require.Equal(t, domain.StatusClientNotFound.Code(), res.Code)
+		require.Equal(t, stdhttp.StatusBadRequest, res.Code)
 		require.Zero(t, f.mock.torrentCalls)
 		require.Zero(t, f.mock.importCalls)
 	})
@@ -415,7 +423,7 @@ func TestHTTPFailureContractsDoNotMutateClientOrFilesystem(t *testing.T) {
 	t.Run("pack missing torrent bytes", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
 		res := f.postJSON(t, "/api/pack", map[string]any{"name": f.releaseName, "clientname": "default"})
-		require.Equal(t, domain.StatusTorrentBytesError.Code(), res.Code)
+		require.Equal(t, stdhttp.StatusBadRequest, res.Code)
 		require.Zero(t, f.mock.torrentCalls)
 		require.Zero(t, f.mock.importCalls)
 	})
@@ -423,7 +431,7 @@ func TestHTTPFailureContractsDoNotMutateClientOrFilesystem(t *testing.T) {
 	t.Run("parse missing torrent bytes", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
 		res := f.postJSON(t, "/api/parse", map[string]any{"name": f.releaseName, "clientname": "default"})
-		require.Equal(t, domain.StatusTorrentBytesError.Code(), res.Code)
+		require.Equal(t, stdhttp.StatusBadRequest, res.Code)
 		require.Zero(t, f.mock.torrentCalls)
 		require.Zero(t, f.mock.importCalls)
 	})
@@ -433,8 +441,8 @@ func TestHTTPFailureContractsDoNotMutateClientOrFilesystem(t *testing.T) {
 		payload := f.packPayload()
 		payload["torrent"] = "%%%"
 		res := f.postJSON(t, "/api/pack", payload)
-		require.Equal(t, domain.StatusDecodeTorrentBytesError.Code(), res.Code)
-		require.JSONEq(t, `{"statusCode":466,"error":"could not decode torrent bytes"}`, res.Body.String())
+		require.Equal(t, stdhttp.StatusBadRequest, res.Code)
+		require.JSONEq(t, `{"outcome":"failure","reason":"torrent_decode_failed","message":"could not decode torrent bytes"}`, res.Body.String())
 		require.Equal(t, 1, f.mock.torrentCalls)
 		require.Zero(t, f.mock.fileCalls)
 		require.Zero(t, f.mock.importCalls)
@@ -445,7 +453,7 @@ func TestHTTPFailureContractsDoNotMutateClientOrFilesystem(t *testing.T) {
 		payload := f.packPayload()
 		payload["torrent"] = base64.StdEncoding.EncodeToString([]byte("not-a-torrent"))
 		res := f.postJSON(t, "/api/pack", payload)
-		require.Equal(t, domain.StatusParseTorrentInfoError.Code(), res.Code)
+		require.Equal(t, stdhttp.StatusBadRequest, res.Code)
 		require.Equal(t, 1, f.mock.torrentCalls)
 		require.Zero(t, f.mock.fileCalls)
 		require.Zero(t, f.mock.importCalls)
@@ -465,7 +473,8 @@ func TestHTTPFailureContractsDoNotMutateClientOrFilesystem(t *testing.T) {
 		payload["torrent"] = base64.StdEncoding.EncodeToString(torrent.Bytes())
 
 		res := f.postJSON(t, "/api/pack", payload)
-		require.Equal(t, domain.StatusGetEpisodesError.Code(), res.Code)
+		require.Equal(t, stdhttp.StatusUnprocessableEntity, res.Code)
+		require.JSONEq(t, `{"outcome":"rejection","reason":"no_eligible_episodes","message":"torrent contains no eligible episode files"}`, res.Body.String())
 		require.Zero(t, f.mock.fileCalls)
 		require.Zero(t, f.mock.importCalls)
 	})
@@ -473,7 +482,7 @@ func TestHTTPFailureContractsDoNotMutateClientOrFilesystem(t *testing.T) {
 	t.Run("below threshold", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 4, 2, 0.75)
 		res := f.postJSON(t, "/api/pack", f.packPayload())
-		require.Equal(t, domain.StatusBelowThreshold.Code(), res.Code)
+		require.Equal(t, stdhttp.StatusUnprocessableEntity, res.Code)
 		require.Zero(t, f.mock.importCalls)
 		require.NoDirExists(t, filepath.Join(f.importDir, f.releaseName))
 	})
@@ -482,13 +491,13 @@ func TestHTTPFailureContractsDoNotMutateClientOrFilesystem(t *testing.T) {
 func TestParseRebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 	t.Run("missing after restart", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, stdhttp.StatusOK, f.postJSON(t, "/api/pack", f.packPayload()).Code)
 
 		planMap = xsync.NewMapOf[importPlanCacheKey, cachedImportPlan]()
 		entryMap = xsync.NewMapOf[string, *entryCache]()
 		res := f.postJSON(t, "/api/parse", f.packPayload())
 
-		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
+		require.Equal(t, stdhttp.StatusOK, res.Code)
 		require.Equal(t, 2, f.mock.torrentCalls, "restart must rebuild the client inventory")
 		require.Equal(t, 2, f.mock.fileCalls, "restart must rebuild the exact plan")
 		require.Equal(t, 1, f.mock.importCalls)
@@ -496,7 +505,7 @@ func TestParseRebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 
 	t.Run("expired", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, stdhttp.StatusOK, f.postJSON(t, "/api/pack", f.packPayload()).Code)
 
 		hashes, err := torrents.InfoHashes(f.torrent)
 		require.NoError(t, err)
@@ -507,7 +516,7 @@ func TestParseRebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 		planMap.Store(key, cached)
 
 		res := f.postJSON(t, "/api/parse", f.packPayload())
-		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
+		require.Equal(t, stdhttp.StatusOK, res.Code)
 		require.Equal(t, 1, f.mock.torrentCalls, "an expired plan can still reuse the inventory cache")
 		require.Equal(t, 2, f.mock.fileCalls, "an expired plan must rebuild file mappings")
 		require.Equal(t, 1, f.mock.importCalls)
@@ -515,19 +524,19 @@ func TestParseRebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 
 	t.Run("release name changed", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, stdhttp.StatusOK, f.postJSON(t, "/api/pack", f.packPayload()).Code)
 
 		payload := f.packPayload()
 		payload["name"] = "Different.S01.1080p.WEB-DL.H.264-RlsGrp"
 		res := f.postJSON(t, "/api/parse", payload)
 
-		require.Equal(t, domain.StatusNoMatches.Code(), res.Code)
+		require.Equal(t, stdhttp.StatusUnprocessableEntity, res.Code)
 		require.Zero(t, f.mock.importCalls, "a plan accepted for another release must not import")
 	})
 
 	t.Run("torrent identity changed", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, stdhttp.StatusOK, f.postJSON(t, "/api/pack", f.packPayload()).Code)
 		changedTorrent, err := torrents.TorrentFromRls(f.releaseName, 2)
 		require.NoError(t, err)
 
@@ -535,21 +544,21 @@ func TestParseRebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 		payload["torrent"] = base64.StdEncoding.EncodeToString(changedTorrent)
 		res := f.postJSON(t, "/api/parse", payload)
 
-		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
+		require.Equal(t, stdhttp.StatusOK, res.Code)
 		require.Equal(t, 2, f.mock.fileCalls, "a different info hash must rebuild the exact plan")
 		require.Equal(t, 1, f.mock.importCalls)
 	})
 
 	t.Run("fuzzy matching changed", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, stdhttp.StatusOK, f.postJSON(t, "/api/pack", f.packPayload()).Code)
 
 		changed := f.config.Snapshot()
 		changed.FuzzyMatching.SkipYearCompare = true
 		f.config.Store(changed)
 		res := f.postJSON(t, "/api/parse", f.packPayload())
 
-		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
+		require.Equal(t, stdhttp.StatusOK, res.Code)
 		require.Equal(t, 2, f.mock.torrentCalls, "matching changes must refresh the inventory index")
 		require.Equal(t, 2, f.mock.fileCalls, "matching changes must rebuild the exact plan")
 		require.Equal(t, 1, f.mock.importCalls)
@@ -557,7 +566,7 @@ func TestParseRebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 
 	t.Run("client configuration changed", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, stdhttp.StatusOK, f.postJSON(t, "/api/pack", f.packPayload()).Code)
 
 		changed := f.config.Snapshot()
 		changedClient := cloneClientConfig(*changed.Clients["default"])
@@ -567,7 +576,7 @@ func TestParseRebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 		clientMap.Store("default", cachedTorrentClient{config: cloneClientConfig(changedClient), client: f.mock})
 
 		res := f.postJSON(t, "/api/parse", f.packPayload())
-		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
+		require.Equal(t, stdhttp.StatusOK, res.Code)
 		require.Equal(t, 2, f.mock.torrentCalls, "client changes must refresh the inventory")
 		require.Equal(t, 2, f.mock.fileCalls, "client changes must rebuild the exact plan")
 		require.Equal(t, 1, f.mock.importCalls)
@@ -577,17 +586,18 @@ func TestParseRebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 func TestParseMutationFailuresRemainSafeAndRetryable(t *testing.T) {
 	t.Run("import failure retains plan for retry", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, stdhttp.StatusOK, f.postJSON(t, "/api/pack", f.packPayload()).Code)
 		f.mock.importErr = errors.New("import failed")
 
 		first := f.postJSON(t, "/api/parse", f.packPayload())
-		require.Equal(t, domain.StatusAddTorrentError.Code(), first.Code)
+		require.Equal(t, stdhttp.StatusBadGateway, first.Code)
+		require.JSONEq(t, `{"outcome":"failure","reason":"torrent_add_failed","message":"could not add torrent to client"}`, first.Body.String())
 		require.Equal(t, 1, f.mock.importCalls)
 		require.FileExists(t, filepath.Join(f.importDir, f.releaseName, "Lifecycle.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"))
 
 		f.mock.importErr = nil
 		second := f.postJSON(t, "/api/parse", f.packPayload())
-		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), second.Code)
+		require.Equal(t, stdhttp.StatusOK, second.Code)
 		require.Equal(t, 1, f.mock.torrentCalls, "retry must retain the accepted inventory")
 		require.Equal(t, 1, f.mock.fileCalls, "retry must retain the accepted plan")
 		require.Equal(t, 2, f.mock.importCalls)
@@ -595,7 +605,7 @@ func TestParseMutationFailuresRemainSafeAndRetryable(t *testing.T) {
 
 	t.Run("one conflicting target does not block safe links", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 2, 2, 0)
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, stdhttp.StatusOK, f.postJSON(t, "/api/pack", f.packPayload()).Code)
 
 		targetDir := filepath.Join(f.importDir, f.releaseName)
 		require.NoError(t, os.MkdirAll(targetDir, 0o755))
@@ -603,7 +613,7 @@ func TestParseMutationFailuresRemainSafeAndRetryable(t *testing.T) {
 		require.NoError(t, os.WriteFile(conflictingTarget, []byte("conflict"), 0o644))
 
 		res := f.postJSON(t, "/api/parse", f.packPayload())
-		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
+		require.Equal(t, stdhttp.StatusOK, res.Code)
 		require.Equal(t, 1, f.mock.importCalls)
 		contents, err := os.ReadFile(conflictingTarget)
 		require.NoError(t, err)
@@ -618,7 +628,7 @@ func TestParseMutationFailuresRemainSafeAndRetryable(t *testing.T) {
 
 		logs := &synchronizedBuffer{}
 		f := newProcessorHTTPFixtureWithLogger(t, 3, 3, 0.75, newCaptureProcessorLogger(logs))
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, stdhttp.StatusOK, f.postJSON(t, "/api/pack", f.packPayload()).Code)
 
 		targetDir := filepath.Join(f.importDir, f.releaseName)
 		require.NoError(t, os.MkdirAll(targetDir, 0o755))
@@ -629,10 +639,12 @@ func TestParseMutationFailuresRemainSafeAndRetryable(t *testing.T) {
 		require.NoError(t, os.WriteFile(conflictingTarget, []byte("conflict"), 0o644))
 
 		res := f.postJSON(t, "/api/parse", f.packPayload())
-		require.Equal(t, domain.StatusBelowThreshold.Code(), res.Code)
-		require.JSONEq(t, `{"statusCode":230,"error":"number of matches below threshold"}`, res.Body.String())
+		require.Equal(t, stdhttp.StatusInternalServerError, res.Code)
+		require.JSONEq(t, `{"outcome":"failure","reason":"hardlink_failed","message":"could not create hardlinks"}`, res.Body.String())
 		require.Contains(t, logs.String(), `"outcome":"failure"`)
-		require.Contains(t, logs.String(), `"status_code":230`)
+		require.Contains(t, logs.String(), `"reason":"hardlink_failed"`)
+		require.Contains(t, logs.String(), `"fault_class":"internal"`)
+		require.Contains(t, logs.String(), `"http_status":500`)
 		require.Contains(t, logs.String(), `"level":"error"`)
 		require.Zero(t, f.mock.importCalls)
 		existingSourceInfo, err := os.Stat(existingSource)
@@ -648,7 +660,7 @@ func TestParseMutationFailuresRemainSafeAndRetryable(t *testing.T) {
 
 	t.Run("all conflicting targets prevent import", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, stdhttp.StatusOK, f.postJSON(t, "/api/pack", f.packPayload()).Code)
 
 		targetDir := filepath.Join(f.importDir, f.releaseName)
 		require.NoError(t, os.MkdirAll(targetDir, 0o755))
@@ -656,7 +668,7 @@ func TestParseMutationFailuresRemainSafeAndRetryable(t *testing.T) {
 		require.NoError(t, os.WriteFile(conflictingTarget, []byte("conflict"), 0o644))
 
 		res := f.postJSON(t, "/api/parse", f.packPayload())
-		require.Equal(t, domain.StatusFailedHardlink.Code(), res.Code)
+		require.Equal(t, stdhttp.StatusInternalServerError, res.Code)
 		require.Zero(t, f.mock.importCalls)
 		contents, err := os.ReadFile(conflictingTarget)
 		require.NoError(t, err)

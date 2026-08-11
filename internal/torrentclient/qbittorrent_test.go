@@ -134,7 +134,7 @@ func TestQbitBuildTorrentAddOptions(t *testing.T) {
 		q := newTestQbitClient(&stubQbitAPI{}, domain.ImportPolicy{Category: "tv-hd", ContentLayout: "bad"})
 		_, err := q.buildTorrentAddOptions()
 		require.Error(t, err)
-		require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
+		requireImportFailure(t, err, domain.ReasonImportConfigInvalid, domain.FaultInternal)
 	})
 }
 
@@ -150,6 +150,8 @@ func TestQbitImportDestination(t *testing.T) {
 		prefsErr    error
 		want        string
 		wantErr     bool
+		wantReason  domain.Reason
+		wantClass   domain.FaultClass
 	}{
 		{
 			name:   "explicit save path wins",
@@ -218,18 +220,24 @@ func TestQbitImportDestination(t *testing.T) {
 			policy:      domain.ImportPolicy{Category: "tv-hd"},
 			categoryErr: stderrors.New("boom"),
 			wantErr:     true,
+			wantReason:  domain.ReasonImportDestinationFailed,
+			wantClass:   domain.FaultDependency,
 		},
 		{
 			name:       "missing category",
 			policy:     domain.ImportPolicy{Category: "tv-hd"},
 			categories: map[string]qbittorrent.Category{},
 			wantErr:    true,
+			wantReason: domain.ReasonImportConfigInvalid,
+			wantClass:  domain.FaultInternal,
 		},
 		{
 			name:       "empty resolved destination",
 			policy:     domain.ImportPolicy{Category: "tv-hd"},
 			categories: map[string]qbittorrent.Category{"tv-hd": {Name: "tv-hd", SavePath: ""}},
 			wantErr:    true,
+			wantReason: domain.ReasonImportConfigInvalid,
+			wantClass:  domain.FaultInternal,
 		},
 		{
 			name:       "default save path read error",
@@ -237,6 +245,8 @@ func TestQbitImportDestination(t *testing.T) {
 			categories: map[string]qbittorrent.Category{"tv-hd": {Name: "tv-hd", SavePath: "/data/tv-hd"}},
 			defaultErr: stderrors.New("boom"),
 			wantErr:    true,
+			wantReason: domain.ReasonImportDestinationFailed,
+			wantClass:  domain.FaultDependency,
 		},
 		{
 			name:       "preference read error",
@@ -244,6 +254,8 @@ func TestQbitImportDestination(t *testing.T) {
 			categories: map[string]qbittorrent.Category{"tv-hd": {Name: "tv-hd", SavePath: "/data/tv-hd"}},
 			prefsErr:   stderrors.New("boom"),
 			wantErr:    true,
+			wantReason: domain.ReasonImportDestinationFailed,
+			wantClass:  domain.FaultDependency,
 		},
 	}
 
@@ -261,7 +273,7 @@ func TestQbitImportDestination(t *testing.T) {
 			destination, err := q.ImportDestination()
 			if tt.wantErr {
 				require.Error(t, err)
-				require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
+				requireImportFailure(t, err, tt.wantReason, tt.wantClass)
 				return
 			}
 			require.NoError(t, err)

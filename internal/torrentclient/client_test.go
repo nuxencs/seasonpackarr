@@ -9,6 +9,24 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 )
 
+func requireImportFailure(t *testing.T, err error, wantReason domain.Reason, wantClass domain.FaultClass) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("expected import error")
+	}
+
+	outcome := ImportFailed(err)
+	if validationErr := outcome.Validate(); validationErr != nil {
+		t.Fatalf("invalid import outcome: %v", validationErr)
+	}
+	if outcome.Reason() != wantReason || outcome.FaultClass() != wantClass {
+		t.Fatalf(
+			"import failure = (%s, %s), want (%s, %s)",
+			outcome.Reason(), outcome.FaultClass(), wantReason, wantClass,
+		)
+	}
+}
+
 func TestBuildTransmissionURL(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

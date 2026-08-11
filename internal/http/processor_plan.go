@@ -60,7 +60,7 @@ func (p *processor) processSeasonPack() domain.Outcome {
 
 	clientCfg, ok := snapshot.Clients[clientName]
 	if !ok {
-		return domain.Failed(domain.StatusClientNotFound)
+		return domain.Failed(domain.ReasonClientNotFound, domain.FaultRequest)
 	}
 	p.log.Info().Msgf("using %s client", clientName)
 
@@ -73,18 +73,18 @@ func (p *processor) processSeasonPack() domain.Outcome {
 		coverage := release.PercentOfTotalEpisodes(plan.totalEps, len(plan.links))
 		p.log.Info().Msgf("found %d/%d (%.2f%%) reusable episodes in announced torrent", len(plan.links), plan.totalEps, coverage*100)
 		if coverage < snapshot.SmartModeThreshold {
-			return domain.Rejected(domain.StatusBelowThreshold)
+			return domain.Rejected(domain.ReasonBelowThreshold)
 		}
 	}
 
 	p.storeImportPlan(clientName, *clientCfg, snapshot.FuzzyMatching, plan)
 
-	return domain.Successful(domain.StatusSuccessfulMatch)
+	return domain.Successful(domain.ReasonMatched)
 }
 
 func (p *processor) buildImportPlan(clientName string, clientCfg *domain.Client, cfg domain.Config) (importPlan, domain.Outcome) {
 	if len(p.req.Torrent) == 0 {
-		return importPlan{}, domain.Failed(domain.StatusTorrentBytesError)
+		return importPlan{}, domain.Failed(domain.ReasonMissingTorrent, domain.FaultRequest)
 	}
 
 	candidates, outcome := p.findCandidates(clientName, clientCfg, cfg)
@@ -94,17 +94,17 @@ func (p *processor) buildImportPlan(clientName string, clientCfg *domain.Client,
 
 	torrentBytes, err := torrents.DecodeTorrentBytes(p.req.Torrent)
 	if err != nil {
-		return importPlan{}, domain.FailedBecause(domain.StatusDecodeTorrentBytesError, err)
+		return importPlan{}, domain.FailedBecause(domain.ReasonTorrentDecodeFailed, domain.FaultRequest, err)
 	}
 
 	torrentInfo, err := torrents.Info(torrentBytes)
 	if err != nil {
-		return importPlan{}, domain.FailedBecause(domain.StatusParseTorrentInfoError, err)
+		return importPlan{}, domain.FailedBecause(domain.ReasonTorrentParseFailed, domain.FaultRequest, err)
 	}
 
 	torrentEps, err := torrents.Episodes(torrentInfo)
 	if err != nil {
-		return importPlan{}, domain.FailedBecause(domain.StatusGetEpisodesError, err)
+		return importPlan{}, domain.Rejected(domain.ReasonNoEligibleEpisodes)
 	}
 	eligibleEps := torrentEps[:0]
 	for _, torrentEp := range torrentEps {
@@ -113,12 +113,12 @@ func (p *processor) buildImportPlan(clientName string, clientCfg *domain.Client,
 		}
 	}
 	if len(eligibleEps) == 0 {
-		return importPlan{}, domain.Rejected(domain.StatusFailedMatchToTorrentEps)
+		return importPlan{}, domain.Rejected(domain.ReasonNoEligibleEpisodes)
 	}
 
 	hashes, err := torrents.InfoHashes(torrentBytes)
 	if err != nil {
-		return importPlan{}, domain.FailedBecause(domain.StatusParseTorrentInfoError, err)
+		return importPlan{}, domain.FailedBecause(domain.ReasonTorrentParseFailed, domain.FaultRequest, err)
 	}
 
 	linksByTarget := make(map[string]plannedLink)
@@ -151,9 +151,9 @@ func (p *processor) buildImportPlan(clientName string, clientCfg *domain.Client,
 
 	if len(linksByTarget) == 0 {
 		if firstFileErr != nil {
-			return importPlan{}, domain.FailedBecause(domain.StatusFailedMatchToTorrentEps, firstFileErr)
+			return importPlan{}, domain.FailedBecause(domain.ReasonClientFileInspectFailed, domain.FaultDependency, firstFileErr)
 		}
-		return importPlan{}, domain.Rejected(domain.StatusFailedMatchToTorrentEps)
+		return importPlan{}, domain.Rejected(domain.ReasonTorrentMismatch)
 	}
 
 	links := make([]plannedLink, 0, len(linksByTarget))
@@ -169,7 +169,7 @@ func (p *processor) buildImportPlan(clientName string, clientCfg *domain.Client,
 		packName:     torrentInfo.BestName(),
 		links:        links,
 		totalEps:     len(eligibleEps),
-	}, domain.Successful(domain.StatusSuccessfulMatch)
+	}, domain.Successful(domain.ReasonMatched)
 }
 
 func (p *processor) findEpisodeFile(hash string) (torrentclient.File, bool, error) {

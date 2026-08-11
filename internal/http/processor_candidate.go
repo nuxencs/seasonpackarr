@@ -58,56 +58,56 @@ func (p *processor) candidateSeasonPack() domain.Outcome {
 
 	clientCfg, ok := snapshot.Clients[clientName]
 	if !ok {
-		return domain.Failed(domain.StatusClientNotFound)
+		return domain.Failed(domain.ReasonClientNotFound, domain.FaultRequest)
 	}
 
 	if _, outcome := p.findCandidates(clientName, clientCfg, snapshot); outcome.Kind() != domain.OutcomeSuccess {
 		return outcome
 	}
 
-	return domain.Successful(domain.StatusSuccessfulMatch)
+	return domain.Successful(domain.ReasonMatched)
 }
 
 func (p *processor) findCandidates(clientName string, clientCfg *domain.Client, cfg domain.Config) ([]entry, domain.Outcome) {
 	if len(p.req.Name) == 0 {
-		return nil, domain.Failed(domain.StatusAnnounceNameError)
+		return nil, domain.Failed(domain.ReasonMissingReleaseName, domain.FaultRequest)
 	}
 
 	if err := p.getClient(clientCfg, clientName); err != nil {
-		return nil, domain.FailedBecause(domain.StatusGetClientError, err)
+		return nil, domain.FailedBecause(domain.ReasonClientUnavailable, domain.FaultDependency, err)
 	}
 
 	entries, err := p.getAllTorrents(clientName, clientCfg, cfg.FuzzyMatching)
 	if err != nil {
-		return nil, domain.FailedBecause(domain.StatusGetTorrentsError, err)
+		return nil, domain.FailedBecause(domain.ReasonClientInventoryFailed, domain.FaultDependency, err)
 	}
 
 	requestRls := rls.ParseString(p.req.Name)
 	filteredEntries, ok := entries[format.ComparableTitle(requestRls, cfg.FuzzyMatching)]
 	if !ok {
-		return nil, domain.Rejected(domain.StatusNoMatches)
+		return nil, domain.Rejected(domain.ReasonNoMatches)
 	}
 
 	candidates := make([]entry, 0, len(filteredEntries))
 	for _, filteredEntry := range filteredEntries {
 		compareInfo := release.CheckCandidates(requestRls, filteredEntry.release, cfg.FuzzyMatching)
-		switch compareInfo.StatusCode {
-		case domain.StatusAlreadyInClient, domain.StatusNotASeasonPack:
-			return nil, domain.Rejected(compareInfo.StatusCode)
-		case domain.StatusSuccessfulMatch:
+		switch compareInfo.Reason {
+		case domain.ReasonAlreadyInClient, domain.ReasonNotSeasonPack:
+			return nil, domain.Rejected(compareInfo.Reason)
+		case domain.ReasonMatched:
 			candidates = append(candidates, filteredEntry)
 		default:
 			p.log.Info().Msgf("%s: request(%s => %v), client(%s => %v)",
-				compareInfo.StatusCode, requestRls.String(), compareInfo.RejectValueA,
+				compareInfo.Reason, requestRls.String(), compareInfo.RejectValueA,
 				filteredEntry.release.String(), compareInfo.RejectValueB)
 		}
 	}
 
 	if len(candidates) == 0 {
-		return nil, domain.Rejected(domain.StatusNoMatches)
+		return nil, domain.Rejected(domain.ReasonNoMatches)
 	}
 
-	return candidates, domain.Successful(domain.StatusSuccessfulMatch)
+	return candidates, domain.Successful(domain.ReasonMatched)
 }
 
 func (p *processor) getClient(client *domain.Client, clientName string) error {

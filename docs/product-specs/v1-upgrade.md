@@ -180,6 +180,15 @@ In every example:
 If API authentication is disabled in seasonpackarr, leave the header empty and
 omit `?apikey=...` from the action endpoint.
 
+v1.0.0 uses standard HTTP status codes. A successful check returns `200`.
+Autobrr rejects any other result because **On Error** is set to **Reject** and
+the expected status is `200`.
+
+For troubleshooting, `400` means that the request is invalid, `422` means that
+the release was rejected by matching or smart-mode policy, `500` means that
+seasonpackarr failed internally, and `502` means that a torrent-client
+operation failed. The response body includes a named reason and a message.
+
 ### External entry 1: quick candidate check
 
 Open the filter's **External** tab, select **Add new**, and choose **Webhook**.
@@ -192,7 +201,7 @@ Enter:
 | Endpoint | `http://seasonpackarr:42069/api/candidate` |
 | HTTP method | `POST` |
 | HTTP Request Headers | `X-API-Token=your-api-token` |
-| Expected HTTP status code | `250` |
+| Expected HTTP status code | `200` |
 
 Use this in **Data (JSON)**:
 
@@ -219,7 +228,7 @@ Select **Add new** again and choose **Webhook**. Enter:
 | Endpoint | `http://seasonpackarr:42069/api/pack` |
 | HTTP method | `POST` |
 | HTTP Request Headers | `X-API-Token=your-api-token` |
-| Expected HTTP status code | `250` |
+| Expected HTTP status code | `200` |
 
 Use this in **Data (JSON)**:
 
@@ -375,7 +384,8 @@ is still running.
 4. Restore the old Autobrr filter. It must have the single `/api/pack`
    External check and the old torrent-client action. If the restored v0.16.0
    configuration uses `parseTorrentFile`, also restore its `/api/parse`
-   Webhook action above the torrent-client action.
+   Webhook action above the torrent-client action. The restored External entry
+   must expect the v0.16.0 status `250`, not the v1.0.0 status `200`.
 5. Start v0.16.0, check that it is healthy, and enable the restored filter.
 
 Rollback does not remove hardlinks or torrents already imported by v1.0.0.

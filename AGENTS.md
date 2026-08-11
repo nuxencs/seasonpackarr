@@ -37,7 +37,7 @@ Use progressive disclosure. Do not read the whole repo up front unless the task 
 - `internal/torrents/`: torrent fetch/decode helpers
 - `internal/files/`: hardlink creation
 - `internal/config/`: config defaults, loading, reload, schema-adjacent behavior
-- `internal/domain/`: shared domain structs and status codes
+- `internal/domain/`: shared domain structs, processing outcomes, semantic reasons, and fault classes
 - `internal/notification/`: Discord notifications
 - `schemas/`: JSON schema for config surface
 - `distrib/`, `Dockerfile`, `ci.Dockerfile`: runtime packaging

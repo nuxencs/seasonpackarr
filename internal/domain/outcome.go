@@ -16,45 +16,59 @@ const (
 	OutcomeFailure   OutcomeKind = "failure"
 )
 
-// Outcome is the authoritative result of one processing operation. StatusCode
-// preserves the legacy webhook reason contract. Kind controls operational
-// handling.
+type FaultClass string
+
+const (
+	FaultRequest    FaultClass = "request"
+	FaultInternal   FaultClass = "internal"
+	FaultDependency FaultClass = "dependency"
+)
+
+// Outcome is the authoritative result of one processing operation. Kind
+// controls operational handling. Reason explains the result. FaultClass and
+// Cause are present only for failures.
 type Outcome struct {
 	kind       OutcomeKind
-	statusCode StatusCode
+	reason     Reason
+	faultClass FaultClass
 	cause      error
 }
 
-func Successful(statusCode StatusCode) Outcome {
-	return Outcome{kind: OutcomeSuccess, statusCode: statusCode}
+func Successful(reason Reason) Outcome {
+	return Outcome{kind: OutcomeSuccess, reason: reason}
 }
 
-func Rejected(statusCode StatusCode) Outcome {
-	return Outcome{kind: OutcomeRejection, statusCode: statusCode}
+func Rejected(reason Reason) Outcome {
+	return Outcome{kind: OutcomeRejection, reason: reason}
 }
 
-func Failed(statusCode StatusCode) Outcome {
+func Failed(reason Reason, faultClass FaultClass) Outcome {
 	return Outcome{
 		kind:       OutcomeFailure,
-		statusCode: statusCode,
-		cause:      errors.New(statusCode.String()),
+		reason:     reason,
+		faultClass: faultClass,
+		cause:      errors.New(reason.Message()),
 	}
 }
 
-func FailedBecause(statusCode StatusCode, cause error) Outcome {
+func FailedBecause(reason Reason, faultClass FaultClass, cause error) Outcome {
 	if cause == nil {
-		return Failed(statusCode)
+		return Failed(reason, faultClass)
 	}
 
-	return Outcome{kind: OutcomeFailure, statusCode: statusCode, cause: cause}
+	return Outcome{kind: OutcomeFailure, reason: reason, faultClass: faultClass, cause: cause}
 }
 
 func (o Outcome) Kind() OutcomeKind {
 	return o.kind
 }
 
-func (o Outcome) StatusCode() StatusCode {
-	return o.statusCode
+func (o Outcome) Reason() Reason {
+	return o.reason
+}
+
+func (o Outcome) FaultClass() FaultClass {
+	return o.faultClass
 }
 
 func (o Outcome) Cause() error {
@@ -62,16 +76,24 @@ func (o Outcome) Cause() error {
 }
 
 func (o Outcome) Validate() error {
-	if o.statusCode.String() == "" {
-		return fmt.Errorf("unknown status code: %d", o.statusCode)
+	if !o.reason.Valid() {
+		return fmt.Errorf("unknown outcome reason: %q", o.reason)
 	}
 
 	switch o.kind {
 	case OutcomeSuccess, OutcomeRejection:
+		if o.faultClass != "" {
+			return fmt.Errorf("%s outcome must not have a fault class", o.kind)
+		}
 		if o.cause != nil {
 			return fmt.Errorf("%s outcome must not have a cause", o.kind)
 		}
 	case OutcomeFailure:
+		switch o.faultClass {
+		case FaultRequest, FaultInternal, FaultDependency:
+		default:
+			return fmt.Errorf("unknown fault class: %q", o.faultClass)
+		}
 		if o.cause == nil {
 			return errors.New("failure outcome must have a cause")
 		}

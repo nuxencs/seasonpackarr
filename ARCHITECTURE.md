@@ -59,11 +59,13 @@
 
 - `internal/domain/outcome.go` defines success, rejection, and failure as one
   cross-package result.
-- A legacy webhook reason code preserves the existing numeric and text
-  contract. It does not define severity. The processing stage selects the
-  outcome kind from context.
+- `internal/domain/reason.go` defines semantic reasons. Reasons explain results
+  without selecting transport or notification behavior.
+- Failures also carry a request, internal, or dependency fault class and an
+  operational cause.
 - `internal/http/processor_outcome.go` validates outcomes and is the HTTP and
-  logging adapter. Invalid outcomes fail safely with HTTP 500.
+  logging adapter. It maps outcome kind and fault class to standard HTTP
+  statuses. Invalid outcomes fail safely with HTTP 500.
 - `internal/notification/discord.go` maps the same outcome kind to the existing
   `MATCH`, `INFO`, and `ERROR` configuration levels.
 
@@ -89,8 +91,8 @@ Preferred dependency direction:
 3. leaf packages should stay narrow:
    - `internal/release/` should not know HTTP details
    - `internal/files/` should not know webhook payloads
-4. `internal/domain/` holds cross-package data shapes, processing outcomes, and
-   legacy webhook reason concepts
+4. `internal/domain/` holds cross-package data shapes, processing outcomes,
+   semantic reasons, and fault classes
 
 If a change starts pushing transport concerns into matching logic or file ops, stop and re-check the boundary.
 

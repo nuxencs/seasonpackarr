@@ -12,47 +12,51 @@ import (
 
 func TestOutcomeConstructorsEnforceCauseInvariant(t *testing.T) {
 	t.Run("success has no cause", func(t *testing.T) {
-		outcome := Successful(StatusSuccessfulMatch)
+		outcome := Successful(ReasonMatched)
 
 		require.Equal(t, OutcomeSuccess, outcome.Kind())
-		require.Equal(t, StatusSuccessfulMatch, outcome.StatusCode())
+		require.Equal(t, ReasonMatched, outcome.Reason())
+		require.Empty(t, outcome.FaultClass())
 		require.NoError(t, outcome.Cause())
 	})
 
 	t.Run("rejection has no cause", func(t *testing.T) {
-		outcome := Rejected(StatusNoMatches)
+		outcome := Rejected(ReasonNoMatches)
 
 		require.Equal(t, OutcomeRejection, outcome.Kind())
-		require.Equal(t, StatusNoMatches, outcome.StatusCode())
+		require.Equal(t, ReasonNoMatches, outcome.Reason())
+		require.Empty(t, outcome.FaultClass())
 		require.NoError(t, outcome.Cause())
 	})
 
 	t.Run("failure keeps its cause", func(t *testing.T) {
 		cause := errors.New("client unavailable")
-		outcome := FailedBecause(StatusGetClientError, cause)
+		outcome := FailedBecause(ReasonClientUnavailable, FaultDependency, cause)
 
 		require.Equal(t, OutcomeFailure, outcome.Kind())
-		require.Equal(t, StatusGetClientError, outcome.StatusCode())
+		require.Equal(t, ReasonClientUnavailable, outcome.Reason())
+		require.Equal(t, FaultDependency, outcome.FaultClass())
 		require.ErrorIs(t, outcome.Cause(), cause)
 	})
 
 	t.Run("failure supplies a default cause", func(t *testing.T) {
-		outcome := Failed(StatusTorrentBytesError)
+		outcome := Failed(ReasonMissingTorrent, FaultRequest)
 
-		require.EqualError(t, outcome.Cause(), StatusTorrentBytesError.String())
+		require.EqualError(t, outcome.Cause(), ReasonMissingTorrent.Message())
 	})
 
-	t.Run("failure with nil cause uses the status cause", func(t *testing.T) {
-		outcome := FailedBecause(StatusTorrentBytesError, nil)
+	t.Run("failure with nil cause uses the reason cause", func(t *testing.T) {
+		outcome := FailedBecause(ReasonMissingTorrent, FaultRequest, nil)
 
-		require.EqualError(t, outcome.Cause(), StatusTorrentBytesError.String())
+		require.EqualError(t, outcome.Cause(), ReasonMissingTorrent.Message())
 	})
 }
 
 func TestOutcomeValidationRejectsInvalidValues(t *testing.T) {
 	require.Error(t, (Outcome{}).Validate())
-	require.Error(t, Successful(StatusCode(999)).Validate())
-	require.NoError(t, Successful(StatusSuccessfulMatch).Validate())
-	require.NoError(t, Rejected(StatusNoMatches).Validate())
-	require.NoError(t, Failed(StatusTorrentBytesError).Validate())
+	require.Error(t, Successful(Reason("unknown")).Validate())
+	require.Error(t, Failed(ReasonMissingTorrent, FaultClass("unknown")).Validate())
+	require.NoError(t, Successful(ReasonMatched).Validate())
+	require.NoError(t, Rejected(ReasonNoMatches).Validate())
+	require.NoError(t, Failed(ReasonMissingTorrent, FaultRequest).Validate())
 }

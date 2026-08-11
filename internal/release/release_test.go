@@ -39,7 +39,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			},
 			want: compare{
 				path: "Series Title 2022 S02E01 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				info: domain.CompareInfo{},
+				info: domain.CompareInfo{Reason: domain.ReasonMatched},
 			},
 		},
 		{
@@ -53,7 +53,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			want: compare{
 				path: "",
 				info: domain.CompareInfo{
-					StatusCode:   domain.StatusEpisodeMismatch,
+					Reason:       domain.ReasonEpisodeMismatch,
 					RejectValueA: 1,
 					RejectValueB: 2,
 				},
@@ -70,7 +70,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			want: compare{
 				path: "",
 				info: domain.CompareInfo{
-					StatusCode:   domain.StatusSeasonMismatch,
+					Reason:       domain.ReasonSeasonMismatch,
 					RejectValueA: 2,
 					RejectValueB: 3,
 				},
@@ -87,7 +87,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			want: compare{
 				path: "",
 				info: domain.CompareInfo{
-					StatusCode:   domain.StatusResolutionMismatch,
+					Reason:       domain.ReasonResolutionMismatch,
 					RejectValueA: "1080p",
 					RejectValueB: "2160p",
 				},
@@ -104,7 +104,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			want: compare{
 				path: "",
 				info: domain.CompareInfo{
-					StatusCode:   domain.StatusRlsGrpMismatch,
+					Reason:       domain.ReasonReleaseGroupMismatch,
 					RejectValueA: "RlsGrp",
 					RejectValueB: "OtherRlsGrp",
 				},
@@ -121,7 +121,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			want: compare{
 				path: "",
 				info: domain.CompareInfo{
-					StatusCode:   domain.StatusSizeMismatch,
+					Reason:       domain.ReasonSizeMismatch,
 					RejectValueA: int64(2316560346),
 					RejectValueB: int64(2278773077),
 				},
@@ -138,7 +138,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			want: compare{
 				path: "",
 				info: domain.CompareInfo{
-					StatusCode:   domain.StatusContainerMismatch,
+					Reason:       domain.ReasonContainerMismatch,
 					RejectValueA: "mkv",
 					RejectValueB: "mp4",
 				},
@@ -154,7 +154,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			},
 			want: compare{
 				path: "Series Title 2022 S02E01 Test 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				info: domain.CompareInfo{},
+				info: domain.CompareInfo{Reason: domain.ReasonMatched},
 			},
 		},
 		{
@@ -167,7 +167,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			},
 			want: compare{
 				path: "Test/Series Title 2022 S02E01 Test 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				info: domain.CompareInfo{},
+				info: domain.CompareInfo{Reason: domain.ReasonMatched},
 			},
 		},
 		{
@@ -180,7 +180,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			},
 			want: compare{
 				path: "Test/Series Title 2022 S02E01 Test 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				info: domain.CompareInfo{},
+				info: domain.CompareInfo{Reason: domain.ReasonMatched},
 			},
 		},
 		{
@@ -193,7 +193,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			},
 			want: compare{
 				path: "Series Title 2022 S02/Test/Series Title 2022 S02E01 Test 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				info: domain.CompareInfo{},
+				info: domain.CompareInfo{Reason: domain.ReasonMatched},
 			},
 		},
 	}

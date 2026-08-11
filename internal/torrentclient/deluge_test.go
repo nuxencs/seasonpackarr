@@ -194,7 +194,7 @@ func TestDelugeImportDestination(t *testing.T) {
 	client.policy.SavePath = ""
 	_, err = client.ImportDestination()
 	require.Error(t, err)
-	require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
+	requireImportFailure(t, err, domain.ReasonImportConfigInvalid, domain.FaultInternal)
 }
 
 func TestDelugeImportResumesThenWaitsForCheck(t *testing.T) {
@@ -233,7 +233,7 @@ func TestDelugeImportRejectsPureV2Torrent(t *testing.T) {
 	err := client.Import(ImportRequest{SavePath: "/downloads/tv", V2Hash: "v2-hash"})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "v1 or hybrid")
-	require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
+	requireImportFailure(t, err, domain.ReasonTorrentUnsupported, domain.FaultRequest)
 }
 
 func TestDelugeImportDoesNotMutateExistingV2Torrent(t *testing.T) {

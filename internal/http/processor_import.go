@@ -27,25 +27,25 @@ func (p *processor) parseTorrent() domain.Outcome {
 
 	clientCfg, ok := snapshot.Clients[clientName]
 	if !ok {
-		return domain.Failed(domain.StatusClientNotFound)
+		return domain.Failed(domain.ReasonClientNotFound, domain.FaultRequest)
 	}
 	p.log.Info().Msgf("using %s client", clientName)
 
 	if len(p.req.Torrent) == 0 {
-		return domain.Failed(domain.StatusTorrentBytesError)
+		return domain.Failed(domain.ReasonMissingTorrent, domain.FaultRequest)
 	}
 
 	if err := p.getClient(clientCfg, clientName); err != nil {
-		return domain.FailedBecause(domain.StatusGetClientError, err)
+		return domain.FailedBecause(domain.ReasonClientUnavailable, domain.FaultDependency, err)
 	}
 
 	torrentBytes, err := torrents.DecodeTorrentBytes(p.req.Torrent)
 	if err != nil {
-		return domain.FailedBecause(domain.StatusDecodeTorrentBytesError, err)
+		return domain.FailedBecause(domain.ReasonTorrentDecodeFailed, domain.FaultRequest, err)
 	}
 	hashes, err := torrents.InfoHashes(torrentBytes)
 	if err != nil {
-		return domain.FailedBecause(domain.StatusParseTorrentInfoError, err)
+		return domain.FailedBecause(domain.ReasonTorrentParseFailed, domain.FaultRequest, err)
 	}
 
 	plan, ok := p.loadImportPlan(clientName, *clientCfg, snapshot.FuzzyMatching, hashes)
@@ -60,14 +60,13 @@ func (p *processor) parseTorrent() domain.Outcome {
 	if snapshot.SmartMode {
 		coverage := release.PercentOfTotalEpisodes(plan.totalEps, len(plan.links))
 		if coverage < snapshot.SmartModeThreshold {
-			return domain.Rejected(domain.StatusBelowThreshold)
+			return domain.Rejected(domain.ReasonBelowThreshold)
 		}
 	}
 
 	importDestination, err := p.req.Client.ImportDestination()
 	if err != nil {
-		statusCode := torrentclient.ImportStatusCode(err)
-		return domain.FailedBecause(statusCode, err)
+		return torrentclient.ImportFailed(err)
 	}
 	importRoot := importDestination.SavePath()
 	p.log.Debug().Msgf("resolved import root: %s", importRoot)
@@ -89,15 +88,15 @@ func (p *processor) parseTorrent() domain.Outcome {
 
 	p.log.Info().Msgf("hardlinked %d/%d episodes from pack", linkedCount, plan.totalEps)
 	if linkedCount == 0 {
-		return domain.FailedBecause(domain.StatusFailedHardlink, firstHardlinkErr)
+		return domain.FailedBecause(domain.ReasonHardlinkFailed, domain.FaultInternal, firstHardlinkErr)
 	}
 	if snapshot.SmartMode {
 		coverage := release.PercentOfTotalEpisodes(plan.totalEps, linkedCount)
 		if coverage < snapshot.SmartModeThreshold {
 			if firstHardlinkErr != nil {
-				return domain.FailedBecause(domain.StatusBelowThreshold, firstHardlinkErr)
+				return domain.FailedBecause(domain.ReasonHardlinkFailed, domain.FaultInternal, firstHardlinkErr)
 			}
-			return domain.Rejected(domain.StatusBelowThreshold)
+			return domain.Rejected(domain.ReasonBelowThreshold)
 		}
 	}
 
@@ -108,12 +107,11 @@ func (p *processor) parseTorrent() domain.Outcome {
 		V2Hash:       plan.hashes.V2,
 		HasV1:        plan.hashes.HasV1,
 	}); err != nil {
-		statusCode := torrentclient.ImportStatusCode(err)
-		return domain.FailedBecause(statusCode, err)
+		return torrentclient.ImportFailed(err)
 	}
 
 	planMap.Delete(importPlanKey(clientName, plan.hashes))
 	entryMap.Delete(clientName)
 
-	return domain.Successful(domain.StatusSuccessfulHardlink)
+	return domain.Successful(domain.ReasonImported)
 }

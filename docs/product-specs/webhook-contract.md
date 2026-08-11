@@ -19,26 +19,58 @@ Requests must include the configured API token. Unauthorized requests are reject
 
 ## Processing Outcomes
 
-Each processing stage returns one of three outcomes without changing the
-existing legacy webhook reason-code contract:
+Each processing stage returns one of three domain outcomes:
 
-- Success returns the successful match reason and logs at info level.
-- Rejection returns its filter reason and JSON error body, but logs at info level without an error field. Examples include no matching client release, no exact reusable torrent target, and smart-mode coverage below the configured threshold.
-- Failure returns its failure reason and canonical JSON error body, logs at error level, and retains the underlying cause for notifications when available.
+- Success: the operation completed.
+- Rejection: the release did not meet matching or smart-mode policy.
+- Failure: an invalid request or an operational fault prevented completion.
 
-The stage selects the outcome kind from context. A legacy webhook reason code
-can appear with more than one kind. For compatibility, its numeric value is
-still written to the HTTP status line. It is not a standards-based HTTP
-classification. Pack and parse notifications keep the same reason codes and
-configuration values: success uses `MATCH`, rejection uses `INFO`, and failure
-uses `ERROR`. Only failures include a cause. The HTTP error field always uses
-the canonical reason text and does not expose client, torrent, or filesystem
-implementation details.
+Every outcome has a semantic `reason`. A failure also has a fault class and an
+underlying cause. Reasons do not select HTTP status, log severity, or
+notification severity.
+
+The HTTP adapter uses only the outcome kind and failure class:
+
+| Outcome | Fault class | HTTP status |
+| --- | --- | --- |
+| Success | none | `200 OK` |
+| Rejection | none | `422 Unprocessable Entity` |
+| Failure | request | `400 Bad Request` |
+| Failure | internal | `500 Internal Server Error` |
+| Failure | dependency | `502 Bad Gateway` |
+
+Authentication remains separate and returns `401 Unauthorized` when the API
+token is missing or invalid.
+
+All valid processing outcomes use one JSON response shape:
+
+```json
+{
+  "outcome": "rejection",
+  "reason": "torrent_mismatch",
+  "message": "could not match episodes to files in pack"
+}
+```
+
+The response does not expose client, torrent, or filesystem implementation
+details. Operational causes stay in structured logs and failure notifications.
+Invalid domain outcomes fail safely with `500`, `internal_error`, and no
+notification.
+
+Client inventory, file inspection, destination discovery, add, recheck, and
+resume faults are dependency failures. Invalid local import policy is an
+internal failure. A torrent format that the selected client adapter cannot
+import is a request failure.
+
+Notification configuration does not change. Success uses `MATCH`, rejection
+uses `INFO`, and failure uses `ERROR`. Notification filtering and color depend
+only on the outcome kind. The semantic reason supplies the title. Only failure
+notifications include the underlying cause.
 
 If hardlink faults prevent achieved smart-mode coverage from meeting the
-threshold, `/api/parse` keeps the below-threshold reason code but classifies the
-outcome as a failure. Coverage below the threshold is a rejection only when no
-operational fault caused the shortfall.
+threshold, `/api/parse` returns an internal failure with reason
+`hardlink_failed`. Coverage below the threshold is a normal rejection with
+reason `below_threshold` only when no operational fault caused the shortfall.
 
 ## Contract Stability Rules
 

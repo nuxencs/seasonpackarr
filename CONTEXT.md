@@ -1,15 +1,13 @@
 # Season Pack Processing
 
 This context describes how seasonpackarr evaluates an announced season pack and
-reports the result without changing its established legacy webhook reason
-contract.
+reports the result through its processing and transport boundaries.
 
 ## Language
 
 **Processing outcome**:
 The result of one candidate, pack, or parse operation. It contains an outcome
-kind and a stable legacy webhook reason code, plus a cause only when the outcome
-is a failure.
+kind and a semantic reason. A failure also contains its origin and cause.
 _Avoid_: Return code, result error
 
 **Success**:
@@ -26,7 +24,12 @@ A processing outcome where an operational fault prevented completion. It has a
 cause for logs and notifications. HTTP responses keep the canonical reason text.
 _Avoid_: Hard error, error status
 
-**Legacy webhook reason code**:
-The stable numeric and text reason defined by the existing webhook contract. It
-does not determine whether an outcome is a success, rejection, or failure.
-_Avoid_: Status code, severity, outcome kind
+**Reason**:
+A named explanation for a processing outcome. It is independent of transport
+status and notification severity.
+_Avoid_: Reason code, status code, severity
+
+**Failure class**:
+The origin of a failure: invalid caller input, a seasonpackarr operation, or a
+torrent-client dependency.
+_Avoid_: HTTP class, error code, severity

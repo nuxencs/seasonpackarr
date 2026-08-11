@@ -17,7 +17,7 @@ func CheckCandidates(requestRls, clientRls rls.Release, fuzzyMatching domain.Fuz
 	// check if season pack or no extension
 	if !requestRls.Type.Is(rls.Series) || requestRls.Ext != "" {
 		// not a season pack
-		return domain.CompareInfo{StatusCode: domain.StatusNotASeasonPack}
+		return domain.CompareInfo{Reason: domain.ReasonNotSeasonPack}
 	}
 
 	return compare(requestRls, clientRls, fuzzyMatching)
@@ -26,7 +26,7 @@ func CheckCandidates(requestRls, clientRls rls.Release, fuzzyMatching domain.Fuz
 func compare(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatching) domain.CompareInfo {
 	if requestRls.Resolution != clientRls.Resolution {
 		return domain.CompareInfo{
-			StatusCode:   domain.StatusResolutionMismatch,
+			Reason:       domain.ReasonResolutionMismatch,
 			RejectValueA: requestRls.Resolution,
 			RejectValueB: clientRls.Resolution,
 		}
@@ -40,7 +40,7 @@ func compare(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatchi
 
 	if requestRls.Source != clientRls.Source {
 		return domain.CompareInfo{
-			StatusCode:   domain.StatusSourceMismatch,
+			Reason:       domain.ReasonSourceMismatch,
 			RejectValueA: requestRls.Source,
 			RejectValueB: clientRls.Source,
 		}
@@ -48,7 +48,7 @@ func compare(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatchi
 
 	if rls.MustNormalize(requestRls.Group) != rls.MustNormalize(clientRls.Group) {
 		return domain.CompareInfo{
-			StatusCode:   domain.StatusRlsGrpMismatch,
+			Reason:       domain.ReasonReleaseGroupMismatch,
 			RejectValueA: requestRls.Group,
 			RejectValueB: clientRls.Group,
 		}
@@ -56,7 +56,7 @@ func compare(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatchi
 
 	if !slices.EqualElements(requestRls.Cut, clientRls.Cut) {
 		return domain.CompareInfo{
-			StatusCode:   domain.StatusCutMismatch,
+			Reason:       domain.ReasonCutMismatch,
 			RejectValueA: requestRls.Cut,
 			RejectValueB: clientRls.Cut,
 		}
@@ -64,7 +64,7 @@ func compare(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatchi
 
 	if !slices.EqualElements(requestRls.Edition, clientRls.Edition) {
 		return domain.CompareInfo{
-			StatusCode:   domain.StatusEditionMismatch,
+			Reason:       domain.ReasonEditionMismatch,
 			RejectValueA: requestRls.Edition,
 			RejectValueB: clientRls.Edition,
 		}
@@ -74,7 +74,7 @@ func compare(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatchi
 	if !fuzzyMatching.SkipRepackCompare {
 		if !slices.EqualElements(requestRls.Other, clientRls.Other) {
 			return domain.CompareInfo{
-				StatusCode:   domain.StatusRepackStatusMismatch,
+				Reason:       domain.ReasonRepackMismatch,
 				RejectValueA: requestRls.Other,
 				RejectValueB: clientRls.Other,
 			}
@@ -89,7 +89,7 @@ func compare(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatchi
 
 	if !slices.EqualElements(requestRls.HDR, clientRls.HDR) {
 		return domain.CompareInfo{
-			StatusCode:   domain.StatusHdrMismatch,
+			Reason:       domain.ReasonHDRMismatch,
 			RejectValueA: requestRls.HDR,
 			RejectValueB: clientRls.HDR,
 		}
@@ -97,17 +97,17 @@ func compare(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatchi
 
 	if requestRls.Collection != clientRls.Collection {
 		return domain.CompareInfo{
-			StatusCode:   domain.StatusStreamingServiceMismatch,
+			Reason:       domain.ReasonStreamingServiceMismatch,
 			RejectValueA: requestRls.Collection,
 			RejectValueB: clientRls.Collection,
 		}
 	}
 
 	if requestRls.Episode == clientRls.Episode {
-		return domain.CompareInfo{StatusCode: domain.StatusAlreadyInClient}
+		return domain.CompareInfo{Reason: domain.ReasonAlreadyInClient}
 	}
 
-	return domain.CompareInfo{StatusCode: domain.StatusSuccessfulMatch}
+	return domain.CompareInfo{Reason: domain.ReasonMatched}
 }
 
 func MatchEpToSeasonPackEp(clientEpPath string, clientEpSize int64, torrentEpPath string, torrentEpSize int64) (string, domain.CompareInfo) {
@@ -117,43 +117,43 @@ func MatchEpToSeasonPackEp(clientEpPath string, clientEpSize int64, torrentEpPat
 	switch {
 	case !strings.EqualFold(clientEpRls.Ext, torrentEpRls.Ext):
 		return "", domain.CompareInfo{
-			StatusCode:   domain.StatusContainerMismatch,
+			Reason:       domain.ReasonContainerMismatch,
 			RejectValueA: clientEpRls.Ext,
 			RejectValueB: torrentEpRls.Ext,
 		}
 	case clientEpSize != torrentEpSize:
 		return "", domain.CompareInfo{
-			StatusCode:   domain.StatusSizeMismatch,
+			Reason:       domain.ReasonSizeMismatch,
 			RejectValueA: clientEpSize,
 			RejectValueB: torrentEpSize,
 		}
 	case clientEpRls.Series != torrentEpRls.Series:
 		return "", domain.CompareInfo{
-			StatusCode:   domain.StatusSeasonMismatch,
+			Reason:       domain.ReasonSeasonMismatch,
 			RejectValueA: clientEpRls.Series,
 			RejectValueB: torrentEpRls.Series,
 		}
 	case clientEpRls.Episode != torrentEpRls.Episode:
 		return "", domain.CompareInfo{
-			StatusCode:   domain.StatusEpisodeMismatch,
+			Reason:       domain.ReasonEpisodeMismatch,
 			RejectValueA: clientEpRls.Episode,
 			RejectValueB: torrentEpRls.Episode,
 		}
 	case clientEpRls.Resolution != torrentEpRls.Resolution:
 		return "", domain.CompareInfo{
-			StatusCode:   domain.StatusResolutionMismatch,
+			Reason:       domain.ReasonResolutionMismatch,
 			RejectValueA: clientEpRls.Resolution,
 			RejectValueB: torrentEpRls.Resolution,
 		}
 	case rls.MustNormalize(clientEpRls.Group) != rls.MustNormalize(torrentEpRls.Group):
 		return "", domain.CompareInfo{
-			StatusCode:   domain.StatusRlsGrpMismatch,
+			Reason:       domain.ReasonReleaseGroupMismatch,
 			RejectValueA: clientEpRls.Group,
 			RejectValueB: torrentEpRls.Group,
 		}
 	}
 
-	return torrentEpPath, domain.CompareInfo{}
+	return torrentEpPath, domain.CompareInfo{Reason: domain.ReasonMatched}
 }
 
 func PercentOfTotalEpisodes(totalEps int, foundEps int) float32 {

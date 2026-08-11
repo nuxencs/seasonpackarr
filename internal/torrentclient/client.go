@@ -84,16 +84,18 @@ func (d ImportDestination) TargetPath(torrentName, torrentFilePath string) strin
 	return filepath.Join(d.root, torrentFilePath)
 }
 
-// ImportStage identifies which step of Import failed so the caller can map it
-// to a domain.StatusCode without importing any client-specific type.
+// ImportStage identifies which step of Import failed without exposing a
+// client-specific error type to the processor.
 type ImportStage int
 
 const (
-	ImportStageConfig  ImportStage = iota // resolving destination / building options
-	ImportStageAdd                        // adding the torrent to the client
-	ImportStageFind                       // locating the added torrent
-	ImportStageRecheck                    // rechecking / verifying local data
-	ImportStageResume                     // resuming the torrent
+	ImportStageConfig      ImportStage = iota // invalid local policy or invariant
+	ImportStageRequest                        // supplied torrent unsupported by the selected client
+	ImportStageDestination                    // reading destination state from the client
+	ImportStageAdd                            // adding the torrent to the client
+	ImportStageFind                           // locating the added torrent
+	ImportStageRecheck                        // rechecking / verifying local data
+	ImportStageResume                         // resuming the torrent
 )
 
 // ImportError tags an import failure with the stage it happened in.
@@ -109,25 +111,30 @@ func importErr(stage ImportStage, err error) *ImportError {
 	return &ImportError{Stage: stage, Err: err}
 }
 
-// ImportStatusCode maps an error returned by ImportDestination or Import to the
-// domain.StatusCode the caller should report. Errors that aren't a stage-tagged
-// *ImportError fall back to StatusAddTorrentError.
-func ImportStatusCode(err error) domain.StatusCode {
+// ImportFailed converts an error returned by ImportDestination or Import to a
+// processing outcome. Invalid local state is internal, unsupported input is a
+// request failure, and client operations are dependency failures. Untagged
+// errors use the add-torrent fallback.
+func ImportFailed(err error) domain.Outcome {
 	if ie, ok := stderrors.AsType[*ImportError](err); ok {
 		switch ie.Stage {
 		case ImportStageConfig:
-			return domain.StatusImportConfigError
+			return domain.FailedBecause(domain.ReasonImportConfigInvalid, domain.FaultInternal, err)
+		case ImportStageRequest:
+			return domain.FailedBecause(domain.ReasonTorrentUnsupported, domain.FaultRequest, err)
+		case ImportStageDestination:
+			return domain.FailedBecause(domain.ReasonImportDestinationFailed, domain.FaultDependency, err)
 		case ImportStageAdd:
-			return domain.StatusAddTorrentError
+			return domain.FailedBecause(domain.ReasonTorrentAddFailed, domain.FaultDependency, err)
 		case ImportStageFind:
-			return domain.StatusFindTorrentError
+			return domain.FailedBecause(domain.ReasonImportedTorrentNotFound, domain.FaultDependency, err)
 		case ImportStageRecheck:
-			return domain.StatusRecheckTorrentError
+			return domain.FailedBecause(domain.ReasonTorrentRecheckFailed, domain.FaultDependency, err)
 		case ImportStageResume:
-			return domain.StatusResumeTorrentError
+			return domain.FailedBecause(domain.ReasonTorrentResumeFailed, domain.FaultDependency, err)
 		}
 	}
-	return domain.StatusAddTorrentError
+	return domain.FailedBecause(domain.ReasonTorrentAddFailed, domain.FaultDependency, err)
 }
 
 // TorrentClient is the surface the processor needs from a torrent client.

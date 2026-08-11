@@ -25,8 +25,11 @@ Reliable does not mean perfect acceptance. It means predictable outcomes when de
 - hardlink creation isolated from matching logic
 - authenticated HTTP component coverage across candidate, pack, parse, cache invalidation, and filesystem failure paths
 - one authoritative success, rejection, and failure outcome for HTTP, logs, and notifications
+- semantic reasons that stay independent of transport and notification severity
+- one HTTP adapter that maps outcome kind and failure class to `200`, `400`, `422`, `500`, or `502`
 - adapter validation that turns invalid outcomes into a safe HTTP 500 without notification
-- canonical HTTP error text with operational causes confined to logs and failure notifications
+- one JSON response shape with outcome, semantic reason, and canonical message
+- operational causes confined to logs and failure notifications
 - captured-log regression tests for rejection and failure severity
 
 ## Known Reliability Gaps

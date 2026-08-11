@@ -96,7 +96,7 @@ func TestCandidateSeasonPackUsesTorrentSummariesOnly(t *testing.T) {
 
 	outcome := p.candidateSeasonPack()
 	require.Equal(t, domain.OutcomeSuccess, outcome.Kind())
-	require.Equal(t, domain.StatusSuccessfulMatch, outcome.StatusCode())
+	require.Equal(t, domain.ReasonMatched, outcome.Reason())
 	require.Equal(t, 1, mock.torrentCalls)
 	require.Zero(t, mock.fileCalls, "candidate evaluation must not request torrent file details")
 }
@@ -122,7 +122,7 @@ func TestCandidateEndpointReturnsSuccessfulMatchWithoutFileReads(t *testing.T) {
 	res := httptest.NewRecorder()
 	router.ServeHTTP(res, req)
 
-	require.Equal(t, domain.StatusSuccessfulMatch.Code(), res.Code)
+	require.Equal(t, http.StatusOK, res.Code)
 	require.Zero(t, mock.fileCalls)
 }
 
@@ -148,7 +148,7 @@ func TestCandidateAndPackShareOneClientInventory(t *testing.T) {
 
 	outcome := candidateProcessor.candidateSeasonPack()
 	require.Equal(t, domain.OutcomeSuccess, outcome.Kind())
-	require.Equal(t, domain.StatusSuccessfulMatch, outcome.StatusCode())
+	require.Equal(t, domain.ReasonMatched, outcome.Reason())
 
 	packProcessor := newImportProcessor()
 	packProcessor.req = &request{
@@ -159,7 +159,7 @@ func TestCandidateAndPackShareOneClientInventory(t *testing.T) {
 	}
 	outcome = packProcessor.processSeasonPack()
 	require.Equal(t, domain.OutcomeSuccess, outcome.Kind())
-	require.Equal(t, domain.StatusSuccessfulMatch, outcome.StatusCode())
+	require.Equal(t, domain.ReasonMatched, outcome.Reason())
 	require.Equal(t, 1, mock.torrentCalls, "candidate and pack must share one inventory snapshot")
 }
 
@@ -195,7 +195,7 @@ func TestProcessSeasonPackUsesTorrentEpisodeCoverage(t *testing.T) {
 
 	outcome := p.processSeasonPack()
 	require.Equal(t, domain.OutcomeSuccess, outcome.Kind())
-	require.Equal(t, domain.StatusSuccessfulMatch, outcome.StatusCode())
+	require.Equal(t, domain.ReasonMatched, outcome.Reason())
 	require.False(t, mock.importCalled, "pack evaluation must remain side-effect free")
 }
 
@@ -231,7 +231,7 @@ func TestProcessSeasonPackRejectsCoverageBelowTorrentThreshold(t *testing.T) {
 
 	outcome := p.processSeasonPack()
 	require.Equal(t, domain.OutcomeRejection, outcome.Kind())
-	require.Equal(t, domain.StatusBelowThreshold, outcome.StatusCode())
+	require.Equal(t, domain.ReasonBelowThreshold, outcome.Reason())
 	require.NoError(t, outcome.Cause())
 	require.False(t, mock.importCalled)
 }
@@ -262,7 +262,7 @@ func TestImportPlanCoverageCannotExceedTorrentEpisodeCount(t *testing.T) {
 
 	plan, outcome := p.buildImportPlan("default", clientCfg, cfg.Snapshot())
 	require.Equal(t, domain.OutcomeSuccess, outcome.Kind())
-	require.Equal(t, domain.StatusSuccessfulMatch, outcome.StatusCode())
+	require.Equal(t, domain.ReasonMatched, outcome.Reason())
 	require.Equal(t, 6, plan.totalEps)
 	require.Len(t, plan.links, 6, "client episodes outside the torrent cannot increase coverage")
 }
@@ -309,7 +309,7 @@ func TestParseTorrentReusesAcceptedPlanWithoutClientReads(t *testing.T) {
 
 	outcome := packProcessor.processSeasonPack()
 	require.Equal(t, domain.OutcomeSuccess, outcome.Kind())
-	require.Equal(t, domain.StatusSuccessfulMatch, outcome.StatusCode())
+	require.Equal(t, domain.ReasonMatched, outcome.Reason())
 	require.Equal(t, 1, mock.torrentCalls)
 	require.Equal(t, 2, mock.fileCalls)
 
@@ -317,7 +317,7 @@ func TestParseTorrentReusesAcceptedPlanWithoutClientReads(t *testing.T) {
 	parseProcessor.req = &request{Name: releaseName, Torrent: encodedTorrent, Client: mock, ClientName: "default"}
 	outcome = parseProcessor.parseTorrent()
 	require.Equal(t, domain.OutcomeSuccess, outcome.Kind())
-	require.Equal(t, domain.StatusSuccessfulHardlink, outcome.StatusCode())
+	require.Equal(t, domain.ReasonImported, outcome.Reason())
 	require.Equal(t, 1, mock.torrentCalls, "parse must reuse the accepted inventory")
 	require.Equal(t, 2, mock.fileCalls, "parse must reuse the accepted import plan")
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep1))
@@ -590,7 +590,7 @@ func TestProcessSeasonPackIsGateOnly(t *testing.T) {
 
 	outcome := p.processSeasonPack()
 	require.Equal(t, domain.OutcomeSuccess, outcome.Kind())
-	require.Equal(t, domain.StatusSuccessfulMatch, outcome.StatusCode())
+	require.Equal(t, domain.ReasonMatched, outcome.Reason())
 	require.False(t, mock.importCalled, "gate must not import")
 	require.NoFileExists(t, filepath.Join(importDir, "Series.S01.1080p.WEB-DL.H.264-RlsGrp", epName))
 }
@@ -640,7 +640,7 @@ func TestParseTorrentImportsAndPassesResolvedRoot(t *testing.T) {
 
 	outcome := p.parseTorrent()
 	require.Equal(t, domain.OutcomeSuccess, outcome.Kind())
-	require.Equal(t, domain.StatusSuccessfulHardlink, outcome.StatusCode())
+	require.Equal(t, domain.ReasonImported, outcome.Reason())
 
 	require.True(t, mock.importCalled)
 	require.Equal(t, infoHashes.Legacy, mock.importReq.LegacyHash)
@@ -700,7 +700,7 @@ func TestParseTorrentRejectsArchivePackWithSampleVideos(t *testing.T) {
 	outcome := p.parseTorrent()
 	require.Equal(t, domain.OutcomeRejection, outcome.Kind())
 	require.NoError(t, outcome.Cause())
-	require.Equal(t, domain.StatusFailedMatchToTorrentEps, outcome.StatusCode())
+	require.Equal(t, domain.ReasonNoEligibleEpisodes, outcome.Reason())
 	require.False(t, mock.importCalled, "rejected archive pack must not be imported")
 	require.NoFileExists(t, filepath.Join(importDir, releaseName, episodeName))
 }
@@ -742,7 +742,7 @@ func TestParseTorrentUsesFlatImportDestination(t *testing.T) {
 
 	outcome := p.parseTorrent()
 	require.Equal(t, domain.OutcomeSuccess, outcome.Kind())
-	require.Equal(t, domain.StatusSuccessfulHardlink, outcome.StatusCode())
+	require.Equal(t, domain.ReasonImported, outcome.Reason())
 	require.FileExists(t, filepath.Join(importDir, episodeName))
 	require.NoFileExists(t, filepath.Join(importDir, releaseName, episodeName))
 }
@@ -783,7 +783,7 @@ func TestParseTorrentRetryReusesExistingHardlinks(t *testing.T) {
 
 		outcome := p.parseTorrent()
 		require.Equal(t, domain.OutcomeSuccess, outcome.Kind(), "attempt %d", attempt+1)
-		require.Equal(t, domain.StatusSuccessfulHardlink, outcome.StatusCode())
+		require.Equal(t, domain.ReasonImported, outcome.Reason())
 		require.True(t, mock.importCalled, "attempt %d must reach client import", attempt+1)
 	}
 }
@@ -838,7 +838,7 @@ func TestParseTorrentSkipsCrossSeedDuplicates(t *testing.T) {
 
 	outcome := p.parseTorrent()
 	require.Equal(t, domain.OutcomeSuccess, outcome.Kind())
-	require.Equal(t, domain.StatusSuccessfulHardlink, outcome.StatusCode())
+	require.Equal(t, domain.ReasonImported, outcome.Reason())
 
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep1))
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep2))

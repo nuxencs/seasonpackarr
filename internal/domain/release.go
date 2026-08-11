@@ -4,7 +4,7 @@
 package domain
 
 type CompareInfo struct {
-	StatusCode   StatusCode
+	Reason       Reason
 	RejectValueA any
 	RejectValueB any
 }

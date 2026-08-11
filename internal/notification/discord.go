@@ -82,7 +82,7 @@ func (s *discordSender) Send(outcome domain.Outcome, payload Payload) error {
 	}
 
 	if !s.shouldSend(outcome, notifications) {
-		s.log.Debug().Msg("no notification wanted for this status, skipping notification")
+		s.log.Debug().Msg("no notification wanted for this outcome, skipping notification")
 		return nil
 	}
 
@@ -93,12 +93,12 @@ func (s *discordSender) Send(outcome domain.Outcome, payload Payload) error {
 
 	jsonData, err := json.Marshal(m)
 	if err != nil {
-		return errors.Wrap(err, "could not marshal json request for status: %v payload: %v", outcome.StatusCode(), payload)
+		return errors.Wrap(err, "could not marshal json request for reason: %v payload: %v", outcome.Reason(), payload)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, notifications.Discord, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return errors.Wrap(err, "could not create request for status: %v payload: %v", outcome.StatusCode(), payload)
+		return errors.Wrap(err, "could not create request for reason: %v payload: %v", outcome.Reason(), payload)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -106,7 +106,7 @@ func (s *discordSender) Send(outcome domain.Outcome, payload Payload) error {
 
 	res, err := s.httpClient.Do(req)
 	if err != nil {
-		return errors.Wrap(err, "client request error for status: %v payload: %v", outcome.StatusCode(), payload)
+		return errors.Wrap(err, "client request error for reason: %v payload: %v", outcome.Reason(), payload)
 	}
 
 	defer res.Body.Close()
@@ -117,7 +117,7 @@ func (s *discordSender) Send(outcome domain.Outcome, payload Payload) error {
 	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
 		body, err := io.ReadAll(bufio.NewReader(res.Body))
 		if err != nil {
-			return errors.Wrap(err, "could not read body for status: %v payload: %v", outcome.StatusCode(), payload)
+			return errors.Wrap(err, "could not read body for reason: %v payload: %v", outcome.Reason(), payload)
 		}
 
 		return errors.New("unexpected status: %v body: %v", res.StatusCode, string(body))
@@ -181,7 +181,7 @@ func (s *discordSender) buildEmbed(outcome domain.Outcome, payload Payload) Disc
 	}
 
 	embed := DiscordEmbeds{
-		Title:     BuildTitle(outcome.StatusCode()),
+		Title:     BuildTitle(outcome.Reason()),
 		Color:     int(presentDiscordOutcome(outcome.Kind()).color),
 		Fields:    fields,
 		Timestamp: time.Now(),

@@ -38,9 +38,11 @@ flowchart TD
     N --> M
 ```
 
-Any step that fails returns a stage-tagged `*ImportError` (`config` / `add` /
-`find` / `recheck` / `resume`) which the processor maps to a status code
-(459–463) without ever seeing a qBittorrent type.
+Any step that fails returns a stage-tagged `*ImportError` (`config` / `request`
+/ `destination` / `add` / `find` / `recheck` / `resume`). The package seam
+converts invalid local policy to an internal failure, unsupported torrent input
+to a request failure, and remote client operations to dependency failures. The
+processor does not need a qBittorrent-specific type.
 
 Category-only policy sends the category without `savepath` or `autoTMM`, so
 qBittorrent keeps its own path-selection and automatic-management behavior.

@@ -356,7 +356,7 @@ have a `cross-seed` filter positioned above the `seasonpackarr` filter.
 
 ### External Filters
 
-Add two ordered Webhook entries in the `External` tab. Both use `POST` and expect HTTP status `250`.
+Add two ordered Webhook entries in the `External` tab. Both use `POST` and expect HTTP status `200`.
 autobrr shows the up and down reorder arrows only after the filter has multiple external entries.
 
 The first entry is a cheap announce-only candidate check. Its endpoint is:

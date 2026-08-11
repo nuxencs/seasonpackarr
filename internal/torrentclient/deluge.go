@@ -205,7 +205,7 @@ func (d *delugeClient) ImportDestination() (ImportDestination, error) {
 // pieces. The adapter waits until the torrent is no longer paused or checking.
 func (d *delugeClient) Import(req ImportRequest) error {
 	if !req.HasV1 || strings.TrimSpace(req.LegacyHash) == "" {
-		return importErr(ImportStageConfig, errors.New("deluge requires a v1 or hybrid torrent"))
+		return importErr(ImportStageRequest, errors.New("deluge requires a v1 or hybrid torrent"))
 	}
 
 	savePath := strings.TrimSpace(req.SavePath)

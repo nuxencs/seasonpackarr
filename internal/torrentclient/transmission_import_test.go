@@ -5,6 +5,7 @@ package torrentclient
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -25,6 +26,7 @@ type stubTransmissionAPI struct {
 	errorString string
 
 	sessionDir string
+	sessionErr error
 }
 
 func (s *stubTransmissionAPI) TorrentGet(context.Context, []string, []int64) ([]transmissionrpc.Torrent, error) {
@@ -68,7 +70,7 @@ func (s *stubTransmissionAPI) TorrentStartHashes(_ context.Context, hashes []str
 
 func (s *stubTransmissionAPI) SessionArgumentsGetAll(context.Context) (transmissionrpc.SessionArguments, error) {
 	dir := s.sessionDir
-	return transmissionrpc.SessionArguments{DownloadDir: &dir}, nil
+	return transmissionrpc.SessionArguments{DownloadDir: &dir}, s.sessionErr
 }
 
 func newTestTransmissionClient(stub *stubTransmissionAPI, policy domain.ImportPolicy) *transmissionClient {
@@ -116,8 +118,16 @@ func TestTransmissionImportFailsOnError(t *testing.T) {
 
 	err := tc.Import(ImportRequest{TorrentBytes: []byte("t"), LegacyHash: "h", HasV1: true, SavePath: "/data/tv"})
 	require.Error(t, err)
-	require.Equal(t, domain.StatusRecheckTorrentError, ImportStatusCode(err))
+	requireImportFailure(t, err, domain.ReasonTorrentRecheckFailed, domain.FaultDependency)
 	require.Empty(t, stub.startCalls)
+}
+
+func TestTransmissionImportRejectsPureV2Torrent(t *testing.T) {
+	tc := newTestTransmissionClient(&stubTransmissionAPI{}, domain.ImportPolicy{SavePath: "/data/tv"})
+
+	err := tc.Import(ImportRequest{TorrentBytes: []byte("torrent"), V2Hash: "v2-hash", SavePath: "/data/tv"})
+
+	requireImportFailure(t, err, domain.ReasonTorrentUnsupported, domain.FaultRequest)
 }
 
 func TestTransmissionImportDestination(t *testing.T) {
@@ -139,6 +149,12 @@ func TestTransmissionImportDestination(t *testing.T) {
 		tc := newTestTransmissionClient(&stubTransmissionAPI{sessionDir: ""}, domain.ImportPolicy{})
 		_, err := tc.ImportDestination()
 		require.Error(t, err)
-		require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
+		requireImportFailure(t, err, domain.ReasonImportConfigInvalid, domain.FaultInternal)
+	})
+
+	t.Run("reports session read as dependency failure", func(t *testing.T) {
+		tc := newTestTransmissionClient(&stubTransmissionAPI{sessionErr: errors.New("session unavailable")}, domain.ImportPolicy{})
+		_, err := tc.ImportDestination()
+		requireImportFailure(t, err, domain.ReasonImportDestinationFailed, domain.FaultDependency)
 	})
 }

@@ -144,7 +144,7 @@ func (t *transmissionClient) ImportDestination() (ImportDestination, error) {
 
 	args, err := t.c.SessionArgumentsGetAll(ctx)
 	if err != nil {
-		return ImportDestination{}, importErr(ImportStageConfig, errors.Wrap(err, "could not read transmission session"))
+		return ImportDestination{}, importErr(ImportStageDestination, errors.Wrap(err, "could not read transmission session"))
 	}
 
 	downloadDir := strings.TrimSpace(derefString(args.DownloadDir))
@@ -165,7 +165,7 @@ func (t *transmissionClient) ImportDestination() (ImportDestination, error) {
 // downloaded once started.
 func (t *transmissionClient) Import(req ImportRequest) error {
 	if strings.TrimSpace(req.LegacyHash) == "" {
-		return importErr(ImportStageConfig, errors.New("resolved transmission info hash is empty"))
+		return importErr(ImportStageRequest, errors.New("transmission requires a v1 or hybrid torrent"))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), t.verifyTimeout)

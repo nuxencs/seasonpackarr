@@ -109,7 +109,7 @@ func (q *qbitClient) ImportDestination() (ImportDestination, error) {
 		var err error
 		preferences, err = q.c.GetAppPreferences()
 		if err != nil {
-			return ImportDestination{}, importErr(ImportStageConfig, errors.Wrap(err, "could not read qbittorrent preferences"))
+			return ImportDestination{}, importErr(ImportStageDestination, errors.Wrap(err, "could not read qbittorrent preferences"))
 		}
 	}
 
@@ -119,7 +119,7 @@ func (q *qbitClient) ImportDestination() (ImportDestination, error) {
 	} else {
 		categories, err := q.c.GetCategories()
 		if err != nil {
-			return ImportDestination{}, importErr(ImportStageConfig, errors.Wrap(err, "could not read qbittorrent categories"))
+			return ImportDestination{}, importErr(ImportStageDestination, errors.Wrap(err, "could not read qbittorrent categories"))
 		}
 
 		_, ok := categories[q.policy.Category]
@@ -131,7 +131,7 @@ func (q *qbitClient) ImportDestination() (ImportDestination, error) {
 		if !useCategoryPath {
 			defaultSavePath, err := q.c.GetDefaultSavePath()
 			if err != nil {
-				return ImportDestination{}, importErr(ImportStageConfig, errors.Wrap(err, "could not read qbittorrent default save path"))
+				return ImportDestination{}, importErr(ImportStageDestination, errors.Wrap(err, "could not read qbittorrent default save path"))
 			}
 			actualPath = defaultSavePath
 		} else {
@@ -168,7 +168,7 @@ func (q *qbitClient) resolveCategorySavePath(categoryName string, categories map
 	defaultSavePath := func() (string, error) {
 		path, err := q.c.GetDefaultSavePath()
 		if err != nil {
-			return "", importErr(ImportStageConfig, errors.Wrap(err, "could not read qbittorrent default save path"))
+			return "", importErr(ImportStageDestination, errors.Wrap(err, "could not read qbittorrent default save path"))
 		}
 		return path, nil
 	}

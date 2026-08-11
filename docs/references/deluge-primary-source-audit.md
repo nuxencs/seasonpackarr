@@ -190,14 +190,14 @@ Source: [`methods.go` lines 639-676](https://github.com/autobrr/go-qbittorrent/b
 
 ### Current seasonpackarr call order
 
-The working tree inspected on 2026-08-08 has these paths:
+The working tree inspected on 2026-08-11 has these paths:
 
 - Request-level duplicate gate: `/api/candidate` checks the announce against the
   short-lived client inventory. `/api/pack` reuses that inventory while building
   its exact plan. `/api/parse` reuses the accepted plan or safely rebuilds it.
-  If the same release is already present, processing returns
-  `StatusAlreadyInClient` before file lookup, hardlink creation, or client
-  import. The current wire status is `210`, a 2xx no-action response. An exact
+  If the same release is already present, processing returns an
+  `already_in_client` rejection before file lookup, hardlink creation, or
+  client import. The HTTP adapter returns `422 Unprocessable Entity`. An exact
   duplicate therefore does not reach any torrent-client duplicate-add path in
   the normal seasonpackarr flow. Local sources:
   `internal/http/processor_candidate.go`, `internal/http/processor_plan.go`, and

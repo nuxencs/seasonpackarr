@@ -25,41 +25,45 @@ func (c staticNotificationConfig) Snapshot() domain.Config {
 	return c.config
 }
 
-func TestDiscordSenderUsesOutcomeKindInsteadOfStatusCode(t *testing.T) {
+func TestDiscordSenderUsesOutcomeKindInsteadOfReason(t *testing.T) {
 	tests := []struct {
 		name          string
 		outcome       domain.Outcome
 		levels        []string
 		wantSend      bool
 		wantColor     EmbedColors
+		wantTitle     string
 		wantErrorText string
 	}{
 		{
-			name:      "445 rejection uses info",
-			outcome:   domain.Rejected(domain.StatusFailedMatchToTorrentEps),
+			name:      "rejection uses info",
+			outcome:   domain.Rejected(domain.ReasonTorrentMismatch),
 			levels:    []string{LevelInfo},
 			wantSend:  true,
 			wantColor: GRAY,
+			wantTitle: "Could not match episodes to files in pack",
 		},
 		{
-			name:    "445 failure does not use info",
-			outcome: domain.FailedBecause(domain.StatusFailedMatchToTorrentEps, errors.New("client file lookup failed")),
+			name:    "failure does not use info",
+			outcome: domain.FailedBecause(domain.ReasonClientFileInspectFailed, domain.FaultDependency, errors.New("client file lookup failed")),
 			levels:  []string{LevelInfo},
 		},
 		{
-			name:          "445 failure uses error",
-			outcome:       domain.FailedBecause(domain.StatusFailedMatchToTorrentEps, errors.New("client file lookup failed")),
+			name:          "failure uses error",
+			outcome:       domain.FailedBecause(domain.ReasonClientFileInspectFailed, domain.FaultDependency, errors.New("client file lookup failed")),
 			levels:        []string{LevelError},
 			wantSend:      true,
 			wantColor:     RED,
+			wantTitle:     "Could not inspect client episode files",
 			wantErrorText: "client file lookup failed",
 		},
 		{
 			name:      "success uses match",
-			outcome:   domain.Successful(domain.StatusSuccessfulMatch),
+			outcome:   domain.Successful(domain.ReasonMatched),
 			levels:    []string{LevelMatch},
 			wantSend:  true,
 			wantColor: GREEN,
+			wantTitle: "Season pack matched",
 		},
 	}
 
@@ -102,6 +106,7 @@ func TestDiscordSenderUsesOutcomeKindInsteadOfStatusCode(t *testing.T) {
 			require.Len(t, messages[0].Embeds, 1)
 			embed := messages[0].Embeds[0]
 			require.Equal(t, int(tt.wantColor), embed.Color)
+			require.Equal(t, tt.wantTitle, embed.Title)
 			if tt.wantErrorText == "" {
 				require.False(t, hasDiscordField(embed.Fields, "Error"))
 			} else {

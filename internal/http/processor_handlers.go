@@ -37,7 +37,7 @@ var (
 		failureMessage:     "error parsing torrent",
 	}
 	decodeOperation = processingOperation{
-		failureMessage: domain.StatusDecodingError.String(),
+		failureMessage: domain.ReasonRequestDecodeFailed.Message(),
 	}
 )
 
@@ -64,17 +64,14 @@ func (p *processor) handleProcessing(c *gin.Context, operation processingOperati
 
 func (p *processor) decodeRequest(c *gin.Context) bool {
 	if err := json.NewDecoder(c.Request.Body).Decode(&p.req); err != nil {
-		p.writeProcessingOutcome(c, domain.FailedBecause(domain.StatusDecodingError, err), decodeOperation)
+		p.writeProcessingOutcome(c, domain.FailedBecause(
+			domain.ReasonRequestDecodeFailed,
+			domain.FaultRequest,
+			err,
+		), decodeOperation)
 		return false
 	}
 	return true
-}
-
-func abortWithStatus(c *gin.Context, statusCode domain.StatusCode) {
-	c.AbortWithStatusJSON(statusCode.Code(), gin.H{
-		"statusCode": statusCode.Code(),
-		"error":      statusCode.String(),
-	})
 }
 
 func (p *processor) sendNotification(outcome domain.Outcome, action string) {
@@ -91,7 +88,7 @@ func (p *processor) sendNotification(outcome domain.Outcome, action string) {
 	log := p.log
 	go func() {
 		if sendErr := sender.Send(outcome, payload); sendErr != nil {
-			log.Error().Err(sendErr).Msgf("error sending %s notification for %d", sender.Name(), outcome.StatusCode())
+			log.Error().Err(sendErr).Msgf("error sending %s notification for %s", sender.Name(), outcome.Reason())
 		}
 	}()
 }
