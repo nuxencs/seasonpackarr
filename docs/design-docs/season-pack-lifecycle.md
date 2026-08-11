@@ -21,18 +21,33 @@ Describe the normal path from webhook hit to hardlink creation and client import
 13. The torrent is added to the client, checked so the present files are recognised, and not left paused. See
     [qbittorrent-import-flow.md](qbittorrent-import-flow.md) for the complete-vs-partial
     client import flow with diagrams.
-14. Logs and notifications communicate outcome.
+14. The processor returns an explicit success, rejection, or failure outcome. One response module applies the matching log severity, notification payload, and unchanged legacy webhook reason contract.
 
-## Failure Classes
+## Outcome Classes
 
-- request decode/auth failure
+- Success: the stage completed its match or import operation. It logs at info level and maps to the `MATCH` notification level.
+- Rejection: the release does not meet matching or smart-mode policy. It logs at info level without an error field and maps to the `INFO` notification level.
+- Failure: request, client, torrent, filesystem, or import work failed. It logs at error level with the cause and maps to the `ERROR` notification level.
+
+The processing stage chooses the outcome kind. The legacy webhook reason code
+remains stable. It does not select log or notification severity. For example,
+reason `445` is a rejection when inspected files do not match the pack, but it
+is a failure when candidate file details cannot be read.
+
+HTTP rejection and failure bodies use the canonical reason text. Operational
+causes stay in structured logs and failure notifications. If one or more
+hardlink faults make achieved smart-mode coverage insufficient, the result is a
+failure at the stable below-threshold reason code, not a policy rejection.
+
+Failures include:
+
+- request decode failure
 - client connectivity or login failure
 - client inventory or file-detail failure
-- release mismatch
-- torrent parse mismatch
+- torrent decode or parse failure
 - filesystem hardlink failure
 - client import or verify failure
 
 ## Verification Notes
 
-Verified against code on 2026-08-09. The lifecycle is implementation-backed, not aspirational.
+Verified against code on 2026-08-10. The lifecycle is implementation-backed, not aspirational.

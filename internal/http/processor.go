@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 
 	"github.com/nuxencs/seasonpackarr/internal/config"
-	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
+	"github.com/nuxencs/seasonpackarr/internal/notification"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 
 	"github.com/rs/zerolog"
@@ -17,7 +17,7 @@ import (
 type processor struct {
 	log  zerolog.Logger
 	cfg  config.Provider
-	noti domain.Sender
+	noti notification.Sender
 	req  *request
 }
 
@@ -28,11 +28,11 @@ type request struct {
 	ClientName string
 }
 
-func newProcessor(log logger.Logger, config config.Provider, notification domain.Sender) *processor {
+func newProcessor(log logger.Logger, config config.Provider, sender notification.Sender) *processor {
 	return &processor{
 		log:  log.With().Str("module", "processor").Logger(),
 		cfg:  config,
-		noti: notification,
+		noti: sender,
 	}
 }
 

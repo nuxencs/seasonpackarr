@@ -21,20 +21,59 @@ import (
 	"github.com/autobrr/go-torrent/metainfo"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
+	"github.com/nuxencs/seasonpackarr/internal/notification"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
+	"github.com/gin-gonic/gin"
 	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
 
 const processorTestToken = "processor-test-token"
 
+type synchronizedBuffer struct {
+	mu sync.Mutex
+	bytes.Buffer
+}
+
+func (b *synchronizedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Buffer.Write(p)
+}
+
+func (b *synchronizedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Buffer.String()
+}
+
 type noopNotificationSender struct{}
 
 func (noopNotificationSender) Name() string { return "noop" }
 
-func (noopNotificationSender) Send(domain.StatusCode, domain.NotificationPayload) error { return nil }
+func (noopNotificationSender) Send(domain.Outcome, notification.Payload) error { return nil }
+
+type captureProcessorLogger struct {
+	log zerolog.Logger
+}
+
+func newCaptureProcessorLogger(output *synchronizedBuffer) *captureProcessorLogger {
+	return &captureProcessorLogger{log: zerolog.New(output)}
+}
+
+func (l *captureProcessorLogger) Log() *zerolog.Event          { return l.log.Log() }
+func (l *captureProcessorLogger) Fatal() *zerolog.Event        { return l.log.Panic() }
+func (l *captureProcessorLogger) Err(err error) *zerolog.Event { return l.log.Err(err) }
+func (l *captureProcessorLogger) Error() *zerolog.Event        { return l.log.Error() }
+func (l *captureProcessorLogger) Warn() *zerolog.Event         { return l.log.Warn() }
+func (l *captureProcessorLogger) Info() *zerolog.Event         { return l.log.Info() }
+func (l *captureProcessorLogger) Trace() *zerolog.Event        { return l.log.Trace() }
+func (l *captureProcessorLogger) Debug() *zerolog.Event        { return l.log.Debug() }
+func (l *captureProcessorLogger) With() zerolog.Context        { return l.log.With() }
+func (l *captureProcessorLogger) SetLogLevel(string)           {}
 
 type mutableProcessorConfig struct {
 	mu     sync.RWMutex
@@ -64,6 +103,22 @@ type processorHTTPFixture struct {
 }
 
 func newProcessorHTTPFixture(t *testing.T, torrentEpisodes, clientEpisodes int, threshold float32) processorHTTPFixture {
+	return newProcessorHTTPFixtureWithLogger(
+		t,
+		torrentEpisodes,
+		clientEpisodes,
+		threshold,
+		logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}),
+	)
+}
+
+func newProcessorHTTPFixtureWithLogger(
+	t *testing.T,
+	torrentEpisodes int,
+	clientEpisodes int,
+	threshold float32,
+	log logger.Logger,
+) processorHTTPFixture {
 	t.Helper()
 	resetProcessorGlobals()
 
@@ -110,7 +165,7 @@ func newProcessorHTTPFixture(t *testing.T, torrentEpisodes, clientEpisodes int, 
 	clientMap.Store("default", cachedTorrentClient{config: cloneClientConfig(*clientCfg), client: mock})
 
 	server := NewServer(
-		logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}),
+		log,
 		cfg,
 		noopNotificationSender{},
 	)
@@ -123,6 +178,118 @@ func newProcessorHTTPFixture(t *testing.T, torrentEpisodes, clientEpisodes int, 
 		sourceDir:   sourceDir,
 		importDir:   importDir,
 	}
+}
+
+func TestExpectedPackRejectionIsNotLoggedAsError(t *testing.T) {
+	previousLevel := zerolog.GlobalLevel()
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
+
+	logs := &synchronizedBuffer{}
+	f := newProcessorHTTPFixtureWithLogger(t, 1, 0, 0, newCaptureProcessorLogger(logs))
+
+	res := f.postJSON(t, "/api/pack", f.packPayload())
+
+	require.Equal(t, domain.StatusNoMatches.Code(), res.Code)
+	require.JSONEq(t, `{"statusCode":200,"error":"no matching releases in client"}`, res.Body.String())
+	require.NotContains(t, logs.String(), `"level":"error"`)
+	require.Contains(t, logs.String(), `"level":"info"`)
+	require.Contains(t, logs.String(), `"message":"season pack rejected"`)
+}
+
+func TestExactPackMismatchIsNotLoggedAsError(t *testing.T) {
+	previousLevel := zerolog.GlobalLevel()
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
+
+	logs := &synchronizedBuffer{}
+	f := newProcessorHTTPFixtureWithLogger(t, 1, 1, 0, newCaptureProcessorLogger(logs))
+	f.mock.filesByHash["ep1"] = []torrentclient.File{{
+		Name: "Lifecycle.S01E01.1080p.WEB-DL.H.264-RlsGrp.mp4",
+		Size: 1,
+	}}
+
+	res := f.postJSON(t, "/api/pack", f.packPayload())
+
+	require.Equal(t, domain.StatusFailedMatchToTorrentEps.Code(), res.Code)
+	require.NotContains(t, logs.String(), `"level":"error"`)
+	require.Contains(t, logs.String(), `"outcome":"rejection"`)
+	require.Contains(t, logs.String(), `"status_code":445`)
+	require.Contains(t, logs.String(), `"message":"season pack rejected"`)
+}
+
+func TestCandidateFileLookupFailureUsesFailureOutcome(t *testing.T) {
+	previousLevel := zerolog.GlobalLevel()
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
+
+	logs := &synchronizedBuffer{}
+	f := newProcessorHTTPFixtureWithLogger(t, 1, 1, 0, newCaptureProcessorLogger(logs))
+	f.mock.filesErr = errors.New("client file lookup failed")
+
+	res := f.postJSON(t, "/api/pack", f.packPayload())
+
+	require.Equal(t, domain.StatusFailedMatchToTorrentEps.Code(), res.Code)
+	require.JSONEq(t, `{"statusCode":445,"error":"could not match episodes to files in pack"}`, res.Body.String())
+	require.Contains(t, logs.String(), `"level":"error"`)
+	require.Contains(t, logs.String(), `"outcome":"failure"`)
+	require.Contains(t, logs.String(), `"status_code":445`)
+	require.Contains(t, logs.String(), "client file lookup failed")
+}
+
+func TestExpectedParseRejectionIsNotLoggedAsError(t *testing.T) {
+	previousLevel := zerolog.GlobalLevel()
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
+
+	logs := &synchronizedBuffer{}
+	f := newProcessorHTTPFixtureWithLogger(t, 1, 0, 0, newCaptureProcessorLogger(logs))
+
+	res := f.postJSON(t, "/api/parse", f.packPayload())
+
+	require.Equal(t, domain.StatusNoMatches.Code(), res.Code)
+	require.NotContains(t, logs.String(), `"level":"error"`)
+	require.Contains(t, logs.String(), `"outcome":"rejection"`)
+	require.Contains(t, logs.String(), `"status_code":200`)
+	require.Contains(t, logs.String(), `"message":"season pack import rejected"`)
+}
+
+func TestProcessingFailureRemainsAnErrorLog(t *testing.T) {
+	previousLevel := zerolog.GlobalLevel()
+	zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
+
+	logs := &synchronizedBuffer{}
+	f := newProcessorHTTPFixtureWithLogger(t, 1, 1, 0, newCaptureProcessorLogger(logs))
+
+	res := f.postJSON(t, "/api/pack", map[string]any{
+		"name":       f.releaseName,
+		"clientname": "default",
+	})
+
+	require.Equal(t, domain.StatusTorrentBytesError.Code(), res.Code)
+	require.JSONEq(t, `{"statusCode":467,"error":"could not get torrent bytes"}`, res.Body.String())
+	require.Contains(t, logs.String(), `"level":"error"`)
+	require.Contains(t, logs.String(), `"outcome":"failure"`)
+	require.Contains(t, logs.String(), `"status_code":467`)
+	require.Contains(t, logs.String(), `"error":"could not get torrent bytes"`)
+	require.Contains(t, logs.String(), `"message":"error processing season pack"`)
+}
+
+func TestInvalidProcessingOutcomeFailsSafely(t *testing.T) {
+	logs := &synchronizedBuffer{}
+	p := newProcessor(newCaptureProcessorLogger(logs), staticConfig{}, nil)
+	response := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(response)
+
+	require.NotPanics(t, func() {
+		p.writeProcessingOutcome(c, domain.Outcome{}, packOperation)
+	})
+
+	require.Equal(t, stdhttp.StatusInternalServerError, response.Code)
+	require.JSONEq(t, `{"statusCode":500,"error":"internal processing error"}`, response.Body.String())
+	require.Contains(t, logs.String(), `"level":"error"`)
+	require.Contains(t, logs.String(), `"message":"processing returned an invalid outcome"`)
 }
 
 func (f processorHTTPFixture) postJSON(t *testing.T, path string, payload any) *httptest.ResponseRecorder {
@@ -160,12 +327,14 @@ func TestAuthenticatedHTTPLifecycleReusesAcceptedPlan(t *testing.T) {
 		"clientname": "default",
 	})
 	require.Equal(t, domain.StatusSuccessfulMatch.Code(), candidate.Code)
+	require.Equal(t, domain.StatusSuccessfulMatch.String(), candidate.Body.String())
 	require.Equal(t, 1, f.mock.torrentCalls)
 	require.Zero(t, f.mock.fileCalls)
 	require.Zero(t, f.mock.importCalls)
 
 	pack := f.postJSON(t, "/api/pack", f.packPayload())
 	require.Equal(t, domain.StatusSuccessfulMatch.Code(), pack.Code)
+	require.Equal(t, domain.StatusSuccessfulMatch.String(), pack.Body.String())
 	require.Equal(t, 1, f.mock.torrentCalls, "pack must reuse the candidate inventory")
 	require.Equal(t, 2, f.mock.fileCalls)
 	require.Zero(t, f.mock.importCalls)
@@ -173,6 +342,7 @@ func TestAuthenticatedHTTPLifecycleReusesAcceptedPlan(t *testing.T) {
 
 	parse := f.postJSON(t, "/api/parse", f.packPayload())
 	require.Equal(t, domain.StatusSuccessfulHardlink.Code(), parse.Code)
+	require.Equal(t, domain.StatusSuccessfulHardlink.String(), parse.Body.String())
 	require.Equal(t, 1, f.mock.torrentCalls, "parse must not reread the inventory on a plan hit")
 	require.Equal(t, 2, f.mock.fileCalls, "parse must not reread file details on a plan hit")
 	require.Equal(t, 1, f.mock.importCalls)
@@ -264,6 +434,7 @@ func TestHTTPFailureContractsDoNotMutateClientOrFilesystem(t *testing.T) {
 		payload["torrent"] = "%%%"
 		res := f.postJSON(t, "/api/pack", payload)
 		require.Equal(t, domain.StatusDecodeTorrentBytesError.Code(), res.Code)
+		require.JSONEq(t, `{"statusCode":466,"error":"could not decode torrent bytes"}`, res.Body.String())
 		require.Equal(t, 1, f.mock.torrentCalls)
 		require.Zero(t, f.mock.fileCalls)
 		require.Zero(t, f.mock.importCalls)
@@ -441,7 +612,12 @@ func TestParseMutationFailuresRemainSafeAndRetryable(t *testing.T) {
 	})
 
 	t.Run("smart mode retains safe links when achieved coverage is below threshold", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 3, 3, 0.75)
+		previousLevel := zerolog.GlobalLevel()
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+		t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
+
+		logs := &synchronizedBuffer{}
+		f := newProcessorHTTPFixtureWithLogger(t, 3, 3, 0.75, newCaptureProcessorLogger(logs))
 		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
 
 		targetDir := filepath.Join(f.importDir, f.releaseName)
@@ -454,6 +630,10 @@ func TestParseMutationFailuresRemainSafeAndRetryable(t *testing.T) {
 
 		res := f.postJSON(t, "/api/parse", f.packPayload())
 		require.Equal(t, domain.StatusBelowThreshold.Code(), res.Code)
+		require.JSONEq(t, `{"statusCode":230,"error":"number of matches below threshold"}`, res.Body.String())
+		require.Contains(t, logs.String(), `"outcome":"failure"`)
+		require.Contains(t, logs.String(), `"status_code":230`)
+		require.Contains(t, logs.String(), `"level":"error"`)
 		require.Zero(t, f.mock.importCalls)
 		existingSourceInfo, err := os.Stat(existingSource)
 		require.NoError(t, err)

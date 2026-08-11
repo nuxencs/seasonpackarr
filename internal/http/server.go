@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/config"
-	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
+	"github.com/nuxencs/seasonpackarr/internal/notification"
 	"github.com/nuxencs/seasonpackarr/pkg/errors"
 
 	"github.com/gin-contrib/requestid"
@@ -25,16 +25,16 @@ var ErrServerClosed = http.ErrServerClosed
 type Server struct {
 	log  logger.Logger
 	cfg  config.Provider
-	noti domain.Sender
+	noti notification.Sender
 
 	httpServer http.Server
 }
 
-func NewServer(log logger.Logger, config config.Provider, notification domain.Sender) *Server {
+func NewServer(log logger.Logger, config config.Provider, sender notification.Sender) *Server {
 	return &Server{
 		log:  log,
 		cfg:  config,
-		noti: notification,
+		noti: sender,
 	}
 }
 

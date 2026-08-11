@@ -5,107 +5,93 @@ package http
 
 import (
 	"encoding/json"
-	"net/http"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/notification"
 
 	"github.com/gin-gonic/gin"
 )
 
+var (
+	candidateOperation = processingOperation{
+		startMessage:     "starting season pack candidate check",
+		sendNotification: false,
+		successMessage:   "season pack candidate matched client releases",
+		rejectionMessage: "season pack candidate rejected",
+		failureMessage:   "error checking season pack candidate",
+	}
+	packOperation = processingOperation{
+		startMessage:       "starting to process season pack request",
+		notificationAction: "Pack",
+		sendNotification:   true,
+		successMessage:     "successfully matched season pack to episodes in client",
+		rejectionMessage:   "season pack rejected",
+		failureMessage:     "error processing season pack",
+	}
+	parseOperation = processingOperation{
+		startMessage:       "starting to parse season pack torrent",
+		notificationAction: "Parse",
+		sendNotification:   true,
+		successMessage:     "successfully parsed torrent, hardlinked episodes, and imported the season pack",
+		rejectionMessage:   "season pack import rejected",
+		failureMessage:     "error parsing torrent",
+	}
+	decodeOperation = processingOperation{
+		failureMessage: domain.StatusDecodingError.String(),
+	}
+)
+
 func (p *processor) CandidateSeasonPackHandler(c *gin.Context) {
-	p.log.Info().Msg("starting season pack candidate check")
-
-	if !p.decodeRequest(c) {
-		return
-	}
-
-	statusCode, err := p.candidateSeasonPack()
-	if err != nil {
-		if statusCode.Code() >= http.StatusBadRequest {
-			p.log.Error().Err(err).Msg("error checking season pack candidate")
-		} else {
-			p.log.Info().Err(err).Msg("season pack candidate rejected")
-		}
-		abortWithError(c, statusCode, err)
-		return
-	}
-
-	p.log.Info().Msg("season pack candidate matched client releases")
-	c.String(statusCode.Code(), statusCode.String())
+	p.handleProcessing(c, candidateOperation, p.candidateSeasonPack)
 }
 
 func (p *processor) ProcessSeasonPackHandler(c *gin.Context) {
-	p.log.Info().Msg("starting to process season pack request")
-
-	if !p.decodeRequest(c) {
-		return
-	}
-
-	statusCode, err := p.processSeasonPack()
-	if err != nil {
-		p.sendNotification(statusCode, "Pack", err)
-		p.log.Error().Err(err).Msg("error processing season pack")
-		abortWithError(c, statusCode, err)
-		return
-	}
-
-	p.sendNotification(statusCode, "Pack", nil)
-	p.log.Info().Msg("successfully matched season pack to episodes in client")
-	c.String(statusCode.Code(), statusCode.String())
+	p.handleProcessing(c, packOperation, p.processSeasonPack)
 }
 
 func (p *processor) ParseTorrentHandler(c *gin.Context) {
-	p.log.Info().Msg("starting to parse season pack torrent")
+	p.handleProcessing(c, parseOperation, p.parseTorrent)
+}
 
+func (p *processor) handleProcessing(c *gin.Context, operation processingOperation, process func() domain.Outcome) {
+	p.log.Info().Msg(operation.startMessage)
 	if !p.decodeRequest(c) {
 		return
 	}
 
-	statusCode, err := p.parseTorrent()
-	if err != nil {
-		p.sendNotification(statusCode, "Parse", err)
-		p.log.Error().Err(err).Msg("error parsing torrent")
-		abortWithError(c, statusCode, err)
-		return
-	}
-
-	p.sendNotification(statusCode, "Parse", nil)
-	p.log.Info().Msg("successfully parsed torrent, hardlinked episodes, and imported the season pack")
-	c.String(statusCode.Code(), statusCode.String())
+	p.writeProcessingOutcome(c, process(), operation)
 }
 
 func (p *processor) decodeRequest(c *gin.Context) bool {
 	if err := json.NewDecoder(c.Request.Body).Decode(&p.req); err != nil {
-		p.log.Error().Err(err).Msgf("%s", domain.StatusDecodingError)
-		abortWithError(c, domain.StatusDecodingError, err)
+		p.writeProcessingOutcome(c, domain.FailedBecause(domain.StatusDecodingError, err), decodeOperation)
 		return false
 	}
 	return true
 }
 
-func abortWithError(c *gin.Context, statusCode domain.StatusCode, err error) {
+func abortWithStatus(c *gin.Context, statusCode domain.StatusCode) {
 	c.AbortWithStatusJSON(statusCode.Code(), gin.H{
 		"statusCode": statusCode.Code(),
-		"error":      err.Error(),
+		"error":      statusCode.String(),
 	})
 }
 
-func (p *processor) sendNotification(statusCode domain.StatusCode, action string, err error) {
+func (p *processor) sendNotification(outcome domain.Outcome, action string) {
 	if p.noti == nil {
 		return
 	}
 
 	sender := p.noti
-	payload := domain.NotificationPayload{
+	payload := notification.Payload{
 		ReleaseName: p.req.Name,
 		Client:      p.req.ClientName,
 		Action:      action,
-		Error:       err,
 	}
 	log := p.log
 	go func() {
-		if sendErr := sender.Send(statusCode, payload); sendErr != nil {
-			log.Error().Err(sendErr).Msgf("error sending %s notification for %d", sender.Name(), statusCode)
+		if sendErr := sender.Send(outcome, payload); sendErr != nil {
+			log.Error().Err(sendErr).Msgf("error sending %s notification for %d", sender.Name(), outcome.StatusCode())
 		}
 	}()
 }

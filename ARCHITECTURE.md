@@ -9,7 +9,7 @@
 1. `main.go` calls Cobra commands in `cmd/`.
 2. `cmd/start.go` loads config, logger, and notifications, then starts the HTTP server.
 3. `internal/http/server.go` builds `/api/healthz`, `/api/candidate`, `/api/pack`, and `/api/parse`.
-4. `internal/http/processor_*.go` keeps each processing stage together. The handler file owns payload decode and responses. The candidate file owns announce-only matching and inventory caching. The plan file parses torrent bytes and builds an exact side-effect-free plan. The import file reuses or rebuilds that plan, resolves the client import destination, hardlinks matched files, and imports the pack. See [docs/design-docs/qbittorrent-import-flow.md](docs/design-docs/qbittorrent-import-flow.md).
+4. `internal/http/processor_*.go` keeps each processing stage together. Each stage returns the domain outcome from `internal/domain/outcome.go`. The handler file owns one operation table plus payload decode and dispatch. The outcome file validates and adapts the result into logs, notifications, and the stable HTTP response contract. The candidate file owns announce-only matching and inventory caching. The plan file parses torrent bytes and builds an exact side-effect-free plan. The import file reuses or rebuilds that plan, resolves the client import destination, hardlinks matched files, and imports the pack. See [docs/design-docs/qbittorrent-import-flow.md](docs/design-docs/qbittorrent-import-flow.md).
 5. `internal/release/` decides whether a client episode and announced season pack are compatible.
 6. `internal/files/` performs the hardlink operation.
 7. `internal/notification/` emits Discord notifications for notable events.
@@ -55,6 +55,18 @@
 - Cache entries validate client configuration, matching settings, release name, and torrent identity. `/api/parse` rebuilds safely on a cache miss.
 - A successful import invalidates the plan and the client inventory.
 
+### Processing Outcomes
+
+- `internal/domain/outcome.go` defines success, rejection, and failure as one
+  cross-package result.
+- A legacy webhook reason code preserves the existing numeric and text
+  contract. It does not define severity. The processing stage selects the
+  outcome kind from context.
+- `internal/http/processor_outcome.go` validates outcomes and is the HTTP and
+  logging adapter. Invalid outcomes fail safely with HTTP 500.
+- `internal/notification/discord.go` maps the same outcome kind to the existing
+  `MATCH`, `INFO`, and `ERROR` configuration levels.
+
 ### File Operations
 
 - Implemented in `internal/files/`
@@ -65,6 +77,8 @@
 
 - Implemented in `internal/notification/`
 - Current primary output: Discord webhook notifications
+- The package owns the sender interface and notification payload.
+- Notification filtering, color, and error detail use the processing outcome.
 
 ## Package Layering
 
@@ -75,7 +89,8 @@ Preferred dependency direction:
 3. leaf packages should stay narrow:
    - `internal/release/` should not know HTTP details
    - `internal/files/` should not know webhook payloads
-4. `internal/domain/` holds cross-package data shapes and status concepts
+4. `internal/domain/` holds cross-package data shapes, processing outcomes, and
+   legacy webhook reason concepts
 
 If a change starts pushing transport concerns into matching logic or file ops, stop and re-check the boundary.
 

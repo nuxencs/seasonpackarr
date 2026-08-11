@@ -5,10 +5,9 @@ package torrents
 
 import (
 	"encoding/base64"
+	"errors"
 	"strings"
 	"unicode"
-
-	"github.com/nuxencs/seasonpackarr/internal/domain"
 )
 
 func DecodeTorrentBytes(torrentBytes []byte) ([]byte, error) {
@@ -36,7 +35,7 @@ func DecodeTorrentBytes(torrentBytes []byte) ([]byte, error) {
 		}
 	}
 
-	return []byte{}, domain.StatusDecodeTorrentBytesError.Error()
+	return []byte{}, errors.New("torrent bytes are neither base64 nor a byte array")
 }
 
 func atoi(buf string) (ret int, valid bool, pos string) {

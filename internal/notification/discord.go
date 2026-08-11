@@ -56,7 +56,7 @@ type discordSender struct {
 	httpClient *http.Client
 }
 
-func NewDiscordSender(log logger.Logger, config config.Provider) domain.Sender {
+func NewDiscordSender(log logger.Logger, config config.Provider) Sender {
 	return &discordSender{
 		log: log.With().Str("sender", "discord").Logger(),
 		cfg: config,
@@ -70,31 +70,35 @@ func (s *discordSender) Name() string {
 	return "discord"
 }
 
-func (s *discordSender) Send(statusCode domain.StatusCode, payload domain.NotificationPayload) error {
+func (s *discordSender) Send(outcome domain.Outcome, payload Payload) error {
+	if err := outcome.Validate(); err != nil {
+		return fmt.Errorf("invalid processing outcome: %w", err)
+	}
+
 	notifications := s.cfg.Snapshot().Notifications
 	if !s.isEnabled(notifications) {
 		s.log.Debug().Msg("no webhook defined, skipping notification")
 		return nil
 	}
 
-	if !s.shouldSend(statusCode, notifications) {
+	if !s.shouldSend(outcome, notifications) {
 		s.log.Debug().Msg("no notification wanted for this status, skipping notification")
 		return nil
 	}
 
 	m := DiscordMessage{
 		Content: nil,
-		Embeds:  []DiscordEmbeds{s.buildEmbed(statusCode, payload)},
+		Embeds:  []DiscordEmbeds{s.buildEmbed(outcome, payload)},
 	}
 
 	jsonData, err := json.Marshal(m)
 	if err != nil {
-		return errors.Wrap(err, "could not marshal json request for status: %v payload: %v", statusCode, payload)
+		return errors.Wrap(err, "could not marshal json request for status: %v payload: %v", outcome.StatusCode(), payload)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, notifications.Discord, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return errors.Wrap(err, "could not create request for status: %v payload: %v", statusCode, payload)
+		return errors.Wrap(err, "could not create request for status: %v payload: %v", outcome.StatusCode(), payload)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -102,7 +106,7 @@ func (s *discordSender) Send(statusCode domain.StatusCode, payload domain.Notifi
 
 	res, err := s.httpClient.Do(req)
 	if err != nil {
-		return errors.Wrap(err, "client request error for status: %v payload: %v", statusCode, payload)
+		return errors.Wrap(err, "client request error for status: %v payload: %v", outcome.StatusCode(), payload)
 	}
 
 	defer res.Body.Close()
@@ -113,7 +117,7 @@ func (s *discordSender) Send(statusCode domain.StatusCode, payload domain.Notifi
 	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
 		body, err := io.ReadAll(bufio.NewReader(res.Body))
 		if err != nil {
-			return errors.Wrap(err, "could not read body for status: %v payload: %v", statusCode, payload)
+			return errors.Wrap(err, "could not read body for status: %v payload: %v", outcome.StatusCode(), payload)
 		}
 
 		return errors.New("unexpected status: %v body: %v", res.StatusCode, string(body))
@@ -128,36 +132,16 @@ func (s *discordSender) isEnabled(notifications domain.Notifications) bool {
 	return len(notifications.Discord) != 0
 }
 
-func (s *discordSender) shouldSend(statusCode domain.StatusCode, notifications domain.Notifications) bool {
+func (s *discordSender) shouldSend(outcome domain.Outcome, notifications domain.Notifications) bool {
 	if len(notifications.NotificationLevel) == 0 {
 		return false
 	}
 
-	statusCodes := make(map[domain.StatusCode]struct{})
-
-	for _, level := range notifications.NotificationLevel {
-		if codes, ok := domain.NotificationStatusMap[level]; ok {
-			for _, code := range codes {
-				statusCodes[code] = struct{}{}
-			}
-		}
-	}
-
-	_, shouldSend := statusCodes[statusCode]
-	return shouldSend
+	presentation := presentDiscordOutcome(outcome.Kind())
+	return presentation.level != "" && slices.Contains(notifications.NotificationLevel, presentation.level)
 }
 
-func (s *discordSender) buildEmbed(statusCode domain.StatusCode, payload domain.NotificationPayload) DiscordEmbeds {
-	var color EmbedColors
-
-	if slices.Contains(domain.NotificationStatusMap[domain.NotificationLevelInfo], statusCode) { // not matching
-		color = GRAY
-	} else if slices.Contains(domain.NotificationStatusMap[domain.NotificationLevelError], statusCode) { // error processing
-		color = RED
-	} else { // success
-		color = GREEN
-	}
-
+func (s *discordSender) buildEmbed(outcome domain.Outcome, payload Payload) DiscordEmbeds {
 	var fields []DiscordEmbedsFields
 
 	if payload.ReleaseName != "" {
@@ -187,24 +171,39 @@ func (s *discordSender) buildEmbed(statusCode domain.StatusCode, payload domain.
 		fields = append(fields, f)
 	}
 
-	if payload.Error != nil {
-		// actual error?
-		if slices.Contains(domain.NotificationStatusMap[domain.NotificationLevelError], statusCode) {
-			f := DiscordEmbedsFields{
-				Name:   "Error",
-				Value:  fmt.Sprintf("```%s```", payload.Error.Error()),
-				Inline: false,
-			}
-			fields = append(fields, f)
+	if outcome.Kind() == domain.OutcomeFailure && outcome.Cause() != nil {
+		f := DiscordEmbedsFields{
+			Name:   "Error",
+			Value:  fmt.Sprintf("```%s```", outcome.Cause().Error()),
+			Inline: false,
 		}
+		fields = append(fields, f)
 	}
 
 	embed := DiscordEmbeds{
-		Title:     BuildTitle(statusCode),
-		Color:     int(color),
+		Title:     BuildTitle(outcome.StatusCode()),
+		Color:     int(presentDiscordOutcome(outcome.Kind()).color),
 		Fields:    fields,
 		Timestamp: time.Now(),
 	}
 
 	return embed
+}
+
+type discordOutcomePresentation struct {
+	level string
+	color EmbedColors
+}
+
+func presentDiscordOutcome(kind domain.OutcomeKind) discordOutcomePresentation {
+	switch kind {
+	case domain.OutcomeSuccess:
+		return discordOutcomePresentation{level: LevelMatch, color: GREEN}
+	case domain.OutcomeRejection:
+		return discordOutcomePresentation{level: LevelInfo, color: GRAY}
+	case domain.OutcomeFailure:
+		return discordOutcomePresentation{level: LevelError, color: RED}
+	default:
+		return discordOutcomePresentation{color: RED}
+	}
 }

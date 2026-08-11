@@ -4,7 +4,6 @@
 package http
 
 import (
-	"fmt"
 	stdslices "slices"
 	"sync"
 	"time"
@@ -49,7 +48,7 @@ var (
 // candidateSeasonPack is the announce-only prefilter. It establishes that the
 // client contains at least one release-compatible episode without requesting
 // per-torrent file details or requiring the announced torrent bytes.
-func (p *processor) candidateSeasonPack() (domain.StatusCode, error) {
+func (p *processor) candidateSeasonPack() domain.Outcome {
 	clientName := p.getClientName()
 	snapshot := p.cfg.Snapshot()
 
@@ -59,34 +58,34 @@ func (p *processor) candidateSeasonPack() (domain.StatusCode, error) {
 
 	clientCfg, ok := snapshot.Clients[clientName]
 	if !ok {
-		return domain.StatusClientNotFound, domain.StatusClientNotFound.Error()
+		return domain.Failed(domain.StatusClientNotFound)
 	}
 
-	if _, statusCode, err := p.findCandidates(clientName, clientCfg, snapshot); err != nil {
-		return statusCode, err
+	if _, outcome := p.findCandidates(clientName, clientCfg, snapshot); outcome.Kind() != domain.OutcomeSuccess {
+		return outcome
 	}
 
-	return domain.StatusSuccessfulMatch, nil
+	return domain.Successful(domain.StatusSuccessfulMatch)
 }
 
-func (p *processor) findCandidates(clientName string, clientCfg *domain.Client, cfg domain.Config) ([]entry, domain.StatusCode, error) {
+func (p *processor) findCandidates(clientName string, clientCfg *domain.Client, cfg domain.Config) ([]entry, domain.Outcome) {
 	if len(p.req.Name) == 0 {
-		return nil, domain.StatusAnnounceNameError, domain.StatusAnnounceNameError.Error()
+		return nil, domain.Failed(domain.StatusAnnounceNameError)
 	}
 
 	if err := p.getClient(clientCfg, clientName); err != nil {
-		return nil, domain.StatusGetClientError, fmt.Errorf("%s: %w", domain.StatusGetClientError, err)
+		return nil, domain.FailedBecause(domain.StatusGetClientError, err)
 	}
 
 	entries, err := p.getAllTorrents(clientName, clientCfg, cfg.FuzzyMatching)
 	if err != nil {
-		return nil, domain.StatusGetTorrentsError, fmt.Errorf("%s: %w", domain.StatusGetTorrentsError, err)
+		return nil, domain.FailedBecause(domain.StatusGetTorrentsError, err)
 	}
 
 	requestRls := rls.ParseString(p.req.Name)
 	filteredEntries, ok := entries[format.ComparableTitle(requestRls, cfg.FuzzyMatching)]
 	if !ok {
-		return nil, domain.StatusNoMatches, domain.StatusNoMatches.Error()
+		return nil, domain.Rejected(domain.StatusNoMatches)
 	}
 
 	candidates := make([]entry, 0, len(filteredEntries))
@@ -94,7 +93,7 @@ func (p *processor) findCandidates(clientName string, clientCfg *domain.Client, 
 		compareInfo := release.CheckCandidates(requestRls, filteredEntry.release, cfg.FuzzyMatching)
 		switch compareInfo.StatusCode {
 		case domain.StatusAlreadyInClient, domain.StatusNotASeasonPack:
-			return nil, compareInfo.StatusCode, compareInfo.StatusCode.Error()
+			return nil, domain.Rejected(compareInfo.StatusCode)
 		case domain.StatusSuccessfulMatch:
 			candidates = append(candidates, filteredEntry)
 		default:
@@ -105,10 +104,10 @@ func (p *processor) findCandidates(clientName string, clientCfg *domain.Client, 
 	}
 
 	if len(candidates) == 0 {
-		return nil, domain.StatusNoMatches, domain.StatusNoMatches.Error()
+		return nil, domain.Rejected(domain.StatusNoMatches)
 	}
 
-	return candidates, domain.StatusSuccessfulMatch, nil
+	return candidates, domain.Successful(domain.StatusSuccessfulMatch)
 }
 
 func (p *processor) getClient(client *domain.Client, clientName string) error {

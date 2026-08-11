@@ -5,8 +5,8 @@ package http
 
 import (
 	"github.com/nuxencs/seasonpackarr/internal/config"
-	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
+	"github.com/nuxencs/seasonpackarr/internal/notification"
 
 	"github.com/gin-gonic/gin"
 )
@@ -14,14 +14,14 @@ import (
 type webhookHandler struct {
 	log  logger.Logger
 	cfg  config.Provider
-	noti domain.Sender
+	noti notification.Sender
 }
 
-func newWebhookHandler(log logger.Logger, cfg config.Provider, notification domain.Sender) *webhookHandler {
+func newWebhookHandler(log logger.Logger, cfg config.Provider, sender notification.Sender) *webhookHandler {
 	return &webhookHandler{
 		log:  log,
 		cfg:  cfg,
-		noti: notification,
+		noti: sender,
 	}
 }
 

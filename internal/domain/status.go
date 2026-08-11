@@ -3,8 +3,8 @@
 
 package domain
 
-import "fmt"
-
+// StatusCode is the legacy webhook reason code. Its numeric value is also used
+// as the HTTP status for compatibility. It must not determine outcome severity.
 type StatusCode int
 
 const (
@@ -119,47 +119,4 @@ func (s StatusCode) String() string {
 
 func (s StatusCode) Code() int {
 	return int(s)
-}
-
-func (s StatusCode) Error() error {
-	return fmt.Errorf("%s", s)
-}
-
-var NotificationStatusMap = map[string][]StatusCode{
-	NotificationLevelMatch: {
-		StatusSuccessfulMatch,
-	},
-	NotificationLevelInfo: {
-		StatusNoMatches,
-		StatusResolutionMismatch,
-		StatusSourceMismatch,
-		StatusRlsGrpMismatch,
-		StatusCutMismatch,
-		StatusEditionMismatch,
-		StatusRepackStatusMismatch,
-		StatusHdrMismatch,
-		StatusStreamingServiceMismatch,
-		StatusContainerMismatch,
-		StatusAlreadyInClient,
-		StatusNotASeasonPack,
-		StatusBelowThreshold,
-	},
-	NotificationLevelError: {
-		StatusFailedHardlink,
-		StatusFailedMatchToTorrentEps,
-		StatusClientNotFound,
-		StatusGetClientError,
-		StatusDecodingError,
-		StatusAnnounceNameError,
-		StatusGetTorrentsError,
-		StatusTorrentBytesError,
-		StatusDecodeTorrentBytesError,
-		StatusParseTorrentInfoError,
-		StatusGetEpisodesError,
-		StatusAddTorrentError,
-		StatusFindTorrentError,
-		StatusRecheckTorrentError,
-		StatusResumeTorrentError,
-		StatusImportConfigError,
-	},
 }

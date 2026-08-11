@@ -24,11 +24,14 @@ Reliable does not mean perfect acceptance. It means predictable outcomes when de
 - distinct torrent-target accounting that caps smart-mode coverage at 100 percent
 - hardlink creation isolated from matching logic
 - authenticated HTTP component coverage across candidate, pack, parse, cache invalidation, and filesystem failure paths
+- one authoritative success, rejection, and failure outcome for HTTP, logs, and notifications
+- adapter validation that turns invalid outcomes into a safe HTTP 500 without notification
+- canonical HTTP error text with operational causes confined to logs and failure notifications
+- captured-log regression tests for rejection and failure severity
 
 ## Known Reliability Gaps
 
 - no live autobrr-to-real-client end-to-end harness
-- expected filter rejections and operational errors do not have separate outcome classes
 - torrent-derived target paths do not enforce containment beneath the import root
 - no automated stale-doc detection for operational procedures
 

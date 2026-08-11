@@ -15,6 +15,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestDecodeTorrentBytesReturnsTorrentNativeError(t *testing.T) {
+	_, err := DecodeTorrentBytes([]byte("%%%"))
+
+	require.EqualError(t, err, "torrent bytes are neither base64 nor a byte array")
+}
+
 func TestInfoHashesUsesV2IdentityForPureV2Torrent(t *testing.T) {
 	infoBytes, err := bencode.Marshal(metainfo.Info{
 		Name:        "PureV2.S01",
