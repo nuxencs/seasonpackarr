@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -226,7 +227,10 @@ func TestAuthenticatedCandidateLogsStructuredCompatibilityMismatch(t *testing.T)
 
 	var output bytes.Buffer
 	f := newProcessorHTTPFixtureWithLogger(t, 2, 2, 0.5, newCapturedLogger(&output))
-	f.mock.torrents[0].Name = "Lifecycle.S01E01.720p.WEB-DL.H.264-RlsGrp"
+	f.mock.torrents[0].Name = "Lifecycle.S01E01.1080p.BluRay.H.264-RlsGrp"
+	cfg := f.config.Snapshot()
+	cfg.FuzzyMatching.SimplifyWebCompare = true
+	f.config.Store(cfg)
 
 	response := f.postJSON(t, "/api/candidate", map[string]any{
 		"name":       f.releaseName,
@@ -237,10 +241,10 @@ func TestAuthenticatedCandidateLogsStructuredCompatibilityMismatch(t *testing.T)
 	logs := decodeCapturedLogs(t, &output)
 	mismatch := requireCapturedLog(t, logs, "client release is not compatible")
 	require.Equal(t, "compatibility_mismatch", mismatch["reason"])
-	require.Equal(t, "resolution", mismatch["field"])
-	require.Equal(t, "1080p", mismatch["want"])
-	require.Equal(t, "720p", mismatch["got"])
-	require.Equal(t, "Lifecycle.S01E01.720p.WEB-DL.H.264-RlsGrp", mismatch["client_release"])
+	require.Equal(t, "source", mismatch["field"])
+	require.Equal(t, "WEB-DL", mismatch["want"])
+	require.Equal(t, "BluRay", mismatch["got"])
+	require.Equal(t, "Lifecycle.S01E01.1080p.BluRay.H.264-RlsGrp", mismatch["client_release"])
 }
 
 func TestAuthenticatedPackLogsUnmatchedTorrentEpisode(t *testing.T) {
@@ -287,6 +291,26 @@ func TestAuthenticatedPackLogsReasonWhenNoEpisodeIsReusable(t *testing.T) {
 		"want":  float64(1),
 		"got":   float64(2),
 	}}, unmatched["mismatches"])
+	rejection := requireCapturedLog(t, logs, "season pack rejected")
+	require.Equal(t, "info", rejection["level"])
+	require.Equal(t, "could not match episodes to files in pack", rejection["error"])
+}
+
+func TestAuthenticatedPackLogsBelowThresholdAsExpectedRejection(t *testing.T) {
+	previousLevel := zerolog.GlobalLevel()
+	zerolog.SetGlobalLevel(zerolog.TraceLevel)
+	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
+
+	var output bytes.Buffer
+	f := newProcessorHTTPFixtureWithLogger(t, 2, 1, 0.75, newCapturedLogger(&output))
+
+	response := f.postJSON(t, "/api/pack", f.packPayload())
+	require.Equal(t, domain.StatusBelowThreshold.Code(), response.Code)
+
+	logs := decodeCapturedLogs(t, &output)
+	rejection := requireCapturedLog(t, logs, "season pack rejected")
+	require.Equal(t, "info", rejection["level"])
+	require.Equal(t, "number of matches below threshold", rejection["error"])
 }
 
 func TestAuthenticatedParseLogsClientImportStageTiming(t *testing.T) {
@@ -316,9 +340,18 @@ func TestAuthenticatedParseLogsClientImportStageTiming(t *testing.T) {
 	require.Equal(t, "cache", plan["plan_source"])
 	require.Contains(t, plan, "duration_ms")
 
+	destination := requireCapturedLog(t, logs, "import destination resolved")
+	require.Equal(t, "info", destination["level"])
+	require.Equal(t, true, destination["successful"])
+	require.Contains(t, destination, "duration_ms")
+
 	hardlinks := requireCapturedLog(t, logs, "hardlink stage completed")
 	require.Equal(t, float64(2), hardlinks["linked_episodes"])
 	require.Contains(t, hardlinks, "duration_ms")
+	for _, event := range logs {
+		message, _ := event["message"].(string)
+		require.False(t, strings.HasPrefix(message, "hardlinked "), "legacy hardlink summary must be absent")
+	}
 
 	recheck := requireCapturedLogField(t, logs, "torrent client import stage finished", "stage", "recheck")
 	require.Equal(t, float64(35_000), recheck["duration_ms"])
@@ -355,6 +388,33 @@ func TestAuthenticatedParseLogsTotalTimingOnImportFailure(t *testing.T) {
 	require.Equal(t, false, completed["successful"])
 	require.Equal(t, float64(domain.StatusAddTorrentError), completed["status_code"])
 	require.Contains(t, completed, "total_duration_ms")
+}
+
+func TestAuthenticatedParseLogsFailedDestinationResolutionTiming(t *testing.T) {
+	previousLevel := zerolog.GlobalLevel()
+	zerolog.SetGlobalLevel(zerolog.TraceLevel)
+	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
+
+	var output bytes.Buffer
+	f := newProcessorHTTPFixtureWithLogger(t, 1, 1, 0, newCapturedLogger(&output))
+
+	pack := f.postJSON(t, "/api/pack", f.packPayload())
+	require.Equal(t, domain.StatusSuccessfulMatch.Code(), pack.Code)
+	f.mock.importRootErr = &torrentclient.ImportError{
+		Stage: torrentclient.ImportStageConfig,
+		Err:   errors.New("destination unavailable"),
+	}
+	output.Reset()
+
+	parse := f.postJSON(t, "/api/parse", f.packPayload())
+	require.Equal(t, domain.StatusImportConfigError.Code(), parse.Code)
+
+	logs := decodeCapturedLogs(t, &output)
+	destination := requireCapturedLog(t, logs, "import destination resolved")
+	require.Equal(t, "info", destination["level"])
+	require.Equal(t, false, destination["successful"])
+	require.Contains(t, destination, "duration_ms")
+	require.Equal(t, "destination unavailable", destination["error"])
 }
 
 func TestAuthenticatedParseLogsFailedPlanRebuildTiming(t *testing.T) {

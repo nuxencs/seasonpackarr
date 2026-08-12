@@ -5,6 +5,7 @@ package release
 
 import (
 	"path/filepath"
+	stdslices "slices"
 	"strings"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
@@ -32,6 +33,8 @@ func compare(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatchi
 		}
 	}
 
+	requestSource := requestRls.Source
+	clientSource := clientRls.Source
 	// normalize WEB-DL down to plain WEB when simplifyWebCompare is enabled
 	if fuzzyMatching.SimplifyWebCompare {
 		requestRls.Source = simplifyWEB(requestRls.Source)
@@ -41,8 +44,8 @@ func compare(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatchi
 	if requestRls.Source != clientRls.Source {
 		return domain.CompareInfo{
 			StatusCode:   domain.StatusSourceMismatch,
-			RejectValueA: requestRls.Source,
-			RejectValueB: clientRls.Source,
+			RejectValueA: requestSource,
+			RejectValueB: clientSource,
 		}
 	}
 
@@ -81,17 +84,19 @@ func compare(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatchi
 		}
 	}
 
+	requestHDR := stdslices.Clone(requestRls.HDR)
+	clientHDR := stdslices.Clone(clientRls.HDR)
 	// normalize any HDR format down to plain HDR when simplifyHdrCompare is enabled
 	if fuzzyMatching.SimplifyHdrCompare {
-		requestRls.HDR = slices.SimplifyHDR(requestRls.HDR)
-		clientRls.HDR = slices.SimplifyHDR(clientRls.HDR)
+		requestRls.HDR = slices.SimplifyHDR(stdslices.Clone(requestHDR))
+		clientRls.HDR = slices.SimplifyHDR(stdslices.Clone(clientHDR))
 	}
 
 	if !slices.EqualElements(requestRls.HDR, clientRls.HDR) {
 		return domain.CompareInfo{
 			StatusCode:   domain.StatusHdrMismatch,
-			RejectValueA: requestRls.HDR,
-			RejectValueB: clientRls.HDR,
+			RejectValueA: requestHDR,
+			RejectValueB: clientHDR,
 		}
 	}
 

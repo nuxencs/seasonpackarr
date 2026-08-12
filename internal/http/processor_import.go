@@ -87,14 +87,17 @@ func (p *processor) parseTorrent() (statusCode domain.StatusCode, err error) {
 
 	destinationStarted := time.Now()
 	importDestination, err := p.req.Client.ImportDestination()
+	destinationEvent := p.log.Info().
+		Bool("successful", err == nil).
+		Int64("duration_ms", time.Since(destinationStarted).Milliseconds())
 	if err != nil {
+		destinationEvent.Err(err).Msg("import destination resolved")
 		statusCode := torrentclient.ImportStatusCode(err)
 		return statusCode, fmt.Errorf("%s: %w", statusCode, err)
 	}
 	importRoot := importDestination.SavePath()
-	p.log.Debug().
+	destinationEvent.
 		Str("import_root", importRoot).
-		Int64("duration_ms", time.Since(destinationStarted).Milliseconds()).
 		Msg("import destination resolved")
 
 	hardlinkStarted := time.Now()
@@ -109,7 +112,6 @@ func (p *processor) parseTorrent() (statusCode domain.StatusCode, err error) {
 		linkedCount++
 	}
 
-	p.log.Info().Msgf("hardlinked %d/%d episodes from pack", linkedCount, plan.totalEps)
 	p.log.Info().
 		Int("linked_episodes", linkedCount).
 		Int("planned_links", len(plan.links)).
