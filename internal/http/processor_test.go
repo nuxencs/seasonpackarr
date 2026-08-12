@@ -46,6 +46,7 @@ type mockTorrentClient struct {
 	importRootErr error
 	flatImport    bool
 	importErr     error
+	importReport  torrentclient.ImportReport
 	importCalled  bool
 	importCalls   int
 	importReq     torrentclient.ImportRequest
@@ -118,6 +119,24 @@ func TestCandidateSeasonPackUsesTorrentSummariesOnly(t *testing.T) {
 	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
 	require.Equal(t, 1, mock.torrentCalls)
 	require.Zero(t, mock.fileCalls, "candidate evaluation must not request torrent file details")
+}
+
+func TestCandidateMismatchField(t *testing.T) {
+	t.Parallel()
+
+	testCases := map[domain.StatusCode]string{
+		domain.StatusResolutionMismatch:       "resolution",
+		domain.StatusSourceMismatch:           "source",
+		domain.StatusRlsGrpMismatch:           "release_group",
+		domain.StatusCutMismatch:              "cut",
+		domain.StatusEditionMismatch:          "edition",
+		domain.StatusRepackStatusMismatch:     "repack_status",
+		domain.StatusHdrMismatch:              "hdr",
+		domain.StatusStreamingServiceMismatch: "streaming_service",
+	}
+	for statusCode, want := range testCases {
+		require.Equal(t, want, candidateMismatchField(statusCode))
+	}
 }
 
 func TestCandidateEndpointReturnsSuccessfulMatchWithoutFileReads(t *testing.T) {
@@ -369,11 +388,11 @@ func (m *mockTorrentClient) ImportDestination() (torrentclient.ImportDestination
 	return torrentclient.NewRootedImportDestination(m.importRoot), nil
 }
 
-func (m *mockTorrentClient) Import(req torrentclient.ImportRequest) error {
+func (m *mockTorrentClient) Import(req torrentclient.ImportRequest) (torrentclient.ImportReport, error) {
 	m.importCalled = true
 	m.importCalls++
 	m.importReq = req
-	return m.importErr
+	return m.importReport, m.importErr
 }
 
 func newTestProcessor(client torrentclient.TorrentClient) *processor {

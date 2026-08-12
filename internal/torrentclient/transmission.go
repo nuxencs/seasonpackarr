@@ -172,10 +172,14 @@ func (t *transmissionClient) ImportDestination() (ImportDestination, error) {
 //
 // Transmission has no skip-hash-check equivalent (verified against 4.0.6 and
 // 4.1.3), so the import always verifies. Only the genuinely missing pieces are
-// downloaded once started.
-func (t *transmissionClient) Import(req ImportRequest) error {
+// downloaded once started. The returned report identifies how long each client
+// operation took.
+func (t *transmissionClient) Import(req ImportRequest) (ImportReport, error) {
+	var report ImportReport
+	started := time.Now()
 	if strings.TrimSpace(req.LegacyHash) == "" {
-		return importErr(ImportStageConfig, errors.New("resolved transmission info hash is empty"))
+		report.record(ImportStageConfig, started)
+		return report, importErr(ImportStageConfig, errors.New("resolved transmission info hash is empty"))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), t.verifyTimeout)
@@ -193,25 +197,36 @@ func (t *transmissionClient) Import(req ImportRequest) error {
 	if labels := trimStrings(t.policy.Tags); len(labels) > 0 {
 		payload.Labels = labels
 	}
+	report.record(ImportStageConfig, started)
 
+	started = time.Now()
 	if _, err := t.c.TorrentAdd(ctx, payload); err != nil {
-		return importErr(ImportStageAdd, errors.Wrap(err, "failed to add torrent to transmission"))
+		report.record(ImportStageAdd, started)
+		return report, importErr(ImportStageAdd, errors.Wrap(err, "failed to add torrent to transmission"))
 	}
+	report.record(ImportStageAdd, started)
 
+	started = time.Now()
 	if err := t.c.TorrentVerifyHashes(ctx, []string{req.LegacyHash}); err != nil {
-		return importErr(ImportStageRecheck, errors.Wrap(err, "failed to verify torrent"))
+		report.record(ImportStageRecheck, started)
+		return report, importErr(ImportStageRecheck, errors.Wrap(err, "failed to verify torrent"))
 	}
 
 	if err := t.waitForVerify(ctx, req.LegacyHash); err != nil {
-		return importErr(ImportStageRecheck, err)
+		report.record(ImportStageRecheck, started)
+		return report, importErr(ImportStageRecheck, err)
 	}
+	report.record(ImportStageRecheck, started)
 
 	// a correctly imported torrent always starts once verification has settled
+	started = time.Now()
 	if err := t.c.TorrentStartHashes(ctx, []string{req.LegacyHash}); err != nil {
-		return importErr(ImportStageResume, errors.Wrap(err, "failed to start torrent"))
+		report.record(ImportStageResume, started)
+		return report, importErr(ImportStageResume, errors.Wrap(err, "failed to start torrent"))
 	}
+	report.record(ImportStageResume, started)
 
-	return nil
+	return report, nil
 }
 
 // waitForVerify polls until the torrent leaves the checking states. Because the
