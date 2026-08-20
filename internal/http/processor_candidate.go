@@ -62,8 +62,14 @@ func (p *processor) candidateSeasonPack() (domain.StatusCode, error) {
 		return domain.StatusClientNotFound, domain.StatusClientNotFound.Error()
 	}
 
-	if _, statusCode, err := p.findCandidates(clientName, clientCfg, snapshot); err != nil {
+	candidates, statusCode, err := p.findCandidates(clientName, clientCfg, snapshot)
+	if err != nil {
 		return statusCode, err
+	}
+	for _, candidate := range candidates {
+		p.log.Debug().
+			Str("client_release", candidate.torrent.Name).
+			Msg("client release passed candidate gate")
 	}
 
 	return domain.StatusSuccessfulMatch, nil
