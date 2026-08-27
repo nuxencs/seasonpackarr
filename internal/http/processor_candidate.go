@@ -22,12 +22,17 @@ import (
 
 type entry struct {
 	torrent torrentclient.Torrent
-	release rls.Release
+	release *rls.Release
+}
+
+type cachedRelease struct {
+	release         *rls.Release
+	comparableTitle string
 }
 
 type entryCache struct {
 	entriesMap    map[string][]entry
-	rlsMap        map[string]rls.Release
+	rlsMap        map[string]cachedRelease
 	clientConfig  domain.Client
 	fuzzyMatching domain.FuzzyMatching
 	expiresAt     time.Time
@@ -97,7 +102,7 @@ func (p *processor) findCandidates(clientName string, clientCfg *domain.Client, 
 
 	candidates := make([]entry, 0, len(filteredEntries))
 	for _, filteredEntry := range filteredEntries {
-		compareInfo := release.CheckCandidates(requestRls, filteredEntry.release, cfg.FuzzyMatching)
+		compareInfo := release.CheckCandidates(requestRls, *filteredEntry.release, cfg.FuzzyMatching)
 		switch compareInfo.StatusCode {
 		case domain.StatusAlreadyInClient, domain.StatusNotASeasonPack:
 			return nil, compareInfo.StatusCode, compareInfo.StatusCode.Error()
@@ -194,7 +199,7 @@ func (p *processor) getAllTorrents(clientName string, clientConfig *domain.Clien
 			return current, false
 		}
 		return &entryCache{
-			rlsMap:        make(map[string]rls.Release),
+			rlsMap:        make(map[string]cachedRelease),
 			clientConfig:  cloneClientConfig(*clientConfig),
 			fuzzyMatching: fuzzyMatching,
 		}, false
@@ -222,21 +227,27 @@ func (p *processor) getAllTorrents(clientName string, clientConfig *domain.Clien
 
 	refreshed := &entryCache{
 		entriesMap:    make(map[string][]entry),
-		rlsMap:        make(map[string]rls.Release, len(ts)),
+		rlsMap:        make(map[string]cachedRelease, len(ts)),
 		clientConfig:  cloneClientConfig(*clientConfig),
 		fuzzyMatching: fuzzyMatching,
 		expiresAt:     time.Now().Add(inventoryCacheTTL),
 	}
 
 	for _, t := range ts {
-		r, ok := entries.rlsMap[t.Name]
+		cached, ok := entries.rlsMap[t.Name]
 		if !ok {
-			r = rls.ParseString(t.Name)
+			parsed := rls.ParseString(t.Name)
+			cached = cachedRelease{
+				release:         &parsed,
+				comparableTitle: format.ComparableTitle(parsed, fuzzyMatching),
+			}
 		}
-		refreshed.rlsMap[t.Name] = r
+		refreshed.rlsMap[t.Name] = cached
 
-		comparableTitle := format.ComparableTitle(r, fuzzyMatching)
-		refreshed.entriesMap[comparableTitle] = append(refreshed.entriesMap[comparableTitle], entry{torrent: t, release: r})
+		refreshed.entriesMap[cached.comparableTitle] = append(
+			refreshed.entriesMap[cached.comparableTitle],
+			entry{torrent: t, release: cached.release},
+		)
 	}
 
 	entryMap.Compute(clientName, func(current *entryCache, loaded bool) (*entryCache, bool) {
