@@ -25,7 +25,7 @@ func importStageNames(report ImportReport) []ImportStage {
 	return stages
 }
 
-func TestImportErrTracesOperationalFailuresOnly(t *testing.T) {
+func TestImportErr_TracesOperationalFailuresOnly(t *testing.T) {
 	sentinel := errors.New("client failed")
 	operationalErr := importErr(ImportStageAdd, sentinel)
 
@@ -117,7 +117,7 @@ func TestBuildTransmissionURL(t *testing.T) {
 	}
 }
 
-func TestNew_unknownType(t *testing.T) {
+func TestNew_RejectsUnknownClientType(t *testing.T) {
 	t.Parallel()
 
 	_, err := New(t.Context(), &domain.Client{Type: "notarealclient"})

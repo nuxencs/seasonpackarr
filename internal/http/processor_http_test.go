@@ -223,7 +223,7 @@ func (f processorHTTPFixture) packPayload() map[string]any {
 	}
 }
 
-func TestAuthenticatedCandidateLogsStructuredCompatibilityMismatch(t *testing.T) {
+func TestAuthenticatedCandidate_LogsStructuredCompatibilityMismatch(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -250,7 +250,7 @@ func TestAuthenticatedCandidateLogsStructuredCompatibilityMismatch(t *testing.T)
 	require.Equal(t, "Lifecycle.S01E01.1080p.BluRay.H.264-RlsGrp", mismatch["client_release"])
 }
 
-func TestAuthenticatedCandidateLogsEachMatchingClientReleaseAtDebug(t *testing.T) {
+func TestAuthenticatedCandidate_LogsEachMatchingClientReleaseAtDebug(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -272,7 +272,7 @@ func TestAuthenticatedCandidateLogsEachMatchingClientReleaseAtDebug(t *testing.T
 	}
 }
 
-func TestAuthenticatedPackLogsUnmatchedTorrentEpisode(t *testing.T) {
+func TestAuthenticatedPack_LogsUnmatchedTorrentEpisode(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -296,7 +296,7 @@ func TestAuthenticatedPackLogsUnmatchedTorrentEpisode(t *testing.T) {
 	require.Equal(t, float64(50), summary["threshold_percent"])
 }
 
-func TestAuthenticatedPackLogsReasonWhenNoEpisodeIsReusable(t *testing.T) {
+func TestAuthenticatedPack_LogsReasonWhenNoEpisodeIsReusable(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -321,7 +321,7 @@ func TestAuthenticatedPackLogsReasonWhenNoEpisodeIsReusable(t *testing.T) {
 	require.Equal(t, "could not match episodes to files in pack", rejection["error"])
 }
 
-func TestAuthenticatedPackLogsBelowThresholdAsExpectedRejection(t *testing.T) {
+func TestAuthenticatedPack_LogsBelowThresholdAsExpectedRejection(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -338,7 +338,7 @@ func TestAuthenticatedPackLogsBelowThresholdAsExpectedRejection(t *testing.T) {
 	require.Equal(t, "number of matches below threshold", rejection["error"])
 }
 
-func TestAuthenticatedParseLogsClientImportStageTiming(t *testing.T) {
+func TestAuthenticatedParse_LogsClientImportStageTiming(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -385,7 +385,7 @@ func TestAuthenticatedParseLogsClientImportStageTiming(t *testing.T) {
 	require.Contains(t, completed, "total_duration_ms")
 }
 
-func TestAuthenticatedParseLogsTotalTimingOnImportFailure(t *testing.T) {
+func TestAuthenticatedParse_LogsTotalTimingOnImportFailure(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -415,7 +415,7 @@ func TestAuthenticatedParseLogsTotalTimingOnImportFailure(t *testing.T) {
 	require.Contains(t, completed, "total_duration_ms")
 }
 
-func TestAuthenticatedParseLogsFailedDestinationResolutionTiming(t *testing.T) {
+func TestAuthenticatedParse_LogsFailedDestinationResolutionTiming(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -442,7 +442,7 @@ func TestAuthenticatedParseLogsFailedDestinationResolutionTiming(t *testing.T) {
 	require.Equal(t, "destination unavailable", destination["error"])
 }
 
-func TestAuthenticatedParseLogsFailedPlanRebuildTiming(t *testing.T) {
+func TestAuthenticatedParse_LogsFailedPlanRebuildTiming(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -465,7 +465,7 @@ func TestAuthenticatedParseLogsFailedPlanRebuildTiming(t *testing.T) {
 	require.Contains(t, completed, "total_duration_ms")
 }
 
-func TestAuthenticatedHTTPLifecycleReusesAcceptedPlan(t *testing.T) {
+func TestAuthenticatedHTTPLifecycle_ReusesAcceptedPlan(t *testing.T) {
 	f := newProcessorHTTPFixture(t, 2, 2, 0.75)
 
 	candidate := f.postJSON(t, "/api/candidate", map[string]any{
@@ -495,7 +495,7 @@ func TestAuthenticatedHTTPLifecycleReusesAcceptedPlan(t *testing.T) {
 	}
 }
 
-func TestAuthenticatedParseRefreshesPlanWhenSourceMoves(t *testing.T) {
+func TestAuthenticatedParse_RefreshesPlanWhenSourceMoves(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -540,7 +540,7 @@ func TestAuthenticatedParseRefreshesPlanWhenSourceMoves(t *testing.T) {
 	require.Equal(t, float64(2), hardlinks["linked_episodes"])
 }
 
-func TestAuthenticatedParseRefreshesAtMostOnceWhenSourceMovesAgain(t *testing.T) {
+func TestAuthenticatedParse_RefreshesAtMostOnceWhenSourceMovesAgain(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -589,7 +589,7 @@ func TestAuthenticatedParseRefreshesAtMostOnceWhenSourceMovesAgain(t *testing.T)
 	require.Equal(t, 2, missingCount)
 }
 
-func TestAuthenticatedParseRejectsRefreshedPlanBelowThreshold(t *testing.T) {
+func TestAuthenticatedParse_RejectsRefreshedPlanBelowThreshold(t *testing.T) {
 	f := newProcessorHTTPFixture(t, 2, 2, 1)
 
 	pack := f.postJSON(t, "/api/pack", f.packPayload())
@@ -614,7 +614,7 @@ func TestAuthenticatedParseRejectsRefreshedPlanBelowThreshold(t *testing.T) {
 	))
 }
 
-func TestPackCoverageAcceptsMp4EpisodesAndIgnoresExtraVideos(t *testing.T) {
+func TestPackCoverage_AcceptsMP4EpisodesAndIgnoresExtraVideos(t *testing.T) {
 	f := newProcessorHTTPFixture(t, 1, 1, 1)
 	episodeRelease := "Lifecycle.S01E01.1080p.WEB-DL.H.264-RlsGrp"
 	episodeFile := episodeRelease + ".mp4"
@@ -647,7 +647,7 @@ func TestPackCoverageAcceptsMp4EpisodesAndIgnoresExtraVideos(t *testing.T) {
 	require.NoFileExists(t, filepath.Join(f.importDir, f.releaseName, "Extras", "Interview.1080p.WEB-DL.mp4"))
 }
 
-func TestHTTPFailureContractsDoNotMutateClientOrFilesystem(t *testing.T) {
+func TestHTTPFailureContracts_DoNotMutateClientOrFilesystem(t *testing.T) {
 	t.Run("authentication", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
 		res := f.postRaw(t, "/api/candidate", []byte(`{"name":"Lifecycle.S01.1080p.WEB-DL.H.264-RlsGrp"}`), "")
@@ -740,7 +740,7 @@ func TestHTTPFailureContractsDoNotMutateClientOrFilesystem(t *testing.T) {
 	})
 }
 
-func TestParseRebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
+func TestParse_RebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 	t.Run("missing after restart", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
 		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
@@ -835,7 +835,7 @@ func TestParseRebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 	})
 }
 
-func TestParseMutationFailuresRemainSafeAndRetryable(t *testing.T) {
+func TestParseMutationFailures_RemainSafeAndRetryable(t *testing.T) {
 	t.Run("import failure retains plan for retry", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
 		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)

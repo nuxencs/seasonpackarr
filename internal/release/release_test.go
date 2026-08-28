@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCheckCandidatesPreservesOriginalFuzzyMismatchValues(t *testing.T) {
+func TestCheckCandidates_PreservesOriginalFuzzyMismatchValues(t *testing.T) {
 	t.Parallel()
 
 	t.Run("source", func(t *testing.T) {
@@ -45,7 +45,7 @@ func TestCheckCandidatesPreservesOriginalFuzzyMismatchValues(t *testing.T) {
 	})
 }
 
-func TestCheckCandidatesStillAcceptsNormalizedFuzzyValues(t *testing.T) {
+func TestCheckCandidates_AcceptsNormalizedFuzzyValues(t *testing.T) {
 	t.Parallel()
 
 	t.Run("source", func(t *testing.T) {
@@ -73,7 +73,7 @@ func TestCheckCandidatesStillAcceptsNormalizedFuzzyValues(t *testing.T) {
 	})
 }
 
-func Test_MatchEpToSeasonPackEp(t *testing.T) {
+func TestMatchEpToSeasonPackEp(t *testing.T) {
 	type args struct {
 		clientEpPath  string
 		clientEpSize  int64
@@ -92,7 +92,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 		want compare
 	}{
 		{
-			name: "found_match",
+			name: "found match",
 			args: args{
 				clientEpPath:  "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
 				clientEpSize:  2316560346,
@@ -105,7 +105,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			},
 		},
 		{
-			name: "wrong_episode",
+			name: "wrong episode",
 			args: args{
 				clientEpPath:  "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
 				clientEpSize:  2316560346,
@@ -122,7 +122,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			},
 		},
 		{
-			name: "wrong_season",
+			name: "wrong season",
 			args: args{
 				clientEpPath:  "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
 				clientEpSize:  2316560346,
@@ -139,7 +139,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			},
 		},
 		{
-			name: "wrong_resolution",
+			name: "wrong resolution",
 			args: args{
 				clientEpPath:  "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
 				clientEpSize:  2316560346,
@@ -156,7 +156,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			},
 		},
 		{
-			name: "wrong_rlsgrp",
+			name: "wrong rlsgrp",
 			args: args{
 				clientEpPath:  "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
 				clientEpSize:  2316560346,
@@ -173,7 +173,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			},
 		},
 		{
-			name: "wrong_size",
+			name: "wrong size",
 			args: args{
 				clientEpPath:  "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
 				clientEpSize:  2316560346,
@@ -190,7 +190,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			},
 		},
 		{
-			name: "wrong_container",
+			name: "wrong container",
 			args: args{
 				clientEpPath:  "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
 				clientEpSize:  2316560346,
@@ -207,7 +207,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			},
 		},
 		{
-			name: "subfolder_in_client",
+			name: "subfolder in client",
 			args: args{
 				clientEpPath:  "Test/Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
 				clientEpSize:  2316560346,
@@ -220,7 +220,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			},
 		},
 		{
-			name: "subfolder_in_torrent",
+			name: "subfolder in torrent",
 			args: args{
 				clientEpPath:  "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
 				clientEpSize:  2316560346,
@@ -233,7 +233,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			},
 		},
 		{
-			name: "subfolder_in_both",
+			name: "subfolder in both",
 			args: args{
 				clientEpPath:  "Test/Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
 				clientEpSize:  2316560346,
@@ -246,7 +246,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			},
 		},
 		{
-			name: "multi_subfolder",
+			name: "multi subfolder",
 			args: args{
 				clientEpPath:  "/data/torrents/tv/Test/Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
 				clientEpSize:  2316560346,
@@ -274,7 +274,7 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 	}
 }
 
-func Test_IsValidEpisodeFile(t *testing.T) {
+func TestIsValidEpisodeFile(t *testing.T) {
 	type args struct {
 		torrentFileName string
 	}
@@ -284,56 +284,56 @@ func Test_IsValidEpisodeFile(t *testing.T) {
 		want bool
 	}{
 		{
-			name: "sample_with_dash",
+			name: "sample with dash",
 			args: args{
 				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp-sample.mkv",
 			},
 			want: false,
 		},
 		{
-			name: "sample_with_dot",
+			name: "sample with dot",
 			args: args{
 				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.sample.mkv",
 			},
 			want: false,
 		},
 		{
-			name: "wrong_ext",
+			name: "wrong ext",
 			args: args{
 				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.nfo",
 			},
 			want: false,
 		},
 		{
-			name: "wrong_ext_and_sample",
+			name: "wrong ext and sample",
 			args: args{
 				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.sample.nfo",
 			},
 			want: false,
 		},
 		{
-			name: "extra_video",
+			name: "extra video",
 			args: args{
 				torrentFileName: "Extras/Interview.1080p.WEB-DL.mkv",
 			},
 			want: false,
 		},
 		{
-			name: "special_episode",
+			name: "special episode",
 			args: args{
 				torrentFileName: "test.release.s00e01.dutch.1080p.web.h264-rlsgrp.mkv",
 			},
 			want: true,
 		},
 		{
-			name: "valid_release",
+			name: "valid release",
 			args: args{
 				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.mkv",
 			},
 			want: true,
 		},
 		{
-			name: "valid_mp4_release",
+			name: "valid mp4 release",
 			args: args{
 				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.MP4",
 			},
@@ -347,7 +347,7 @@ func Test_IsValidEpisodeFile(t *testing.T) {
 	}
 }
 
-func Test_SimplifyWEB(t *testing.T) {
+func TestSimplifyWEB(t *testing.T) {
 	type args struct {
 		source string
 	}

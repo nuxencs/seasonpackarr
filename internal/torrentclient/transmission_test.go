@@ -120,7 +120,7 @@ func assertStringSlice(t *testing.T, got any, want []string) {
 	}
 }
 
-func TestNewTransmissionClient_SessionHandshakeAndPing(t *testing.T) {
+func TestNewTransmissionClient_PerformsSessionHandshakeAndPing(t *testing.T) {
 	t.Parallel()
 	srv, captured := transmissionTestServer(t, map[string]string{"session-get": emptySessionResp})
 	newTransmissionClientFromServer(t, srv, "", "")
@@ -129,7 +129,7 @@ func TestNewTransmissionClient_SessionHandshakeAndPing(t *testing.T) {
 	lastRequest(t, captured, "session-get")
 }
 
-func TestNew_TransmissionType(t *testing.T) {
+func TestNew_CreatesTransmissionClient(t *testing.T) {
 	t.Parallel()
 	srv, _ := transmissionTestServer(t, map[string]string{"session-get": emptySessionResp})
 	c, err := New(t.Context(), &domain.Client{Type: "transmission", Host: srv.URL})
@@ -201,7 +201,7 @@ func TestTransmissionGetFiles(t *testing.T) {
 	assertStringSlice(t, req.Arguments["ids"], []string{"abc123", "def456"})
 }
 
-func TestTransmissionGetFiles_NotFound(t *testing.T) {
+func TestTransmissionGetFiles_ReportsMissingTorrent(t *testing.T) {
 	t.Parallel()
 	const resp = `{"torrents":[{"hashString":"abc123","files":[{"name":"Show.S01/E01.mkv","length":1}]}]}`
 	srv, _ := transmissionTestServer(t, map[string]string{
@@ -222,7 +222,7 @@ func TestTransmissionGetFiles_NotFound(t *testing.T) {
 	}
 }
 
-func TestTransmissionGetFilesExpandsWholeCallError(t *testing.T) {
+func TestTransmissionGetFiles_ExpandsWholeCallError(t *testing.T) {
 	t.Parallel()
 
 	errBoom := errors.New("boom")
@@ -239,7 +239,7 @@ func TestTransmissionGetFilesExpandsWholeCallError(t *testing.T) {
 	}
 }
 
-func TestTransmissionClient_BasicAuth(t *testing.T) {
+func TestTransmissionClient_UsesBasicAuth(t *testing.T) {
 	t.Parallel()
 	srv, captured := transmissionTestServer(t, map[string]string{"session-get": emptySessionResp})
 	newTransmissionClientFromServer(t, srv, "admin", "secret")
@@ -253,7 +253,7 @@ func TestTransmissionClient_BasicAuth(t *testing.T) {
 	}
 }
 
-func TestNewTransmissionClient_ConnectErrorFailsFast(t *testing.T) {
+func TestNewTransmissionClient_FailsFastOnConnectionError(t *testing.T) {
 	t.Parallel()
 	// Server completes the 409 handshake but then rejects auth, so the constructor
 	// ping must surface a connect error rather than returning a usable client.

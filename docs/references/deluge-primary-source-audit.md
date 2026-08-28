@@ -299,7 +299,7 @@ The inspected `go-deluge` GitHub workflow does not run its real-daemon integrati
 
 Source: [`.github/workflows/go.yml` lines 32-70](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/.github/workflows/go.yml#L32-L70). Local path: `/Users/nuxen/dev/oss/go-deluge/.github/workflows/go.yml:32`.
 
-Run each live-test matrix entry from the repository root after starting the
+Run each integration-test matrix entry from the repository root after starting the
 matching daemon and setting its connection environment:
 
 ```sh
@@ -309,7 +309,8 @@ SEASONPACKARR_TEST_DELUGE_PORT=58846 \
 SEASONPACKARR_TEST_DELUGE_USER=seasonpackarr \
 SEASONPACKARR_TEST_DELUGE_PASS=integration \
 SEASONPACKARR_TEST_IMPORT_DIR=/path/shared/with/deluge \
-go test -v -count=1 -run TestDelugeImportLive ./internal/torrentclient
+go test -tags=integration -v -count=1 \
+  -run '^TestDelugeImport_ImportsAgainstDaemon$' ./internal/torrentclient
 ```
 
 Repeat with `SEASONPACKARR_TEST_DELUGE_TYPE=deluge-v2` against a Deluge 2

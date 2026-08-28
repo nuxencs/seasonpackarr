@@ -18,7 +18,7 @@ func decodePayload(t *testing.T, reader io.Reader) map[string]any {
 	return payload
 }
 
-func TestCompileCandidateOmitsTorrentBytes(t *testing.T) {
+func TestCompileCandidate_OmitsTorrentBytes(t *testing.T) {
 	body, err := CompileCandidate("Series.S01.1080p.WEB-DL-GRP", "default")
 	require.NoError(t, err)
 
@@ -28,7 +28,7 @@ func TestCompileCandidateOmitsTorrentBytes(t *testing.T) {
 	require.NotContains(t, payload, "torrent")
 }
 
-func TestCompilePackIncludesTorrentBytes(t *testing.T) {
+func TestCompilePack_IncludesTorrentBytes(t *testing.T) {
 	body, err := CompilePack("Series.S01.1080p.WEB-DL-GRP", []byte("torrent-data"), "default")
 	require.NoError(t, err)
 

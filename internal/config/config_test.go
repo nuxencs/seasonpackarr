@@ -59,7 +59,7 @@ func (l *captureLogger) Debug() *zerolog.Event        { return l.log.Debug() }
 func (l *captureLogger) With() zerolog.Context        { return l.log.With() }
 func (l *captureLogger) SetLogLevel(string)           {}
 
-func TestMissingOptionalConfigKeysUseDefaults(t *testing.T) {
+func TestLoadSnapshot_MissingOptionalConfigKeysUseDefaults(t *testing.T) {
 	configFile := writeTestConfig(t, `
 host: "127.0.0.1"
 port: 42069
@@ -189,10 +189,10 @@ func TestValidateDeprecatedConfigInputs(t *testing.T) {
 	})
 }
 
-// TestLoadFromEnvParsesMultiWordClientSettings guards the env-parser fix: keys
+// TestLoadFromEnv_ParsesMultiWordClientSettings guards the env-parser fix: keys
 // like IMPORT_SAVE_PATH (multiple underscores) must survive, including for a
 // client that only exists in the environment.
-func TestLoadFromEnvParsesMultiWordClientSettings(t *testing.T) {
+func TestLoadFromEnv_ParsesMultiWordClientSettings(t *testing.T) {
 	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_TYPE", "qbittorrent")
 	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_IMPORT_SAVE_PATH", "/data/tv-hd")
 	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_IMPORT_CATEGORY", "tv-hd")
@@ -209,7 +209,7 @@ func TestLoadFromEnvParsesMultiWordClientSettings(t *testing.T) {
 	require.Equal(t, []string{"a", "b"}, client.Import.Tags)
 }
 
-func TestReloadRejectsInvalidConfigAndKeepsLastSnapshot(t *testing.T) {
+func TestReload_RejectsInvalidConfigAndKeepsLastSnapshot(t *testing.T) {
 	previousLogLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.WarnLevel)
 	t.Cleanup(func() {
@@ -241,7 +241,7 @@ logLevel: TRACE
 	require.Equal(t, zerolog.WarnLevel, zerolog.GlobalLevel())
 }
 
-func TestReloadReappliesEnvironmentOverrides(t *testing.T) {
+func TestReload_ReappliesEnvironmentOverrides(t *testing.T) {
 	t.Setenv("SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_CATEGORY", "from-env")
 	cfg, configFile := newTestAppConfig(t, `
 clients:
@@ -264,7 +264,7 @@ clients:
 	require.Equal(t, "from-env", cfg.Snapshot().Clients["default"].Import.Category)
 }
 
-func TestReloadRestoresDefaultsForOmittedKeys(t *testing.T) {
+func TestReload_RestoresDefaultsForOmittedKeys(t *testing.T) {
 	cfg, configFile := newTestAppConfig(t, `
 clients: {}
 logMaxSize: 99
@@ -277,7 +277,7 @@ logMaxSize: 99
 	require.Equal(t, 50, cfg.Snapshot().LogMaxSize)
 }
 
-func TestResolveConfigFileReturnsDiscoveredFile(t *testing.T) {
+func TestResolveConfigFile_ReturnsDiscoveredFile(t *testing.T) {
 	workingDir := t.TempDir()
 	homeDir := t.TempDir()
 	configFile := filepath.Join(homeDir, ".config", "seasonpackarr", "config.yaml")
@@ -292,7 +292,7 @@ func TestResolveConfigFileReturnsDiscoveredFile(t *testing.T) {
 	require.Equal(t, configFile, got)
 }
 
-func TestSnapshotCannotMutateStoredConfig(t *testing.T) {
+func TestSnapshot_CannotMutateStoredConfig(t *testing.T) {
 	cfg, _ := newTestAppConfig(t, `
 clients:
   default:
@@ -316,7 +316,7 @@ notifications:
 	require.Equal(t, []string{"MATCH", "ERROR"}, stored.Notifications.NotificationLevel)
 }
 
-func TestDynamicReloadPublishesSnapshotForConcurrentReaders(t *testing.T) {
+func TestDynamicReload_PublishesSnapshotForConcurrentReaders(t *testing.T) {
 	previousLogLevel := zerolog.GlobalLevel()
 	t.Cleanup(func() {
 		zerolog.SetGlobalLevel(previousLogLevel)
@@ -375,7 +375,7 @@ logLevel: INFO
 	require.Equal(t, "after", cfg.Snapshot().Clients["default"].Import.Category)
 }
 
-func TestDynamicReloadKeepsSnapshotWhileConfigWriteIsIncomplete(t *testing.T) {
+func TestDynamicReload_KeepsSnapshotWhileConfigWriteIsIncomplete(t *testing.T) {
 	previousLogLevel := zerolog.GlobalLevel()
 	t.Cleanup(func() {
 		zerolog.SetGlobalLevel(previousLogLevel)
@@ -431,7 +431,7 @@ clients:
 	require.Equal(t, "after", cfg.Snapshot().Clients["default"].Import.Category)
 }
 
-func TestDynamicReloadDebouncesTruncateFirstWrites(t *testing.T) {
+func TestDynamicReload_DebouncesTruncateFirstWrites(t *testing.T) {
 	previousLogLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.DebugLevel)
 	t.Cleanup(func() {
@@ -492,7 +492,7 @@ logLevel: DEBUG
 	require.Equal(t, "after", cfg.Snapshot().Clients["default"].Import.Category)
 }
 
-func TestDynamicReloadSurvivesRenameAndRecreateSave(t *testing.T) {
+func TestDynamicReload_SurvivesRenameAndRecreateSave(t *testing.T) {
 	previousLogLevel := zerolog.GlobalLevel()
 	t.Cleanup(func() {
 		zerolog.SetGlobalLevel(previousLogLevel)
@@ -550,7 +550,7 @@ clients:
 	require.NotContains(t, output.String(), "error watching config file")
 }
 
-func TestDynamicReloadFollowsReplacedConfigSymlink(t *testing.T) {
+func TestDynamicReload_FollowsReplacedConfigSymlink(t *testing.T) {
 	previousLogLevel := zerolog.GlobalLevel()
 	t.Cleanup(func() {
 		zerolog.SetGlobalLevel(previousLogLevel)

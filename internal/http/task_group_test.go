@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestTaskGroupCancelsTasksAtShutdownDeadline(t *testing.T) {
+func TestTaskGroup_CancelsTasksAtShutdownDeadline(t *testing.T) {
 	tasks := newTaskGroup()
 	taskCanceled := make(chan struct{})
 	tasks.Go(func(ctx context.Context) {
@@ -25,7 +25,7 @@ func TestTaskGroupCancelsTasksAtShutdownDeadline(t *testing.T) {
 	<-taskCanceled
 }
 
-func TestTaskGroupRejectsTasksAfterShutdownStarts(t *testing.T) {
+func TestTaskGroup_RejectsTasksAfterShutdownStarts(t *testing.T) {
 	tasks := newTaskGroup()
 	require.NoError(t, tasks.Wait(t.Context()))
 
