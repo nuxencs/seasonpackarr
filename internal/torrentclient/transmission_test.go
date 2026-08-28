@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -67,7 +68,7 @@ func transmissionTestServer(t *testing.T, responses map[string]string) (*httptes
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"result":"success","tag":%d,"arguments":%s}`, req.Tag, args)
+		_, _ = fmt.Fprintf(w, `{"result":"success","tag":%d,"arguments":%s}`, req.Tag, args)
 	}))
 	t.Cleanup(srv.Close)
 	return srv, &captured
@@ -78,7 +79,7 @@ const emptySessionResp = `{}`
 
 func newTransmissionClientFromServer(t *testing.T, srv *httptest.Server, user, pass string) *transmissionClient {
 	t.Helper()
-	c, err := newTransmissionClient(&domain.Client{Host: srv.URL, Username: user, Password: pass})
+	c, err := newTransmissionClient(t.Context(), &domain.Client{Host: srv.URL, Username: user, Password: pass})
 	if err != nil {
 		t.Fatalf("newTransmissionClient: %v", err)
 	}
@@ -88,7 +89,7 @@ func newTransmissionClientFromServer(t *testing.T, srv *httptest.Server, user, p
 // lastRequest returns the most recent captured request for the given method.
 func lastRequest(t *testing.T, captured *[]capturedRequest, method string) capturedRequest {
 	t.Helper()
-	for i := len(*captured) - 1; i >= 0; i-- {
+	for i := range slices.Backward(*captured) {
 		if (*captured)[i].Method == method {
 			return (*captured)[i]
 		}
@@ -131,7 +132,7 @@ func TestNewTransmissionClient_SessionHandshakeAndPing(t *testing.T) {
 func TestNew_TransmissionType(t *testing.T) {
 	t.Parallel()
 	srv, _ := transmissionTestServer(t, map[string]string{"session-get": emptySessionResp})
-	c, err := New(&domain.Client{Type: "transmission", Host: srv.URL})
+	c, err := New(t.Context(), &domain.Client{Type: "transmission", Host: srv.URL})
 	if err != nil {
 		t.Fatalf("New(transmission): %v", err)
 	}
@@ -149,7 +150,7 @@ func TestTransmissionGetTorrents(t *testing.T) {
 	})
 	c := newTransmissionClientFromServer(t, srv, "", "")
 
-	torrents, err := c.GetTorrents()
+	torrents, err := c.GetTorrents(t.Context())
 	if err != nil {
 		t.Fatalf("GetTorrents: %v", err)
 	}
@@ -180,7 +181,7 @@ func TestTransmissionGetFiles(t *testing.T) {
 	})
 	c := newTransmissionClientFromServer(t, srv, "", "")
 
-	results := c.GetFiles([]string{"abc123", "def456"})
+	results := c.GetFiles(t.Context(), []string{"abc123", "def456"})
 	if len(results) != 2 {
 		t.Fatalf("len(results) = %d, want 2", len(results))
 	}
@@ -209,7 +210,7 @@ func TestTransmissionGetFiles_NotFound(t *testing.T) {
 	})
 	c := newTransmissionClientFromServer(t, srv, "", "")
 
-	results := c.GetFiles([]string{"abc123", "notexist"})
+	results := c.GetFiles(t.Context(), []string{"abc123", "notexist"})
 	if len(results) != 2 || results[0].Err != nil {
 		t.Fatalf("results = %+v, want first hash to succeed", results)
 	}
@@ -226,7 +227,7 @@ func TestTransmissionGetFilesExpandsWholeCallError(t *testing.T) {
 
 	errBoom := errors.New("boom")
 	client := newTestTransmissionClient(&stubTransmissionAPI{getErr: errBoom}, domain.ImportPolicy{})
-	results := client.GetFiles([]string{"one", "two"})
+	results := client.GetFiles(t.Context(), []string{"one", "two"})
 
 	if len(results) != 2 {
 		t.Fatalf("len(results) = %d, want 2", len(results))
@@ -266,7 +267,7 @@ func TestNewTransmissionClient_ConnectErrorFailsFast(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	_, err := newTransmissionClient(&domain.Client{Host: srv.URL, Username: "x", Password: "y"})
+	_, err := newTransmissionClient(t.Context(), &domain.Client{Host: srv.URL, Username: "x", Password: "y"})
 	if err == nil {
 		t.Fatal("expected error when server rejects auth, got nil")
 	}

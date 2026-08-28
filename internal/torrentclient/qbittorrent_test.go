@@ -131,7 +131,7 @@ func TestQbitGetFilesUsesBoundedOrderedReads(t *testing.T) {
 	client := newTestQbitClient(stub, domain.ImportPolicy{})
 	hashes := []string{"one", "two", "three", "four", "five", "six"}
 
-	results := client.GetFiles(hashes)
+	results := client.GetFiles(t.Context(), hashes)
 	require.Len(t, results, len(hashes))
 	for index, hash := range hashes {
 		require.Equal(t, hash, results[index].Hash)
@@ -309,7 +309,7 @@ func TestQbitImportDestination(t *testing.T) {
 				prefsErr:    tt.prefsErr,
 			}, tt.policy)
 
-			destination, err := q.ImportDestination()
+			destination, err := q.ImportDestination(t.Context())
 			if tt.wantErr {
 				require.Error(t, err)
 				require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
@@ -327,7 +327,7 @@ func TestQbitImportDestinationUsesConfiguredContentLayout(t *testing.T) {
 		ContentLayout: "nosubfolder",
 	})
 
-	destination, err := q.ImportDestination()
+	destination, err := q.ImportDestination(t.Context())
 	require.NoError(t, err)
 	require.Equal(t,
 		filepath.Join("/data/tv-hd", "Show.S01E01.mkv"),
@@ -340,7 +340,7 @@ func TestQbitImportDestinationUsesClientDefaultContentLayout(t *testing.T) {
 		preferences: qbittorrent.AppPreferences{TorrentContentLayout: "NoSubfolder"},
 	}, domain.ImportPolicy{SavePath: "/data/tv-hd"})
 
-	destination, err := q.ImportDestination()
+	destination, err := q.ImportDestination(t.Context())
 	require.NoError(t, err)
 	require.Equal(t,
 		filepath.Join("/data/tv-hd", "Show.S01E01.mkv"),
@@ -359,7 +359,7 @@ func TestQbitImportRechecksMissingFilesThenResumes(t *testing.T) {
 	}
 	q := newTestQbitClient(stub, domain.ImportPolicy{Category: "tv-hd", Tags: []string{"seasonpackarr"}})
 
-	_, err := q.Import(ImportRequest{TorrentBytes: []byte("torrent"), LegacyHash: hash, HasV1: true, SavePath: "/data/tv-hd"})
+	_, err := q.Import(t.Context(), ImportRequest{TorrentBytes: []byte("torrent"), LegacyHash: hash, HasV1: true, SavePath: "/data/tv-hd"})
 	require.NoError(t, err)
 
 	require.NotEmpty(t, stub.addBytes)
@@ -414,7 +414,7 @@ func TestQbitImportAutomaticManagementOption(t *testing.T) {
 			}
 			q := newTestQbitClient(stub, tt.policy)
 
-			_, err := q.Import(ImportRequest{TorrentBytes: []byte("torrent"), LegacyHash: hash, HasV1: true, SavePath: "/data/tv-hd"})
+			_, err := q.Import(t.Context(), ImportRequest{TorrentBytes: []byte("torrent"), LegacyHash: hash, HasV1: true, SavePath: "/data/tv-hd"})
 			require.NoError(t, err)
 			gotSavePath, savePresent := stub.addOptions["savepath"]
 			require.Equal(t, tt.wantSavePresent, savePresent)
@@ -443,7 +443,7 @@ func TestQbitImportWaitsForCheckingToSettle(t *testing.T) {
 	}
 	q := newTestQbitClient(stub, domain.ImportPolicy{Category: "tv-hd"})
 
-	report, err := q.Import(ImportRequest{TorrentBytes: []byte("torrent"), LegacyHash: hash, HasV1: true, SavePath: "/data/tv-hd"})
+	report, err := q.Import(t.Context(), ImportRequest{TorrentBytes: []byte("torrent"), LegacyHash: hash, HasV1: true, SavePath: "/data/tv-hd"})
 	require.NoError(t, err)
 	require.Len(t, stub.recheckCalls, 1, "recheck must run once missingFiles is observed")
 	require.Len(t, stub.resumeCalls, 1)
@@ -465,7 +465,7 @@ func TestQbitImportSkipsResumeWhenAlreadyActive(t *testing.T) {
 	}
 	q := newTestQbitClient(stub, domain.ImportPolicy{Category: "tv-hd"})
 
-	report, err := q.Import(ImportRequest{TorrentBytes: []byte("torrent"), LegacyHash: hash, HasV1: true, SavePath: "/data/tv-hd"})
+	report, err := q.Import(t.Context(), ImportRequest{TorrentBytes: []byte("torrent"), LegacyHash: hash, HasV1: true, SavePath: "/data/tv-hd"})
 	require.NoError(t, err)
 	require.Equal(t, []ImportStage{
 		ImportStageConfig,
@@ -488,7 +488,7 @@ func TestQbitImportUsesV2HashForPureV2Torrent(t *testing.T) {
 	}
 	q := newTestQbitClient(stub, domain.ImportPolicy{SavePath: "/data/tv-hd"})
 
-	_, err := q.Import(ImportRequest{
+	_, err := q.Import(t.Context(), ImportRequest{
 		TorrentBytes: []byte("torrent"),
 		SavePath:     "/data/tv-hd",
 		LegacyHash:   legacyHash,
@@ -505,7 +505,7 @@ func TestQbitImportRejectsMissingHashBeforeAdd(t *testing.T) {
 	stub := &stubQbitAPI{}
 	q := newTestQbitClient(stub, domain.ImportPolicy{SavePath: "/data/tv-hd"})
 
-	report, err := q.Import(ImportRequest{TorrentBytes: []byte("torrent"), HasV1: true, SavePath: "/data/tv-hd"})
+	report, err := q.Import(t.Context(), ImportRequest{TorrentBytes: []byte("torrent"), HasV1: true, SavePath: "/data/tv-hd"})
 	require.Error(t, err)
 	require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
 	require.Equal(t, []ImportStage{ImportStageConfig}, importStageNames(report))

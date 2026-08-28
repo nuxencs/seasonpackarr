@@ -5,25 +5,32 @@ package cmd
 
 import (
 	"context"
-	"os"
+	"errors"
+	"fmt"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/buildinfo"
 	"github.com/nuxencs/seasonpackarr/internal/config"
 	"github.com/nuxencs/seasonpackarr/internal/http"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/notification"
-	"github.com/nuxencs/seasonpackarr/pkg/errors"
-
 	"github.com/spf13/cobra"
 )
+
+const serverShutdownTimeout = 15 * time.Second
+
+type managedServer interface {
+	Open(ctx context.Context) error
+	Shutdown(ctx context.Context) error
+}
 
 // startCmd represents the start command
 var startCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start seasonpackarr",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		// read config
 		cfg := config.New(configPath, buildinfo.Version)
 		snapshot := cfg.Snapshot()
@@ -33,7 +40,7 @@ var startCmd = &cobra.Command{
 
 		// init dynamic config
 		if _, err := cfg.DynamicReload(log); err != nil {
-			log.Fatal().Err(err).Msg("failed to start config reload watcher")
+			return fmt.Errorf("failed to start config reload watcher: %w", err)
 		}
 
 		// init notification sender
@@ -47,32 +54,43 @@ var startCmd = &cobra.Command{
 		log.Info().Msgf("Build date: %s", buildinfo.Date)
 		log.Info().Msgf("Log-level: %s", snapshot.LogLevel)
 
-		errorChannel := make(chan error)
-		go func() {
-			err := srv.Open()
-			if err != nil {
-				if !errors.Is(err, http.ErrServerClosed) {
-					errorChannel <- err
-				}
-			}
-		}()
+		ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
+		defer stop()
 
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
-
-		select {
-		case sig := <-sigCh:
-			log.Info().Msgf("received signal: %q, shutting down server.", sig)
-			os.Exit(0)
-
-		case err := <-errorChannel:
-			log.Error().Err(err).Msg("unexpected error from server")
+		if err := runServer(ctx, srv); err != nil {
+			return err
 		}
-		if err := srv.Shutdown(context.Background()); err != nil {
-			log.Error().Err(err).Msg("error during http shutdown")
-			os.Exit(1)
-		}
-
-		os.Exit(0)
+		return nil
 	},
+}
+
+func runServer(ctx context.Context, srv managedServer) error {
+	serverErr := make(chan error, 1)
+	go func() {
+		serverErr <- srv.Open(ctx)
+	}()
+
+	select {
+	case err := <-serverErr:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("server stopped unexpectedly: %w", err)
+		}
+		return nil
+	case <-ctx.Done():
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), serverShutdownTimeout)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("could not shut down server: %w", err)
+	}
+
+	select {
+	case err := <-serverErr:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("server stopped during shutdown: %w", err)
+		}
+	default:
+	}
+	return nil
 }

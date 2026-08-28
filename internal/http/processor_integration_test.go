@@ -5,6 +5,7 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -36,7 +37,9 @@ type noopNotificationSender struct{}
 
 func (noopNotificationSender) Name() string { return "noop" }
 
-func (noopNotificationSender) Send(domain.StatusCode, domain.NotificationPayload) error { return nil }
+func (noopNotificationSender) Send(context.Context, domain.StatusCode, domain.NotificationPayload) error {
+	return nil
+}
 
 type mutableProcessorConfig struct {
 	mu     sync.RWMutex
@@ -202,7 +205,7 @@ func (f processorHTTPFixture) postJSON(t *testing.T, path string, payload any) *
 
 func (f processorHTTPFixture) postRaw(t *testing.T, path string, body []byte, token string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(stdhttp.MethodPost, path, bytes.NewReader(body))
+	req := httptest.NewRequestWithContext(t.Context(), stdhttp.MethodPost, path, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
 		req.Header.Set("X-API-Token", token)

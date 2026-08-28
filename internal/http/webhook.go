@@ -12,16 +12,18 @@ import (
 )
 
 type webhookHandler struct {
-	log  logger.Logger
-	cfg  config.Provider
-	noti domain.Sender
+	log   logger.Logger
+	cfg   config.Provider
+	noti  domain.Sender
+	tasks *taskGroup
 }
 
-func newWebhookHandler(log logger.Logger, cfg config.Provider, notification domain.Sender) *webhookHandler {
+func newWebhookHandler(log logger.Logger, cfg config.Provider, notification domain.Sender, tasks *taskGroup) *webhookHandler {
 	return &webhookHandler{
-		log:  log,
-		cfg:  cfg,
-		noti: notification,
+		log:   log,
+		cfg:   cfg,
+		noti:  notification,
+		tasks: tasks,
 	}
 }
 
@@ -32,13 +34,13 @@ func (h *webhookHandler) Routes(r *gin.RouterGroup) {
 }
 
 func (h *webhookHandler) candidate(c *gin.Context) {
-	newProcessor(h.log, h.cfg, h.noti).CandidateSeasonPackHandler(c)
+	newProcessor(h.log, h.cfg, h.noti, h.tasks).CandidateSeasonPackHandler(c)
 }
 
 func (h *webhookHandler) pack(c *gin.Context) {
-	newProcessor(h.log, h.cfg, h.noti).ProcessSeasonPackHandler(c)
+	newProcessor(h.log, h.cfg, h.noti, h.tasks).ProcessSeasonPackHandler(c)
 }
 
 func (h *webhookHandler) parse(c *gin.Context) {
-	newProcessor(h.log, h.cfg, h.noti).ParseTorrentHandler(c)
+	newProcessor(h.log, h.cfg, h.noti, h.tasks).ParseTorrentHandler(c)
 }
