@@ -6,6 +6,7 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -19,15 +20,13 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/nuxencs/seasonpackarr/internal/domain"
-	"github.com/nuxencs/seasonpackarr/internal/logger"
-	"github.com/nuxencs/seasonpackarr/pkg/errors"
-
 	"github.com/fsnotify/fsnotify"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/structs"
 	"github.com/knadh/koanf/v2"
+	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/logger"
 )
 
 var configTemplate = `# yaml-language-server: $schema=https://raw.githubusercontent.com/nuxencs/seasonpackarr/develop/schemas/config-schema.json
@@ -336,10 +335,7 @@ func (c *AppConfig) writeConfig(configPath string, configFile string) error {
 			// if this file exists then the viewer is running
 			// from inside a lxc container so return true
 			host = "0.0.0.0"
-		} else if pd, _ := os.Open("/proc/1/cgroup"); pd != nil {
-			defer pd.Close()
-			b := make([]byte, 4096)
-			pd.Read(b)
+		} else if b, err := os.ReadFile("/proc/1/cgroup"); err == nil {
 			if strings.Contains(string(b), "/docker") || strings.Contains(string(b), "/lxc") {
 				host = "0.0.0.0"
 			}
@@ -351,12 +347,16 @@ func (c *AppConfig) writeConfig(configPath string, configFile string) error {
 			log.Printf("error creating file: %q", err)
 			return err
 		}
-		defer f.Close()
+		defer func() {
+			if err := f.Close(); err != nil {
+				log.Printf("error closing config file: %q", err)
+			}
+		}()
 
 		// setup text template to inject variables into
 		tmpl, err := template.New("config").Parse(configTemplate)
 		if err != nil {
-			return errors.Wrap(err, "could not create config template")
+			return fmt.Errorf("could not create config template: %w", err)
 		}
 
 		tmplVars := map[string]string{
@@ -365,7 +365,7 @@ func (c *AppConfig) writeConfig(configPath string, configFile string) error {
 
 		var buffer bytes.Buffer
 		if err = tmpl.Execute(&buffer, &tmplVars); err != nil {
-			return errors.Wrap(err, "could not write template output")
+			return fmt.Errorf("could not write template output: %w", err)
 		}
 
 		if _, err = f.WriteString(buffer.String()); err != nil {

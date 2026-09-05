@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -46,7 +47,7 @@ func TestDelugeImportLive(t *testing.T) {
 		}
 		port = parsedPort
 	}
-	c, err := newDelugeClient(&domain.Client{
+	c, err := newDelugeClient(t.Context(), &domain.Client{
 		Type:     clientType,
 		Host:     envOrDefault("SEASONPACKARR_TEST_DELUGE_HOST", "127.0.0.1"),
 		Port:     port,
@@ -71,7 +72,7 @@ func TestDelugeImportLive(t *testing.T) {
 			t.Errorf("close Deluge client: %v", err)
 		}
 	})
-	ctx, cancel := context.WithTimeout(context.Background(), delugeTimeout)
+	ctx, cancel := context.WithTimeout(t.Context(), delugeTimeout)
 	defer cancel()
 	version, err := raw.DaemonVersion(ctx)
 	if err != nil {
@@ -107,14 +108,14 @@ func TestDelugeImportLive(t *testing.T) {
 			t.Fatalf("complete import progress=%.2f totalDone=%d totalSize=%d", status.Progress, status.TotalDone, status.TotalSize)
 		}
 
-		torrents, err := c.GetTorrents()
+		torrents, err := c.GetTorrents(t.Context())
 		if err != nil {
 			t.Fatalf("list torrents: %v", err)
 		}
 		if len(torrents) != 1 || torrents[0].SavePath != filepath.Clean(importDir) {
 			t.Fatalf("unexpected torrents: %+v", torrents)
 		}
-		results := c.GetFiles([]string{hashes.Legacy})
+		results := c.GetFiles(t.Context(), []string{hashes.Legacy})
 		if len(results) != 1 || results[0].Err != nil {
 			t.Fatalf("list files: %+v", results)
 		}
@@ -145,11 +146,11 @@ func TestDelugeImportLive(t *testing.T) {
 
 func importAndRegisterCleanup(t *testing.T, c *delugeClient, raw delugeLiveAPI, req ImportRequest) {
 	t.Helper()
-	if _, err := c.Import(req); err != nil {
+	if _, err := c.Import(t.Context(), req); err != nil {
 		t.Fatalf("import: %v", err)
 	}
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), delugeTimeout)
+		ctx, cancel := context.WithTimeout(t.Context(), delugeTimeout)
 		defer cancel()
 		if _, err := raw.RemoveTorrent(ctx, req.LegacyHash, false); err != nil {
 			t.Errorf("remove torrent: %v", err)
@@ -159,7 +160,7 @@ func importAndRegisterCleanup(t *testing.T, c *delugeClient, raw delugeLiveAPI, 
 
 func requireDelugeStarted(t *testing.T, c *delugeClient, hash string) *deluge.TorrentStatus {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	var status *deluge.TorrentStatus
 	for ctx.Err() == nil {
@@ -189,7 +190,7 @@ func requireDelugeStarted(t *testing.T, c *delugeClient, hash string) *deluge.To
 
 func requireDelugeLabel(t *testing.T, c *delugeClient, hash, want string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), delugeTimeout)
+	ctx, cancel := context.WithTimeout(t.Context(), delugeTimeout)
 	defer cancel()
 	c.mu.Lock()
 	plugin, err := c.label(ctx)
@@ -213,12 +214,7 @@ func requireDelugeLabel(t *testing.T, c *delugeClient, hash, want string) {
 }
 
 func containsString(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, want)
 }
 
 func envOrDefault(key, fallback string) string {

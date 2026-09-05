@@ -5,6 +5,7 @@ package payload
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -43,8 +44,8 @@ func compile(payload any) (io.Reader, error) {
 	return bytes.NewReader(data), nil
 }
 
-func Exec(url string, body io.Reader, apiToken string) error {
-	req, err := http.NewRequest(http.MethodPost, url, body)
+func Exec(ctx context.Context, url string, body io.Reader, apiToken string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 	if err != nil {
 		return err
 	}
@@ -59,7 +60,7 @@ func Exec(url string, body io.Reader, apiToken string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	fmt.Printf("Completed the request with the following response: %d\n"+
 		"For more details take a look at the logs!", resp.StatusCode)

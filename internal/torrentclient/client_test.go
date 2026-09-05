@@ -4,10 +4,18 @@
 package torrentclient
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
+	pkgerrors "github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
 )
+
+type testStackTracer interface {
+	error
+	StackTrace() pkgerrors.StackTrace
+}
 
 func importStageNames(report ImportReport) []ImportStage {
 	stages := make([]ImportStage, len(report.Stages))
@@ -15,6 +23,19 @@ func importStageNames(report ImportReport) []ImportStage {
 		stages[index] = stage.Stage
 	}
 	return stages
+}
+
+func TestImportErrTracesOperationalFailuresOnly(t *testing.T) {
+	sentinel := errors.New("client failed")
+	operationalErr := importErr(ImportStageAdd, sentinel)
+
+	require.ErrorIs(t, operationalErr, sentinel)
+	_, traced := errors.AsType[testStackTracer](operationalErr)
+	require.True(t, traced)
+
+	configErr := importErr(ImportStageConfig, sentinel)
+	_, traced = errors.AsType[testStackTracer](configErr)
+	require.False(t, traced)
 }
 
 func TestBuildTransmissionURL(t *testing.T) {
@@ -99,7 +120,7 @@ func TestBuildTransmissionURL(t *testing.T) {
 func TestNew_unknownType(t *testing.T) {
 	t.Parallel()
 
-	_, err := New(&domain.Client{Type: "notarealclient"})
+	_, err := New(t.Context(), &domain.Client{Type: "notarealclient"})
 	if err == nil {
 		t.Fatal("expected error for unknown client type, got nil")
 	}

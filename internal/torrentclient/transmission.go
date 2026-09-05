@@ -6,6 +6,7 @@ package torrentclient
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -13,7 +14,7 @@ import (
 
 	"github.com/hekmon/transmissionrpc/v3"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
-	"github.com/nuxencs/seasonpackarr/pkg/errors"
+	"github.com/nuxencs/seasonpackarr/internal/errtrace"
 )
 
 const transmissionTimeout = 60 * time.Second
@@ -38,22 +39,22 @@ type transmissionClient struct {
 	pollInterval  time.Duration
 }
 
-func newTransmissionClient(client *domain.Client) (*transmissionClient, error) {
+func newTransmissionClient(ctx context.Context, client *domain.Client) (*transmissionClient, error) {
 	endpoint, err := buildTransmissionURL(client)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to build transmission url")
+		return nil, fmt.Errorf("failed to build transmission URL: %w", err)
 	}
 
 	c, err := transmissionrpc.New(endpoint, nil)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create transmission client")
+		return nil, fmt.Errorf("failed to create transmission client: %w", err)
 	}
 
 	// Ping to fail fast on bad host/auth (mirrors the qBittorrent adapter's Login()).
-	ctx, cancel := context.WithTimeout(context.Background(), transmissionTimeout)
+	ctx, cancel := context.WithTimeout(ctx, transmissionTimeout)
 	defer cancel()
 	if _, err := c.SessionArgumentsGetAll(ctx); err != nil {
-		return nil, errors.Wrap(err, "failed to connect to transmission")
+		return nil, errtrace.WithStack(fmt.Errorf("failed to connect to transmission: %w", err))
 	}
 
 	return &transmissionClient{
@@ -75,7 +76,7 @@ func buildTransmissionURL(client *domain.Client) (*url.URL, error) {
 
 	parsed, err := url.Parse(host)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse host")
+		return nil, fmt.Errorf("failed to parse host: %w", err)
 	}
 
 	parsed.Path = "/transmission/rpc"
@@ -86,13 +87,13 @@ func buildTransmissionURL(client *domain.Client) (*url.URL, error) {
 	return parsed, nil
 }
 
-func (t *transmissionClient) GetTorrents() ([]Torrent, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), transmissionTimeout)
+func (t *transmissionClient) GetTorrents(ctx context.Context) ([]Torrent, error) {
+	ctx, cancel := context.WithTimeout(ctx, transmissionTimeout)
 	defer cancel()
 
 	ts, err := t.c.TorrentGet(ctx, []string{"hashString", "name", "downloadDir"}, nil)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get torrents")
+		return nil, errtrace.WithStack(fmt.Errorf("failed to get torrents: %w", err))
 	}
 
 	torrents := make([]Torrent, 0, len(ts))
@@ -107,17 +108,17 @@ func (t *transmissionClient) GetTorrents() ([]Torrent, error) {
 	return torrents, nil
 }
 
-func (t *transmissionClient) GetFiles(hashes []string) []FileResult {
+func (t *transmissionClient) GetFiles(ctx context.Context, hashes []string) []FileResult {
 	if len(hashes) == 0 {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), transmissionTimeout)
+	ctx, cancel := context.WithTimeout(ctx, transmissionTimeout)
 	defer cancel()
 
 	ts, err := t.c.TorrentGetHashes(ctx, []string{"hashString", "files"}, hashes)
 	if err != nil {
-		return fileResultsWithError(hashes, errors.Wrap(err, "failed to get files"))
+		return fileResultsWithError(hashes, errtrace.WithStack(fmt.Errorf("failed to get files: %w", err)))
 	}
 
 	filesByHash := make(map[string][]File, len(ts))
@@ -144,17 +145,17 @@ func (t *transmissionClient) GetFiles(hashes []string) []FileResult {
 
 // ImportDestination resolves the final import destination for this transmission client:
 // an explicit savePath wins, otherwise the session's default download dir.
-func (t *transmissionClient) ImportDestination() (ImportDestination, error) {
+func (t *transmissionClient) ImportDestination(ctx context.Context) (ImportDestination, error) {
 	if t.policy.SavePath != "" {
 		return NewRootedImportDestination(normalizePath(t.policy.SavePath)), nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), transmissionTimeout)
+	ctx, cancel := context.WithTimeout(ctx, transmissionTimeout)
 	defer cancel()
 
 	args, err := t.c.SessionArgumentsGetAll(ctx)
 	if err != nil {
-		return ImportDestination{}, importErr(ImportStageConfig, errors.Wrap(err, "could not read transmission session"))
+		return ImportDestination{}, importErr(ImportStageConfig, errtrace.WithStack(fmt.Errorf("could not read transmission session: %w", err)))
 	}
 
 	downloadDir := strings.TrimSpace(derefString(args.DownloadDir))
@@ -174,7 +175,7 @@ func (t *transmissionClient) ImportDestination() (ImportDestination, error) {
 // 4.1.3), so the import always verifies. Only the genuinely missing pieces are
 // downloaded once started. The returned report identifies how long each client
 // operation took.
-func (t *transmissionClient) Import(req ImportRequest) (ImportReport, error) {
+func (t *transmissionClient) Import(ctx context.Context, req ImportRequest) (ImportReport, error) {
 	var report ImportReport
 	started := time.Now()
 	if strings.TrimSpace(req.LegacyHash) == "" {
@@ -182,17 +183,13 @@ func (t *transmissionClient) Import(req ImportRequest) (ImportReport, error) {
 		return report, importErr(ImportStageConfig, errors.New("resolved transmission info hash is empty"))
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), t.verifyTimeout)
+	ctx, cancel := context.WithTimeout(ctx, t.verifyTimeout)
 	defer cancel()
 
-	metaInfo := base64.StdEncoding.EncodeToString(req.TorrentBytes)
-	downloadDir := req.SavePath
-	paused := true
-
 	payload := transmissionrpc.TorrentAddPayload{
-		MetaInfo:    &metaInfo,
-		DownloadDir: &downloadDir,
-		Paused:      &paused,
+		MetaInfo:    new(base64.StdEncoding.EncodeToString(req.TorrentBytes)),
+		DownloadDir: new(req.SavePath),
+		Paused:      new(true),
 	}
 	if labels := trimStrings(t.policy.Tags); len(labels) > 0 {
 		payload.Labels = labels
@@ -202,14 +199,14 @@ func (t *transmissionClient) Import(req ImportRequest) (ImportReport, error) {
 	started = time.Now()
 	if _, err := t.c.TorrentAdd(ctx, payload); err != nil {
 		report.record(ImportStageAdd, started)
-		return report, importErr(ImportStageAdd, errors.Wrap(err, "failed to add torrent to transmission"))
+		return report, importErr(ImportStageAdd, fmt.Errorf("failed to add torrent to transmission: %w", err))
 	}
 	report.record(ImportStageAdd, started)
 
 	started = time.Now()
 	if err := t.c.TorrentVerifyHashes(ctx, []string{req.LegacyHash}); err != nil {
 		report.record(ImportStageRecheck, started)
-		return report, importErr(ImportStageRecheck, errors.Wrap(err, "failed to verify torrent"))
+		return report, importErr(ImportStageRecheck, fmt.Errorf("failed to verify torrent: %w", err))
 	}
 
 	if err := t.waitForVerify(ctx, req.LegacyHash); err != nil {
@@ -222,7 +219,7 @@ func (t *transmissionClient) Import(req ImportRequest) (ImportReport, error) {
 	started = time.Now()
 	if err := t.c.TorrentStartHashes(ctx, []string{req.LegacyHash}); err != nil {
 		report.record(ImportStageResume, started)
-		return report, importErr(ImportStageResume, errors.Wrap(err, "failed to start torrent"))
+		return report, importErr(ImportStageResume, fmt.Errorf("failed to start torrent: %w", err))
 	}
 	report.record(ImportStageResume, started)
 
@@ -235,7 +232,7 @@ func (t *transmissionClient) Import(req ImportRequest) (ImportReport, error) {
 // observed CHECK state, since a small partial verify can pass through checking
 // faster than the poll interval.
 func (t *transmissionClient) waitForVerify(ctx context.Context, hash string) error {
-	return pollUntil(t.pollInterval, t.verifyTimeout, func() (bool, error) {
+	return pollUntil(ctx, t.pollInterval, func() (bool, error) {
 		ts, err := t.c.TorrentGetHashes(ctx, []string{"status", "percentDone", "recheckProgress", "errorString"}, []string{hash})
 		if err != nil {
 			return false, err
@@ -246,7 +243,7 @@ func (t *transmissionClient) waitForVerify(ctx context.Context, hash string) err
 
 		tr := ts[0]
 		if es := strings.TrimSpace(derefString(tr.ErrorString)); es != "" {
-			return false, errors.New("transmission reported error: %s", es)
+			return false, fmt.Errorf("transmission reported error: %s", es)
 		}
 
 		if tr.Status == nil {

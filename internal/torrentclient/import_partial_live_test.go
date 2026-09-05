@@ -118,7 +118,7 @@ func TestQbitImportPartialLive(t *testing.T) {
 		t.Skip("qbit live env not set")
 	}
 
-	c, err := newQbitClient(&domain.Client{
+	c, err := newQbitClient(t.Context(), &domain.Client{
 		Host:     host,
 		Username: os.Getenv("SEASONPACKARR_TEST_QBIT_USER"),
 		Password: os.Getenv("SEASONPACKARR_TEST_QBIT_PASS"),
@@ -129,14 +129,14 @@ func TestQbitImportPartialLive(t *testing.T) {
 	}
 
 	_, torrentBytes, hashes := buildPartialPack(t, importDir, "AdapterPartialQbit.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
-	if _, err := c.Import(ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
+	if _, err := c.Import(t.Context(), ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
 		t.Fatalf("Import: %v", err)
 	}
 
 	// poll for a few seconds so the post-recheck resume takes effect, then report
 	var tor qbittorrent.Torrent
 	for i := range 20 {
-		found, ok, err := c.lookupTorrent(hashes.Legacy)
+		found, ok, err := c.lookupTorrent(t.Context(), hashes.Legacy)
 		if err != nil || !ok {
 			t.Fatalf("lookup after import: ok=%v err=%v", ok, err)
 		}
@@ -169,7 +169,7 @@ func TestTransmissionImportPartialLive(t *testing.T) {
 		t.Skip("transmission live env not set")
 	}
 
-	c, err := newTransmissionClient(&domain.Client{
+	c, err := newTransmissionClient(t.Context(), &domain.Client{
 		Host:     host,
 		Username: os.Getenv("SEASONPACKARR_TEST_TRANSMISSION_USER"),
 		Password: os.Getenv("SEASONPACKARR_TEST_TRANSMISSION_PASS"),
@@ -180,11 +180,11 @@ func TestTransmissionImportPartialLive(t *testing.T) {
 	}
 
 	packName, torrentBytes, hashes := buildPartialPack(t, importDir, "AdapterPartialTr.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
-	if _, err := c.Import(ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
+	if _, err := c.Import(t.Context(), ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
 		t.Fatalf("Import: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), transmissionTimeout)
+	ctx, cancel := context.WithTimeout(t.Context(), transmissionTimeout)
 	defer cancel()
 	ts, err := c.c.TorrentGetHashes(ctx, []string{"name", "status", "percentDone", "errorString"}, []string{hashes.Legacy})
 	if err != nil || len(ts) == 0 {

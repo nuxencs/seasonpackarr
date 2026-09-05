@@ -7,6 +7,7 @@ package notification
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,9 +17,8 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/config"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/errtrace"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
-	"github.com/nuxencs/seasonpackarr/pkg/errors"
-
 	"github.com/rs/zerolog"
 )
 
@@ -38,7 +38,7 @@ type DiscordEmbeds struct {
 type DiscordEmbedsFields struct {
 	Name   string `json:"name"`
 	Value  string `json:"value"`
-	Inline bool   `json:"inline,omitempty"`
+	Inline bool   `json:"inline,omitzero"`
 }
 
 type EmbedColors int
@@ -70,7 +70,7 @@ func (s *discordSender) Name() string {
 	return "discord"
 }
 
-func (s *discordSender) Send(statusCode domain.StatusCode, payload domain.NotificationPayload) error {
+func (s *discordSender) Send(ctx context.Context, statusCode domain.StatusCode, payload domain.NotificationPayload) error {
 	notifications := s.cfg.Snapshot().Notifications
 	if !s.isEnabled(notifications) {
 		s.log.Debug().Msg("no webhook defined, skipping notification")
@@ -89,12 +89,12 @@ func (s *discordSender) Send(statusCode domain.StatusCode, payload domain.Notifi
 
 	jsonData, err := json.Marshal(m)
 	if err != nil {
-		return errors.Wrap(err, "could not marshal json request for status: %v payload: %v", statusCode, payload)
+		return errtrace.WithStack(fmt.Errorf("could not marshal JSON request for status %v and payload %v: %w", statusCode, payload, err))
 	}
 
-	req, err := http.NewRequest(http.MethodPost, notifications.Discord, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, notifications.Discord, bytes.NewReader(jsonData))
 	if err != nil {
-		return errors.Wrap(err, "could not create request for status: %v payload: %v", statusCode, payload)
+		return errtrace.WithStack(fmt.Errorf("could not create request for status %v and payload %v: %w", statusCode, payload, err))
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -102,10 +102,10 @@ func (s *discordSender) Send(statusCode domain.StatusCode, payload domain.Notifi
 
 	res, err := s.httpClient.Do(req)
 	if err != nil {
-		return errors.Wrap(err, "client request error for status: %v payload: %v", statusCode, payload)
+		return errtrace.WithStack(fmt.Errorf("client request error for status %v and payload %v: %w", statusCode, payload, err))
 	}
 
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	s.log.Trace().Msgf("discord response status: %d", res.StatusCode)
 
@@ -113,10 +113,10 @@ func (s *discordSender) Send(statusCode domain.StatusCode, payload domain.Notifi
 	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
 		body, err := io.ReadAll(bufio.NewReader(res.Body))
 		if err != nil {
-			return errors.Wrap(err, "could not read body for status: %v payload: %v", statusCode, payload)
+			return errtrace.WithStack(fmt.Errorf("could not read response body for status %v and payload %v: %w", statusCode, payload, err))
 		}
 
-		return errors.New("unexpected status: %v body: %v", res.StatusCode, string(body))
+		return errtrace.WithStack(fmt.Errorf("unexpected status %v with body %v", res.StatusCode, string(body)))
 	}
 
 	s.log.Debug().Msg("notification successfully sent to discord")

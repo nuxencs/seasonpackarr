@@ -6,45 +6,47 @@ package http
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"time"
 
-	"github.com/nuxencs/seasonpackarr/internal/config"
-	"github.com/nuxencs/seasonpackarr/internal/domain"
-	"github.com/nuxencs/seasonpackarr/internal/logger"
-	"github.com/nuxencs/seasonpackarr/pkg/errors"
-
 	"github.com/gin-contrib/requestid"
 	"github.com/gin-gonic/gin"
+	"github.com/nuxencs/seasonpackarr/internal/config"
+	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/errtrace"
+	"github.com/nuxencs/seasonpackarr/internal/logger"
 )
 
 var ErrServerClosed = http.ErrServerClosed
 
 type Server struct {
-	log  logger.Logger
-	cfg  config.Provider
-	noti domain.Sender
+	log   logger.Logger
+	cfg   config.Provider
+	noti  domain.Sender
+	tasks *taskGroup
 
 	httpServer http.Server
 }
 
 func NewServer(log logger.Logger, config config.Provider, notification domain.Sender) *Server {
 	return &Server{
-		log:  log,
-		cfg:  config,
-		noti: notification,
+		log:   log,
+		cfg:   config,
+		noti:  notification,
+		tasks: newTaskGroup(),
 	}
 }
 
-func (s *Server) Open() error {
+func (s *Server) Open(ctx context.Context) error {
 	var err error
 	snapshot := s.cfg.Snapshot()
 	addr := fmt.Sprintf("%s:%d", snapshot.Host, snapshot.Port)
 
 	for _, proto := range []string{"tcp", "tcp4", "tcp6"} {
-		if err = s.tryToServe(addr, proto); err == nil {
+		if err = s.tryToServe(ctx, addr, proto); err == nil {
 			return nil
 		}
 		s.log.Error().Err(err).Msgf("Failed to start %s server on %s", proto, addr)
@@ -53,10 +55,10 @@ func (s *Server) Open() error {
 	return fmt.Errorf("unable to start server on any protocol")
 }
 
-func (s *Server) tryToServe(addr, proto string) error {
-	listener, err := net.Listen(proto, addr)
+func (s *Server) tryToServe(ctx context.Context, addr, proto string) error {
+	listener, err := new(net.ListenConfig).Listen(ctx, proto, addr)
 	if err != nil {
-		return err
+		return errtrace.WithStack(err)
 	}
 
 	s.log.Info().Msgf("Starting server on %s with %s", listener.Addr().String(), proto)
@@ -68,7 +70,7 @@ func (s *Server) tryToServe(addr, proto string) error {
 	}
 
 	if err := s.httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
+		return errtrace.WithStack(err)
 	}
 
 	return nil
@@ -76,10 +78,14 @@ func (s *Server) tryToServe(addr, proto string) error {
 
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.log.Info().Msg("Shutting down the server gracefully...")
+	var shutdownErrors []error
 	if err := s.httpServer.Shutdown(ctx); err != nil {
-		return fmt.Errorf("failed to shutdown server: %w", err)
+		shutdownErrors = append(shutdownErrors, errtrace.WithStack(fmt.Errorf("failed to shutdown server: %w", err)))
 	}
-	return nil
+	if err := s.tasks.Wait(ctx); err != nil {
+		shutdownErrors = append(shutdownErrors, errtrace.WithStack(fmt.Errorf("failed to finish background tasks: %w", err)))
+	}
+	return errors.Join(shutdownErrors...)
 }
 
 func (s *Server) Handler() http.Handler {
@@ -99,7 +105,7 @@ func (s *Server) Handler() http.Handler {
 
 		api.Use(s.AuthMiddleware())
 		{
-			newWebhookHandler(s.log, s.cfg, s.noti).Routes(api.Group("/"))
+			newWebhookHandler(s.log, s.cfg, s.noti, s.tasks).Routes(api.Group("/"))
 		}
 	}
 

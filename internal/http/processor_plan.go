@@ -4,6 +4,8 @@
 package http
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -13,8 +15,6 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/release"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
-	"github.com/nuxencs/seasonpackarr/pkg/errors"
-
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/rs/zerolog"
 )
@@ -60,7 +60,7 @@ var planMap = xsync.NewMapOf[importPlanCacheKey, cachedImportPlan]()
 // processSeasonPack is the /api/pack gate. It builds an exact torrent-aware
 // import plan but has no filesystem or client side effects. Hardlinking and
 // importing happen on /api/parse.
-func (p *processor) processSeasonPack() (domain.StatusCode, error) {
+func (p *processor) processSeasonPack(ctx context.Context) (domain.StatusCode, error) {
 	clientName := p.getClientName()
 	snapshot := p.cfg.Snapshot()
 
@@ -74,7 +74,7 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 	}
 	p.log.Info().Msgf("using %s client", clientName)
 
-	plan, statusCode, err := p.buildImportPlan(clientName, clientCfg, snapshot)
+	plan, statusCode, err := p.buildImportPlan(ctx, clientName, clientCfg, snapshot)
 	if plan.totalEps > 0 {
 		p.logImportPlan(plan, snapshot)
 	}
@@ -125,12 +125,12 @@ func (p *processor) logImportPlan(plan importPlan, cfg domain.Config) {
 	summary.Msg("season pack import plan built")
 }
 
-func (p *processor) buildImportPlan(clientName string, clientCfg *domain.Client, cfg domain.Config) (importPlan, domain.StatusCode, error) {
+func (p *processor) buildImportPlan(ctx context.Context, clientName string, clientCfg *domain.Client, cfg domain.Config) (importPlan, domain.StatusCode, error) {
 	if len(p.req.Torrent) == 0 {
 		return importPlan{}, domain.StatusTorrentBytesError, domain.StatusTorrentBytesError.Error()
 	}
 
-	candidates, statusCode, err := p.findCandidates(clientName, clientCfg, cfg)
+	candidates, statusCode, err := p.findCandidates(ctx, clientName, clientCfg, cfg)
 	if err != nil {
 		return importPlan{}, statusCode, err
 	}
@@ -165,7 +165,7 @@ func (p *processor) buildImportPlan(clientName string, clientCfg *domain.Client,
 	}
 
 	matcher := release.NewEpisodeMatcher(eligibleEps)
-	matchResult := matcher.Match(p.getEpisodeFiles(candidates))
+	matchResult := matcher.Match(p.getEpisodeFiles(ctx, candidates))
 
 	links := make([]plannedLink, 0, len(matchResult.Matches))
 	for _, match := range matchResult.Matches {
@@ -189,13 +189,13 @@ func (p *processor) buildImportPlan(clientName string, clientCfg *domain.Client,
 	return plan, domain.StatusSuccessfulMatch, nil
 }
 
-func (p *processor) getEpisodeFiles(candidates []entry) []release.EpisodeFile {
+func (p *processor) getEpisodeFiles(ctx context.Context, candidates []entry) []release.EpisodeFile {
 	hashes := make([]string, len(candidates))
 	for index, candidate := range candidates {
 		hashes[index] = candidate.torrent.Hash
 	}
 
-	results := p.req.Client.GetFiles(hashes)
+	results := p.req.Client.GetFiles(ctx, hashes)
 	episodes := make([]release.EpisodeFile, 0, len(results))
 	for index, candidate := range candidates {
 		if index >= len(results) {

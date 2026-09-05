@@ -6,16 +6,17 @@ package torrentclient
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"maps"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/autobrr/go-deluge"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
-	"github.com/nuxencs/seasonpackarr/pkg/errors"
+	"github.com/nuxencs/seasonpackarr/internal/errtrace"
 )
 
 const (
@@ -55,10 +56,10 @@ type delugeClient struct {
 	pollInterval time.Duration
 }
 
-func newDelugeClient(client *domain.Client) (*delugeClient, error) {
+func newDelugeClient(ctx context.Context, client *domain.Client) (*delugeClient, error) {
 	settings, err := buildDelugeSettings(client)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to build deluge settings")
+		return nil, fmt.Errorf("failed to build deluge settings: %w", err)
 	}
 
 	var c delugeAPI
@@ -80,13 +81,13 @@ func newDelugeClient(client *domain.Client) (*delugeClient, error) {
 			return raw.LabelPlugin(ctx)
 		}
 	default:
-		return nil, errors.New("unsupported deluge client type: %s", client.Type)
+		return nil, fmt.Errorf("unsupported deluge client type: %s", client.Type)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), delugeTimeout)
+	ctx, cancel := context.WithTimeout(ctx, delugeTimeout)
 	defer cancel()
 	if err := c.Connect(ctx); err != nil {
-		return nil, errors.Wrap(err, "failed to connect to deluge")
+		return nil, errtrace.WithStack(fmt.Errorf("failed to connect to deluge: %w", err))
 	}
 
 	return &delugeClient{
@@ -125,23 +126,19 @@ func buildDelugeSettings(client *domain.Client) (deluge.Settings, error) {
 	}, nil
 }
 
-func (d *delugeClient) GetTorrents() ([]Torrent, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), delugeTimeout)
+func (d *delugeClient) GetTorrents(ctx context.Context) ([]Torrent, error) {
+	ctx, cancel := context.WithTimeout(ctx, delugeTimeout)
 	defer cancel()
 
 	d.mu.Lock()
 	ts, err := d.c.TorrentsStatus(ctx, deluge.StateUnspecified, nil)
 	d.mu.Unlock()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get torrents from deluge")
+		return nil, errtrace.WithStack(fmt.Errorf("failed to get torrents from deluge: %w", err))
 	}
 
 	// Deluge returns a map. Sort its keys to keep matching and tests stable.
-	hashes := make([]string, 0, len(ts))
-	for hash := range ts {
-		hashes = append(hashes, hash)
-	}
-	sort.Strings(hashes)
+	hashes := slices.Sorted(maps.Keys(ts))
 
 	torrents := make([]Torrent, 0, len(ts))
 	for _, hash := range hashes {
@@ -170,12 +167,12 @@ func (d *delugeClient) GetTorrents() ([]Torrent, error) {
 	return torrents, nil
 }
 
-func (d *delugeClient) GetFiles(hashes []string) []FileResult {
+func (d *delugeClient) GetFiles(ctx context.Context, hashes []string) []FileResult {
 	if len(hashes) == 0 {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), delugeTimeout)
+	ctx, cancel := context.WithTimeout(ctx, delugeTimeout)
 	defer cancel()
 
 	requestedHashes := uniqueFoldedHashes(hashes)
@@ -185,7 +182,7 @@ func (d *delugeClient) GetFiles(hashes []string) []FileResult {
 		sessionHashes, err := d.c.SessionState(ctx)
 		if err != nil {
 			d.mu.Unlock()
-			return fileResultsWithError(hashes, errors.Wrap(err, "failed to list deluge torrents"))
+			return fileResultsWithError(hashes, errtrace.WithStack(fmt.Errorf("failed to list deluge torrents: %w", err)))
 		}
 		knownHashes := make(map[string]struct{}, len(sessionHashes))
 		for _, hash := range sessionHashes {
@@ -204,7 +201,7 @@ func (d *delugeClient) GetFiles(hashes []string) []FileResult {
 	}
 	d.mu.Unlock()
 	if err != nil {
-		return fileResultsWithError(hashes, errors.Wrap(err, "failed to get files from deluge"))
+		return fileResultsWithError(hashes, errtrace.WithStack(fmt.Errorf("failed to get files from deluge: %w", err)))
 	}
 
 	statusByHash := make(map[string]*deluge.TorrentStatus, len(statuses))
@@ -250,7 +247,10 @@ func uniqueFoldedHashes(hashes []string) []string {
 // ImportDestination uses an explicit path because go-deluge does not expose
 // Deluge's global download_location setting. Deluge stores multi-file torrent
 // paths below their torrent root, so the destination is rooted.
-func (d *delugeClient) ImportDestination() (ImportDestination, error) {
+func (d *delugeClient) ImportDestination(ctx context.Context) (ImportDestination, error) {
+	if err := ctx.Err(); err != nil {
+		return ImportDestination{}, err
+	}
 	savePath := strings.TrimSpace(d.policy.SavePath)
 	if savePath == "" {
 		return ImportDestination{}, importErr(ImportStageConfig, errors.New("deluge requires import.savePath"))
@@ -262,7 +262,7 @@ func (d *delugeClient) ImportDestination() (ImportDestination, error) {
 // Deluge/libtorrent performs its normal initial data check before it transfers
 // pieces. The adapter waits until the torrent is no longer paused or checking
 // and returns the duration of each client operation.
-func (d *delugeClient) Import(req ImportRequest) (ImportReport, error) {
+func (d *delugeClient) Import(ctx context.Context, req ImportRequest) (ImportReport, error) {
 	var report ImportReport
 	started := time.Now()
 	if !req.HasV1 || strings.TrimSpace(req.LegacyHash) == "" {
@@ -276,13 +276,12 @@ func (d *delugeClient) Import(req ImportRequest) (ImportReport, error) {
 		return report, importErr(ImportStageConfig, errors.New("resolved deluge save path is empty"))
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), d.checkTimeout)
+	ctx, cancel := context.WithTimeout(ctx, d.checkTimeout)
 	defer cancel()
 
-	paused := true
 	options := &deluge.Options{
-		DownloadLocation: &savePath,
-		AddPaused:        &paused,
+		DownloadLocation: new(savePath),
+		AddPaused:        new(true),
 	}
 	content := base64.StdEncoding.EncodeToString(req.TorrentBytes)
 	report.record(ImportStageConfig, started)
@@ -297,7 +296,7 @@ func (d *delugeClient) Import(req ImportRequest) (ImportReport, error) {
 	}
 	if err != nil {
 		report.record(ImportStageAdd, started)
-		return report, importErr(ImportStageAdd, errors.Wrap(err, "failed to add torrent to deluge"))
+		return report, importErr(ImportStageAdd, fmt.Errorf("failed to add torrent to deluge: %w", err))
 	}
 	if strings.TrimSpace(addedHash) == "" {
 		report.record(ImportStageAdd, started)
@@ -315,7 +314,7 @@ func (d *delugeClient) Import(req ImportRequest) (ImportReport, error) {
 	d.mu.Unlock()
 	report.record(ImportStageResume, started)
 	if err != nil {
-		return report, importErr(ImportStageResume, errors.Wrap(err, "failed to resume torrent in deluge"))
+		return report, importErr(ImportStageResume, fmt.Errorf("failed to resume torrent in deluge: %w", err))
 	}
 
 	started = time.Now()
@@ -343,7 +342,7 @@ func (d *delugeClient) applyLabel(ctx context.Context, hash string) error {
 
 	plugin, err := d.label(ctx)
 	if err != nil {
-		return errors.Wrap(err, "failed to load deluge Label plugin")
+		return fmt.Errorf("failed to load deluge Label plugin: %w", err)
 	}
 	// Match Autobrr's disabled-plugin behavior. When enabled, create the label
 	// definition if it does not exist, then assign it to the torrent.
@@ -351,7 +350,7 @@ func (d *delugeClient) applyLabel(ctx context.Context, hash string) error {
 		return nil
 	}
 	if err := ensureDelugeLabel(ctx, plugin, hash, label); err != nil {
-		return errors.Wrap(err, "failed to assign deluge label %q", label)
+		return fmt.Errorf("failed to assign deluge label %q: %w", label, err)
 	}
 	return nil
 }
@@ -370,14 +369,14 @@ func ensureDelugeLabel(ctx context.Context, plugin delugeLabelAPI, hash, label s
 }
 
 func isDelugeAlreadyAdded(err error) bool {
-	var rpcErr deluge.RPCError
-	return errors.As(err, &rpcErr) &&
+	rpcErr, ok := errors.AsType[deluge.RPCError](err)
+	return ok &&
 		rpcErr.ExceptionType == "AddTorrentError" &&
 		strings.Contains(strings.ToLower(rpcErr.ExceptionMessage), "already in session")
 }
 
 func (d *delugeClient) waitForStarted(ctx context.Context, hash string) error {
-	return pollUntil(d.pollInterval, d.checkTimeout, func() (bool, error) {
+	return pollUntil(ctx, d.pollInterval, func() (bool, error) {
 		if err := ctx.Err(); err != nil {
 			return false, err
 		}
@@ -396,7 +395,7 @@ func (d *delugeClient) waitForStarted(ctx context.Context, hash string) error {
 		case deluge.StatePaused, deluge.StateChecking, deluge.StateAllocating, deluge.StateMoving:
 			return false, nil
 		case deluge.StateError:
-			return false, errors.New("deluge reported an error while starting torrent %s", hash)
+			return false, fmt.Errorf("deluge reported an error while starting torrent %s", hash)
 		default:
 			return true, nil
 		}
