@@ -1,6 +1,8 @@
 // Copyright (c) 2023 - 2025, nuxen and the seasonpackarr contributors.
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+//go:build integration
+
 package torrentclient
 
 import (
@@ -53,15 +55,15 @@ func buildPartialPack(t *testing.T, importDir, packName string, episodes int) (s
 	return packName, torrentBytes, hashes
 }
 
-// TestQbitPartialRawBehaviorLive answers the load-bearing question: does real
+// TestQbitPartialRawBehavior_ReportsPausedMissingFileState answers the load-bearing question: does real
 // qBittorrent report missingFiles for a PAUSED, skip-checked torrent whose files
 // are partially missing, or only once resumed? This is what the adapter's
 // "if state == missingFiles { recheck }" branch depends on.
-func TestQbitPartialRawBehaviorLive(t *testing.T) {
+func TestQbitPartialRawBehavior_ReportsPausedMissingFileState(t *testing.T) {
 	host := os.Getenv("SEASONPACKARR_TEST_QBIT_HOST")
 	importDir := os.Getenv("SEASONPACKARR_TEST_IMPORT_DIR")
 	if host == "" || importDir == "" {
-		t.Skip("qbit live env not set")
+		t.Skip("qBittorrent integration environment is not set")
 	}
 
 	h, err := buildHost(&domain.Client{Host: host})
@@ -108,14 +110,14 @@ func TestQbitPartialRawBehaviorLive(t *testing.T) {
 	_ = c.DeleteTorrents([]string{hashes.Legacy}, false)
 }
 
-// TestQbitImportPartialLive runs the actual adapter Import against a partial pack
+// TestQbitImport_ResumesPartialPack runs the actual adapter Import against a partial pack
 // and reports the final client state (should end up trying to download the
 // missing episodes, not stuck errored).
-func TestQbitImportPartialLive(t *testing.T) {
+func TestQbitImport_ResumesPartialPack(t *testing.T) {
 	host := os.Getenv("SEASONPACKARR_TEST_QBIT_HOST")
 	importDir := os.Getenv("SEASONPACKARR_TEST_IMPORT_DIR")
 	if host == "" || importDir == "" {
-		t.Skip("qbit live env not set")
+		t.Skip("qBittorrent integration environment is not set")
 	}
 
 	c, err := newQbitClient(t.Context(), &domain.Client{
@@ -160,13 +162,13 @@ func TestQbitImportPartialLive(t *testing.T) {
 	_ = c.c.(*qbittorrent.Client).DeleteTorrents([]string{hashes.Legacy}, false)
 }
 
-// TestTransmissionImportPartialLive runs the adapter against a partial pack and
+// TestTransmissionImport_ResumesPartialPack runs the adapter against a partial pack and
 // confirms it verifies to a partial percentDone and starts downloading the rest.
-func TestTransmissionImportPartialLive(t *testing.T) {
+func TestTransmissionImport_ResumesPartialPack(t *testing.T) {
 	host := os.Getenv("SEASONPACKARR_TEST_TRANSMISSION_HOST")
 	importDir := os.Getenv("SEASONPACKARR_TEST_IMPORT_DIR")
 	if host == "" || importDir == "" {
-		t.Skip("transmission live env not set")
+		t.Skip("Transmission integration environment is not set")
 	}
 
 	c, err := newTransmissionClient(t.Context(), &domain.Client{

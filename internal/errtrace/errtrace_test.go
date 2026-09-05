@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestWithStackPreservesErrorIdentityAndAddsOneStack(t *testing.T) {
+func TestWithStack_PreservesErrorIdentityAndAddsOneStack(t *testing.T) {
 	sentinel := errors.New("boom")
 
 	traced := WithStack(sentinel)
@@ -24,7 +24,7 @@ func TestWithStackPreservesErrorIdentityAndAddsOneStack(t *testing.T) {
 	require.Same(t, traced, WithStack(traced))
 }
 
-func TestWithStackLeavesExpectedCancellationUnchanged(t *testing.T) {
+func TestWithStack_LeavesExpectedCancellationUnchanged(t *testing.T) {
 	require.ErrorIs(t, WithStack(context.Canceled), context.Canceled)
 	require.Equal(t, context.Canceled, WithStack(context.Canceled))
 	require.Equal(t, context.DeadlineExceeded, WithStack(context.DeadlineExceeded))

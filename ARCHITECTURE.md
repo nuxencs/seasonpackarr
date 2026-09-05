@@ -109,9 +109,38 @@ If a change starts pushing transport concerns into matching logic or file ops, s
 
 ## Testing Surface
 
+Test functions use `Test<Subject>` when the subject names the complete contract
+or groups closely related cases. They use `Test<Subject>_<Behavior>` for a
+distinct invariant. Subtest names use short, lowercase phrases. Test files use
+lowercase responsibility names and one of these suffixes:
+
+- `<subject>_test.go` for unit, component, and contract coverage
+- `<subject>_integration_test.go` for tests against real external services
+
+Hermetic tests, including HTTP tests backed by `httptest`, run in the default
+suite and use responsibility-based filenames. Torrent-client integration tests
+use the `integration` build tag, require explicit
+`SEASONPACKARR_TEST_*` connection settings, and are not part of the default CI
+workflow.
+
+Canonical commands:
+
+```sh
+go test ./...
+go test -race ./...
+go test -tags=integration -count=1 -v ./internal/torrentclient
+go test -tags=integration -count=1 -v -run '^TestQbit' ./internal/torrentclient
+go test -tags=integration -count=1 -v -run '^TestTransmission' ./internal/torrentclient
+go test -tags=integration -count=1 -v -run '^TestDeluge' ./internal/torrentclient
+```
+
+The client-specific commands run that adapter's unit tests and tagged
+integration tests together. `-count=1` prevents cached results from hiding
+changes in an external service.
+
 Current explicit test coverage exists in:
 
-- `internal/torrentclient/*_test.go` (unit tests plus environment-gated Deluge V1/V2 live coverage)
+- `internal/torrentclient/*_test.go` (unit tests plus tagged integration coverage for supported clients)
 - `internal/release/release_test.go`
 - `internal/format/format_test.go`
 - `internal/http/processor*_test.go`

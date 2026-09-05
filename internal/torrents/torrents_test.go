@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestInfoHashesUsesV2IdentityForPureV2Torrent(t *testing.T) {
+func TestInfoHashes_UsesV2IdentityForPureV2Torrent(t *testing.T) {
 	infoBytes, err := bencode.Marshal(metainfo.Info{
 		Name:        "PureV2.S01",
 		PieceLength: 16 * 1024,
@@ -33,7 +33,7 @@ func TestInfoHashesUsesV2IdentityForPureV2Torrent(t *testing.T) {
 	require.Equal(t, metainfo.HashV2Bytes(infoBytes).HexString(), hashes.V2)
 }
 
-func TestInfoHashesMarksHybridTorrentAsV1Capable(t *testing.T) {
+func TestInfoHashes_MarksHybridTorrentAsV1Capable(t *testing.T) {
 	infoBytes, err := bencode.Marshal(metainfo.Info{
 		Name:        "Hybrid.S01",
 		PieceLength: 16 * 1024,
@@ -77,7 +77,7 @@ func mustTorrentWithFiles(t *testing.T, name string, paths ...string) []byte {
 	return torrentBytes
 }
 
-func Test_TorrentFromRls_RoundTrip(t *testing.T) {
+func TestTorrentFromRls_RoundTrip(t *testing.T) {
 	const rlsName = "Series.S01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp"
 
 	torrentBytes, err := TorrentFromRls(rlsName, 3)
@@ -99,17 +99,17 @@ func Test_TorrentFromRls_RoundTrip(t *testing.T) {
 	}, episodes)
 }
 
-func Test_TorrentFromRls_NoSeasonInName(t *testing.T) {
+func TestTorrentFromRls_RejectsNameWithoutSeason(t *testing.T) {
 	_, err := TorrentFromRls("Series.1080p.WEB-DL.DDP5.1.H.264-RlsGrp", 3)
 	assert.ErrorContains(t, err, "no season information found in release name")
 }
 
-func Test_Info_InvalidBytes(t *testing.T) {
+func TestInfo_RejectsInvalidBytes(t *testing.T) {
 	_, err := Info([]byte("not a torrent"))
 	assert.Error(t, err)
 }
 
-func Test_Episodes_ReturnsMkvAndMp4Files(t *testing.T) {
+func TestEpisodes_ReturnsMKVAndMP4Files(t *testing.T) {
 	info, err := Info(mustTorrentWithFiles(t, "Series.S01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp",
 		"Series.S01E01.mkv", "Series.S01E01.nfo", "Series.S01E02.mp4", "Series.S01E03.MP4"))
 	require.NoError(t, err)
@@ -124,7 +124,7 @@ func Test_Episodes_ReturnsMkvAndMp4Files(t *testing.T) {
 	}, episodes)
 }
 
-func Test_Episodes_NoSupportedVideoFiles(t *testing.T) {
+func TestEpisodes_RejectsTorrentWithoutSupportedVideoFiles(t *testing.T) {
 	info, err := Info(mustTorrentWithFiles(t, "Series.S01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp",
 		"Series.S01E01.nfo", "Series.S01E02.nfo"))
 	require.NoError(t, err)
@@ -133,7 +133,7 @@ func Test_Episodes_NoSupportedVideoFiles(t *testing.T) {
 	assert.ErrorContains(t, err, "no supported video files found")
 }
 
-func Test_Episodes_NotADirectory(t *testing.T) {
+func TestEpisodes_RejectsSingleFileTorrent(t *testing.T) {
 	info, err := Info(mustTorrentWithFiles(t, "Series.S01E01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp.mkv"))
 	require.NoError(t, err)
 

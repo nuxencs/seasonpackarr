@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCreateHardlinkAcceptsExistingLinkToSource(t *testing.T) {
+func TestCreateHardlink_AcceptsExistingLinkToSource(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "source.mkv")
 	target := filepath.Join(dir, "pack", "target.mkv")
@@ -29,7 +29,7 @@ func TestCreateHardlinkAcceptsExistingLinkToSource(t *testing.T) {
 	require.True(t, os.SameFile(sourceInfo, targetInfo))
 }
 
-func TestCreateHardlinkRejectsConflictingTarget(t *testing.T) {
+func TestCreateHardlink_RejectsConflictingTarget(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "source.mkv")
 	target := filepath.Join(dir, "target.mkv")
@@ -39,7 +39,7 @@ func TestCreateHardlinkRejectsConflictingTarget(t *testing.T) {
 	require.Error(t, CreateHardlink(source, target))
 }
 
-func TestCreateHardlinkPreservesFilesystemErrorIdentity(t *testing.T) {
+func TestCreateHardlink_PreservesFilesystemErrorIdentity(t *testing.T) {
 	dir := t.TempDir()
 	err := CreateHardlink(filepath.Join(dir, "missing.mkv"), filepath.Join(dir, "pack", "target.mkv"))
 
