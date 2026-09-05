@@ -8,7 +8,7 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/pkg/errors"
 
-	"github.com/moistari/rls"
+	"github.com/autobrr/rls"
 	"github.com/mrobinsn/go-tvmaze/tvmaze"
 )
 

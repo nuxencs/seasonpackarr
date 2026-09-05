@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/moistari/rls"
+	"github.com/autobrr/rls"
 	"github.com/stretchr/testify/assert"
 )
 

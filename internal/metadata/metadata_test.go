@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/moistari/rls"
+	"github.com/autobrr/rls"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 )

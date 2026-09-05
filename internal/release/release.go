@@ -9,7 +9,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/slices"
 
-	"github.com/moistari/rls"
+	"github.com/autobrr/rls"
 )
 
 func CheckCandidates(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatching) domain.CompareInfo {

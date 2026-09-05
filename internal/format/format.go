@@ -8,7 +8,7 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 
-	"github.com/moistari/rls"
+	"github.com/autobrr/rls"
 )
 
 func ComparableTitle(r rls.Release, fuzzyMatching domain.FuzzyMatching) string {
