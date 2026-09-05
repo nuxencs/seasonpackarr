@@ -6,6 +6,6 @@ seasonpackarr operations and verification reference
 - smoke flows:
   - go run . start --config <dir>
   - go run . test candidate "<release>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>"
-  - go run . test pack "<release-or-torrent>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>"
-  - go run . test parse "<release-or-torrent>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>" (mutating: creates hardlinks and imports the torrent)
+  - go run . test match "<release-or-torrent>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>"
+  - go run . test import "<release-or-torrent>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>" (mutating: creates hardlinks and imports the torrent)
 - if E2E cannot run because external services or credentials are missing, say that explicitly

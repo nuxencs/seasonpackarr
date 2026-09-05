@@ -6,7 +6,7 @@ This is a self-hosted integration service with network-facing HTTP endpoints and
 
 ## Current Controls
 
-- API token auth for `/api/candidate`, `/api/pack`, and `/api/parse`
+- API token auth for `/api/candidate`, `/api/match`, and `/api/import`
 - explicit config-driven client credentials, including qBittorrent passwords or API keys
 - narrow HTTP surface
 - CodeQL in CI

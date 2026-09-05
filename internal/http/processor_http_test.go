@@ -272,7 +272,7 @@ func TestAuthenticatedCandidate_LogsEachMatchingClientReleaseAtDebug(t *testing.
 	}
 }
 
-func TestAuthenticatedPack_LogsUnmatchedTorrentEpisode(t *testing.T) {
+func TestAuthenticatedMatch_LogsUnmatchedTorrentEpisode(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -280,7 +280,7 @@ func TestAuthenticatedPack_LogsUnmatchedTorrentEpisode(t *testing.T) {
 	var output bytes.Buffer
 	f := newProcessorHTTPFixtureWithLogger(t, 2, 1, 0.5, newCapturedLogger(&output))
 
-	response := f.postJSON(t, "/api/pack", f.packPayload())
+	response := f.postJSON(t, "/api/match", f.packPayload())
 	require.Equal(t, domain.StatusSuccessfulMatch.Code(), response.Code)
 
 	logs := decodeCapturedLogs(t, &output)
@@ -296,7 +296,7 @@ func TestAuthenticatedPack_LogsUnmatchedTorrentEpisode(t *testing.T) {
 	require.Equal(t, float64(50), summary["threshold_percent"])
 }
 
-func TestAuthenticatedPack_LogsReasonWhenNoEpisodeIsReusable(t *testing.T) {
+func TestAuthenticatedMatch_LogsReasonWhenNoEpisodeIsReusable(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -305,7 +305,7 @@ func TestAuthenticatedPack_LogsReasonWhenNoEpisodeIsReusable(t *testing.T) {
 	f := newProcessorHTTPFixtureWithLogger(t, 1, 1, 0, newCapturedLogger(&output))
 	f.mock.filesByHash["ep1"][0].Size = 2
 
-	response := f.postJSON(t, "/api/pack", f.packPayload())
+	response := f.postJSON(t, "/api/match", f.packPayload())
 	require.Equal(t, domain.StatusFailedMatchToTorrentEps.Code(), response.Code)
 
 	logs := decodeCapturedLogs(t, &output)
@@ -321,7 +321,7 @@ func TestAuthenticatedPack_LogsReasonWhenNoEpisodeIsReusable(t *testing.T) {
 	require.Equal(t, "could not match episodes to files in pack", rejection["error"])
 }
 
-func TestAuthenticatedPack_LogsBelowThresholdAsExpectedRejection(t *testing.T) {
+func TestAuthenticatedMatch_LogsBelowThresholdAsExpectedRejection(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -329,7 +329,7 @@ func TestAuthenticatedPack_LogsBelowThresholdAsExpectedRejection(t *testing.T) {
 	var output bytes.Buffer
 	f := newProcessorHTTPFixtureWithLogger(t, 2, 1, 0.75, newCapturedLogger(&output))
 
-	response := f.postJSON(t, "/api/pack", f.packPayload())
+	response := f.postJSON(t, "/api/match", f.packPayload())
 	require.Equal(t, domain.StatusBelowThreshold.Code(), response.Code)
 
 	logs := decodeCapturedLogs(t, &output)
@@ -338,7 +338,7 @@ func TestAuthenticatedPack_LogsBelowThresholdAsExpectedRejection(t *testing.T) {
 	require.Equal(t, "number of matches below threshold", rejection["error"])
 }
 
-func TestAuthenticatedParse_LogsClientImportStageTiming(t *testing.T) {
+func TestAuthenticatedImport_LogsClientImportStageTiming(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -353,12 +353,12 @@ func TestAuthenticatedParse_LogsClientImportStageTiming(t *testing.T) {
 		{Stage: torrentclient.ImportStageResume, Duration: 3 * time.Millisecond},
 	}}
 
-	pack := f.postJSON(t, "/api/pack", f.packPayload())
-	require.Equal(t, domain.StatusSuccessfulMatch.Code(), pack.Code)
+	matchResponse := f.postJSON(t, "/api/match", f.packPayload())
+	require.Equal(t, domain.StatusSuccessfulMatch.Code(), matchResponse.Code)
 	output.Reset()
 
-	parse := f.postJSON(t, "/api/parse", f.packPayload())
-	require.Equal(t, domain.StatusSuccessfulHardlink.Code(), parse.Code)
+	importResponse := f.postJSON(t, "/api/import", f.packPayload())
+	require.Equal(t, domain.StatusSuccessfulHardlink.Code(), importResponse.Code)
 
 	logs := decodeCapturedLogs(t, &output)
 	plan := requireCapturedLog(t, logs, "import plan resolved")
@@ -385,7 +385,7 @@ func TestAuthenticatedParse_LogsClientImportStageTiming(t *testing.T) {
 	require.Contains(t, completed, "total_duration_ms")
 }
 
-func TestAuthenticatedParse_LogsTotalTimingOnImportFailure(t *testing.T) {
+func TestAuthenticatedImport_LogsTotalTimingOnImportFailure(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -401,12 +401,12 @@ func TestAuthenticatedParse_LogsTotalTimingOnImportFailure(t *testing.T) {
 		Err:   errors.New("client rejected torrent"),
 	}
 
-	pack := f.postJSON(t, "/api/pack", f.packPayload())
-	require.Equal(t, domain.StatusSuccessfulMatch.Code(), pack.Code)
+	matchResponse := f.postJSON(t, "/api/match", f.packPayload())
+	require.Equal(t, domain.StatusSuccessfulMatch.Code(), matchResponse.Code)
 	output.Reset()
 
-	parse := f.postJSON(t, "/api/parse", f.packPayload())
-	require.Equal(t, domain.StatusAddTorrentError.Code(), parse.Code)
+	importResponse := f.postJSON(t, "/api/import", f.packPayload())
+	require.Equal(t, domain.StatusAddTorrentError.Code(), importResponse.Code)
 
 	logs := decodeCapturedLogs(t, &output)
 	completed := requireCapturedLog(t, logs, "season pack import completed")
@@ -415,7 +415,7 @@ func TestAuthenticatedParse_LogsTotalTimingOnImportFailure(t *testing.T) {
 	require.Contains(t, completed, "total_duration_ms")
 }
 
-func TestAuthenticatedParse_LogsFailedDestinationResolutionTiming(t *testing.T) {
+func TestAuthenticatedImport_LogsFailedDestinationResolutionTiming(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -423,16 +423,16 @@ func TestAuthenticatedParse_LogsFailedDestinationResolutionTiming(t *testing.T) 
 	var output bytes.Buffer
 	f := newProcessorHTTPFixtureWithLogger(t, 1, 1, 0, newCapturedLogger(&output))
 
-	pack := f.postJSON(t, "/api/pack", f.packPayload())
-	require.Equal(t, domain.StatusSuccessfulMatch.Code(), pack.Code)
+	matchResponse := f.postJSON(t, "/api/match", f.packPayload())
+	require.Equal(t, domain.StatusSuccessfulMatch.Code(), matchResponse.Code)
 	f.mock.importRootErr = &torrentclient.ImportError{
 		Stage: torrentclient.ImportStageConfig,
 		Err:   errors.New("destination unavailable"),
 	}
 	output.Reset()
 
-	parse := f.postJSON(t, "/api/parse", f.packPayload())
-	require.Equal(t, domain.StatusImportConfigError.Code(), parse.Code)
+	importResponse := f.postJSON(t, "/api/import", f.packPayload())
+	require.Equal(t, domain.StatusImportConfigError.Code(), importResponse.Code)
 
 	logs := decodeCapturedLogs(t, &output)
 	destination := requireCapturedLog(t, logs, "import destination resolved")
@@ -442,7 +442,7 @@ func TestAuthenticatedParse_LogsFailedDestinationResolutionTiming(t *testing.T) 
 	require.Equal(t, "destination unavailable", destination["error"])
 }
 
-func TestAuthenticatedParse_LogsFailedPlanRebuildTiming(t *testing.T) {
+func TestAuthenticatedImport_LogsFailedPlanRebuildTiming(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -451,8 +451,8 @@ func TestAuthenticatedParse_LogsFailedPlanRebuildTiming(t *testing.T) {
 	f := newProcessorHTTPFixtureWithLogger(t, 1, 1, 0, newCapturedLogger(&output))
 	f.mock.filesByHash["ep1"][0].Size = 2
 
-	parse := f.postJSON(t, "/api/parse", f.packPayload())
-	require.Equal(t, domain.StatusFailedMatchToTorrentEps.Code(), parse.Code)
+	importResponse := f.postJSON(t, "/api/import", f.packPayload())
+	require.Equal(t, domain.StatusFailedMatchToTorrentEps.Code(), importResponse.Code)
 
 	logs := decodeCapturedLogs(t, &output)
 	plan := requireCapturedLog(t, logs, "import plan resolved")
@@ -477,17 +477,17 @@ func TestAuthenticatedHTTPLifecycle_ReusesAcceptedPlan(t *testing.T) {
 	require.Zero(t, f.mock.fileCalls)
 	require.Zero(t, f.mock.importCalls)
 
-	pack := f.postJSON(t, "/api/pack", f.packPayload())
-	require.Equal(t, domain.StatusSuccessfulMatch.Code(), pack.Code)
-	require.Equal(t, 1, f.mock.torrentCalls, "pack must reuse the candidate inventory")
+	matchResponse := f.postJSON(t, "/api/match", f.packPayload())
+	require.Equal(t, domain.StatusSuccessfulMatch.Code(), matchResponse.Code)
+	require.Equal(t, 1, f.mock.torrentCalls, "match must reuse the candidate inventory")
 	require.Equal(t, 2, f.mock.fileCalls)
 	require.Zero(t, f.mock.importCalls)
 	require.NoDirExists(t, filepath.Join(f.importDir, f.releaseName))
 
-	parse := f.postJSON(t, "/api/parse", f.packPayload())
-	require.Equal(t, domain.StatusSuccessfulHardlink.Code(), parse.Code)
-	require.Equal(t, 1, f.mock.torrentCalls, "parse must not reread the inventory on a plan hit")
-	require.Equal(t, 2, f.mock.fileCalls, "parse must not reread file details on a plan hit")
+	importResponse := f.postJSON(t, "/api/import", f.packPayload())
+	require.Equal(t, domain.StatusSuccessfulHardlink.Code(), importResponse.Code)
+	require.Equal(t, 1, f.mock.torrentCalls, "import must not reread the inventory on a plan hit")
+	require.Equal(t, 2, f.mock.fileCalls, "import must not reread file details on a plan hit")
 	require.Equal(t, 1, f.mock.importCalls)
 	for episode := 1; episode <= 2; episode++ {
 		episodeFile := fmt.Sprintf("Lifecycle.S01E%02d.1080p.WEB-DL.H.264-RlsGrp.mkv", episode)
@@ -495,7 +495,7 @@ func TestAuthenticatedHTTPLifecycle_ReusesAcceptedPlan(t *testing.T) {
 	}
 }
 
-func TestAuthenticatedParse_RefreshesPlanWhenSourceMoves(t *testing.T) {
+func TestAuthenticatedImport_RefreshesPlanWhenSourceMoves(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -503,8 +503,8 @@ func TestAuthenticatedParse_RefreshesPlanWhenSourceMoves(t *testing.T) {
 	var output bytes.Buffer
 	f := newProcessorHTTPFixtureWithLogger(t, 2, 2, 1, newCapturedLogger(&output))
 
-	pack := f.postJSON(t, "/api/pack", f.packPayload())
-	require.Equal(t, domain.StatusSuccessfulMatch.Code(), pack.Code)
+	matchResponse := f.postJSON(t, "/api/match", f.packPayload())
+	require.Equal(t, domain.StatusSuccessfulMatch.Code(), matchResponse.Code)
 
 	episodeFile := "Lifecycle.S01E02.1080p.WEB-DL.H.264-RlsGrp.mkv"
 	movedDir := filepath.Join(filepath.Dir(f.sourceDir), "source-completed")
@@ -515,10 +515,10 @@ func TestAuthenticatedParse_RefreshesPlanWhenSourceMoves(t *testing.T) {
 	))
 	f.mock.torrents[1].SavePath = movedDir
 
-	parse := f.postJSON(t, "/api/parse", f.packPayload())
-	require.Equal(t, domain.StatusSuccessfulHardlink.Code(), parse.Code, parse.Body.String())
-	require.Equal(t, 2, f.mock.torrentCalls, "parse must refresh the stale inventory once")
-	require.Equal(t, 4, f.mock.fileCalls, "parse must rebuild the stale plan once")
+	importResponse := f.postJSON(t, "/api/import", f.packPayload())
+	require.Equal(t, domain.StatusSuccessfulHardlink.Code(), importResponse.Code, importResponse.Body.String())
+	require.Equal(t, 2, f.mock.torrentCalls, "import must refresh the stale inventory once")
+	require.Equal(t, 4, f.mock.fileCalls, "import must rebuild the stale plan once")
 	for episode := 1; episode <= 2; episode++ {
 		fileName := fmt.Sprintf("Lifecycle.S01E%02d.1080p.WEB-DL.H.264-RlsGrp.mkv", episode)
 		require.FileExists(t, filepath.Join(f.importDir, f.releaseName, fileName))
@@ -540,7 +540,7 @@ func TestAuthenticatedParse_RefreshesPlanWhenSourceMoves(t *testing.T) {
 	require.Equal(t, float64(2), hardlinks["linked_episodes"])
 }
 
-func TestAuthenticatedParse_RefreshesAtMostOnceWhenSourceMovesAgain(t *testing.T) {
+func TestAuthenticatedImport_RefreshesAtMostOnceWhenSourceMovesAgain(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -548,8 +548,8 @@ func TestAuthenticatedParse_RefreshesAtMostOnceWhenSourceMovesAgain(t *testing.T
 	var output bytes.Buffer
 	f := newProcessorHTTPFixtureWithLogger(t, 2, 2, 1, newCapturedLogger(&output))
 
-	pack := f.postJSON(t, "/api/pack", f.packPayload())
-	require.Equal(t, domain.StatusSuccessfulMatch.Code(), pack.Code)
+	matchResponse := f.postJSON(t, "/api/match", f.packPayload())
+	require.Equal(t, domain.StatusSuccessfulMatch.Code(), matchResponse.Code)
 
 	episodeFile := "Lifecycle.S01E02.1080p.WEB-DL.H.264-RlsGrp.mkv"
 	movedDir := filepath.Join(filepath.Dir(f.sourceDir), "source-completed")
@@ -569,10 +569,10 @@ func TestAuthenticatedParse_RefreshesAtMostOnceWhenSourceMovesAgain(t *testing.T
 		f.mock.afterGetFiles = nil
 	}
 
-	parse := f.postJSON(t, "/api/parse", f.packPayload())
-	require.Equal(t, domain.StatusBelowThreshold.Code(), parse.Code, parse.Body.String())
-	require.Equal(t, 2, f.mock.torrentCalls, "parse must refresh the inventory only once")
-	require.Equal(t, 4, f.mock.fileCalls, "parse must rebuild the plan only once")
+	importResponse := f.postJSON(t, "/api/import", f.packPayload())
+	require.Equal(t, domain.StatusBelowThreshold.Code(), importResponse.Code, importResponse.Body.String())
+	require.Equal(t, 2, f.mock.torrentCalls, "import must refresh the inventory only once")
+	require.Equal(t, 4, f.mock.fileCalls, "import must rebuild the plan only once")
 	require.Zero(t, f.mock.importCalls)
 
 	refreshCount := 0
@@ -589,11 +589,11 @@ func TestAuthenticatedParse_RefreshesAtMostOnceWhenSourceMovesAgain(t *testing.T
 	require.Equal(t, 2, missingCount)
 }
 
-func TestAuthenticatedParse_RejectsRefreshedPlanBelowThreshold(t *testing.T) {
+func TestAuthenticatedImport_RejectsRefreshedPlanBelowThreshold(t *testing.T) {
 	f := newProcessorHTTPFixture(t, 2, 2, 1)
 
-	pack := f.postJSON(t, "/api/pack", f.packPayload())
-	require.Equal(t, domain.StatusSuccessfulMatch.Code(), pack.Code)
+	matchResponse := f.postJSON(t, "/api/match", f.packPayload())
+	require.Equal(t, domain.StatusSuccessfulMatch.Code(), matchResponse.Code)
 
 	episodeFile := "Lifecycle.S01E02.1080p.WEB-DL.H.264-RlsGrp.mkv"
 	require.NoError(t, os.Rename(
@@ -602,8 +602,8 @@ func TestAuthenticatedParse_RejectsRefreshedPlanBelowThreshold(t *testing.T) {
 	))
 	f.mock.torrents = f.mock.torrents[:1]
 
-	parse := f.postJSON(t, "/api/parse", f.packPayload())
-	require.Equal(t, domain.StatusBelowThreshold.Code(), parse.Code, parse.Body.String())
+	importResponse := f.postJSON(t, "/api/import", f.packPayload())
+	require.Equal(t, domain.StatusBelowThreshold.Code(), importResponse.Code, importResponse.Body.String())
 	require.Equal(t, 2, f.mock.torrentCalls)
 	require.Equal(t, 3, f.mock.fileCalls)
 	require.Zero(t, f.mock.importCalls)
@@ -635,12 +635,12 @@ func TestPackCoverage_AcceptsMP4EpisodesAndIgnoresExtraVideos(t *testing.T) {
 	require.NoError(t, (&metainfo.MetaInfo{InfoBytes: infoBytes}).Write(&torrent))
 	f.torrent = torrent.Bytes()
 
-	res := f.postJSON(t, "/api/pack", f.packPayload())
+	res := f.postJSON(t, "/api/match", f.packPayload())
 	require.Equal(t, domain.StatusSuccessfulMatch.Code(), res.Code)
 	require.Equal(t, 1, f.mock.fileCalls)
 	require.Zero(t, f.mock.importCalls)
 
-	res = f.postJSON(t, "/api/parse", f.packPayload())
+	res = f.postJSON(t, "/api/import", f.packPayload())
 	require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
 	require.Equal(t, 1, f.mock.importCalls)
 	require.FileExists(t, filepath.Join(f.importDir, f.releaseName, episodeFile))
@@ -649,16 +649,28 @@ func TestPackCoverage_AcceptsMP4EpisodesAndIgnoresExtraVideos(t *testing.T) {
 
 func TestHTTPFailureContracts_DoNotMutateClientOrFilesystem(t *testing.T) {
 	t.Run("authentication", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		res := f.postRaw(t, "/api/candidate", []byte(`{"name":"Lifecycle.S01.1080p.WEB-DL.H.264-RlsGrp"}`), "")
-		require.Equal(t, stdhttp.StatusUnauthorized, res.Code)
-		require.Zero(t, f.mock.torrentCalls)
-		require.Zero(t, f.mock.importCalls)
+		for _, path := range []string{"/api/candidate", "/api/match", "/api/import"} {
+			t.Run(path, func(t *testing.T) {
+				f := newProcessorHTTPFixture(t, 1, 1, 0)
+				body, err := json.Marshal(f.packPayload())
+				require.NoError(t, err)
+				for _, token := range []string{"", "wrong-token"} {
+					res := f.postRaw(t, path, body, token)
+					require.Equal(t, stdhttp.StatusUnauthorized, res.Code)
+				}
+				require.Zero(t, f.mock.torrentCalls)
+				require.Zero(t, f.mock.fileCalls)
+				require.Zero(t, f.mock.importCalls)
+				entries, err := os.ReadDir(f.importDir)
+				require.NoError(t, err)
+				require.Empty(t, entries)
+			})
+		}
 	})
 
 	t.Run("invalid JSON", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		res := f.postRaw(t, "/api/pack", []byte(`{"name":`), processorTestToken)
+		res := f.postRaw(t, "/api/match", []byte(`{"name":`), processorTestToken)
 		require.Equal(t, domain.StatusDecodingError.Code(), res.Code)
 		require.Zero(t, f.mock.torrentCalls)
 		require.Zero(t, f.mock.importCalls)
@@ -668,23 +680,23 @@ func TestHTTPFailureContracts_DoNotMutateClientOrFilesystem(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
 		payload := f.packPayload()
 		payload["clientname"] = "missing"
-		res := f.postJSON(t, "/api/pack", payload)
+		res := f.postJSON(t, "/api/match", payload)
 		require.Equal(t, domain.StatusClientNotFound.Code(), res.Code)
 		require.Zero(t, f.mock.torrentCalls)
 		require.Zero(t, f.mock.importCalls)
 	})
 
-	t.Run("pack missing torrent bytes", func(t *testing.T) {
+	t.Run("match missing torrent bytes", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		res := f.postJSON(t, "/api/pack", map[string]any{"name": f.releaseName, "clientname": "default"})
+		res := f.postJSON(t, "/api/match", map[string]any{"name": f.releaseName, "clientname": "default"})
 		require.Equal(t, domain.StatusTorrentBytesError.Code(), res.Code)
 		require.Zero(t, f.mock.torrentCalls)
 		require.Zero(t, f.mock.importCalls)
 	})
 
-	t.Run("parse missing torrent bytes", func(t *testing.T) {
+	t.Run("import missing torrent bytes", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		res := f.postJSON(t, "/api/parse", map[string]any{"name": f.releaseName, "clientname": "default"})
+		res := f.postJSON(t, "/api/import", map[string]any{"name": f.releaseName, "clientname": "default"})
 		require.Equal(t, domain.StatusTorrentBytesError.Code(), res.Code)
 		require.Zero(t, f.mock.torrentCalls)
 		require.Zero(t, f.mock.importCalls)
@@ -694,7 +706,7 @@ func TestHTTPFailureContracts_DoNotMutateClientOrFilesystem(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
 		payload := f.packPayload()
 		payload["torrent"] = "%%%"
-		res := f.postJSON(t, "/api/pack", payload)
+		res := f.postJSON(t, "/api/match", payload)
 		require.Equal(t, domain.StatusDecodeTorrentBytesError.Code(), res.Code)
 		require.Equal(t, 1, f.mock.torrentCalls)
 		require.Zero(t, f.mock.fileCalls)
@@ -705,7 +717,7 @@ func TestHTTPFailureContracts_DoNotMutateClientOrFilesystem(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
 		payload := f.packPayload()
 		payload["torrent"] = base64.StdEncoding.EncodeToString([]byte("not-a-torrent"))
-		res := f.postJSON(t, "/api/pack", payload)
+		res := f.postJSON(t, "/api/match", payload)
 		require.Equal(t, domain.StatusParseTorrentInfoError.Code(), res.Code)
 		require.Equal(t, 1, f.mock.torrentCalls)
 		require.Zero(t, f.mock.fileCalls)
@@ -725,7 +737,7 @@ func TestHTTPFailureContracts_DoNotMutateClientOrFilesystem(t *testing.T) {
 		payload := f.packPayload()
 		payload["torrent"] = base64.StdEncoding.EncodeToString(torrent.Bytes())
 
-		res := f.postJSON(t, "/api/pack", payload)
+		res := f.postJSON(t, "/api/match", payload)
 		require.Equal(t, domain.StatusGetEpisodesError.Code(), res.Code)
 		require.Zero(t, f.mock.fileCalls)
 		require.Zero(t, f.mock.importCalls)
@@ -733,21 +745,38 @@ func TestHTTPFailureContracts_DoNotMutateClientOrFilesystem(t *testing.T) {
 
 	t.Run("below threshold", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 4, 2, 0.75)
-		res := f.postJSON(t, "/api/pack", f.packPayload())
+		res := f.postJSON(t, "/api/match", f.packPayload())
 		require.Equal(t, domain.StatusBelowThreshold.Code(), res.Code)
 		require.Zero(t, f.mock.importCalls)
 		require.NoDirExists(t, filepath.Join(f.importDir, f.releaseName))
 	})
 }
 
-func TestParse_RebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
+func TestRemovedWebhookRoutes_ReturnNotFound(t *testing.T) {
+	for _, path := range []string{"/api/pack", "/api/parse"} {
+		t.Run(path, func(t *testing.T) {
+			f := newProcessorHTTPFixture(t, 1, 1, 0)
+			res := f.postJSON(t, path, f.packPayload())
+			require.Equal(t, stdhttp.StatusNotFound, res.Code)
+			require.Empty(t, res.Header().Get("Location"))
+			require.Zero(t, f.mock.torrentCalls)
+			require.Zero(t, f.mock.fileCalls)
+			require.Zero(t, f.mock.importCalls)
+			entries, err := os.ReadDir(f.importDir)
+			require.NoError(t, err)
+			require.Empty(t, entries)
+		})
+	}
+}
+
+func TestImport_RebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 	t.Run("missing after restart", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
 		planMap = xsync.NewMapOf[importPlanCacheKey, cachedImportPlan]()
 		entryMap = xsync.NewMapOf[string, *entryCache]()
-		res := f.postJSON(t, "/api/parse", f.packPayload())
+		res := f.postJSON(t, "/api/import", f.packPayload())
 
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
 		require.Equal(t, 2, f.mock.torrentCalls, "restart must rebuild the client inventory")
@@ -757,7 +786,7 @@ func TestParse_RebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 
 	t.Run("expired", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
 		hashes, err := torrents.InfoHashes(f.torrent)
 		require.NoError(t, err)
@@ -767,7 +796,7 @@ func TestParse_RebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 		cached.expiresAt = time.Now().Add(-time.Second)
 		planMap.Store(key, cached)
 
-		res := f.postJSON(t, "/api/parse", f.packPayload())
+		res := f.postJSON(t, "/api/import", f.packPayload())
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
 		require.Equal(t, 1, f.mock.torrentCalls, "an expired plan can still reuse the inventory cache")
 		require.Equal(t, 2, f.mock.fileCalls, "an expired plan must rebuild file mappings")
@@ -776,11 +805,11 @@ func TestParse_RebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 
 	t.Run("release name changed", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
 		payload := f.packPayload()
 		payload["name"] = "Different.S01.1080p.WEB-DL.H.264-RlsGrp"
-		res := f.postJSON(t, "/api/parse", payload)
+		res := f.postJSON(t, "/api/import", payload)
 
 		require.Equal(t, domain.StatusNoMatches.Code(), res.Code)
 		require.Zero(t, f.mock.importCalls, "a plan accepted for another release must not import")
@@ -788,13 +817,13 @@ func TestParse_RebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 
 	t.Run("torrent identity changed", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 		changedTorrent, err := torrents.TorrentFromRls(f.releaseName, 2)
 		require.NoError(t, err)
 
 		payload := f.packPayload()
 		payload["torrent"] = base64.StdEncoding.EncodeToString(changedTorrent)
-		res := f.postJSON(t, "/api/parse", payload)
+		res := f.postJSON(t, "/api/import", payload)
 
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
 		require.Equal(t, 2, f.mock.fileCalls, "a different info hash must rebuild the exact plan")
@@ -803,12 +832,12 @@ func TestParse_RebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 
 	t.Run("fuzzy matching changed", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
 		changed := f.config.Snapshot()
 		changed.FuzzyMatching.SkipYearCompare = true
 		f.config.Store(changed)
-		res := f.postJSON(t, "/api/parse", f.packPayload())
+		res := f.postJSON(t, "/api/import", f.packPayload())
 
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
 		require.Equal(t, 2, f.mock.torrentCalls, "matching changes must refresh the inventory index")
@@ -818,7 +847,7 @@ func TestParse_RebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 
 	t.Run("client configuration changed", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
 		changed := f.config.Snapshot()
 		changedClient := cloneClientConfig(*changed.Clients["default"])
@@ -827,7 +856,7 @@ func TestParse_RebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 		f.config.Store(changed)
 		clientMap.Store("default", cachedTorrentClient{config: cloneClientConfig(changedClient), client: f.mock})
 
-		res := f.postJSON(t, "/api/parse", f.packPayload())
+		res := f.postJSON(t, "/api/import", f.packPayload())
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
 		require.Equal(t, 2, f.mock.torrentCalls, "client changes must refresh the inventory")
 		require.Equal(t, 2, f.mock.fileCalls, "client changes must rebuild the exact plan")
@@ -835,19 +864,19 @@ func TestParse_RebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 	})
 }
 
-func TestParseMutationFailures_RemainSafeAndRetryable(t *testing.T) {
+func TestImportMutationFailures_RemainSafeAndRetryable(t *testing.T) {
 	t.Run("import failure retains plan for retry", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 		f.mock.importErr = errors.New("import failed")
 
-		first := f.postJSON(t, "/api/parse", f.packPayload())
+		first := f.postJSON(t, "/api/import", f.packPayload())
 		require.Equal(t, domain.StatusAddTorrentError.Code(), first.Code)
 		require.Equal(t, 1, f.mock.importCalls)
 		require.FileExists(t, filepath.Join(f.importDir, f.releaseName, "Lifecycle.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"))
 
 		f.mock.importErr = nil
-		second := f.postJSON(t, "/api/parse", f.packPayload())
+		second := f.postJSON(t, "/api/import", f.packPayload())
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), second.Code)
 		require.Equal(t, 1, f.mock.torrentCalls, "retry must retain the accepted inventory")
 		require.Equal(t, 1, f.mock.fileCalls, "retry must retain the accepted plan")
@@ -856,14 +885,14 @@ func TestParseMutationFailures_RemainSafeAndRetryable(t *testing.T) {
 
 	t.Run("one conflicting target does not block safe links", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 2, 2, 0)
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
 		targetDir := filepath.Join(f.importDir, f.releaseName)
 		require.NoError(t, os.MkdirAll(targetDir, 0o755))
 		conflictingTarget := filepath.Join(targetDir, "Lifecycle.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv")
 		require.NoError(t, os.WriteFile(conflictingTarget, []byte("conflict"), 0o644))
 
-		res := f.postJSON(t, "/api/parse", f.packPayload())
+		res := f.postJSON(t, "/api/import", f.packPayload())
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
 		require.Equal(t, 1, f.mock.importCalls)
 		contents, err := os.ReadFile(conflictingTarget)
@@ -874,7 +903,7 @@ func TestParseMutationFailures_RemainSafeAndRetryable(t *testing.T) {
 
 	t.Run("smart mode retains safe links when achieved coverage is below threshold", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 3, 3, 0.75)
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
 		targetDir := filepath.Join(f.importDir, f.releaseName)
 		require.NoError(t, os.MkdirAll(targetDir, 0o755))
@@ -884,7 +913,7 @@ func TestParseMutationFailures_RemainSafeAndRetryable(t *testing.T) {
 		conflictingTarget := filepath.Join(targetDir, "Lifecycle.S01E02.1080p.WEB-DL.H.264-RlsGrp.mkv")
 		require.NoError(t, os.WriteFile(conflictingTarget, []byte("conflict"), 0o644))
 
-		res := f.postJSON(t, "/api/parse", f.packPayload())
+		res := f.postJSON(t, "/api/import", f.packPayload())
 		require.Equal(t, domain.StatusBelowThreshold.Code(), res.Code)
 		require.Zero(t, f.mock.importCalls)
 		existingSourceInfo, err := os.Stat(existingSource)
@@ -900,14 +929,14 @@ func TestParseMutationFailures_RemainSafeAndRetryable(t *testing.T) {
 
 	t.Run("all conflicting targets prevent import", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/pack", f.packPayload()).Code)
+		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
 		targetDir := filepath.Join(f.importDir, f.releaseName)
 		require.NoError(t, os.MkdirAll(targetDir, 0o755))
 		conflictingTarget := filepath.Join(targetDir, "Lifecycle.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv")
 		require.NoError(t, os.WriteFile(conflictingTarget, []byte("conflict"), 0o644))
 
-		res := f.postJSON(t, "/api/parse", f.packPayload())
+		res := f.postJSON(t, "/api/import", f.packPayload())
 		require.Equal(t, domain.StatusFailedHardlink.Code(), res.Code)
 		require.Zero(t, f.mock.importCalls)
 		contents, err := os.ReadFile(conflictingTarget)

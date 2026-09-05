@@ -61,7 +61,7 @@ clients:
     apiKey: ""
 
     # Import Policy
-    # Controls how /api/parse re-imports the matched season pack back into the client
+    # Controls how /api/import re-imports the matched season pack back into the client
     # after the local episodes have been hardlinked into place.
     #
     import:
