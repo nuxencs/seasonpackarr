@@ -145,7 +145,7 @@ func TestDelugeImportLive(t *testing.T) {
 
 func importAndRegisterCleanup(t *testing.T, c *delugeClient, raw delugeLiveAPI, req ImportRequest) {
 	t.Helper()
-	if err := c.Import(req); err != nil {
+	if _, err := c.Import(req); err != nil {
 		t.Fatalf("import: %v", err)
 	}
 	t.Cleanup(func() {

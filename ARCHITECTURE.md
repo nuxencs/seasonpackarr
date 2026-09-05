@@ -56,6 +56,9 @@
 - Accepted import plans are cached for 2 minutes. `/api/parse` normally performs no second inventory or file-detail reads.
 - Cache entries validate client configuration, matching settings, release name, and torrent identity. `/api/parse` rebuilds safely on a cache miss.
 - A successful import invalidates the plan and the client inventory.
+- Exact plans retain one compact reason for every unmatched torrent target.
+  Torrent-client adapters return neutral stage timings for successful and failed
+  imports. The HTTP processor owns the operator-facing structured logs.
 
 ### File Operations
 

@@ -17,6 +17,28 @@ Requests must include the configured API token. Unauthorized requests are reject
 - `/api/parse` owns the import. It reuses the accepted plan when available and safely rebuilds it on a cache miss. It resolves the client destination, hardlinks matched episodes, and imports through the per-client policy. If achieved smart-mode coverage falls below the threshold, it does not import. Successful hardlinks remain for a safe retry; the service does not perform destructive cleanup.
 - The candidate and pack checks share a short-lived client inventory. A normal candidate, pack, parse sequence performs one inventory scan and one set of candidate file-detail reads.
 
+## Operator Log Contract
+
+- `/api/candidate` logs each release compatibility rejection as a structured
+  event. The event reports the incompatible field, the original announced
+  `want` value, the original client `got` value, and the client release. Fuzzy
+  matching can normalize values for comparison but not for diagnostics.
+- `/api/pack` logs the reusable, unmatched, and total torrent episode counts.
+- Each unmatched torrent episode produces one structured log event. The event
+  reports either a missing source episode, a duplicate torrent target, or the
+  closest same-episode client source plus every incompatible safety field. Each
+  incompatible field reports its torrent `want` and client `got` value.
+- `/api/parse` logs whether it reused or rebuilt the import plan. It also logs
+  each successful or failed destination-resolution attempt at `INFO`, hardlink
+  duration, each torrent-client import stage, total client-import duration, and
+  total parse duration.
+- Torrent-client stages use the stable names `config`, `add`, `find`,
+  `recheck`, and `resume`. A client omits stages that it does not perform.
+- Logs never include configured credentials or request authentication tokens.
+- Expected candidate and pack gate rejections use informational events.
+  Configuration, decoding, client, filesystem, and import failures use error
+  events.
+
 ## Contract Stability Rules
 
 - do not change auth expectations casually
