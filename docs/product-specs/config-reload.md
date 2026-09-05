@@ -25,15 +25,14 @@ The following settings apply without a restart:
 - Discord webhook and notification levels
 - log level
 
-Each request or notification uses one coherent snapshot. A client configuration change also replaces the cached
-client adapter and its torrent-entry cache on the next use.
+Each request or notification uses one coherent snapshot. Cached inventories and import plans validate the relevant
+client and matching settings before reuse. Changed settings cause the next request to rebuild stale data.
 
 ## Restart-Only Settings
 
 The following settings configure components that start once:
 
 - server host and port
-- metadata provider credentials
 - log path, maximum size, and backup count
 - `disableConfigFile`
 

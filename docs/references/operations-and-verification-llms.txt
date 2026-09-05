@@ -5,6 +5,7 @@ seasonpackarr operations and verification reference
 - formatting for Go changes: gofumpt -w .
 - smoke flows:
   - go run . start --config <dir>
-  - go run . test pack "<release>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>"
-  - go run . test parse "<release-or-torrent>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>"
+  - go run . test candidate "<release>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>"
+  - go run . test pack "<release-or-torrent>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>"
+  - go run . test parse "<release-or-torrent>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>" (mutating: creates hardlinks and imports the torrent)
 - if E2E cannot run because external services or credentials are missing, say that explicitly

@@ -13,10 +13,10 @@ seasonpackarr configuration surface reference
 - qBittorrent clients must set import.savePath or import.category; without savePath, the destination follows qBittorrent automatic-management and manual category-path preferences
 - Transmission has no categories or content layout; empty import.savePath falls back to the session download dir; Transmission always hash-checks existing data on add, so imports verify before starting
 - Deluge requires import.savePath; it adds stopped, applies its optional label, resumes into Deluge/libtorrent's normal initial check, and waits until it is no longer paused or checking
-- parseTorrentFile and clients.<name>.preImportPath are removed; startup hard-fails with a migration message if they (or their env vars) are still present
+- metadata, parseTorrentFile, and clients.<name>.preImportPath are removed; startup hard-fails with a migration message if they (or their env vars) are still present
 - config reload builds a new immutable snapshot, reapplies SEASONPACKARR__ environment overrides, validates it, and publishes it atomically; invalid reloads keep the last valid snapshot
 - live reload applies client connections/import policies, apiToken, smart/fuzzy matching, notifications, and logLevel
-- host/port, metadata credentials, log file output settings, and disableConfigFile require restart
+- host/port, log file output settings, and disableConfigFile require restart
 - high-signal settings:
   - host
   - port
@@ -25,10 +25,10 @@ seasonpackarr configuration surface reference
   - clients.<name>.import.savePath/tags
   - clients.<name>.import.category/downloadPath/contentLayout (qBittorrent only)
   - smartMode
-  - smartModeThreshold
+  - smartModeThreshold (minimum reusable share of distinct valid episode files in the announced torrent)
   - fuzzyMatching.skipRepackCompare
   - fuzzyMatching.simplifyHdrCompare
-  - metadata.tvdbAPIKey
-  - metadata.tvdbPIN
+  - fuzzyMatching.simplifyWebCompare
+  - fuzzyMatching.skipYearCompare
   - notifications
 - any config behavior change should update docs and schema together

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/autobrr/go-torrent/metainfo"
 )
@@ -70,7 +71,9 @@ func Episodes(info metainfo.Info) ([]Episode, error) {
 	for _, file := range files {
 		path := file.DisplayPath(&info)
 
-		if filepath.Ext(path) != ".mkv" {
+		switch strings.ToLower(filepath.Ext(path)) {
+		case ".mkv", ".mp4":
+		default:
 			continue
 		}
 
@@ -81,7 +84,7 @@ func Episodes(info metainfo.Info) ([]Episode, error) {
 	}
 
 	if len(episodes) == 0 {
-		return []Episode{}, fmt.Errorf("no .mkv files found")
+		return []Episode{}, fmt.Errorf("no supported video files found")
 	}
 
 	if len(episodes) > 1 {
