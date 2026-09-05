@@ -247,6 +247,28 @@ func TestAuthenticatedCandidateLogsStructuredCompatibilityMismatch(t *testing.T)
 	require.Equal(t, "Lifecycle.S01E01.1080p.BluRay.H.264-RlsGrp", mismatch["client_release"])
 }
 
+func TestAuthenticatedCandidateLogsEachMatchingClientReleaseAtDebug(t *testing.T) {
+	previousLevel := zerolog.GlobalLevel()
+	zerolog.SetGlobalLevel(zerolog.TraceLevel)
+	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
+
+	var output bytes.Buffer
+	f := newProcessorHTTPFixtureWithLogger(t, 2, 2, 0.5, newCapturedLogger(&output))
+
+	response := f.postJSON(t, "/api/candidate", map[string]any{
+		"name":       f.releaseName,
+		"clientname": "default",
+	})
+	require.Equal(t, domain.StatusSuccessfulMatch.Code(), response.Code)
+
+	logs := decodeCapturedLogs(t, &output)
+	for episode := 1; episode <= 2; episode++ {
+		clientRelease := fmt.Sprintf("Lifecycle.S01E%02d.1080p.WEB-DL.H.264-RlsGrp", episode)
+		matched := requireCapturedLogField(t, logs, "client release passed candidate gate", "client_release", clientRelease)
+		require.Equal(t, "debug", matched["level"])
+	}
+}
+
 func TestAuthenticatedPackLogsUnmatchedTorrentEpisode(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
@@ -468,6 +490,125 @@ func TestAuthenticatedHTTPLifecycleReusesAcceptedPlan(t *testing.T) {
 		episodeFile := fmt.Sprintf("Lifecycle.S01E%02d.1080p.WEB-DL.H.264-RlsGrp.mkv", episode)
 		require.FileExists(t, filepath.Join(f.importDir, f.releaseName, episodeFile))
 	}
+}
+
+func TestAuthenticatedParseRefreshesPlanWhenSourceMoves(t *testing.T) {
+	previousLevel := zerolog.GlobalLevel()
+	zerolog.SetGlobalLevel(zerolog.TraceLevel)
+	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
+
+	var output bytes.Buffer
+	f := newProcessorHTTPFixtureWithLogger(t, 2, 2, 1, newCapturedLogger(&output))
+
+	pack := f.postJSON(t, "/api/pack", f.packPayload())
+	require.Equal(t, domain.StatusSuccessfulMatch.Code(), pack.Code)
+
+	episodeFile := "Lifecycle.S01E02.1080p.WEB-DL.H.264-RlsGrp.mkv"
+	movedDir := filepath.Join(filepath.Dir(f.sourceDir), "source-completed")
+	require.NoError(t, os.MkdirAll(movedDir, 0o755))
+	require.NoError(t, os.Rename(
+		filepath.Join(f.sourceDir, episodeFile),
+		filepath.Join(movedDir, episodeFile),
+	))
+	f.mock.torrents[1].SavePath = movedDir
+
+	parse := f.postJSON(t, "/api/parse", f.packPayload())
+	require.Equal(t, domain.StatusSuccessfulHardlink.Code(), parse.Code, parse.Body.String())
+	require.Equal(t, 2, f.mock.torrentCalls, "parse must refresh the stale inventory once")
+	require.Equal(t, 4, f.mock.fileCalls, "parse must rebuild the stale plan once")
+	for episode := 1; episode <= 2; episode++ {
+		fileName := fmt.Sprintf("Lifecycle.S01E%02d.1080p.WEB-DL.H.264-RlsGrp.mkv", episode)
+		require.FileExists(t, filepath.Join(f.importDir, f.releaseName, fileName))
+	}
+	require.True(t, f.mock.importCalled)
+
+	logs := decodeCapturedLogs(t, &output)
+	missing := requireCapturedLogField(
+		t,
+		logs,
+		"hardlink source is missing",
+		"source",
+		filepath.Join(f.sourceDir, episodeFile),
+	)
+	require.Equal(t, "warn", missing["level"])
+	refresh := requireCapturedLog(t, logs, "import plan refreshed after missing hardlink source")
+	require.Equal(t, true, refresh["successful"])
+	hardlinks := requireCapturedLog(t, logs, "hardlink stage completed")
+	require.Equal(t, float64(2), hardlinks["linked_episodes"])
+}
+
+func TestAuthenticatedParseRefreshesAtMostOnceWhenSourceMovesAgain(t *testing.T) {
+	previousLevel := zerolog.GlobalLevel()
+	zerolog.SetGlobalLevel(zerolog.TraceLevel)
+	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
+
+	var output bytes.Buffer
+	f := newProcessorHTTPFixtureWithLogger(t, 2, 2, 1, newCapturedLogger(&output))
+
+	pack := f.postJSON(t, "/api/pack", f.packPayload())
+	require.Equal(t, domain.StatusSuccessfulMatch.Code(), pack.Code)
+
+	episodeFile := "Lifecycle.S01E02.1080p.WEB-DL.H.264-RlsGrp.mkv"
+	movedDir := filepath.Join(filepath.Dir(f.sourceDir), "source-completed")
+	movedAgainDir := filepath.Join(filepath.Dir(f.sourceDir), "source-moved-again")
+	require.NoError(t, os.MkdirAll(movedDir, 0o755))
+	require.NoError(t, os.MkdirAll(movedAgainDir, 0o755))
+	require.NoError(t, os.Rename(
+		filepath.Join(f.sourceDir, episodeFile),
+		filepath.Join(movedDir, episodeFile),
+	))
+	f.mock.torrents[1].SavePath = movedDir
+	f.mock.afterGetFiles = func() {
+		require.NoError(t, os.Rename(
+			filepath.Join(movedDir, episodeFile),
+			filepath.Join(movedAgainDir, episodeFile),
+		))
+		f.mock.afterGetFiles = nil
+	}
+
+	parse := f.postJSON(t, "/api/parse", f.packPayload())
+	require.Equal(t, domain.StatusBelowThreshold.Code(), parse.Code, parse.Body.String())
+	require.Equal(t, 2, f.mock.torrentCalls, "parse must refresh the inventory only once")
+	require.Equal(t, 4, f.mock.fileCalls, "parse must rebuild the plan only once")
+	require.Zero(t, f.mock.importCalls)
+
+	refreshCount := 0
+	missingCount := 0
+	for _, event := range decodeCapturedLogs(t, &output) {
+		switch event["message"] {
+		case "import plan refreshed after missing hardlink source":
+			refreshCount++
+		case "hardlink source is missing":
+			missingCount++
+		}
+	}
+	require.Equal(t, 1, refreshCount)
+	require.Equal(t, 2, missingCount)
+}
+
+func TestAuthenticatedParseRejectsRefreshedPlanBelowThreshold(t *testing.T) {
+	f := newProcessorHTTPFixture(t, 2, 2, 1)
+
+	pack := f.postJSON(t, "/api/pack", f.packPayload())
+	require.Equal(t, domain.StatusSuccessfulMatch.Code(), pack.Code)
+
+	episodeFile := "Lifecycle.S01E02.1080p.WEB-DL.H.264-RlsGrp.mkv"
+	require.NoError(t, os.Rename(
+		filepath.Join(f.sourceDir, episodeFile),
+		filepath.Join(filepath.Dir(f.sourceDir), episodeFile),
+	))
+	f.mock.torrents = f.mock.torrents[:1]
+
+	parse := f.postJSON(t, "/api/parse", f.packPayload())
+	require.Equal(t, domain.StatusBelowThreshold.Code(), parse.Code, parse.Body.String())
+	require.Equal(t, 2, f.mock.torrentCalls)
+	require.Equal(t, 3, f.mock.fileCalls)
+	require.Zero(t, f.mock.importCalls)
+	require.FileExists(t, filepath.Join(
+		f.importDir,
+		f.releaseName,
+		"Lifecycle.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv",
+	))
 }
 
 func TestPackCoverageAcceptsMp4EpisodesAndIgnoresExtraVideos(t *testing.T) {

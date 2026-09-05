@@ -4,7 +4,10 @@
 package http
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
@@ -78,11 +81,8 @@ func (p *processor) parseTorrent() (statusCode domain.StatusCode, err error) {
 		return statusCode, err
 	}
 
-	if snapshot.SmartMode {
-		coverage := release.PercentOfTotalEpisodes(plan.totalEps, len(plan.links))
-		if coverage < snapshot.SmartModeThreshold {
-			return domain.StatusBelowThreshold, domain.StatusBelowThreshold.Error()
-		}
+	if !plan.meetsPlannedCoverageThreshold(snapshot) {
+		return domain.StatusBelowThreshold, domain.StatusBelowThreshold.Error()
 	}
 
 	destinationStarted := time.Now()
@@ -101,28 +101,40 @@ func (p *processor) parseTorrent() (statusCode domain.StatusCode, err error) {
 		Msg("import destination resolved")
 
 	hardlinkStarted := time.Now()
-	linkedCount := 0
-	for _, link := range plan.links {
-		targetEpPath := importDestination.TargetPath(plan.packName, link.torrentEpPath)
-		if err = files.CreateHardlink(link.clientEpPath, targetEpPath); err != nil {
-			p.log.Error().Err(err).Msgf("error creating hardlink: %s", link.clientEpPath)
-			continue
+	hardlinkResult := p.createPlanHardlinks(plan, importDestination)
+	if hardlinkResult.sourceMissing {
+		p.log.Warn().Msg("hardlink source disappeared; refreshing client inventory and import plan")
+		invalidateImportCaches(clientName, plan.hashes)
+
+		refreshStarted := time.Now()
+		refreshedPlan, refreshStatusCode, refreshErr := p.buildImportPlan(clientName, clientCfg, snapshot)
+		refreshEvent := p.log.Info().
+			Bool("successful", refreshErr == nil).
+			Int64("duration_ms", time.Since(refreshStarted).Milliseconds())
+		if refreshErr != nil {
+			refreshEvent.Err(refreshErr).Msg("import plan refreshed after missing hardlink source")
+			p.logHardlinkStage(plan, hardlinkResult, hardlinkStarted)
+			return refreshStatusCode, refreshErr
 		}
-		p.log.Info().Msgf("created or reused hardlink: source(%s), target(%s)", link.clientEpPath, targetEpPath)
-		linkedCount++
+		refreshEvent.
+			Int("planned_links", len(refreshedPlan.links)).
+			Int("total_episodes", refreshedPlan.totalEps).
+			Msg("import plan refreshed after missing hardlink source")
+		if !refreshedPlan.meetsPlannedCoverageThreshold(snapshot) {
+			p.logHardlinkStage(plan, hardlinkResult, hardlinkStarted)
+			return domain.StatusBelowThreshold, domain.StatusBelowThreshold.Error()
+		}
+
+		plan = refreshedPlan
+		hardlinkResult = p.createPlanHardlinks(plan, importDestination)
 	}
 
-	p.log.Info().
-		Int("linked_episodes", linkedCount).
-		Int("planned_links", len(plan.links)).
-		Int("total_episodes", plan.totalEps).
-		Int64("duration_ms", time.Since(hardlinkStarted).Milliseconds()).
-		Msg("hardlink stage completed")
-	if linkedCount == 0 {
+	p.logHardlinkStage(plan, hardlinkResult, hardlinkStarted)
+	if hardlinkResult.linkedCount == 0 {
 		return domain.StatusFailedHardlink, domain.StatusFailedHardlink.Error()
 	}
 	if snapshot.SmartMode {
-		coverage := release.PercentOfTotalEpisodes(plan.totalEps, linkedCount)
+		coverage := release.PercentOfTotalEpisodes(plan.totalEps, hardlinkResult.linkedCount)
 		if coverage < snapshot.SmartModeThreshold {
 			return domain.StatusBelowThreshold, domain.StatusBelowThreshold.Error()
 		}
@@ -151,8 +163,43 @@ func (p *processor) parseTorrent() (statusCode domain.StatusCode, err error) {
 		return statusCode, fmt.Errorf("%s: %w", statusCode, err)
 	}
 
-	planMap.Delete(importPlanKey(clientName, plan.hashes))
-	entryMap.Delete(clientName)
+	invalidateImportCaches(clientName, plan.hashes)
 
 	return domain.StatusSuccessfulHardlink, nil
+}
+
+type hardlinkAttemptResult struct {
+	linkedCount   int
+	sourceMissing bool
+}
+
+func (p *processor) createPlanHardlinks(plan importPlan, importDestination torrentclient.ImportDestination) hardlinkAttemptResult {
+	result := hardlinkAttemptResult{}
+	for _, link := range plan.links {
+		targetEpPath := importDestination.TargetPath(plan.packName, link.torrentEpPath)
+		if err := files.CreateHardlink(link.clientEpPath, targetEpPath); err != nil {
+			if _, statErr := os.Stat(link.clientEpPath); errors.Is(statErr, fs.ErrNotExist) {
+				result.sourceMissing = true
+				p.log.Warn().
+					Err(err).
+					Str("source", link.clientEpPath).
+					Msg("hardlink source is missing")
+				continue
+			}
+			p.log.Error().Err(err).Msgf("error creating hardlink: %s", link.clientEpPath)
+			continue
+		}
+		p.log.Info().Msgf("created or reused hardlink: source(%s), target(%s)", link.clientEpPath, targetEpPath)
+		result.linkedCount++
+	}
+	return result
+}
+
+func (p *processor) logHardlinkStage(plan importPlan, result hardlinkAttemptResult, started time.Time) {
+	p.log.Info().
+		Int("linked_episodes", result.linkedCount).
+		Int("planned_links", len(plan.links)).
+		Int("total_episodes", plan.totalEps).
+		Int64("duration_ms", time.Since(started).Milliseconds()).
+		Msg("hardlink stage completed")
 }
