@@ -45,10 +45,11 @@ func TestTransmissionLive(t *testing.T) {
 	first := torrents[0]
 	t.Logf("first torrent: hash=%s name=%q savePath=%q", first.Hash, first.Name, first.SavePath)
 
-	files, err := c.GetFiles(first.Hash)
-	if err != nil {
-		t.Fatalf("GetFiles(%q): %v", first.Hash, err)
+	results := c.GetFiles([]string{first.Hash})
+	if len(results) != 1 || results[0].Err != nil {
+		t.Fatalf("GetFiles(%q): %+v", first.Hash, results)
 	}
+	files := results[0].Files
 	t.Logf("GetFiles returned %d file(s)", len(files))
 	for i, f := range files {
 		t.Logf("  [%d] name=%q size=%d", i, f.Name, f.Size)

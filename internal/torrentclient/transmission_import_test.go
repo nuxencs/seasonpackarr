@@ -23,6 +23,7 @@ type stubTransmissionAPI struct {
 	statusSeq   []transmissionrpc.TorrentStatus
 	statusIdx   int
 	errorString string
+	getErr      error
 
 	sessionDir string
 }
@@ -32,6 +33,9 @@ func (s *stubTransmissionAPI) TorrentGet(context.Context, []string, []int64) ([]
 }
 
 func (s *stubTransmissionAPI) TorrentGetHashes(context.Context, []string, []string) ([]transmissionrpc.Torrent, error) {
+	if s.getErr != nil {
+		return nil, s.getErr
+	}
 	if len(s.statusSeq) == 0 {
 		return nil, nil
 	}

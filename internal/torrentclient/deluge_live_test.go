@@ -114,13 +114,15 @@ func TestDelugeImportLive(t *testing.T) {
 		if len(torrents) != 1 || torrents[0].SavePath != filepath.Clean(importDir) {
 			t.Fatalf("unexpected torrents: %+v", torrents)
 		}
-		files, err := c.GetFiles(hashes.Legacy)
-		if err != nil {
-			t.Fatalf("list files: %v", err)
+		results := c.GetFiles([]string{hashes.Legacy})
+		if len(results) != 1 || results[0].Err != nil {
+			t.Fatalf("list files: %+v", results)
 		}
+		files := results[0].Files
 		if len(files) != 3 || !strings.HasPrefix(files[0].Name, packName+"/") {
 			t.Fatalf("unexpected files: %+v", files)
 		}
+		requireFileReadLoad(t, c, hashes.Legacy)
 		requireDelugeLabel(t, c, hashes.Legacy, "seasonpackarr")
 	})
 
