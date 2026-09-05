@@ -108,10 +108,10 @@ func (p *processor) buildImportPlan(clientName string, clientCfg *domain.Client,
 	if err != nil {
 		return importPlan{}, domain.StatusGetEpisodesError, fmt.Errorf("%s: %w", domain.StatusGetEpisodesError, err)
 	}
-	eligibleEps := torrentEps[:0]
+	eligibleEps := make([]release.EpisodeFile, 0, len(torrentEps))
 	for _, torrentEp := range torrentEps {
-		if release.IsValidEpisodeFile(torrentEp.Path) {
-			eligibleEps = append(eligibleEps, torrentEp)
+		if episode, ok := release.ParseEpisodeFile(torrentEp.Path, torrentEp.Size); ok {
+			eligibleEps = append(eligibleEps, episode)
 		}
 	}
 	if len(eligibleEps) == 0 {
@@ -123,52 +123,18 @@ func (p *processor) buildImportPlan(clientName string, clientCfg *domain.Client,
 		return importPlan{}, domain.StatusParseTorrentInfoError, fmt.Errorf("%s: %w", domain.StatusParseTorrentInfoError, err)
 	}
 
-	fileResults := p.getFiles(candidates)
-	linksByTarget := make(map[string]plannedLink)
-	for index, candidate := range candidates {
-		if index >= len(fileResults) {
-			p.log.Error().Msgf("torrent client omitted file result for %s", candidate.torrent.Name)
-			continue
-		}
-
-		result := fileResults[index]
-		if !strings.EqualFold(result.Hash, candidate.torrent.Hash) {
-			p.log.Error().Msgf("torrent client returned out-of-order file result for %s", candidate.torrent.Name)
-			continue
-		}
-		if result.Err != nil {
-			p.log.Error().Err(result.Err).Msgf("error getting file info: %s", candidate.torrent.Name)
-			continue
-		}
-
-		fileName, size, err := episodeFileFromFiles(result.Files)
-		if err != nil {
-			p.log.Error().Err(err).Msgf("error getting file info: %s", candidate.torrent.Name)
-			continue
-		}
-		clientEpPath := filepath.Join(candidate.torrent.SavePath, fileName)
-
-		for _, torrentEp := range eligibleEps {
-			matchedEpPath, _ := release.MatchEpToSeasonPackEp(clientEpPath, size, torrentEp.Path, torrentEp.Size)
-			if matchedEpPath == "" {
-				continue
-			}
-			if _, exists := linksByTarget[matchedEpPath]; !exists {
-				linksByTarget[matchedEpPath] = plannedLink{clientEpPath: clientEpPath, torrentEpPath: matchedEpPath}
-			}
-			break
-		}
-	}
-
-	if len(linksByTarget) == 0 {
+	matcher := release.NewEpisodeMatcher(eligibleEps)
+	matches := matcher.Match(p.getEpisodeFiles(candidates))
+	if len(matches) == 0 {
 		return importPlan{}, domain.StatusFailedMatchToTorrentEps, domain.StatusFailedMatchToTorrentEps.Error()
 	}
 
-	links := make([]plannedLink, 0, len(linksByTarget))
-	for _, torrentEp := range eligibleEps {
-		if link, ok := linksByTarget[torrentEp.Path]; ok {
-			links = append(links, link)
-		}
+	links := make([]plannedLink, 0, len(matches))
+	for _, match := range matches {
+		links = append(links, plannedLink{
+			clientEpPath:  match.ClientPath,
+			torrentEpPath: match.TorrentPath,
+		})
 	}
 
 	return importPlan{
@@ -180,34 +146,53 @@ func (p *processor) buildImportPlan(clientName string, clientCfg *domain.Client,
 	}, domain.StatusSuccessfulMatch, nil
 }
 
-func (p *processor) getFiles(candidates []entry) []torrentclient.FileResult {
+func (p *processor) getEpisodeFiles(candidates []entry) []release.EpisodeFile {
 	hashes := make([]string, len(candidates))
 	for index, candidate := range candidates {
 		hashes[index] = candidate.torrent.Hash
 	}
-	return p.req.Client.GetFiles(hashes)
-}
 
-func episodeFileFromFiles(torrentFiles []torrentclient.File) (string, int64, error) {
-	var fileName string
-	var size int64
-	for _, f := range torrentFiles {
-		if !release.IsValidEpisodeFile(f.Name) {
+	results := p.req.Client.GetFiles(hashes)
+	episodes := make([]release.EpisodeFile, 0, len(results))
+	for index, candidate := range candidates {
+		if index >= len(results) {
+			p.log.Error().Msgf("torrent client omitted file result for %s", candidate.torrent.Name)
 			continue
 		}
 
-		fileName = f.Name
-		size = f.Size
-		break
+		result := results[index]
+		if !strings.EqualFold(result.Hash, candidate.torrent.Hash) {
+			p.log.Error().Msgf("torrent client returned out-of-order file result for %s", candidate.torrent.Name)
+			continue
+		}
+		if result.Err != nil {
+			p.log.Error().Err(result.Err).Msgf("error getting file info: %s", candidate.torrent.Name)
+			continue
+		}
+
+		episode, err := episodeFileFromFiles(result.Files, candidate.torrent.SavePath)
+		if err != nil {
+			p.log.Error().Err(err).Msgf("error getting file info: %s", candidate.torrent.Name)
+			continue
+		}
+		episodes = append(episodes, episode)
 	}
-	switch {
-	case len(fileName) == 0:
-		return "", 0, errors.New("file name is empty")
-	case size == 0:
-		return "", 0, errors.New("file size is empty")
+	return episodes
+}
+
+func episodeFileFromFiles(files []torrentclient.File, savePath string) (release.EpisodeFile, error) {
+	for _, f := range files {
+		episode, ok := release.ParseEpisodeFile(filepath.Join(savePath, f.Name), f.Size)
+		if !ok {
+			continue
+		}
+		if f.Size == 0 {
+			return release.EpisodeFile{}, errors.New("file size is empty")
+		}
+		return episode, nil
 	}
 
-	return fileName, size, nil
+	return release.EpisodeFile{}, errors.New("file name is empty")
 }
 
 func importPlanKey(clientName string, hashes torrents.Hashes) importPlanCacheKey {

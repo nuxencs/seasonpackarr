@@ -26,6 +26,14 @@ Current comparison logic checks:
 - changes to target path derivation need docs plus concrete verification notes
 - if behavior intentionally broadens acceptance, explain the user value and failure tradeoff
 
+## Planning Performance Expectations
+
+- parse each client and torrent episode filename once per exact plan
+- index targets by every safety-sensitive episode compatibility field
+- preserve torrent target order and first-source deduplication
+- request candidate file details once through the torrent-client interface
+- keep client-specific batching and concurrency inside each adapter
+
 ## Open Questions
 
 - whether additional sample/extension filtering is needed beyond current checks
