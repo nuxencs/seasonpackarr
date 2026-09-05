@@ -23,8 +23,8 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 	"github.com/nuxencs/seasonpackarr/pkg/errors"
 
+	"github.com/autobrr/rls"
 	"github.com/gin-gonic/gin"
-	"github.com/moistari/rls"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/rs/zerolog"
 )

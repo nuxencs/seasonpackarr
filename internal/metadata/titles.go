@@ -6,7 +6,7 @@ package metadata
 import (
 	"strings"
 
-	"github.com/moistari/rls"
+	"github.com/autobrr/rls"
 )
 
 // maxVariantWords caps the longest shortened title variant. Provider searches
