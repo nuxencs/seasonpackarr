@@ -29,18 +29,18 @@ func newWebhookHandler(log logger.Logger, cfg config.Provider, notification doma
 
 func (h *webhookHandler) Routes(r *gin.RouterGroup) {
 	r.POST("/candidate", h.candidate)
-	r.POST("/pack", h.pack)
-	r.POST("/parse", h.parse)
+	r.POST("/match", h.match)
+	r.POST("/import", h.importPack)
 }
 
 func (h *webhookHandler) candidate(c *gin.Context) {
 	newProcessor(h.log, h.cfg, h.noti, h.tasks).CandidateSeasonPackHandler(c)
 }
 
-func (h *webhookHandler) pack(c *gin.Context) {
-	newProcessor(h.log, h.cfg, h.noti, h.tasks).ProcessSeasonPackHandler(c)
+func (h *webhookHandler) match(c *gin.Context) {
+	newProcessor(h.log, h.cfg, h.noti, h.tasks).MatchSeasonPackHandler(c)
 }
 
-func (h *webhookHandler) parse(c *gin.Context) {
-	newProcessor(h.log, h.cfg, h.noti, h.tasks).ParseTorrentHandler(c)
+func (h *webhookHandler) importPack(c *gin.Context) {
+	newProcessor(h.log, h.cfg, h.noti, h.tasks).ImportSeasonPackHandler(c)
 }

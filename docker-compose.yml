@@ -39,7 +39,7 @@ services:
       SEASONPACKARR__CLIENTS_DEFAULT_PASSWORD: adminadmin
       SEASONPACKARR__CLIENTS_DEFAULT_APIKEY:
 
-      # Import policy (how /api/parse re-imports the season pack into the client)
+      # Import policy (how /api/import re-imports the season pack into the client)
       SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_SAVE_PATH: # final import destination; required for qBittorrent unless IMPORT_CATEGORY is set
       SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_CATEGORY: # qBittorrent only
       SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_TAGS: seasonpackarr

@@ -20,9 +20,9 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// parseTorrent is the /api/parse path. It reuses an accepted plan or rebuilds it
+// importSeasonPack is the /api/import path. It reuses an accepted plan or rebuilds it
 // on a cache miss, hardlinks the planned episodes, then imports the pack.
-func (p *processor) parseTorrent(ctx context.Context) (statusCode domain.StatusCode, err error) {
+func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.StatusCode, err error) {
 	totalStarted := time.Now()
 	defer func() {
 		event := p.log.Info().

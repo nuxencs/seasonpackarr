@@ -92,7 +92,7 @@ clients:
     apiKey: ""
 
     # Import Policy
-    # Controls how /api/parse re-imports the matched season pack back into the client
+    # Controls how /api/import re-imports the matched season pack back into the client
     # after the local episodes have been hardlinked into place.
     #
     import:
@@ -450,14 +450,14 @@ func validateDeprecatedConfigInputs(k *koanf.Koanf, lookupEnv func(string) (stri
 	}
 
 	if k != nil && k.Exists(deprecatedMetadataKey) {
-		return fmt.Errorf("deprecated config detected: %s was removed; smart mode now uses the actual torrent sent to /api/pack - remove the metadata block and update the autobrr external filters as described in the README",
+		return fmt.Errorf("deprecated config detected: %s was removed; smart mode now uses the actual torrent sent to /api/match - remove the metadata block and update the autobrr external filters as described in the README",
 			deprecatedMetadataKey)
 	}
 
 	if lookupEnv != nil {
 		for _, envKey := range []string{deprecatedMetadataTVDBAPIKeyEnv, deprecatedMetadataTVDBPINEnv} {
 			if _, ok := lookupEnv(envKey); ok {
-				return fmt.Errorf("deprecated environment variable detected: %s was removed; smart mode now uses the actual torrent sent to /api/pack - remove this variable and update the autobrr external filters as described in the README",
+				return fmt.Errorf("deprecated environment variable detected: %s was removed; smart mode now uses the actual torrent sent to /api/match - remove this variable and update the autobrr external filters as described in the README",
 					envKey)
 			}
 		}

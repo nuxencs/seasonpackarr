@@ -28,8 +28,8 @@ func TestCompileCandidate_OmitsTorrentBytes(t *testing.T) {
 	require.NotContains(t, payload, "torrent")
 }
 
-func TestCompilePack_IncludesTorrentBytes(t *testing.T) {
-	body, err := CompilePack("Series.S01.1080p.WEB-DL-GRP", []byte("torrent-data"), "default")
+func TestCompileMatch_IncludesTorrentBytes(t *testing.T) {
+	body, err := CompileMatch("Series.S01.1080p.WEB-DL-GRP", []byte("torrent-data"), "default")
 	require.NoError(t, err)
 
 	payload := decodePayload(t, body)

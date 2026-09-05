@@ -28,11 +28,11 @@ func CompileCandidate(torrentName string, clientName string) (io.Reader, error) 
 	return compile(candidatePayload{Name: torrentName, ClientName: clientName})
 }
 
-func CompilePack(torrentName string, torrentBytes []byte, clientName string) (io.Reader, error) {
+func CompileMatch(torrentName string, torrentBytes []byte, clientName string) (io.Reader, error) {
 	return compile(torrentPayload{Name: torrentName, Torrent: torrentBytes, ClientName: clientName})
 }
 
-func CompileParse(torrentName string, torrentBytes []byte, clientName string) (io.Reader, error) {
+func CompileImport(torrentName string, torrentBytes []byte, clientName string) (io.Reader, error) {
 	return compile(torrentPayload{Name: torrentName, Torrent: torrentBytes, ClientName: clientName})
 }
 

@@ -157,7 +157,7 @@ func TestValidateDeprecatedConfigInputs(t *testing.T) {
 		err := validateDeprecatedConfigInputs(loadTestKoanf(t, "metadata:\n  tvdbAPIKey: old-key\n"), nil)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "metadata was removed")
-		require.Contains(t, err.Error(), "/api/pack")
+		require.Contains(t, err.Error(), "/api/match")
 	})
 
 	t.Run("rejects metadata env", func(t *testing.T) {
@@ -170,7 +170,7 @@ func TestValidateDeprecatedConfigInputs(t *testing.T) {
 		err := validateDeprecatedConfigInputs(nil, lookup)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), deprecatedMetadataTVDBAPIKeyEnv)
-		require.Contains(t, err.Error(), "/api/pack")
+		require.Contains(t, err.Error(), "/api/match")
 	})
 
 	t.Run("rejects empty metadata env", func(t *testing.T) {
