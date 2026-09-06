@@ -9,6 +9,7 @@ Scored on 1-5. `5` means strong confidence with clear docs, tests, and operation
 | Core season-pack matching | 4 | Focused code and tests exist | More regression cases for renamed/weird releases |
 | Torrent parsing flow | 4 | Exact plans are built before side effects and covered through authenticated HTTP component tests | External autobrr-to-client verification and adversarial path cases |
 | Smart mode / torrent coverage | 4 | Uses distinct MKV and MP4 episode targets, excludes extra videos, and has focused cache and threshold tests | Broader multi-episode and container corpus cases |
+| Prowlarr backfill | 3 | API/CLI fixtures cover grouping, tracker selection, search-only preview, source preflight, metadata reuse, exact imports, duplicates, pagination, rate limits, and cancellation | Live Prowlarr/tracker validation; ambiguous and date-based episode names |
 | Config experience | 2 | Rich defaults and schema surface | Migration notes and doc sync need discipline |
 | Notifications / observability | 3 | Logging and Discord hooks exist | Sharper operator playbooks |
 | Packaging / release | 4 | CI, Docker, GoReleaser, systemd docs exist | No explicit docs quality gates yet |

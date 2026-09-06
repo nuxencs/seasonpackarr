@@ -68,6 +68,9 @@ func (f EpisodeFile) Path() string {
 	return f.path
 }
 
+// Size returns the declared episode size in bytes.
+func (f EpisodeFile) Size() int64 { return f.key.size }
+
 // EpisodeMatch maps one reusable client episode to one announced torrent
 // target.
 type EpisodeMatch struct {

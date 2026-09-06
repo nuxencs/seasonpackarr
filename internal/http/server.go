@@ -23,24 +23,35 @@ import (
 var ErrServerClosed = http.ErrServerClosed
 
 type Server struct {
-	log   logger.Logger
-	cfg   config.Provider
-	noti  domain.Sender
-	tasks *taskGroup
+	log         logger.Logger
+	cfg         config.Provider
+	noti        domain.Sender
+	tasks       *taskGroup
+	search      *searchRunner
+	searchTasks *taskGroup
 
 	httpServer http.Server
 }
 
 func NewServer(log logger.Logger, config config.Provider, notification domain.Sender) *Server {
+	tasks := newTaskGroup()
 	return &Server{
-		log:   log,
-		cfg:   config,
-		noti:  notification,
-		tasks: newTaskGroup(),
+		log:         log,
+		cfg:         config,
+		noti:        notification,
+		tasks:       tasks,
+		search:      &searchRunner{log: log, cfg: config, noti: notification, tasks: tasks},
+		searchTasks: newTaskGroup(),
 	}
 }
 
 func (s *Server) Open(ctx context.Context) error {
+	s.searchTasks.Go(func(searchCtx context.Context) {
+		stop := context.AfterFunc(ctx, s.searchTasks.cancel)
+		defer stop()
+		s.search.schedule(searchCtx)
+	})
+	defer s.searchTasks.cancel()
 	var err error
 	snapshot := s.cfg.Snapshot()
 	addr := fmt.Sprintf("%s:%d", snapshot.Host, snapshot.Port)
@@ -79,8 +90,12 @@ func (s *Server) tryToServe(ctx context.Context, addr, proto string) error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.log.Info().Msg("Shutting down the server gracefully...")
 	var shutdownErrors []error
+	s.searchTasks.cancel()
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		shutdownErrors = append(shutdownErrors, errtrace.WithStack(fmt.Errorf("failed to shutdown server: %w", err)))
+	}
+	if err := s.searchTasks.Wait(ctx); err != nil {
+		shutdownErrors = append(shutdownErrors, fmt.Errorf("failed to stop backfill: %w", err))
 	}
 	if err := s.tasks.Wait(ctx); err != nil {
 		shutdownErrors = append(shutdownErrors, errtrace.WithStack(fmt.Errorf("failed to finish background tasks: %w", err)))
@@ -106,6 +121,7 @@ func (s *Server) Handler() http.Handler {
 		api.Use(s.AuthMiddleware())
 		{
 			newWebhookHandler(s.log, s.cfg, s.noti, s.tasks).Routes(api.Group("/"))
+			api.POST("/search", s.search.handler)
 		}
 	}
 

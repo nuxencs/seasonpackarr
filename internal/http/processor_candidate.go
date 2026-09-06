@@ -250,7 +250,12 @@ func (p *processor) getAllTorrents(ctx context.Context, clientName string, clien
 	}
 
 	entryMap.Compute(clientName, func(current *entryCache, loaded bool) (*entryCache, bool) {
-		if loaded && current != entries {
+		// An import can invalidate this scan while GetTorrents is in flight.
+		// Do not publish its pre-import inventory after that invalidation.
+		if !loaded {
+			return nil, true
+		}
+		if current != entries {
 			return current, false
 		}
 		return refreshed, false

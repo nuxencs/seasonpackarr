@@ -9,3 +9,21 @@ seasonpackarr operations and verification reference
   - go run . test match "<release-or-torrent>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>"
   - go run . test import "<release-or-torrent>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>" (mutating: creates hardlinks and imports the torrent)
 - if E2E cannot run because external services or credentials are missing, say that explicitly
+
+Prowlarr backfill:
+- Search-only preview (no torrent downloads): go run . search --dry-run --api <token> [--client <name>]
+- Exact preview: go run . search --dry-run --verify --api <token> [--client <name>]
+- Import: go run . search --api <token> [--client <name>]
+- All three modes call the running service. --url selects its base URL.
+- Episode variants with a compatible pack in the same client are excluded before tracker queries. coveredEpisodeTorrents reports excluded torrent entries; other variants and independent clients remain eligible.
+- Schedule: search.interval is 0s by default; set a duration such as 24h to opt in.
+- Checks: go test ./internal/prowlarr ./internal/http ./internal/config ./cmd
+- Contract and limits: docs/product-specs/prowlarr-backfill.md
+
+Deadcode on Go 1.27 (verified 2026-09-05):
+- Tagged x/tools v0.49.0 crashes on boxed receivers with generic methods.
+- Fixed upstream revision: 2e922938d07f0ab6689b9bc341b9121d3ce1357b.
+- Install: go install golang.org/x/tools/cmd/deadcode@v0.49.1-0.20260828025639-2e922938d07f
+- Run: deadcode ./...; include tests with deadcode -test ./...
+- Upstream issue: https://github.com/golang/go/issues/80973
+- This pin updates the user tool only, not seasonpackarr's module dependencies.

@@ -44,6 +44,17 @@ host: "{{ .host }}"
 #
 port: 42069
 
+# Optional Prowlarr backfill. A zero interval disables scheduled runs.
+search:
+  # Empty: all enabled searchable torrent indexers. Otherwise only these Prowlarr IDs.
+  indexerIDs: []
+  prowlarrURL: ""
+  apiKey: ""
+  # 0s disables scheduling. When enabled, minimum: 1h.
+  interval: "0s"
+  # Minimum spacing between Prowlarr requests: 10s.
+  requestInterval: "10s"
+
 clients:
   # Client name used in the autobrr filter, can be customized to whatever you like
   # Note that a client name has to be unique and can only be used once
@@ -575,6 +586,7 @@ func defaultConfig(version, configFile string, disableConfigFile bool) domain.Co
 		LogMaxSize:         50,
 		LogMaxBackups:      3,
 		SmartModeThreshold: 0.75,
+		Search:             domain.Search{Interval: "0s", RequestInterval: "10s"},
 		Notifications: domain.Notifications{
 			NotificationLevel: []string{"MATCH", "ERROR"},
 		},
@@ -629,6 +641,18 @@ func applyEnvironment(cfg *domain.Config) {
 					if f, _ := strconv.ParseFloat(envValue, 32); f > 0 {
 						cfg.SmartModeThreshold = float32(f)
 					}
+
+				// search settings
+				case prefix + "SEARCH_PROWLARR_URL":
+					cfg.Search.ProwlarrURL = envValue
+				case prefix + "SEARCH_API_KEY":
+					cfg.Search.APIKey = envValue
+				case prefix + "SEARCH_INDEXER_IDS":
+					cfg.Search.IndexerIDs = parseSearchIndexerIDs(envValue)
+				case prefix + "SEARCH_INTERVAL":
+					cfg.Search.Interval = envValue
+				case prefix + "SEARCH_REQUEST_INTERVAL":
+					cfg.Search.RequestInterval = envValue
 
 				// api token
 				case prefix + "API_TOKEN":
@@ -766,6 +790,9 @@ func (c *AppConfig) loadSnapshot() (*domain.Config, error) {
 }
 
 func validateConfig(cfg domain.Config) error {
+	if err := validateSearch(cfg.Search); err != nil {
+		return err
+	}
 	for clientName, client := range cfg.Clients {
 		if client == nil {
 			return fmt.Errorf("client %q cannot be null", clientName)
@@ -779,6 +806,7 @@ func validateConfig(cfg domain.Config) error {
 
 func cloneConfig(cfg domain.Config) domain.Config {
 	clone := cfg
+	clone.Search.IndexerIDs = slices.Clone(cfg.Search.IndexerIDs)
 	clone.Clients = make(map[string]*domain.Client, len(cfg.Clients))
 	for name, client := range cfg.Clients {
 		if client == nil {

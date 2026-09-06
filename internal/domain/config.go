@@ -58,6 +58,15 @@ type Notifications struct {
 	// Shoutrrr  string `yaml:"shoutrrr"`
 }
 
+// Search configures Prowlarr backfill. A zero interval disables the schedule.
+type Search struct {
+	IndexerIDs      []int  `yaml:"indexerIDs"`
+	ProwlarrURL     string `yaml:"prowlarrURL"`
+	APIKey          string `yaml:"apiKey"`
+	Interval        string `yaml:"interval"`
+	RequestInterval string `yaml:"requestInterval"`
+}
+
 type Config struct {
 	Version            string
 	ConfigPath         string
@@ -74,4 +83,5 @@ type Config struct {
 	FuzzyMatching      FuzzyMatching      `yaml:"fuzzyMatching"`
 	APIToken           string             `yaml:"apiToken"`
 	Notifications      Notifications      `yaml:"notifications"`
+	Search             Search             `yaml:"search"`
 }

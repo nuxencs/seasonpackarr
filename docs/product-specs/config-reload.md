@@ -10,7 +10,7 @@ For each file change, seasonpackarr:
 1. starts from built-in defaults
 2. loads the complete YAML file
 3. reapplies `SEASONPACKARR__...` environment overrides
-4. validates deprecated settings and every torrent client
+4. validates deprecated settings, every torrent client, and backfill settings
 5. atomically publishes the new immutable snapshot
 
 If any step fails, seasonpackarr logs the rejection and keeps the last valid snapshot.
@@ -24,6 +24,7 @@ The following settings apply without a restart:
 - smart mode and fuzzy matching
 - Discord webhook and notification levels
 - log level
+- Prowlarr backfill connection, request spacing, and schedule
 
 Each request or notification uses one coherent snapshot. Cached inventories and import plans validate the relevant
 client and matching settings before reuse. Changed settings cause the next request to rebuild stale data.
@@ -47,3 +48,7 @@ These changes require a process restart.
 - omitted optional keys return to built-in defaults
 - concurrent readers do not race with reload publication
 - automatic config discovery watches the file that was actually loaded
+
+A backfill run retains one snapshot for its entire execution. A schedule interval
+change resets the next automatic run while the scheduler is idle; it does not
+interrupt a run already in progress.
