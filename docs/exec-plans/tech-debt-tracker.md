@@ -4,6 +4,7 @@
 
 | Area | Debt | Impact | Suggested Next Step |
 | --- | --- | --- | --- |
+| Release parser codec ambiguity | `Cells.at.Work.S01.1080p.BluRay.FLAC2.0x265-Main10p-CTR` parses as episode 265 in the current parser | Pack-only inventory can create an unnecessary backfill group | Fix and test in the parser repository, then update the dependency. Deferred on 2026-09-06; do not add a search-specific name workaround |
 | Docs automation | No CI checks for doc structure, stale links, or missing index updates | Docs can drift silently | Add a docs validation job and basic link/index checks |
 | External E2E verification | The authenticated HTTP and filesystem lifecycle uses a mock client; no external autobrr-to-client harness exists | Upstream workflow or cross-process regressions may escape component tests | Add a containerized external harness after a repeated need or concrete regression |
 | Secret logging verification | Auth code avoids echoing submitted tokens, but no test prevents API tokens or client credentials from entering logs | A logging regression could expose operational secrets | Add captured-log contract tests for auth, config, and client failures |

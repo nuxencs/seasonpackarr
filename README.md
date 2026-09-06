@@ -141,6 +141,7 @@ These settings reload while seasonpackarr runs:
 - smart mode and fuzzy matching
 - Discord webhook and notification levels
 - log level
+- Prowlarr backfill connection, request spacing, and schedule
 
 These settings configure components that start once and require a restart:
 
@@ -258,6 +259,39 @@ filter and webhook configuration.
 
 Both entries use the same qBittorrent torrent list. qBittorrent can store a torrent only once, so the same torrent
 cannot be added separately to both categories.
+
+### Prowlarr Backfill
+
+Use Prowlarr to find season packs that autobrr missed. seasonpackarr groups episode
+torrents by series, year, and season, then searches enabled torrent trackers.
+It imports one compatible pack per release variant and respects existing
+smart-mode settings. An equivalent pack already in the client blocks another
+tracker copy. Episode variants already covered by a compatible pack are excluded
+before tracker queries. Other variants of the same season remain eligible.
+
+```yaml
+search:
+  indexerIDs: [] # All eligible indexers; use [2, 5] to restrict tracker access.
+  prowlarrURL: "http://prowlarr:9696"
+  apiKey: "your-prowlarr-api-key"
+  interval: "0s" # Set to "24h" to enable scheduled imports. Minimum: "1h".
+  requestInterval: "10s" # Minimum: 10s.
+```
+
+Search without torrent downloads, optionally verify exact reuse, then import:
+
+```sh
+seasonpackarr search --dry-run --api "your-seasonpackarr-api-token"
+seasonpackarr search --dry-run --verify --api "your-seasonpackarr-api-token"
+seasonpackarr search --api "your-seasonpackarr-api-token"
+```
+
+The default dry run reports candidates with unknown coverage. `--verify` retrieves
+torrent metadata after local source checks. Valid metadata is cached in memory for
+up to seven days; every run checks current files and smart-mode settings again.
+
+Add `--client default` to select one client. See [Prowlarr backfill](docs/product-specs/prowlarr-backfill.md)
+for scheduling, API usage, limits, and result reporting.
 
 ### Smart Mode
 

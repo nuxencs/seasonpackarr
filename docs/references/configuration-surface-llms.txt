@@ -32,3 +32,14 @@ seasonpackarr configuration surface reference
   - fuzzyMatching.skipYearCompare
   - notifications
 - any config behavior change should update docs and schema together
+
+Prowlarr search settings (live reload):
+- search.prowlarrURL: Prowlarr base URL, including URL base if used.
+- search.apiKey: Prowlarr API key, not the seasonpackarr API token.
+- search.indexerIDs: unique positive Prowlarr IDs; [] selects all enabled searchable torrent indexers. Restricts manual and scheduled runs.
+- search.interval: 0s disables scheduled imports; positive values must be >= 1h.
+- search.requestInterval: duration between requests, minimum and default 10s.
+- Environment: SEASONPACKARR__SEARCH_PROWLARR_URL, SEASONPACKARR__SEARCH_API_KEY,
+  SEASONPACKARR__SEARCH_INTERVAL, SEASONPACKARR__SEARCH_REQUEST_INTERVAL,
+  SEASONPACKARR__SEARCH_INDEXER_IDS (comma-separated).
+- Manual and scheduled runs use existing smart-mode and fuzzy-matching settings.

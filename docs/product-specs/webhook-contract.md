@@ -54,3 +54,15 @@ Requests must include the configured API token. Unauthorized requests are reject
 - do not change auth expectations casually
 - if payload shape or required fields change, update CLI test helpers and docs in the same diff
 - if an endpoint becomes broader or narrower in acceptance, call out the operator impact
+
+## Backfill Coordination
+
+`POST /api/search` uses the same authentication middleware. Its separate request
+and response contract is documented in [Prowlarr backfill](prowlarr-backfill.md).
+
+Webhook and backfill imports to the same configured client endpoint are
+serialized. Import rechecks the candidate gate before it uses a cached exact
+plan. A prior import can therefore cause a previously matched request to return
+`210` (already in client). Every attempted client import invalidates endpoint
+inventories and plans, including failed attempts that may already have added the
+pack. A retry refreshes client state before it creates another import.
