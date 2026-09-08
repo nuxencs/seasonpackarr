@@ -79,7 +79,7 @@ func newSearchFixture(t *testing.T, packEpisodes, clientEpisodes int, threshold 
 		}
 		if r.URL.Path == "/api/v1/indexer" {
 			f.discoveryCalls++
-			fmt.Fprintf(w, `[{"id":1,"priority":1,"enable":true,"protocol":"torrent","supportsSearch":true,"supportsPagination":%t,"capabilities":{"searchParams":["q"],"limitsMax":%d}},{"id":2,"priority":2,"enable":true,"protocol":"torrent","supportsSearch":true,"capabilities":{"searchParams":["q"]}}]`, f.pages, f.pageSize)
+			fmt.Fprintf(w, `[{"id":1,"priority":1,"enable":true,"protocol":"torrent","supportsSearch":true,"supportsRss":true,"supportsPagination":%t,"capabilities":{"searchParams":["q"],"limitsMax":%d}},{"id":2,"priority":2,"enable":true,"protocol":"torrent","supportsSearch":true,"supportsRss":true,"capabilities":{"searchParams":["q"]}}]`, f.pages, f.pageSize)
 			return
 		}
 		if strings.HasSuffix(r.URL.Path, "/api") {
@@ -104,7 +104,7 @@ func newSearchFixture(t *testing.T, packEpisodes, clientEpisodes int, threshold 
 						continue
 					}
 				}
-				feed.Items = append(feed.Items, prowlarr.Result{Title: title, GUID: fmt.Sprintf("%s-%d", id, i), Link: fmt.Sprintf("http://%s/%s/download?link=%d&file=t", r.Host, id, i)})
+				feed.Items = append(feed.Items, prowlarr.Result{Title: title, GUID: fmt.Sprintf("%s-%s", id, title), Link: fmt.Sprintf("http://%s/%s/download?link=%d&file=t", r.Host, id, i)})
 			}
 			require.NoError(t, xml.NewEncoder(w).Encode(feed))
 			return
@@ -123,7 +123,7 @@ func newSearchFixture(t *testing.T, packEpisodes, clientEpisodes int, threshold 
 	}))
 	t.Cleanup(server.Close)
 	cfg := f.config.Snapshot()
-	cfg.Search = domain.Search{ProwlarrURL: server.URL, APIKey: "prowlarr-test-key", Interval: "0s", RequestInterval: "0s"}
+	cfg.Search = domain.Search{ProwlarrURL: server.URL, APIKey: "prowlarr-test-key", RSSInterval: "0s", RequestInterval: "0s"}
 	f.config.Store(cfg)
 	clientMap.Store("default", cachedTorrentClient{config: *cfg.Clients["default"], client: &recordingSearchClient{mockTorrentClient: f.mock}})
 	return f
@@ -263,9 +263,9 @@ func TestSearch_ConcurrentWebhookCannotAddAnotherVariantCopy(t *testing.T) {
 	require.Equal(t, 1, f.mock.importCalls)
 }
 
-func TestSearchSchedule_OptInAndReload(t *testing.T) {
+func TestRSSSchedule_OptInAndReload(t *testing.T) {
 	now := time.Now()
-	var schedule searchSchedule
+	var schedule rssSchedule
 	require.False(t, schedule.due(now, "0s"))
 	require.False(t, schedule.due(now, "1h"))
 	require.False(t, schedule.due(now.Add(59*time.Minute), "1h"))
@@ -300,6 +300,7 @@ func TestSearch_GroupIdentityAndUnrelatedTorrents(t *testing.T) {
 	for _, name := range []string{
 		"Example.2024.S01E01.1080p.WEB-DL.H.264-RlsGrp",
 		"Example.2025.S01E01.1080p.WEB-DL.H.264-RlsGrp",
+		"Example.S01E01.1080p.WEB-DL.H.264-RlsGrp",
 		"Example.2024.S02E01.1080p.WEB-DL.H.264-RlsGrp",
 		"Film.2024.1080p.BluRay.x264-RlsGrp",
 		"Packed.S01.1080p.WEB-DL.H.264-RlsGrp",
@@ -308,10 +309,9 @@ func TestSearch_GroupIdentityAndUnrelatedTorrents(t *testing.T) {
 		f.mock.torrents = append(f.mock.torrents, torrentclient.Torrent{Name: name, Hash: name})
 	}
 	report := f.runExact(t, true)
-	require.Equal(t, 4, report.Groups)
+	require.Equal(t, 3, report.Groups)
 	require.ElementsMatch(t, []string{
-		"Example S01", "Example S01", // 2024 group, two indexers
-		"Example S01", "Example S01", // 2025 group, two indexers
+		"Example S01", "Example S01", // all years and a missing year share two indexer queries
 		"Example S02", "Example S02",
 		"Lifecycle S01", "Lifecycle S01",
 	}, f.queries)
@@ -348,7 +348,7 @@ func TestSearch_PreviewDeduplicatesClientAliases(t *testing.T) {
 	require.Equal(t, 2, report.Requests)
 }
 
-func TestSearchSchedule_CancellationStopsWorker(t *testing.T) {
+func TestRSSSchedule_CancellationStopsWorker(t *testing.T) {
 	f := newSearchFixture(t, 1, 1, 0.75)
 	runner := &searchRunner{cfg: f.config}
 	ctx, cancel := context.WithCancel(t.Context())
@@ -453,8 +453,12 @@ func TestSearch_QueryOmitsYearButMatchingRespectsSettings(t *testing.T) {
 			cfg.FuzzyMatching.SkipYearCompare = skipYear
 			f.config.Store(cfg)
 			f.mock.torrents[0].Name = "Lifecycle.2024.S01E01.1080p.WEB-DL.H.264-RlsGrp"
+			f.mock.torrents = append(f.mock.torrents, torrentclient.Torrent{
+				Name: "Lifecycle.2025.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "year2025",
+			})
 			f.titles = []string{
 				"Lifecycle.2024.S01.1080p.WEB-DL.H.264-RlsGrp",
+				"Lifecycle.2025.S01.1080p.WEB-DL.H.264-RlsGrp",
 				"Lifecycle.2023.S01.1080p.WEB-DL.H.264-RlsGrp",
 			}
 			response := f.postJSON(t, "/api/search", SearchRequest{DryRun: true})
@@ -462,12 +466,14 @@ func TestSearch_QueryOmitsYearButMatchingRespectsSettings(t *testing.T) {
 			var report searchReport
 			require.NoError(t, json.Unmarshal(response.Body.Bytes(), &report))
 			require.Equal(t, []string{"Lifecycle S01"}, f.queries)
-			require.Len(t, report.Outcomes, 2)
+			require.Equal(t, 1, report.Groups)
+			require.Len(t, report.Outcomes, 3)
 			require.Equal(t, "candidate", report.Outcomes[0].Status)
+			require.Equal(t, "candidate", report.Outcomes[1].Status)
 			if skipYear {
-				require.Equal(t, "candidate", report.Outcomes[1].Status)
+				require.Equal(t, "candidate", report.Outcomes[2].Status)
 			} else {
-				require.Equal(t, "rejected", report.Outcomes[1].Status)
+				require.Equal(t, "rejected", report.Outcomes[2].Status)
 			}
 			require.Zero(t, f.downloads)
 		})

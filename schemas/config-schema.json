@@ -72,8 +72,8 @@
       "properties": {
         "prowlarrURL": {"type": "string", "default": ""},
         "apiKey": {"type": "string", "default": ""},
-        "interval": {"type": "string", "default": "0s", "description": "0s disables scheduling. Positive durations must be at least 1h."},
-        "indexerIDs": {"type": "array", "items": {"type": "integer", "minimum": 1}, "uniqueItems": true, "default": [], "description": "Prowlarr indexer allowlist for every backfill run. Empty selects all enabled searchable torrent indexers."},
+        "rssInterval": {"type": "string", "default": "0s", "description": "0s disables RSS monitoring. Positive durations must be at least 10m. Targeted searches are manual only."},
+        "indexerIDs": {"type": "array", "items": {"type": "integer", "minimum": 1}, "uniqueItems": true, "default": [], "description": "Prowlarr indexer allowlist for RSS and manual search. Empty selects all enabled torrent indexers that support the discovery mode."},
         "requestInterval": {"type": "string", "default": "10s", "description": "Go duration between Prowlarr requests. Must be at least 10s."}
       }
     },

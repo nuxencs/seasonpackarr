@@ -8,14 +8,14 @@ import (
 	"time"
 )
 
-// searchSchedule resets its due time when the configured interval changes.
+// rssSchedule resets its due time when the configured interval changes.
 // Runs are spaced from completion. There is no startup run or catch-up burst.
-type searchSchedule struct {
+type rssSchedule struct {
 	interval time.Duration
 	next     time.Time
 }
 
-func (s *searchSchedule) due(now time.Time, raw string) bool {
+func (s *rssSchedule) due(now time.Time, raw string) bool {
 	interval, err := time.ParseDuration(raw)
 	if err != nil || interval <= 0 {
 		s.interval = 0
@@ -33,18 +33,18 @@ func (s *searchSchedule) due(now time.Time, raw string) bool {
 func (r *searchRunner) schedule(ctx context.Context) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-	var schedule searchSchedule
-	schedule.due(time.Now(), r.cfg.Snapshot().Search.Interval)
+	var schedule rssSchedule
+	schedule.due(time.Now(), r.cfg.Snapshot().Search.RSSInterval)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case now := <-ticker.C:
-			if !schedule.due(now, r.cfg.Snapshot().Search.Interval) {
+			if !schedule.due(now, r.cfg.Snapshot().Search.RSSInterval) {
 				continue
 			}
-			if _, err := r.run(ctx, SearchRequest{}); err != nil {
-				r.log.Warn().Err(err).Msg("scheduled backfill skipped")
+			if _, err := r.poll(ctx); err != nil {
+				r.log.Warn().Err(err).Msg("RSS poll skipped")
 			}
 			schedule.next = time.Now().Add(schedule.interval)
 		}

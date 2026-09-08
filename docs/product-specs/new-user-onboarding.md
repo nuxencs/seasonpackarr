@@ -2,7 +2,8 @@
 
 ## User Goal
 
-Get `seasonpackarr` running with autobrr and a supported torrent client so season packs reuse already-downloaded episodes.
+Get `seasonpackarr` running with Prowlarr or autobrr and a supported torrent client
+so season packs reuse downloaded episodes.
 
 ## Happy Path
 
@@ -14,10 +15,14 @@ Get `seasonpackarr` running with autobrr and a supported torrent client so seaso
    - `transmission`: username/password credentials (no `apiKey`); the RPC protocol version is auto-negotiated; set `import.savePath` or leave it empty to use the session download directory.
    - `deluge-v1` or `deluge-v2`: matching native daemon RPC credentials (not Deluge Web); `deluge` is a V2 alias; port `58846` is used when unset; `import.savePath` is required; omit `apiKey` and qBittorrent-only fields; use at most one `import.tags` entry and enable Deluge's Label plugin if it must be applied.
 5. Tune matching options such as smart mode and fuzzy matching.
-6. Add two ordered autobrr external webhook checks: announce-only `/api/candidate`, then torrent-aware `/api/match`.
+6. For Prowlarr, configure the connection and indexer selection. Preview with
+   `seasonpackarr search --dry-run`, then add `--verify` to check exact reuse.
+   Enable `search.rssInterval` only after reviewing the results. See
+   [Prowlarr discovery](prowlarr-backfill.md).
+7. For optional autobrr input, add two ordered external webhook checks: announce-only `/api/candidate`, then torrent-aware `/api/match`.
    The reorder arrows appear only after multiple external checks exist. Save and reload, then confirm candidate is
    displayed above match because the persisted display order is the execution order.
-7. Add one Webhook action on `/api/import` for hardlink creation and client import. Do not add a torrent-client action.
+   Add one Webhook action on `/api/import` for hardlink creation and client import. Do not add a torrent-client action.
 8. Run smoke tests with the CLI helper commands.
 
 ## First Success Criteria

@@ -58,12 +58,12 @@ type Notifications struct {
 	// Shoutrrr  string `yaml:"shoutrrr"`
 }
 
-// Search configures Prowlarr backfill. A zero interval disables the schedule.
+// Search configures manual backfill and opt-in RSS monitoring.
 type Search struct {
 	IndexerIDs      []int  `yaml:"indexerIDs"`
 	ProwlarrURL     string `yaml:"prowlarrURL"`
 	APIKey          string `yaml:"apiKey"`
-	Interval        string `yaml:"interval"`
+	RSSInterval     string `yaml:"rssInterval"`
 	RequestInterval string `yaml:"requestInterval"`
 }
 

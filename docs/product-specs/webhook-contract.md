@@ -60,7 +60,7 @@ Requests must include the configured API token. Unauthorized requests are reject
 `POST /api/search` uses the same authentication middleware. Its separate request
 and response contract is documented in [Prowlarr backfill](prowlarr-backfill.md).
 
-Webhook and backfill imports to the same configured client endpoint are
+Webhook, RSS, and backfill imports to the same configured client endpoint are
 serialized. Import rechecks the candidate gate before it uses a cached exact
 plan. A prior import can therefore cause a previously matched request to return
 `210` (already in client). Every attempted client import invalidates endpoint

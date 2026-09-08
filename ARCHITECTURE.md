@@ -2,7 +2,7 @@
 
 ## System Summary
 
-`seasonpackarr` is a config-driven Go service with a small CLI surface. It accepts authenticated autobrr webhook requests, filters announces against configured torrent clients, builds exact import plans from torrent contents, hardlinks reusable episode files into the expected season-pack folder, and imports the pack into the torrent client.
+`seasonpackarr` is a config-driven Go service with a small CLI surface. It discovers packs through opt-in Prowlarr RSS polling, manual searches, and authenticated autobrr webhook requests. It filters releases against configured torrent clients, builds exact import plans from torrent contents, hardlinks reusable episode files into the expected season-pack folder, and imports the pack into the torrent client.
 
 ## Main Runtime Flow
 
@@ -63,22 +63,29 @@
   Torrent-client adapters return neutral stage timings for successful and failed
   imports. The HTTP processor owns the operator-facing structured logs.
 
-### Prowlarr Backfill
+### Prowlarr Discovery
 
 - `internal/prowlarr/` owns indexer discovery, capability-aware Torznab queries,
   bounded HTTP reads, request spacing, and torrent proxy retrieval.
-- `internal/http/search.go` groups episode inventories by series/year/season,
+- `internal/http/search.go` groups episode inventories by series/season,
   excludes variants already covered by a pack in each client, shares remaining
-  searches across clients, and feeds results through existing candidate,
+  searches across years and clients, and feeds results through existing candidate,
   exact-plan, and import processing. It accepts one pack per release variant.
 - `POST /api/search` and `cmd/search.go` expose search-only dry runs, exact previews, and imports. The
   request context owns a manual run; there is no persistent job queue.
-- `internal/http/search_schedule.go` runs optional interval-based imports from
-  the server lifecycle context. Manual and scheduled runs share an overlap guard.
+- `internal/http/search_schedule.go` polls RSS on an opt-in interval from the
+  server lifecycle context. Targeted searches are manual only. All discovery runs
+  share an overlap guard.
+- `internal/http/rss.go` reads recent feeds once per indexer and pages back to the
+  previous poll when possible. `rss_state.go` retains bounded relevant listings
+  for later coverage checks. Feed state is process-local. Only the scheduler can
+  start an RSS poll. Manual CLI/API requests always use targeted search.
 - `internal/http/search_cache.go` bounds process-local metadata reuse to seven
   days, 64 MiB, and 1024 entries. Exact runs check local sources before retrieval
   and rebuild decisions from current inputs.
 - Each run keeps one config snapshot and applies the configured indexer allowlist.
+  RSS selects RSS-capable indexers; targeted search selects searchable indexers.
+  Both modes share one connection whose request spacing survives across runs.
 - In-memory cooldowns retain retry deadlines across runs. HTTP 429, temporary HTTP
   errors, and transport failures pause the affected indexer. Discovery failures
   pause the whole Prowlarr connection. Restart or connection changes reset these

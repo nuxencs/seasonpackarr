@@ -29,14 +29,7 @@ var importLocks = struct {
 // lockImport serializes imports to a client endpoint, including configurations
 // that share that endpoint. Waiting respects request or worker cancellation.
 func lockImport(ctx context.Context, client domain.Client) (func(), error) {
-	clientType := client.Type
-	if clientType == "" {
-		clientType = "qbittorrent"
-	}
-	if clientType == "deluge" {
-		clientType = "deluge-v2"
-	}
-	key := importClientKey{Type: clientType, Host: client.Host, Port: client.Port}
+	key := importEndpoint(client)
 	importLocks.Lock()
 	lock := importLocks.values[key]
 	if lock == nil {
@@ -67,6 +60,17 @@ func lockImport(ctx context.Context, client domain.Client) (func(), error) {
 	}
 }
 
+func importEndpoint(client domain.Client) importClientKey {
+	clientType := client.Type
+	if clientType == "" {
+		clientType = "qbittorrent"
+	}
+	if clientType == "deluge" {
+		clientType = "deluge-v2"
+	}
+	return importClientKey{Type: clientType, Host: client.Host, Port: client.Port}
+}
+
 // A client may add a torrent before reporting a verification/resume failure.
 // Drop all plans and inventories for aliases before another import can proceed.
 func invalidateClientImports(client domain.Client) {
@@ -85,14 +89,5 @@ func invalidateClientImports(client domain.Client) {
 }
 
 func sameImportEndpoint(a, b domain.Client) bool {
-	normalize := func(t string) string {
-		if t == "" {
-			return "qbittorrent"
-		}
-		if t == "deluge" {
-			return "deluge-v2"
-		}
-		return t
-	}
-	return normalize(a.Type) == normalize(b.Type) && a.Host == b.Host && a.Port == b.Port
+	return importEndpoint(a) == importEndpoint(b)
 }

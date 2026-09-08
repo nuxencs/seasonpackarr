@@ -16,7 +16,10 @@ Prowlarr backfill:
 - Import: go run . search --api <token> [--client <name>]
 - All three modes call the running service. --url selects its base URL.
 - Episode variants with a compatible pack in the same client are excluded before tracker queries. coveredEpisodeTorrents reports excluded torrent entries; other variants and independent clients remain eligible.
-- Schedule: search.interval is 0s by default; set a duration such as 24h to opt in.
+- RSS monitoring: search.rssInterval is 0s by default; use 15m to opt in (minimum 10m).
+- Targeted search is manual only. RSS is periodic only, with no CLI/API trigger.
+- RSS retains bounded relevant listings in memory for later coverage checks.
+  Use manual search for gaps after downtime.
 - Checks: go test ./internal/prowlarr ./internal/http ./internal/config ./cmd
 - Contract and limits: docs/product-specs/prowlarr-backfill.md
 

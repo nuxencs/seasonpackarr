@@ -15,12 +15,12 @@ port: 42069
 
 # Optional Prowlarr backfill. A zero interval disables scheduled runs.
 search:
-  # Empty: all enabled searchable torrent indexers. Otherwise only these Prowlarr IDs.
+  # Empty: all enabled torrent indexers that support the discovery mode.
   indexerIDs: []
   prowlarrURL: ""
   apiKey: ""
-  # 0s disables scheduling. When enabled, minimum: 1h.
-  interval: "0s"
+  # 0s disables RSS monitoring. Set to 15m to enable it. Minimum: 10m.
+  rssInterval: "0s"
   # Minimum spacing between Prowlarr requests: 10s.
   requestInterval: "10s"
 

@@ -6,7 +6,7 @@ Audit date: 2026-09-05. This is a pinned source audit, not a live service test.
 
 ## Contracts Used
 
-- `GET /api/v1/indexer` exposes enable state, protocol, search/pagination support,
+- `GET /api/v1/indexer` exposes enable state, protocol, RSS/search/pagination support,
   priority, and query parameters under capabilities.
   Source: [IndexerResource.cs](https://github.com/Prowlarr/Prowlarr/blob/647f0dcc8d86448409fc06db5fa071d99b7aaba0/src/Prowlarr.Api.V1/Indexers/IndexerResource.cs)
   and [IndexerCapabilityResource.cs](https://github.com/Prowlarr/Prowlarr/blob/647f0dcc8d86448409fc06db5fa071d99b7aaba0/src/Prowlarr.Api.V1/Indexers/IndexerCapabilityResource.cs).
@@ -22,6 +22,17 @@ Audit date: 2026-09-05. This is a pinned source audit, not a live service test.
   key. seasonpackarr validates the origin and indexer path, removes the query API
   key, and authenticates with `X-Api-Key`. No remote response bodies or URLs appear
   in adapter errors. Source: [DownloadMappingService.cs](https://github.com/Prowlarr/Prowlarr/blob/647f0dcc8d86448409fc06db5fa071d99b7aaba0/src/NzbDrone.Core/Download/DownloadMappingService.cs).
+
+## RSS Contract
+
+- `supportsRss` is independent of `supportsSearch` on `IndexerResource`.
+- `GET /{id}/api?t=search` without a query uses recent-release behavior. Prowlarr
+  identifies an empty search term as RSS in
+  [SearchCriteriaBase.cs](https://github.com/Prowlarr/Prowlarr/blob/647f0dcc8d86448409fc06db5fa071d99b7aaba0/src/NzbDrone.Core/IndexerSearch/Definitions/SearchCriteriaBase.cs).
+- RSS shares the Torznab controller, categories, paging, proxy-download boundary,
+  and retry headers described above. Feed depth depends on the indexer.
+
+Inspected again locally on 2026-09-08 at the same pinned revision.
 
 ## Decision
 

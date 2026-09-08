@@ -1,10 +1,11 @@
-# Prowlarr Backfill
+# Prowlarr Discovery
 
 ## Purpose
 
-Find season packs that autobrr missed. Search starts from episode torrents in
-configured clients. It uses Prowlarr for tracker access, then uses seasonpackarr's
-existing matching, hardlink, and import flow.
+Discover season packs without autobrr through opt-in Prowlarr RSS monitoring.
+Use manual targeted searches for historical backfill or gaps after downtime.
+Both modes start from episode torrents in configured clients and use the existing
+matching, hardlink, and import flow. autobrr remains an optional input.
 
 The service accepts one pack per release variant. An equivalent pack already in
 that client blocks another pack from any tracker, even when its torrent hash is
@@ -19,7 +20,7 @@ search:
   indexerIDs: [] # All eligible indexers; use [2, 5] to restrict tracker access.
   prowlarrURL: "http://prowlarr:9696"
   apiKey: "your-prowlarr-api-key"
-  interval: "0s"
+  rssInterval: "0s" # Set to "15m" to enable RSS imports. Minimum: "10m".
   requestInterval: "10s" # Minimum: 10s.
 ```
 
@@ -27,21 +28,23 @@ search:
 `/api/v1`. `apiKey` is Prowlarr's API key. The service does not need a download
 client configured in Prowlarr.
 
-`indexerIDs` applies to manual and scheduled runs. An empty list selects all
-Prowlarr indexers that are enabled, searchable, and use the torrent protocol.
+`indexerIDs` applies to RSS polls and targeted searches. An empty list selects all
+enabled Prowlarr torrent indexers that support the requested mode: `supportsRss`
+for RSS, `supportsSearch` for targeted search. RSS-only indexers are supported.
 A nonempty list restricts searches to those Prowlarr IDs. IDs must be unique
 positive integers. Missing, disabled, or unsupported selections produce failures;
 the run never falls back to unselected trackers. Eligible selected indexers still
 run. Read IDs from Prowlarr's `GET /api/v1/indexer` response.
 
-`interval: "0s"` disables automatic runs. Set a positive Go duration, for example
-`"24h"`, to opt in. Positive intervals must be at least `"1h"`. The first automatic
-run starts after the interval. Each later interval starts when the previous run
-finishes. There is no startup run or catch-up burst after downtime.
+`rssInterval: "0s"` disables automatic discovery. Set a positive Go duration,
+for example `"15m"`, to enable RSS imports. Positive intervals must be at least
+`"10m"`. The first poll starts after the interval. Later intervals start when the
+previous poll finishes. There is no startup run. Targeted searches are manual only.
 
 `requestInterval` sets the minimum time between requests to Prowlarr, including
-searches and torrent retrieval within a run. Default and minimum: `"10s"`.
-A failed search skips that indexer for the rest of the run. Temporary failures
+indexer discovery, RSS polls, targeted searches, and torrent retrieval across
+runs. Default and minimum: `"10s"`.
+A failed feed request skips that indexer for the rest of the run. Temporary failures
 also create a cooldown that applies to manual and scheduled runs:
 
 | Failure | Fallback cooldown |
@@ -63,13 +66,8 @@ requests to that Prowlarr connection until its cooldown expires.
 Cooldowns remain in memory across runs. They reset after a service restart or a
 Prowlarr URL or API key change. No cooldown state is written to disk.
 
-These limits are project choices, not tracker-specific guarantees.
-[cross-seed](https://www.cross-seed.org/docs/basics/options) uses a 30-second bulk
-search delay and a minimum one-day search cadence.
-[qui](https://getqui.com/docs/features/cross-seed/overview/) uses at least 60 seconds
-between Torznab library searches and a minimum 12-hour per-torrent cooldown.
-Those controls apply to different units of work from our per-request spacing
-and full-run schedule. Keep `"24h"` as a starting schedule for routine backfill.
+These limits are project choices, not tracker-specific guarantees. A poll can
+require multiple requests. Select an interval that fits the configured trackers.
 
 All search settings reload without a restart. The scheduler detects an interval
 change within one second while idle and resets its next run time. An active run
@@ -81,12 +79,48 @@ Environment overrides:
 - `SEASONPACKARR__SEARCH_PROWLARR_URL`
 - `SEASONPACKARR__SEARCH_API_KEY`
 - `SEASONPACKARR__SEARCH_INDEXER_IDS` (comma-separated IDs, for example `2,5`)
-- `SEASONPACKARR__SEARCH_INTERVAL`
+- `SEASONPACKARR__SEARCH_RSS_INTERVAL`
 - `SEASONPACKARR__SEARCH_REQUEST_INTERVAL`
+
+## RSS Monitoring
+
+Each poll reads recent releases once per eligible indexer, regardless of how many
+series or seasons are in the client. It sends `t=search` without a title, year,
+season, or external ID. TV category `5000` is used when advertised. This reads a
+feed through Prowlarr; it does not send a grab to Prowlarr's download clients.
+
+The first poll reads one page, up to 100 items or the indexer's lower page limit.
+Later polls start at the newest page and can page back until a result overlaps
+with the previous poll. Paging stops after ten pages, a short or repeated page,
+or on a non-paginating indexer. A missing overlap reports a possible gap and
+recommends a manual targeted search. After a reported gap, the newest page becomes
+the next checkpoint. An HTTP failure preserves the previous checkpoint for the
+next attempt. When a client inventory is unavailable, the poll uses isolated
+feed state so it cannot consume entries on behalf of that client. RSS cannot
+guarantee historical coverage.
+
+Results must parse as season packs for an uncovered series/season in the client.
+Year compatibility is checked against the episodes before metadata retrieval. The same variant, source-file, exact-coverage, and duplicate checks listed
+below then apply. RSS respects indexer priority and feed order. One indexer failure
+does not prevent other indexers from running. No eligible episode groups means no
+Prowlarr requests.
+
+The process retains relevant pack listings for seven days, bounded to 1024 entries
+and 4 MiB of titles and links. Oldest entries are evicted first. Each poll checks
+retained packs against current inventory, local files, and matching settings,
+even if a pack has left the feed. A pack rejected for low coverage can pass once
+more episodes finish. Valid cached torrent bytes avoid another metadata download.
+There is no permanent "seen means rejected" decision.
+
+Feed checkpoints and retained listings are held only in memory. Restarting or
+changing the Prowlarr URL or API key resets them. Disabled or unselected indexers
+are removed from feed state after the next successful RSS indexer discovery. Retained links are refreshed
+when the same result appears again, without extending the retention deadline.
+Use manual backfill for releases outside the feed and retention window.
 
 ## Manual Runs
 
-Start the service, then preview the work:
+Start the service, then preview a targeted historical search:
 
 ```sh
 seasonpackarr search --dry-run --api "your-seasonpackarr-api-token"
@@ -115,13 +149,19 @@ Import accepted packs:
 seasonpackarr search --api "your-seasonpackarr-api-token"
 ```
 
+RSS runs only on its configured interval and always evaluates imports for all
+clients. The CLI and API run targeted searches across the configured searchable
+indexers. Preview flags apply only to those manual searches.
+
 All three modes scan all configured clients by default. Add `--client default` to
 select one client. Use `--url http://127.0.0.1:42069` to set the seasonpackarr base
 URL. The `--api` token belongs to seasonpackarr, not Prowlarr.
 
 The CLI prints JSON with scan counts, logical search group count, search request
 count, completed torrent downloads, metadata cache hits, per-result outcomes,
-and operation failures. `coveredEpisodeTorrents` counts episode torrent entries
+and operation failures. `requests` counts targeted feed requests, excluding
+indexer discovery and torrent downloads. Automatic RSS logs include `rss: true`.
+`coveredEpisodeTorrents` counts episode torrent entries
 excluded because a compatible pack already exists. `episodeTorrents` includes
 these entries; `groups` counts only groups that still need a search. Counts are
 per client and include duplicate episode torrents, not distinct episodes.
@@ -145,19 +185,20 @@ added a stopped torrent; inspect the client before retrying.
    already has a compatible season pack in the same client. Apply the existing
    release and fuzzy-matching rules, including year comparison. A pack for one
    variant does not suppress another variant. This check uses summaries only.
-   Group the remaining episodes by normalized series title, year, and season.
-   `skipYearCompare` also removes the year from search groups. Reuse a query across
-   clients while keeping their source files and import policies separate. A
+   Group the remaining episodes by normalized series title and season. Different
+   or missing years share one query. Keep parsed years in the local release
+   checks, subject to `skipYearCompare`. Reuse a query across clients while
+   keeping their source files and import policies separate. A
    covered client does not suppress a search needed by an independent client.
    If no groups remain, do not request Prowlarr indexer discovery or searches.
-4. Read enabled, searchable torrent indexers from Prowlarr and apply
+4. For targeted search, read enabled, searchable torrent indexers and apply
    `search.indexerIDs`. Try lower numeric indexer priorities first, with indexer
    ID as the tie-breaker.
 5. Use a TV title-and-season query when the indexer advertises those parameters.
    Otherwise use a title and `Sxx` text query. Omit the parsed release year from
    both query forms so trackers can return packs whose names omit it. Keep the
-   year in local grouping and compatibility checks, subject to `skipYearCompare`.
-   Diagnostic group labels can still include the year. Request TV category `5000` when
+   year in local compatibility checks, subject to `skipYearCompare`.
+   Request TV category `5000` when
    advertised; omit the category filter for trackers without a TV category.
    Indexers without either query capability are reported as failures.
 6. Check results in feed order against existing release rules. Reject an
@@ -221,7 +262,8 @@ Request body:
 {"clientname":"default","dryRun":true}
 ```
 
-Omit `clientname` to scan all configured clients. `dryRun` and `verify` default to `false`.
+Omit `clientname` to scan all configured clients. `dryRun` and `verify` default to
+`false`. This endpoint only runs targeted searches.
 Use `{"clientname":"default","dryRun":true,"verify":true}` for exact preview.
 `verify: true` without `dryRun: true` returns `400`.
 The body must contain one JSON object; unknown fields are rejected.
@@ -229,7 +271,7 @@ The body must contain one JSON object; unknown fields are rejected.
 - `200`: completed run report, including any partial failures
 - `400`: invalid request, unknown client, or incomplete search configuration
 - `401`: missing or invalid API token when authentication is configured
-- `409`: another manual or scheduled backfill run is active
+- `409`: another RSS or targeted discovery run is active
 
 `outcomes[].status` is `candidate`, `would_import`, `imported`, `rejected`, or
 `failed`. The report echoes `dryRun` and `verify`. `torrentDownloads` counts
@@ -255,7 +297,7 @@ all work succeeded.
 - No external series database or TVDB/TMDB lookup is used. Ambiguous names are
   not expanded through guesses. Backfill does not search for shows absent from
   the client and does not remove episode torrents or files.
-- Only one backfill run executes at a time. Imports to the same client endpoint
+- Only one RSS or targeted discovery run executes at a time. Imports to the same client endpoint
   are serialized with webhook imports. Matching stays free of client mutations.
 
 ## Verification
@@ -269,7 +311,7 @@ with the configured installation. See the [source audit](../references/prowlarr-
 
 Use a test client with a few completed episode torrents and a known compatible
 season pack on an enabled tracker. Configure the running service with the real
-Prowlarr URL and key. Keep `search.interval: "0s"` for the first checks.
+Prowlarr URL and key. Keep `search.rssInterval: "0s"` for the first checks.
 
 1. Run `seasonpackarr search --dry-run --client test --api "<token>"`.
    Confirm series, season, and release variant. Set `search.indexerIDs` and check
@@ -287,10 +329,12 @@ Prowlarr URL and key. Keep `search.interval: "0s"` for the first checks.
    again. Smart mode can permit missing files or pieces to download.
 4. Run the preview again. The imported variant must be rejected as already in
    the client, including equivalent results from other trackers.
-5. If scheduling will be used, test a short interval on a service configured
-   only with the test client. Confirm the automatic run appears in logs after
-   the interval. Set `interval: "0s"` and confirm no further automatic run starts.
-   Then select the intended production interval.
+5. To test automatic monitoring, configure `rssInterval: "10m"` on a service with
+   only the test client. Confirm a poll appears in logs after the interval, with
+   `rss: true`. Check that Prowlarr receives no title or season query for the poll
+   and that accepted packs use the expected hardlinks and import policy.
+   Set `rssInterval: "0s"` and confirm no further poll starts. Then
+   choose the intended production interval.
 
 These checks validate installation-specific tracker responses, client paths,
 filesystem mounts, and scheduler operation. Automated fixtures already cover the

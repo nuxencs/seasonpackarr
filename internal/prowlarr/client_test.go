@@ -41,7 +41,7 @@ func TestClient_IndexersAndSeasonQueries(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, indexers, 2)
 	require.Equal(t, 1, indexers[0].ID)
-	results, limit, err := client.SearchPage(t.Context(), indexers[0], Query{Title: "Example", Year: 2024, Season: 2}, 50)
+	results, limit, err := client.SearchPage(t.Context(), indexers[0], Query{Title: "Example", Season: 2}, 50)
 	require.NoError(t, err)
 	require.Equal(t, 25, limit)
 	require.Len(t, results, 1)
@@ -70,7 +70,7 @@ func TestClient_TextFallbackAndInvalidFeeds(t *testing.T) {
 			require.NoError(t, err)
 			indexer := Indexer{ID: 1}
 			indexer.Capabilities.SearchParams = []string{"q"}
-			_, _, err = client.SearchPage(t.Context(), indexer, Query{Title: "Example", Year: 2024, Season: 1}, 0)
+			_, _, err = client.SearchPage(t.Context(), indexer, Query{Title: "Example", Season: 1}, 0)
 			if test.fail {
 				require.Error(t, err)
 				require.NotContains(t, err.Error(), "secret-key")
@@ -113,7 +113,7 @@ func TestClient_DownloadProxyBoundary(t *testing.T) {
 func TestClient_CancellationInterruptsSpacing(t *testing.T) {
 	client, err := New("http://127.0.0.1:1", "key", time.Hour)
 	require.NoError(t, err)
-	client.nextRequest = time.Now().Add(time.Hour)
+	client.lastRequest = time.Now()
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	_, err = client.Indexers(ctx)

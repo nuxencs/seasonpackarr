@@ -30,6 +30,7 @@ type Indexer struct {
 	Enable             bool   `json:"enable"`
 	Protocol           string `json:"protocol"`
 	SupportsSearch     bool   `json:"supportsSearch"`
+	SupportsRSS        bool   `json:"supportsRss"`
 	SupportsPagination bool   `json:"supportsPagination"`
 	Priority           int    `json:"priority"`
 	Capabilities       struct {
@@ -54,18 +55,12 @@ type Result struct {
 
 type Query struct {
 	Title  string
-	Year   int
 	Season int
 }
 
-// String identifies the local search group for diagnostics and ordering.
-// Tracker query text omits Year because releases may not contain it.
+// String identifies the title-and-season query for diagnostics and ordering.
 func (q Query) String() string {
-	title := q.Title
-	if q.Year > 0 {
-		title += " " + strconv.Itoa(q.Year)
-	}
-	return fmt.Sprintf("%s S%02d", title, q.Season)
+	return fmt.Sprintf("%s S%02d", q.Title, q.Season)
 }
 
 // CooldownError carries a retry deadline without exposing remote bodies or URLs.
@@ -88,13 +83,13 @@ func cooldown(reason, retryAfter string) error {
 	return &CooldownError{Until: until, reason: reason}
 }
 
-// Client is used serially by one backfill run. Rate spacing also covers downloads.
+// Client is used serially across discovery runs. Spacing also covers downloads.
 type Client struct {
 	base        *url.URL
 	apiKey      string
 	http        *http.Client
 	interval    time.Duration
-	nextRequest time.Time
+	lastRequest time.Time
 }
 
 func New(rawURL, apiKey string, interval time.Duration) (*Client, error) {
@@ -133,7 +128,7 @@ func (c *Client) Indexers(ctx context.Context) ([]Indexer, error) {
 	if err := json.Unmarshal(data, &all); err != nil {
 		return nil, errors.New("invalid Prowlarr indexer response")
 	}
-	selected := slices.DeleteFunc(all, func(i Indexer) bool { return !i.Enable || i.Protocol != "torrent" || !i.SupportsSearch })
+	selected := slices.DeleteFunc(all, func(i Indexer) bool { return !i.Enable || i.Protocol != "torrent" })
 	slices.SortFunc(selected, func(a, b Indexer) int { return cmp.Or(cmp.Compare(a.Priority, b.Priority), cmp.Compare(a.ID, b.ID)) })
 	return selected, nil
 }
@@ -142,6 +137,31 @@ func (c *Client) Indexers(ctx context.Context) ([]Indexer, error) {
 // search when supported. Prowlarr's feed has no total count; callers stop on
 // a short page, repeated results, or their page budget.
 func (c *Client) SearchPage(ctx context.Context, indexer Indexer, q Query, offset int) ([]Result, int, error) {
+	params, limit := feedParams(indexer, offset)
+	if slices.Contains(indexer.Capabilities.TvSearchParams, "q") && slices.Contains(indexer.Capabilities.TvSearchParams, "season") {
+		params.Set("t", "tvsearch")
+		params.Set("q", q.Title)
+		params.Set("season", strconv.Itoa(q.Season))
+	} else if slices.Contains(indexer.Capabilities.SearchParams, "q") {
+		params.Set("t", "search")
+		params.Set("q", fmt.Sprintf("%s S%02d", q.Title, q.Season))
+	} else {
+		return nil, limit, errors.New("indexer does not support title or season queries")
+	}
+	return c.feed(ctx, indexer.ID, params, limit)
+}
+
+// RSSPage requests recent releases without a title, season, or external ID.
+func (c *Client) RSSPage(ctx context.Context, indexer Indexer, offset int) ([]Result, int, error) {
+	params, limit := feedParams(indexer, offset)
+	params.Set("t", "search")
+	if !indexer.SupportsRSS {
+		return nil, limit, errors.New("indexer does not support RSS")
+	}
+	return c.feed(ctx, indexer.ID, params, limit)
+}
+
+func feedParams(indexer Indexer, offset int) (url.Values, int) {
 	limit := 100
 	if indexer.Capabilities.LimitsMax > 0 {
 		limit = min(limit, indexer.Capabilities.LimitsMax)
@@ -155,17 +175,11 @@ func (c *Client) SearchPage(ctx context.Context, indexer Indexer, q Query, offse
 			break
 		}
 	}
-	if slices.Contains(indexer.Capabilities.TvSearchParams, "q") && slices.Contains(indexer.Capabilities.TvSearchParams, "season") {
-		params.Set("t", "tvsearch")
-		params.Set("q", q.Title)
-		params.Set("season", strconv.Itoa(q.Season))
-	} else if slices.Contains(indexer.Capabilities.SearchParams, "q") {
-		params.Set("t", "search")
-		params.Set("q", fmt.Sprintf("%s S%02d", q.Title, q.Season))
-	} else {
-		return nil, limit, errors.New("indexer does not support title or season queries")
-	}
-	data, err := c.get(ctx, c.endpoint(fmt.Sprintf("/%d/api", indexer.ID), params))
+	return params, limit
+}
+
+func (c *Client) feed(ctx context.Context, indexerID int, params url.Values, limit int) ([]Result, int, error) {
+	data, err := c.get(ctx, c.endpoint(fmt.Sprintf("/%d/api", indexerID), params))
 	if err != nil {
 		return nil, limit, err
 	}
@@ -187,6 +201,10 @@ func (c *Client) SearchPage(ctx context.Context, indexer Indexer, q Query, offse
 	}
 	return feed.Channel.Items, limit, nil
 }
+
+// SetRequestInterval applies a config reload without losing the last request time.
+// The caller must serialize this with requests.
+func (c *Client) SetRequestInterval(interval time.Duration) { c.interval = interval }
 
 func (c *Client) Download(ctx context.Context, indexerID int, result Result) ([]byte, error) {
 	raw := cmp.Or(result.Enclosure.URL, result.Link)
@@ -211,7 +229,7 @@ func (c *Client) Download(ctx context.Context, indexerID int, result Result) ([]
 // get deliberately omits remote bodies and URLs from errors, since either can
 // contain Prowlarr API keys or tracker passkeys.
 func (c *Client) get(ctx context.Context, u *url.URL) ([]byte, error) {
-	if wait := time.Until(c.nextRequest); wait > 0 {
+	if wait := time.Until(c.lastRequest.Add(c.interval)); wait > 0 {
 		timer := time.NewTimer(wait)
 		defer timer.Stop()
 		select {
@@ -229,7 +247,7 @@ func (c *Client) get(ctx context.Context, u *url.URL) ([]byte, error) {
 	}
 	req.Header.Set("X-Api-Key", c.apiKey)
 	req.Header.Set("User-Agent", "seasonpackarr")
-	c.nextRequest = time.Now().Add(c.interval)
+	c.lastRequest = time.Now()
 	resp, err := c.http.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {

@@ -21,9 +21,9 @@ func validateSearch(search domain.Search) error {
 		}
 		seen[id] = true
 	}
-	interval, err := time.ParseDuration(search.Interval)
-	if err != nil || interval < 0 || (interval > 0 && interval < time.Hour) {
-		return fmt.Errorf("search.interval must be 0s (disabled) or at least 1h")
+	interval, err := time.ParseDuration(search.RSSInterval)
+	if err != nil || interval < 0 || (interval > 0 && interval < 10*time.Minute) {
+		return fmt.Errorf("search.rssInterval must be 0s (disabled) or at least 10m")
 	}
 	spacing, err := time.ParseDuration(search.RequestInterval)
 	if err != nil || spacing < 10*time.Second {

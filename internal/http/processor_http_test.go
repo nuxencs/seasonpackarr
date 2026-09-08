@@ -59,6 +59,7 @@ func (c *mutableProcessorConfig) Store(config domain.Config) {
 }
 
 type processorHTTPFixture struct {
+	search      *searchRunner
 	handler     stdhttp.Handler
 	mock        *mockTorrentClient
 	config      *mutableProcessorConfig
@@ -130,6 +131,7 @@ func newProcessorHTTPFixtureWithLogger(
 		noopNotificationSender{},
 	)
 	return processorHTTPFixture{
+		search:      server.search,
 		handler:     server.Handler(),
 		mock:        mock,
 		config:      cfg,

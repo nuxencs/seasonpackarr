@@ -46,12 +46,12 @@ port: 42069
 
 # Optional Prowlarr backfill. A zero interval disables scheduled runs.
 search:
-  # Empty: all enabled searchable torrent indexers. Otherwise only these Prowlarr IDs.
+  # Empty: all enabled torrent indexers that support the discovery mode.
   indexerIDs: []
   prowlarrURL: ""
   apiKey: ""
-  # 0s disables scheduling. When enabled, minimum: 1h.
-  interval: "0s"
+  # 0s disables RSS monitoring. Set to 15m to enable it. Minimum: 10m.
+  rssInterval: "0s"
   # Minimum spacing between Prowlarr requests: 10s.
   requestInterval: "10s"
 
@@ -586,7 +586,7 @@ func defaultConfig(version, configFile string, disableConfigFile bool) domain.Co
 		LogMaxSize:         50,
 		LogMaxBackups:      3,
 		SmartModeThreshold: 0.75,
-		Search:             domain.Search{Interval: "0s", RequestInterval: "10s"},
+		Search:             domain.Search{RSSInterval: "0s", RequestInterval: "10s"},
 		Notifications: domain.Notifications{
 			NotificationLevel: []string{"MATCH", "ERROR"},
 		},
@@ -649,8 +649,8 @@ func applyEnvironment(cfg *domain.Config) {
 					cfg.Search.APIKey = envValue
 				case prefix + "SEARCH_INDEXER_IDS":
 					cfg.Search.IndexerIDs = parseSearchIndexerIDs(envValue)
-				case prefix + "SEARCH_INTERVAL":
-					cfg.Search.Interval = envValue
+				case prefix + "SEARCH_RSS_INTERVAL":
+					cfg.Search.RSSInterval = envValue
 				case prefix + "SEARCH_REQUEST_INTERVAL":
 					cfg.Search.RequestInterval = envValue
 

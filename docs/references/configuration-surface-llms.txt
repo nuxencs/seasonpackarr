@@ -36,10 +36,11 @@ seasonpackarr configuration surface reference
 Prowlarr search settings (live reload):
 - search.prowlarrURL: Prowlarr base URL, including URL base if used.
 - search.apiKey: Prowlarr API key, not the seasonpackarr API token.
-- search.indexerIDs: unique positive Prowlarr IDs; [] selects all enabled searchable torrent indexers. Restricts manual and scheduled runs.
-- search.interval: 0s disables scheduled imports; positive values must be >= 1h.
+- search.indexerIDs: unique positive Prowlarr IDs; [] selects all enabled torrent indexers that support periodic RSS or manual search, respectively. Restricts targeted search and RSS monitoring.
+- search.rssInterval: 0s disables RSS monitoring; positive values must be >= 10m.
+  Targeted historical searches are manual only.
 - search.requestInterval: duration between requests, minimum and default 10s.
 - Environment: SEASONPACKARR__SEARCH_PROWLARR_URL, SEASONPACKARR__SEARCH_API_KEY,
-  SEASONPACKARR__SEARCH_INTERVAL, SEASONPACKARR__SEARCH_REQUEST_INTERVAL,
+  SEASONPACKARR__SEARCH_RSS_INTERVAL, SEASONPACKARR__SEARCH_REQUEST_INTERVAL,
   SEASONPACKARR__SEARCH_INDEXER_IDS (comma-separated).
-- Manual and scheduled runs use existing smart-mode and fuzzy-matching settings.
+- Targeted search and RSS monitoring use existing smart-mode and fuzzy-matching settings.

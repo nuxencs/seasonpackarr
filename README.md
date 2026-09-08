@@ -18,8 +18,9 @@
 </h1>
 
 <p align="center">
-<b>seasonpackarr</b> is a companion app for <a href="https://github.com/autobrr/autobrr">autobrr</a> that automagically <b>hardlinks</b> downloaded episodes into a season folder when a season pack is
-announced and adds the pack back to your torrent client, eliminating the need for re-downloading existing episodes.
+<b>seasonpackarr</b> discovers season packs through Prowlarr RSS feeds, manual searches, or optional
+<a href="https://github.com/autobrr/autobrr">autobrr</a> announces. It <b>hardlinks</b> downloaded episodes into
+the pack folder and imports the pack into your torrent client so existing files can be reused.
 </p>
 
 > [!WARNING]
@@ -141,7 +142,7 @@ These settings reload while seasonpackarr runs:
 - smart mode and fuzzy matching
 - Discord webhook and notification levels
 - log level
-- Prowlarr backfill connection, request spacing, and schedule
+- Prowlarr connection, shared request spacing, and RSS interval
 
 These settings configure components that start once and require a restart:
 
@@ -260,10 +261,12 @@ filter and webhook configuration.
 Both entries use the same qBittorrent torrent list. qBittorrent can store a torrent only once, so the same torrent
 cannot be added separately to both categories.
 
-### Prowlarr Backfill
+### Prowlarr Discovery
 
-Use Prowlarr to find season packs that autobrr missed. seasonpackarr groups episode
-torrents by series, year, and season, then searches enabled torrent trackers.
+Use Prowlarr RSS feeds for automatic season-pack discovery without autobrr. Use a
+manual targeted search to find older packs or recover gaps after downtime.
+seasonpackarr starts from episode torrents already in your client. It does not
+acquire episodes or search for shows absent from the client.
 It imports one compatible pack per release variant and respects existing
 smart-mode settings. An equivalent pack already in the client blocks another
 tracker copy. Episode variants already covered by a compatible pack are excluded
@@ -274,11 +277,11 @@ search:
   indexerIDs: [] # All eligible indexers; use [2, 5] to restrict tracker access.
   prowlarrURL: "http://prowlarr:9696"
   apiKey: "your-prowlarr-api-key"
-  interval: "0s" # Set to "24h" to enable scheduled imports. Minimum: "1h".
+  rssInterval: "0s" # Set to "15m" to enable RSS imports. Minimum: "10m".
   requestInterval: "10s" # Minimum: 10s.
 ```
 
-Search without torrent downloads, optionally verify exact reuse, then import:
+For historical backfill, search manually, optionally verify reuse, then import:
 
 ```sh
 seasonpackarr search --dry-run --api "your-seasonpackarr-api-token"
@@ -291,7 +294,8 @@ torrent metadata after local source checks. Valid metadata is cached in memory f
 up to seven days; every run checks current files and smart-mode settings again.
 
 Add `--client default` to select one client. See [Prowlarr backfill](docs/product-specs/prowlarr-backfill.md)
-for scheduling, API usage, limits, and result reporting.
+for RSS polling, API usage, limits, and result reporting. RSS runs only on its
+configured interval. The CLI and API always run targeted searches. autobrr remains optional and can run alongside it.
 
 ### Smart Mode
 
