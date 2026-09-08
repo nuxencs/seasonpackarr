@@ -18,10 +18,15 @@
 </h1>
 
 <p align="center">
-<b>seasonpackarr</b> discovers season packs through Prowlarr RSS feeds, manual searches, or optional
+<b>seasonpackarr</b> discovers season packs through Prowlarr RSS feeds, targeted searches, or
 <a href="https://github.com/autobrr/autobrr">autobrr</a> announces. It <b>hardlinks</b> downloaded episodes into
 the pack folder and imports the pack into your torrent client so existing files can be reused.
 </p>
+
+For automatic discovery, enable Prowlarr RSS monitoring, configure autobrr, or use
+both. Either integration can run independently. You can also automate targeted
+Prowlarr searches with an external scheduler such as cron. Without one of these
+automation sources, searches must be started on demand.
 
 > [!WARNING]
 > This application is currently under active development. If you encounter any bugs, please report them in the dedicated
@@ -253,7 +258,7 @@ clients:
       category: "tv-uhd"
 ```
 
-In qBittorrent, configure each category to save to the folder used by its Sonarr instance. Then create one autobrr
+In qBittorrent, configure each category to save to the folder used by its Sonarr instance. If you use autobrr, create one
 filter for each seasonpackarr entry. Use `"clientname": "sonarr-hd"` in every seasonpackarr payload for the HD filter
 and `"clientname": "sonarr-uhd"` for the UHD filter. See [autobrr Filter setup](#autobrr-filter-setup) for the complete
 filter and webhook configuration.
@@ -263,7 +268,7 @@ cannot be added separately to both categories.
 
 ### Prowlarr Discovery
 
-Use Prowlarr RSS feeds for automatic season-pack discovery without autobrr. Use a
+Use Prowlarr RSS feeds for automatic season-pack discovery, alone or with autobrr. Use a
 manual targeted search to find older packs or recover gaps after downtime.
 seasonpackarr starts from episode torrents already in your client. It does not
 acquire episodes or search for shows absent from the client.
@@ -295,7 +300,8 @@ up to seven days; every run checks current files and smart-mode settings again.
 
 Add `--client default` to select one client. See [Prowlarr backfill](docs/product-specs/prowlarr-backfill.md)
 for RSS polling, API usage, limits, and result reporting. RSS runs only on its
-configured interval. The CLI and API always run targeted searches. autobrr remains optional and can run alongside it.
+configured interval. The CLI and API always run targeted searches, which you can
+start on demand or schedule externally. Prowlarr is not required for the autobrr workflow.
 
 ### Smart Mode
 

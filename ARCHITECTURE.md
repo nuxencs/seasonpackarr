@@ -135,11 +135,14 @@ If a change starts pushing transport concerns into matching logic or file ops, s
 
 ## External Dependencies
 
-- autobrr webhook integration
+- optional autobrr webhook integration
 - optional Prowlarr API and Torznab tracker access
 - qBittorrent, Transmission, and Deluge 1.3/2 native RPC access
 - filesystem hardlink support
 - Docker/systemd packaging and release automation
+
+Automatic discovery requires Prowlarr RSS, autobrr, or an external scheduler for
+targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or together.
 
 ## Testing Surface
 

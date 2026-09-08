@@ -2,10 +2,16 @@
 
 ## Purpose
 
-Discover season packs without autobrr through opt-in Prowlarr RSS monitoring.
+Discover season packs through opt-in Prowlarr RSS monitoring.
 Use manual targeted searches for historical backfill or gaps after downtime.
 Both modes start from episode torrents in configured clients and use the existing
-matching, hardlink, and import flow. autobrr remains an optional input.
+matching, hardlink, and import flow.
+
+Prowlarr RSS and autobrr can each provide automatic discovery independently, or
+run together. Enable at least one for automation, or use an external scheduler
+such as cron to run targeted Prowlarr searches. Without an automation source,
+start searches on demand. Prowlarr is not required for the autobrr workflow;
+autobrr is not required for RSS or targeted searches.
 
 The service accepts one pack per release variant. An equivalent pack already in
 that client blocks another pack from any tracker, even when its torrent hash is
@@ -36,7 +42,7 @@ positive integers. Missing, disabled, or unsupported selections produce failures
 the run never falls back to unselected trackers. Eligible selected indexers still
 run. Read IDs from Prowlarr's `GET /api/v1/indexer` response.
 
-`rssInterval: "0s"` disables automatic discovery. Set a positive Go duration,
+`rssInterval: "0s"` disables RSS monitoring. Set a positive Go duration,
 for example `"15m"`, to enable RSS imports. Positive intervals must be at least
 `"10m"`. The first poll starts after the interval. Later intervals start when the
 previous poll finishes. There is no startup run. Targeted searches are manual only.

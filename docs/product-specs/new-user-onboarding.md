@@ -5,6 +5,11 @@
 Get `seasonpackarr` running with Prowlarr or autobrr and a supported torrent client
 so season packs reuse downloaded episodes.
 
+Choose Prowlarr RSS monitoring, autobrr, or both for automatic discovery. Either
+integration can run independently. As another option, use an external scheduler
+such as cron to run targeted Prowlarr searches. Without an automation source,
+start searches on demand.
+
 ## Happy Path
 
 1. Install the binary, container, or service.
@@ -19,7 +24,7 @@ so season packs reuse downloaded episodes.
    `seasonpackarr search --dry-run`, then add `--verify` to check exact reuse.
    Enable `search.rssInterval` only after reviewing the results. See
    [Prowlarr discovery](prowlarr-backfill.md).
-7. For optional autobrr input, add two ordered external webhook checks: announce-only `/api/candidate`, then torrent-aware `/api/match`.
+7. For autobrr, add two ordered external webhook checks: announce-only `/api/candidate`, then torrent-aware `/api/match`.
    The reorder arrows appear only after multiple external checks exist. Save and reload, then confirm candidate is
    displayed above match because the persisted display order is the execution order.
    Add one Webhook action on `/api/import` for hardlink creation and client import. Do not add a torrent-client action.
