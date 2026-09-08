@@ -40,7 +40,7 @@ func init() {
 	testCmd.PersistentFlags().IntVarP(&port, "port", "p", 42069, "port used by seasonpackarr")
 	testCmd.PersistentFlags().StringVarP(&apiKey, "api", "a", "", "api key used by seasonpackarr")
 
-	rootCmd.AddCommand(genTokenCmd, startCmd, testCmd, versionCmd)
+	rootCmd.AddCommand(genTokenCmd, startCmd, testCmd, versionCmd, newSearchCommand())
 	testCmd.AddCommand(candidateCmd, matchCmd, importCmd)
 }
 

@@ -59,6 +59,7 @@ func (c *mutableProcessorConfig) Store(config domain.Config) {
 }
 
 type processorHTTPFixture struct {
+	search      *searchRunner
 	handler     stdhttp.Handler
 	mock        *mockTorrentClient
 	config      *mutableProcessorConfig
@@ -130,6 +131,7 @@ func newProcessorHTTPFixtureWithLogger(
 		noopNotificationSender{},
 	)
 	return processorHTTPFixture{
+		search:      server.search,
 		handler:     server.Handler(),
 		mock:        mock,
 		config:      cfg,
@@ -865,7 +867,7 @@ func TestImport_RebuildsUnavailableOrInvalidPlansThroughHTTP(t *testing.T) {
 }
 
 func TestImportMutationFailures_RemainSafeAndRetryable(t *testing.T) {
-	t.Run("import failure retains plan for retry", func(t *testing.T) {
+	t.Run("import failure refreshes state for retry", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, 1, 1, 0)
 		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 		f.mock.importErr = errors.New("import failed")
@@ -878,8 +880,8 @@ func TestImportMutationFailures_RemainSafeAndRetryable(t *testing.T) {
 		f.mock.importErr = nil
 		second := f.postJSON(t, "/api/import", f.packPayload())
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), second.Code)
-		require.Equal(t, 1, f.mock.torrentCalls, "retry must retain the accepted inventory")
-		require.Equal(t, 1, f.mock.fileCalls, "retry must retain the accepted plan")
+		require.Equal(t, 2, f.mock.torrentCalls, "retry must check whether the failed import added a pack")
+		require.Equal(t, 2, f.mock.fileCalls, "retry must rebuild after a client mutation attempt")
 		require.Equal(t, 2, f.mock.importCalls)
 	})
 

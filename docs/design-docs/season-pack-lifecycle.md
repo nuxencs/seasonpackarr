@@ -38,3 +38,16 @@ Describe the normal path from webhook hit to hardlink creation and client import
 ## Verification Notes
 
 Verified against code on 2026-08-28. The lifecycle is implementation-backed, not aspirational.
+
+## Backfill and Concurrent Imports
+
+Prowlarr backfill supplies candidate titles and torrent bytes to the same exact
+planning and import path. One process serializes imports per configured client
+endpoint. Import checks the candidate gate again before it uses a cached plan.
+Client mutation attempts invalidate cached inventories and plans for all aliases
+of that endpoint, even when the adapter returns an error. A retry must establish
+whether the earlier attempt already added the pack. An in-flight inventory scan
+cannot restore a cache entry invalidated by an import.
+
+See [Prowlarr backfill](../product-specs/prowlarr-backfill.md) for search and
+schedule behavior.
