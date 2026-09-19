@@ -46,6 +46,7 @@ Preserve discovery progress across restarts with embedded SQLite. Keep setup aut
 - Preserve the RSS working-set rules. Commit candidates and checkpoints atomically before evaluation; do not commit feed progress for unavailable clients.
 - Store metadata directly in SQLite, not in a second process-local cache. Keep existing bounds and LRU behavior.
 - Stop discovery on storage failures. Reject corrupt or unsupported newer databases at startup.
+- Use an API-key-keyed HMAC-SHA-256 of the Prowlarr URL for connection identity. CodeQL classified the initial plain SHA-256 of the URL and API key as password hashing; use the credential as a cryptographic key instead. No alert suppression is needed.
 - Config values and defaults did not change, so `config.yaml` and the config schema require no new fields.
 
 ## Verification

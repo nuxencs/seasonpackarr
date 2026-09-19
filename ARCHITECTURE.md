@@ -109,8 +109,8 @@
 - `PRAGMA user_version` tracks embedded, transactional migrations. Startup rejects
   corrupt or newer databases. A storage failure stops discovery, not a fallback
   to volatile storage.
-- Prowlarr connection identity is a SHA-256 fingerprint of the URL and API key.
-  Cached torrent bytes and result links remain sensitive data.
+- Prowlarr connection identity is an HMAC-SHA-256 fingerprint of the URL, keyed
+  by the API key. Cached torrent bytes and result links remain sensitive data.
 - Configuration, client inventory, coverage decisions, and exact import plans are
   not persisted. There is no durable job queue or multi-process scheduler.
 - See [schema documentation](docs/generated/db-schema.md) and

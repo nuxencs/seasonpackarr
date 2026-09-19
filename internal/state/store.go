@@ -6,10 +6,10 @@ package state
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"database/sql"
 	_ "embed"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -144,15 +144,16 @@ func (s *Store) UseConnection(ctx context.Context, address, apiKey string) error
 	if err := s.pruneExpired(ctx, time.Now()); err != nil {
 		return err
 	}
-	encoded, _ := json.Marshal([2]string{address, apiKey})
-	fingerprint := sha256.Sum256(encoded)
+	mac := hmac.New(sha256.New, []byte(apiKey))
+	mac.Write([]byte(address))
+	fingerprint := mac.Sum(nil)
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		var previous []byte
 		err := tx.QueryRowContext(ctx, "SELECT fingerprint FROM connection WHERE id = 1").Scan(&previous)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if string(previous) == string(fingerprint[:]) {
+		if hmac.Equal(previous, fingerprint) {
 			return nil
 		}
 		for _, table := range []string{"metadata", "cooldowns", "rss_candidates", "rss_checkpoints"} {
@@ -160,7 +161,7 @@ func (s *Store) UseConnection(ctx context.Context, address, apiKey string) error
 				return err
 			}
 		}
-		_, err = tx.ExecContext(ctx, "INSERT INTO connection VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET fingerprint = excluded.fingerprint", fingerprint[:])
+		_, err = tx.ExecContext(ctx, "INSERT INTO connection VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET fingerprint = excluded.fingerprint", fingerprint)
 		return err
 	})
 }
