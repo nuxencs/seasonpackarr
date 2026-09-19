@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog"
 	_ "modernc.org/sqlite"
 )
 
@@ -49,11 +50,13 @@ func Path(configDir string) (string, error) {
 
 // Open creates or migrates a private database. An unreadable, corrupt, or newer
 // schema is an error, never a reason to erase state or use volatile storage.
-func Open(ctx context.Context, path string) (*Store, error) {
+func Open(ctx context.Context, path string, log zerolog.Logger) (*Store, error) {
 	path, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
 	}
+	log = log.With().Str("module", "database").Logger()
+	log.Info().Str("path", path).Msg("opening discovery database")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("create database directory: %w", err)
 	}
@@ -91,7 +94,8 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	// One connection keeps transactions and PRAGMA behavior predictable.
 	db.SetMaxOpenConns(1)
 	s := &Store{db: db}
-	if err := s.migrate(ctx); err != nil {
+	version, err := s.migrate(ctx, log)
+	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("initialize discovery database: %w", err)
 	}
@@ -99,6 +103,12 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("prune expired discovery state: %w", err)
 	}
+	var journalMode string
+	if err := db.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&journalMode); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("read database journal mode: %w", err)
+	}
+	log.Info().Int("schema_version", version).Str("journal_mode", journalMode).Msg("discovery database ready")
 	return s, nil
 }
 
@@ -116,26 +126,38 @@ func (s *Store) transaction(ctx context.Context, apply func(*sql.Tx) error) erro
 	return tx.Commit()
 }
 
-func (s *Store) migrate(ctx context.Context) error {
-	return s.transaction(ctx, func(tx *sql.Tx) error {
-		var version int
+func (s *Store) migrate(ctx context.Context, log zerolog.Logger) (int, error) {
+	migrations := []string{initialSchema}
+	var version int
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		if err := tx.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 			return err
 		}
-		migrations := []string{initialSchema}
 		if version < 0 || version > len(migrations) {
 			return fmt.Errorf("unsupported database schema version %d; use a compatible seasonpackarr version", version)
 		}
+		log = log.With().Int("from_version", version).Int("to_version", len(migrations)).Int("count", len(migrations)-version).Logger()
+		if version < len(migrations) {
+			log.Info().Msg("applying database migrations")
+		}
 		for i := version; i < len(migrations); i++ {
 			if _, err := tx.ExecContext(ctx, migrations[i]); err != nil {
-				return err
+				return fmt.Errorf("apply schema version %d: %w", i+1, err)
 			}
 			if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", i+1)); err != nil {
-				return err
+				return fmt.Errorf("record schema version %d: %w", i+1, err)
 			}
 		}
 		return nil
 	})
+	if err != nil {
+		return 0, err
+	}
+	// Report success only after the migration transaction commits.
+	if version < len(migrations) {
+		log.Info().Msg("database migrations applied")
+	}
+	return len(migrations), nil
 }
 
 // UseConnection invalidates all discovery state when the URL or credential

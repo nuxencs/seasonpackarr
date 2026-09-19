@@ -40,6 +40,12 @@ var startCmd = &cobra.Command{
 		// init new logger
 		log := logger.New(&snapshot)
 
+		log.Info().Msgf("Starting seasonpackarr")
+		log.Info().Msgf("Version: %s", buildinfo.Version)
+		log.Info().Msgf("Commit: %s", buildinfo.Commit)
+		log.Info().Msgf("Build date: %s", buildinfo.Date)
+		log.Info().Msgf("Log-level: %s", snapshot.LogLevel)
+
 		// init dynamic config
 		if _, err := cfg.DynamicReload(log); err != nil {
 			return fmt.Errorf("failed to start config reload watcher: %w", err)
@@ -52,7 +58,7 @@ var startCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		store, err := state.Open(cmd.Context(), path)
+		store, err := state.Open(cmd.Context(), path, log.With().Logger())
 		if err != nil {
 			return fmt.Errorf("open discovery database %q: %w", path, err)
 		}
@@ -62,12 +68,6 @@ var startCmd = &cobra.Command{
 			}
 		}()
 		srv := http.NewServer(log, cfg, noti, store)
-
-		log.Info().Msgf("Starting seasonpackarr")
-		log.Info().Msgf("Version: %s", buildinfo.Version)
-		log.Info().Msgf("Commit: %s", buildinfo.Commit)
-		log.Info().Msgf("Build date: %s", buildinfo.Date)
-		log.Info().Msgf("Log-level: %s", snapshot.LogLevel)
 
 		ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
 		defer stop()

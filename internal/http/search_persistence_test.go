@@ -12,13 +12,14 @@ import (
 	"testing"
 
 	"github.com/nuxencs/seasonpackarr/internal/state"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
 
 func (f *searchFixture) restart(t *testing.T) {
 	t.Helper()
 	require.NoError(t, f.search.state.Close())
-	store, err := state.Open(t.Context(), f.statePath)
+	store, err := state.Open(t.Context(), f.statePath, zerolog.Nop())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
 	server := NewServer(f.search.log, f.config, noopNotificationSender{}, store)

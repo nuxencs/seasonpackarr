@@ -293,6 +293,17 @@ Expired records are removed at startup and during discovery. Payload limits do
 not cap the database file size: SQLite uses space for indexes and can retain free
 pages for reuse. No manual database maintenance is normally required.
 
+### Startup Logs
+
+At `INFO` level, messages with `module=database` show the database path when it
+opens. `discovery database ready` confirms successful initialization and reports
+the schema version and journal mode. This message also appears on normal restarts.
+
+When migrations are needed, the logs show the old and new schema versions and
+the number of pending migrations. `database migrations applied` appears only
+after they commit. These startup messages do not include configuration contents,
+credentials, SQL parameters, or cached release data.
+
 ### Back Up or Restore
 
 1. Stop seasonpackarr cleanly.

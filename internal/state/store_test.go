@@ -11,13 +11,14 @@ import (
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/prowlarr"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
 
 func testStore(t *testing.T) (*Store, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "state %#", "seasonpackarr.db")
-	s, err := Open(t.Context(), path)
+	s, err := Open(t.Context(), path, zerolog.Nop())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, s.Close()) })
 	return s, path
@@ -42,7 +43,7 @@ func TestStore_RestartAndConnectionIsolation(t *testing.T) {
 			feeds.SetCheckpoint(1, map[Key]bool{key: true})
 			require.NoError(t, s.SaveFeeds(ctx, feeds))
 			require.NoError(t, s.Close())
-			s, err = Open(ctx, path)
+			s, err = Open(ctx, path, zerolog.Nop())
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, s.Close()) })
 			address, secret := "http://prowlarr", "secret"
@@ -92,7 +93,7 @@ func TestStore_PrivateFileAndSchema(t *testing.T) {
 	_, err = s.db.Exec("PRAGMA user_version = 99")
 	require.NoError(t, err)
 	require.NoError(t, s.Close())
-	_, err = Open(t.Context(), path)
+	_, err = Open(t.Context(), path, zerolog.Nop())
 	require.ErrorContains(t, err, "unsupported database schema version 99")
 }
 
@@ -100,17 +101,17 @@ func TestStore_RejectsInvalidFiles(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "corrupt.db")
 	content := []byte("not a database")
 	require.NoError(t, os.WriteFile(path, content, 0o600))
-	_, err := Open(t.Context(), path)
+	_, err := Open(t.Context(), path, zerolog.Nop())
 	require.Error(t, err)
 	actual, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.Equal(t, content, actual)
-	_, err = Open(t.Context(), t.TempDir())
+	_, err = Open(t.Context(), t.TempDir(), zerolog.Nop())
 	require.ErrorContains(t, err, "regular file")
 	if runtime.GOOS != "windows" {
 		link := filepath.Join(t.TempDir(), "state.db")
 		require.NoError(t, os.Symlink(path, link))
-		_, err = Open(t.Context(), link)
+		_, err = Open(t.Context(), link, zerolog.Nop())
 		require.ErrorContains(t, err, "regular file")
 	}
 }
@@ -129,7 +130,7 @@ func TestStore_StartupPrunesExpiredState(t *testing.T) {
 	feeds.SetCheckpoint(1, map[Key]bool{key: true})
 	require.NoError(t, s.SaveFeeds(ctx, feeds))
 	require.NoError(t, s.Close())
-	s, err = Open(ctx, path)
+	s, err = Open(ctx, path, zerolog.Nop())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, s.Close()) })
 	for _, table := range []string{"metadata", "cooldowns", "rss_candidates"} {

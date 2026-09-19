@@ -128,7 +128,7 @@ func newProcessorHTTPFixtureWithLogger(
 	clientMap.Store("default", cachedTorrentClient{config: cloneClientConfig(*clientCfg), client: mock})
 
 	statePath := filepath.Join(tempDir, "seasonpackarr.db")
-	store, err := state.Open(t.Context(), statePath)
+	store, err := state.Open(t.Context(), statePath, zerolog.Nop())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
 	server := NewServer(
