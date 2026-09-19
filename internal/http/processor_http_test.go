@@ -23,6 +23,7 @@ import (
 	"github.com/autobrr/go-torrent/metainfo"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
+	"github.com/nuxencs/seasonpackarr/internal/state"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
@@ -60,6 +61,7 @@ func (c *mutableProcessorConfig) Store(config domain.Config) {
 
 type processorHTTPFixture struct {
 	search      *searchRunner
+	statePath   string
 	handler     stdhttp.Handler
 	mock        *mockTorrentClient
 	config      *mutableProcessorConfig
@@ -125,13 +127,19 @@ func newProcessorHTTPFixtureWithLogger(
 	}}
 	clientMap.Store("default", cachedTorrentClient{config: cloneClientConfig(*clientCfg), client: mock})
 
+	statePath := filepath.Join(tempDir, "seasonpackarr.db")
+	store, err := state.Open(t.Context(), statePath)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
 	server := NewServer(
 		log,
 		cfg,
 		noopNotificationSender{},
+		store,
 	)
 	return processorHTTPFixture{
 		search:      server.search,
+		statePath:   statePath,
 		handler:     server.Handler(),
 		mock:        mock,
 		config:      cfg,

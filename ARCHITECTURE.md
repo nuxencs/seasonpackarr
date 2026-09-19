@@ -7,7 +7,7 @@
 ## Main Runtime Flow
 
 1. `main.go` calls Cobra commands in `cmd/`.
-2. `cmd/start.go` loads config, logger, and notifications, then starts the HTTP server. Signal cancellation starts a bounded graceful shutdown.
+2. `cmd/start.go` loads config, logger, notifications, and the SQLite store, then starts the HTTP server. Signal cancellation starts a bounded graceful shutdown. The command closes the store after server shutdown.
 3. `internal/http/server.go` builds `/api/healthz`, `/api/candidate`, `/api/match`, `/api/import`, and `/api/search`.
 4. `internal/http/processor_*.go` keeps each processing stage together. The handler file owns payload decode and responses. The candidate file owns announce-only matching and inventory caching. The plan file parses torrent bytes and builds an exact side-effect-free plan. The import file reuses or rebuilds that plan, resolves the client import destination, hardlinks matched files, and imports the pack. See [docs/design-docs/qbittorrent-import-flow.md](docs/design-docs/qbittorrent-import-flow.md).
 5. `internal/release/` decides whether a client episode and announced season pack are compatible.
@@ -77,21 +77,44 @@
   server lifecycle context. Targeted searches are manual only. All discovery runs
   share an overlap guard.
 - `internal/http/rss.go` reads recent feeds once per indexer and pages back to the
-  previous poll when possible. `rss_state.go` retains bounded relevant listings
-  for later coverage checks. Feed state is process-local. Only the scheduler can
-  start an RSS poll. Manual CLI/API requests always use targeted search.
-- `internal/http/search_cache.go` bounds process-local metadata reuse to seven
-  days, 64 MiB, and 1024 entries. Exact runs check local sources before retrieval
+  previous poll when possible. `internal/state/rss.go` retains bounded relevant
+  listings for later coverage checks. SQLite preserves feed state across restarts.
+  Checkpoints and candidates commit together before evaluation. Runs with an
+  unavailable client discard their feed working set instead of advancing it.
+  Only the scheduler can start an RSS poll. Manual CLI/API requests always use targeted search.
+- `internal/state/metadata.go` bounds durable metadata reuse to seven days,
+  64 MiB, and 1024 entries. Exact runs check local sources before retrieval
   and rebuild decisions from current inputs.
 - Each run keeps one config snapshot and applies the configured indexer allowlist.
   RSS selects RSS-capable indexers; targeted search selects searchable indexers.
   Both modes share one connection whose request spacing survives across runs.
-- In-memory cooldowns retain retry deadlines across runs. HTTP 429, temporary HTTP
+- SQLite retains retry deadlines across runs and restarts. HTTP 429, temporary HTTP
   errors, and transport failures pause the affected indexer. Discovery failures
-  pause the whole Prowlarr connection. Restart or connection changes reset these
-  deadlines. Requests are not retried automatically.
+  pause the whole Prowlarr connection. Connection changes reset discovery state
+  atomically. Requests are not retried automatically.
 - See [Prowlarr backfill](docs/product-specs/prowlarr-backfill.md) for operator
   behavior and [the API audit](docs/references/prowlarr-backfill-api.md) for source contracts.
+
+### Persistent Discovery State
+
+- `internal/state/` owns the embedded SQLite driver, schema migrations, expiry,
+  metadata eviction, and atomic RSS snapshots. There is no alternative backend.
+- `cmd/start.go` creates `seasonpackarr.db` beside the active config. Environment-only
+  setups use the explicit config directory or the user data directory.
+- The application owns one SQL connection with WAL journaling, SQLite-managed
+  automatic checkpoints, and FULL synchronization. Each commit synchronizes the
+  WAL to preserve acknowledged writes through an OS crash or power loss, subject
+  to the storage system honoring synchronization. Transactions never cover
+  tracker or torrent-client requests.
+- `PRAGMA user_version` tracks embedded, transactional migrations. Startup rejects
+  corrupt or newer databases. A storage failure stops discovery, not a fallback
+  to volatile storage.
+- Prowlarr connection identity is a SHA-256 fingerprint of the URL and API key.
+  Cached torrent bytes and result links remain sensitive data.
+- Configuration, client inventory, coverage decisions, and exact import plans are
+  not persisted. There is no durable job queue or multi-process scheduler.
+- See [schema documentation](docs/generated/db-schema.md) and
+  [backup guidance](docs/product-specs/prowlarr-backfill.md#persistent-discovery-state).
 
 ### File Operations
 

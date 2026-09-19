@@ -18,9 +18,14 @@ Prowlarr backfill:
 - Episode variants with a compatible pack in the same client are excluded before tracker queries. coveredEpisodeTorrents reports excluded torrent entries; other variants and independent clients remain eligible.
 - RSS monitoring: search.rssInterval is 0s by default; use 15m to opt in (minimum 10m).
 - Targeted search is manual only. RSS is periodic only, with no CLI/API trigger.
-- RSS retains bounded relevant listings in memory for later coverage checks.
-  Use manual search for gaps after downtime.
-- Checks: go test ./internal/prowlarr ./internal/http ./internal/config ./cmd
+- SQLite preserves bounded RSS listings, checkpoints, metadata, and cooldowns across restarts.
+  Use manual search for releases outside the feed and retention window.
+- State is seasonpackarr.db beside config.yaml (Docker: /config/seasonpackarr.db).
+  Environment-only setups use --config or the user data directory. No database settings are needed.
+- Stop the service cleanly before copying the database and config for backup.
+  Protect backups: torrent metadata and download links can contain tracker credentials.
+- Database failures stop startup or discovery; there is no volatile fallback or import-job recovery.
+- Checks: go test ./internal/state ./internal/prowlarr ./internal/http ./internal/config ./cmd
 - Contract and limits: docs/product-specs/prowlarr-backfill.md
 
 Deadcode on Go 1.27 (verified 2026-09-05):

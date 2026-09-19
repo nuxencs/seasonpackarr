@@ -7,7 +7,7 @@ Describe the normal path from webhook hit to hardlink creation and client import
 ## Flow
 
 1. Service starts through `cmd/start.go`. `signal.NotifyContext` converts termination signals into cancellation and starts a 15-second graceful shutdown.
-2. Config, logger, and notification sender are initialized.
+2. Config, logger, notification sender, and SQLite discovery state are initialized. The command closes the database after server shutdown.
 3. `internal/http/server.go` exposes authenticated `/api/candidate`, `/api/match`, and `/api/import`.
 4. A webhook request enters `internal/http/webhook.go`. Its context is passed through planning and torrent-client operations, so client disconnects and request cancellation stop context-aware work.
 5. `internal/http/processor_handlers.go` decodes the payload. The candidate, plan, and import processor files keep the three lifecycle stages separate.

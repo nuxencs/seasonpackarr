@@ -8,6 +8,8 @@ This is a self-hosted integration service with network-facing HTTP endpoints and
 
 - API token auth for `/api/candidate`, `/api/match`, `/api/import`, and `/api/search`
 - explicit config-driven client credentials, including qBittorrent passwords or API keys
+- discovery database created with owner-only Unix permissions; use service-account ACLs on Windows
+- Prowlarr connection identity stored as a fingerprint, not as a plaintext API key
 - narrow HTTP surface
 - CodeQL in CI
 - Go vulnerability scanning expected in local verification
@@ -22,6 +24,7 @@ affected `openpgp` package. That advisory has no fixed module version.
 
 - path construction before hardlink creation
 - logging of sensitive config or tokens
+- discovery database and backups: torrent bytes and retained download links can contain tracker credentials
 - webhook contract drift causing unexpected processing
 - torrent-client dependencies and release-parser assumptions
 

@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/http"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/notification"
+	"github.com/nuxencs/seasonpackarr/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -46,7 +48,20 @@ var startCmd = &cobra.Command{
 		// init notification sender
 		noti := notification.NewDiscordSender(log, cfg)
 
-		srv := http.NewServer(log, cfg, noti)
+		path, err := state.Path(cmp.Or(snapshot.ConfigPath, configPath))
+		if err != nil {
+			return err
+		}
+		store, err := state.Open(cmd.Context(), path)
+		if err != nil {
+			return fmt.Errorf("open discovery database %q: %w", path, err)
+		}
+		defer func() {
+			if err := store.Close(); err != nil {
+				log.Error().Err(err).Msg("could not close discovery database")
+			}
+		}()
+		srv := http.NewServer(log, cfg, noti, store)
 
 		log.Info().Msgf("Starting seasonpackarr")
 		log.Info().Msgf("Version: %s", buildinfo.Version)

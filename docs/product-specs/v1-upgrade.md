@@ -8,6 +8,9 @@ This upgrade needs changes in two places:
 1. your seasonpackarr configuration
 2. your seasonpackarr filter in autobrr
 
+Also check the [application data directory](#prepare-the-application-data-directory)
+before starting v1.0.0. This check applies to autobrr-only installations too.
+
 Plan a short maintenance window. Keep the autobrr filter disabled until both
 parts are complete.
 
@@ -21,8 +24,13 @@ parts are complete.
 - Smart mode measures how much of the announced torrent can be reused. It no
   longer asks TVDB or TVMaze for the season episode count.
 
-There is no database migration. Existing torrent data does not need to move if
-the new import destination points to the same location.
+v0.16.0 has no application database to migrate. v1.0.0 creates a SQLite database
+automatically to preserve Prowlarr discovery progress across restarts. You do not
+need to install a database service or add database settings to `config.yaml`.
+
+Existing torrent data does not need to move if the new import destination points
+to the same location. Import plans remain in memory, and imports remain
+synchronous. The database does not resume interrupted imports.
 
 ## Before you start
 
@@ -132,6 +140,29 @@ Container paths are the paths inside the containers. They do not have to match
 the host path, but seasonpackarr and the torrent client must agree on the path
 that the torrent client receives.
 
+### Prepare the application data directory
+
+v1.0.0 creates `seasonpackarr.db` beside the active `config.yaml`, even when
+Prowlarr is not configured. Before starting it:
+
+- Make sure the service account can write to that directory. SQLite uses WAL
+  mode and creates `seasonpackarr.db-wal` and `seasonpackarr.db-shm` beside the
+  database while it runs. Do not delete these files.
+- Keep the directory on local storage, not an NFS or SMB share.
+- For the supplied Docker setup, keep the existing `/config` volume persistent
+  and writable. No additional volume is needed. A read-only `/config` mount
+  prevents startup.
+- Run only one seasonpackarr instance per database.
+
+The database is created and upgraded automatically at startup. If it cannot be
+opened or upgraded, the service stops with an error rather than losing state.
+
+After the upgrade, include `seasonpackarr.db` in your backups. Stop the service
+cleanly before copying it. Torrent metadata and retained links can contain
+tracker credentials, so protect these backups as you protect `config.yaml`.
+See [database backup and recovery](prowlarr-backfill.md#back-up-or-restore) for
+the complete procedure.
+
 <details>
 <summary>Environment-only and Docker Compose configuration</summary>
 
@@ -159,8 +190,16 @@ Replace `<NAME>` with the upper-case client name used by your other variables,
 for example `DEFAULT`. `IMPORT_TAGS` is a comma-separated list. Category,
 download path, and content layout are qBittorrent-only settings.
 
+With `disableConfigFile`, the database goes in the directory passed to
+`--config <dir>`. Without that flag, it goes in
+`$XDG_DATA_HOME/seasonpackarr/seasonpackarr.db`, or
+`~/.local/share/seasonpackarr/seasonpackarr.db` when `XDG_DATA_HOME` is unset.
+Make the selected directory writable and preserve it across container replacements.
+The supplied Docker command already uses `--config /config`.
+
 Run `docker compose config` before the upgrade if you use Compose. Check the
-resolved environment variables and volume paths.
+resolved environment variables and volume paths, including the writable database
+location.
 
 </details>
 
@@ -295,7 +334,9 @@ Save the filter, but keep it disabled until seasonpackarr v1.0.0 is running.
 1. Install the v1.0.0 binary or container image.
 2. Start seasonpackarr while the Autobrr filter is disabled.
 3. Check the seasonpackarr log. If it reports an old setting, remove that
-   setting and start the service again.
+   setting and start the service again. If it reports a database initialization
+   error, check the directory permissions, volume mount, and free space. Confirm
+   that `seasonpackarr.db` exists in the expected location before continuing.
 4. Open `http://host:port/api/healthz/readiness` in a browser. A ready service
    returns `OK`.
 5. Reload the Autobrr filter and confirm the External order one more time.
@@ -384,9 +425,14 @@ is still running.
 
 Rollback does not remove hardlinks or torrents already imported by v1.0.0.
 Inspect those items before the restored filter processes another announce.
+v0.16.0 does not use `seasonpackarr.db`. You can keep it for a later v1.0.0
+upgrade; do not delete it as part of the rollback.
 
 ## New options that do not require migration
 
+- Prowlarr RSS monitoring and targeted searches are optional. Existing autobrr
+  users do not need to configure Prowlarr. RSS is disabled by default. See
+  [Prowlarr discovery](prowlarr-backfill.md) to enable RSS or run a search.
 - v1.0.0 adds Deluge 1.3 and Deluge 2 support. Existing qBittorrent and
   Transmission users do not need to change client type.
 - More settings reload after a valid configuration edit. Server host and port,
