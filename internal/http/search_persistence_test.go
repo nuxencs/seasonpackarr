@@ -51,7 +51,7 @@ func TestSearch_DatabaseFailureStopsDiscovery(t *testing.T) {
 	require.NoError(t, f.search.state.Close())
 	response := f.postJSON(t, "/api/search", map[string]any{"dryRun": false})
 	require.Equal(t, 500, response.Code)
-	require.Contains(t, response.Body.String(), "discovery database")
+	require.JSONEq(t, `{"error":"could not access database; check service logs"}`, response.Body.String())
 	require.Zero(t, f.discoveryCalls)
 	require.Zero(t, f.downloads)
 	require.Zero(t, f.mock.importCalls)
@@ -77,7 +77,7 @@ func TestSearch_MetadataFailureDoesNotImport(t *testing.T) {
 			var report searchReport
 			require.NoError(t, json.Unmarshal(response.Body.Bytes(), &report))
 			require.Len(t, report.Failures, 1)
-			require.Contains(t, report.Failures[0].Reason, "discovery database")
+			require.Equal(t, "could not access database; check service logs", report.Failures[0].Reason)
 			require.Len(t, f.queries, 1, "storage failure stops pagination and other indexers")
 			if stage == "read" {
 				require.Zero(t, f.downloads)
@@ -94,7 +94,7 @@ func TestRSS_CheckpointWriteFailureDoesNotImport(t *testing.T) {
 	f.beforeSearch = func() { require.NoError(t, f.search.state.Close()) }
 	report := f.runRSS(t)
 	require.Len(t, report.Failures, 1)
-	require.Contains(t, report.Failures[0].Reason, "discovery database")
+	require.Equal(t, "could not access database; check service logs", report.Failures[0].Reason)
 	require.Len(t, f.queries, 1)
 	require.Zero(t, f.downloads)
 	require.Zero(t, f.mock.importCalls)

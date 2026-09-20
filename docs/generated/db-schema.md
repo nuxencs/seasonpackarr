@@ -1,4 +1,4 @@
-# SQLite Discovery Schema
+# SQLite Schema
 
 Schema version: `1`, tracked by `PRAGMA user_version`.
 

@@ -60,11 +60,11 @@ var startCmd = &cobra.Command{
 		}
 		store, err := state.Open(cmd.Context(), path, log.With().Logger())
 		if err != nil {
-			return fmt.Errorf("open discovery database %q: %w", path, err)
+			return fmt.Errorf("open database %q: %w", path, err)
 		}
 		defer func() {
 			if err := store.Close(); err != nil {
-				log.Error().Err(err).Msg("could not close discovery database")
+				log.Error().Err(err).Msg("could not close database")
 			}
 		}()
 		srv := http.NewServer(log, cfg, noti, store)

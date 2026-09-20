@@ -95,7 +95,7 @@
 - See [Prowlarr backfill](docs/product-specs/prowlarr-backfill.md) for operator
   behavior and [the API audit](docs/references/prowlarr-backfill-api.md) for source contracts.
 
-### Persistent Discovery State
+### Database
 
 - `internal/state/` owns the embedded SQLite driver, schema migrations, expiry,
   metadata eviction, and atomic RSS snapshots. There is no alternative backend.

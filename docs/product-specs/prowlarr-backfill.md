@@ -296,7 +296,7 @@ pages for reuse. No manual database maintenance is normally required.
 ### Startup Logs
 
 At `INFO` level, messages with `module=database` show the database path when it
-opens. `discovery database ready` confirms successful initialization and reports
+opens. `database ready` confirms successful initialization and reports
 the schema version and journal mode. This message also appears on normal restarts.
 
 When migrations are needed, the logs show the old and new schema versions and
@@ -347,7 +347,7 @@ The body must contain one JSON object; unknown fields are rejected.
 - `400`: invalid request, unknown client, or incomplete search configuration
 - `401`: missing or invalid API token when authentication is configured
 - `409`: another RSS or targeted discovery run is active
-- `500`: the discovery database could not be accessed before the run; check service logs
+- `500`: the database could not be accessed before the run; check service logs
 
 `outcomes[].status` is `candidate`, `would_import`, `imported`, `rejected`, or
 `failed`. The report echoes `dryRun` and `verify`. `torrentDownloads` counts

@@ -1,7 +1,7 @@
 // Copyright (c) 2026, nuxen and the seasonpackarr contributors.
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-// Package state owns the SQLite schema and bounded discovery state.
+// Package state owns the SQLite database and persistent application state.
 package state
 
 import (
@@ -25,7 +25,7 @@ import (
 //go:embed migrations/001_discovery.sql
 var initialSchema string
 
-// Store is owned by the application lifecycle. Discovery operations are serialized
+// Store is the application database. Discovery operations are serialized
 // by the discovery runner; the store is not a multi-process scheduler.
 type Store struct {
 	db *sql.DB
@@ -56,7 +56,7 @@ func Open(ctx context.Context, path string, log zerolog.Logger) (*Store, error) 
 		return nil, err
 	}
 	log = log.With().Str("module", "database").Logger()
-	log.Info().Str("path", path).Msg("opening discovery database")
+	log.Info().Str("path", path).Msg("opening database")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("create database directory: %w", err)
 	}
@@ -97,7 +97,7 @@ func Open(ctx context.Context, path string, log zerolog.Logger) (*Store, error) 
 	version, err := s.migrate(ctx, log)
 	if err != nil {
 		db.Close()
-		return nil, fmt.Errorf("initialize discovery database: %w", err)
+		return nil, fmt.Errorf("initialize database: %w", err)
 	}
 	if err := s.pruneExpired(ctx, time.Now()); err != nil {
 		db.Close()
@@ -108,7 +108,7 @@ func Open(ctx context.Context, path string, log zerolog.Logger) (*Store, error) 
 		db.Close()
 		return nil, fmt.Errorf("read database journal mode: %w", err)
 	}
-	log.Info().Int("schema_version", version).Str("journal_mode", journalMode).Msg("discovery database ready")
+	log.Info().Int("schema_version", version).Str("journal_mode", journalMode).Msg("database ready")
 	return s, nil
 }
 

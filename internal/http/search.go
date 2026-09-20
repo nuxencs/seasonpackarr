@@ -31,8 +31,8 @@ import (
 )
 
 var (
-	errSearchRunning  = errors.New("a Prowlarr discovery run is already active")
-	errDiscoveryState = errors.New("could not access discovery database; check service logs")
+	errSearchRunning = errors.New("a Prowlarr discovery run is already active")
+	errDatabase      = errors.New("could not access database; check service logs")
 )
 
 // SearchRequest selects one configured client or all clients when empty.
@@ -121,7 +121,7 @@ func (r *searchRunner) handler(c *gin.Context) {
 		status := http.StatusBadRequest
 		if errors.Is(err, errSearchRunning) {
 			status = http.StatusConflict
-		} else if errors.Is(err, errDiscoveryState) {
+		} else if errors.Is(err, errDatabase) {
 			status = http.StatusInternalServerError
 		}
 		c.JSON(status, gin.H{"error": err.Error()})
@@ -559,8 +559,8 @@ func (r *searchRunner) stateError(err error) error {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}
-	r.log.Error().Err(errtrace.WithStack(err)).Msg("discovery database operation failed")
-	return errDiscoveryState
+	r.log.Error().Err(errtrace.WithStack(err)).Msg("database operation failed")
+	return errDatabase
 }
 
 func (run *discoveryRun) storageFailure(err error) {

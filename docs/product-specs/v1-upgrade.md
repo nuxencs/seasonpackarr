@@ -156,7 +156,7 @@ Prowlarr is not configured. Before starting it:
 
 The database is created and upgraded automatically at startup. If it cannot be
 opened or upgraded, the service stops with an error rather than losing state.
-At `INFO` level, look for `discovery database ready` with the schema version and
+At `INFO` level, look for `database ready` with the schema version and
 journal mode. The startup logs also show the database path and any migration
 progress. See [startup logs](prowlarr-backfill.md#startup-logs).
 
