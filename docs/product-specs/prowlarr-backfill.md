@@ -69,8 +69,9 @@ A cooldown stops both searches and torrent retrieval for the affected indexer.
 Other indexers can continue. A failure during indexer discovery blocks all
 requests to that Prowlarr connection until its cooldown expires.
 
-Cooldowns remain in memory across runs. They reset after a service restart or a
-Prowlarr URL or API key change. No cooldown state is written to disk.
+Cooldowns are stored in SQLite and survive service restarts. A Prowlarr URL or
+API key change clears them on the next discovery run. Normal request spacing
+still applies, but its last-request timestamp is not persisted.
 
 These limits are project choices, not tracker-specific guarantees. A poll can
 require multiple requests. Select an interval that fits the configured trackers.
@@ -118,9 +119,11 @@ even if a pack has left the feed. A pack rejected for low coverage can pass once
 more episodes finish. Valid cached torrent bytes avoid another metadata download.
 There is no permanent "seen means rejected" decision.
 
-Feed checkpoints and retained listings are held only in memory. Restarting or
-changing the Prowlarr URL or API key resets them. Disabled or unselected indexers
-are removed from feed state after the next successful RSS indexer discovery. Retained links are refreshed
+Feed checkpoints and retained listings are stored in SQLite and survive restarts.
+A checkpoint and its retained listings are saved together before result evaluation.
+Changing the Prowlarr URL or API key resets them on the next discovery run. Disabled
+or unselected indexers are removed from feed state after successful RSS indexer
+selection. Retained links are refreshed
 when the same result appears again, without extending the retention deadline.
 Use manual backfill for releases outside the feed and retention window.
 
@@ -245,9 +248,10 @@ stopped, recover it in the torrent client.
 
 ## Metadata Reuse
 
-The process keeps valid torrent metadata for up to seven days, limited to 64 MiB
+SQLite keeps valid torrent metadata for up to seven days, limited to 64 MiB
 and 1024 entries. The least recently used entries are removed when needed.
-Restarting the service or changing the Prowlarr URL or API key clears the cache.
+Restarting the service preserves the cache. Changing the Prowlarr URL or API key
+clears it on the next discovery run.
 Keys include the indexer ID, result GUID (or download link when no GUID exists),
 and release title. Different tracker results do not share cached bytes.
 
@@ -257,7 +261,72 @@ a lower threshold can make a previous rejection pass without another torrent
 download. Search-only dry runs do not read or populate this cache. Invalid torrent
 responses are not cached. Cache expiry or eviction can cause another download.
 A tracker that replaces metadata under the same result identity can remain stale
-until expiry or restart. The cache assumes stable tracker result identities.
+until expiry or a connection change. The cache assumes stable tracker result identities.
+
+## Persistent Discovery State
+
+seasonpackarr creates and upgrades its SQLite database automatically. You do not
+need to install SQLite or configure another service. Configuration stays in YAML.
+The database contains discovery state only, not import jobs, client inventory, or
+saved acceptance decisions. Restarting does not resume an interrupted import.
+
+The database location is:
+
+- With a config file: `seasonpackarr.db` beside the active `config.yaml`.
+- With `disableConfigFile` and `--config <dir>`: `<dir>/seasonpackarr.db`.
+- With `disableConfigFile` and no `--config`: `$XDG_DATA_HOME/seasonpackarr/seasonpackarr.db`,
+  or `~/.local/share/seasonpackarr/seasonpackarr.db` when `XDG_DATA_HOME` is unset.
+- In the supplied Docker setup: `/config/seasonpackarr.db`, inside the existing volume.
+
+The service account must be able to write the directory and database. Use local
+storage, not an NFS or SMB share. Run only one seasonpackarr instance per database.
+On Unix, the database permits access only to its owner. On Windows, restrict the
+directory to the service account. Torrent metadata and retained links can contain
+tracker credentials, so protect database backups as you protect `config.yaml`.
+
+SQLite uses write-ahead logging (WAL). It creates `seasonpackarr.db-wal` and
+`seasonpackarr.db-shm` beside the database while it runs. Committed data can still
+be in the WAL file, so do not delete or separate these files from the database.
+SQLite manages checkpoints automatically; no checkpoint schedule is required.
+
+Expired records are removed at startup and during discovery. Payload limits do
+not cap the database file size: SQLite uses space for indexes and can retain free
+pages for reuse. No manual database maintenance is normally required.
+
+### Startup Logs
+
+At `INFO` level, messages with `module=database` show the database path when it
+opens. `database ready` confirms successful initialization and reports
+the schema version and journal mode. This message also appears on normal restarts.
+
+When migrations are needed, the logs show the old and new schema versions and
+the number of pending migrations. `database migrations applied` appears only
+after they commit. These startup messages do not include configuration contents,
+credentials, SQL parameters, or cached release data.
+
+### Back Up or Restore
+
+1. Stop seasonpackarr cleanly.
+2. Copy `config.yaml` and `seasonpackarr.db` to a protected backup location.
+3. Start seasonpackarr again.
+
+To restore, stop the service, restore both files with permissions for the service
+account, then start it. Do not copy a live database file on its own. A normal
+close of the last connection checkpoints the WAL and removes the WAL and shared
+memory files. If those files remain after shutdown, do not delete them or assume
+the main database file is a complete backup. Start the service normally to allow
+recovery, then stop it cleanly before making this backup. If recovery or shutdown
+fails, keep all database files together and resolve the reported error first.
+
+An unreadable, corrupt, or unsupported newer database stops startup with an
+explicit error. Check directory permissions and free space first. For a corrupt
+database, restore a backup. For a newer schema, use a compatible application
+version or restore the backup from before the upgrade. The service does not erase
+the database or silently fall back to memory.
+
+A database failure during discovery stops further work in that run and appears
+in its failure report and service logs. Imports completed before the failure are
+not rolled back. Fix the storage problem before running discovery again.
 
 ## API Contract
 
@@ -278,6 +347,7 @@ The body must contain one JSON object; unknown fields are rejected.
 - `400`: invalid request, unknown client, or incomplete search configuration
 - `401`: missing or invalid API token when authentication is configured
 - `409`: another RSS or targeted discovery run is active
+- `500`: the database could not be accessed before the run; check service logs
 
 `outcomes[].status` is `candidate`, `would_import`, `imported`, `rejected`, or
 `failed`. The report echoes `dryRun` and `verify`. `torrentDownloads` counts
@@ -286,7 +356,7 @@ completed metadata retrievals; failed attempts appear as failed outcomes.
 Outcomes include client name, release title, indexer ID, reason, reusable episode
 count, and total episode count. Counts are `null` until an exact plan establishes the target count.
 A known plan with no reusable files reports zero reusable episodes. `failures` reports discovery, client-inventory, query, pagination,
-rate-limit, and cancellation errors. A `200` response alone does not prove that
+rate-limit, database, and cancellation errors. A `200` response alone does not prove that
 all work succeeded.
 
 ## Bounds and Limitations
@@ -309,8 +379,9 @@ all work succeeded.
 ## Verification
 
 Covered by Prowlarr HTTP contract fixtures, authenticated API tests, real hardlink
-checks in temporary directories, and a CLI preview/import smoke test against the
-service handler. Live Prowlarr and tracker behavior requires operator verification
+checks in temporary directories, SQLite restart and rollback tests, and a CLI
+preview/import smoke test with a database reopen between preview and import.
+Live Prowlarr and tracker behavior requires operator verification
 with the configured installation. See the [source audit](../references/prowlarr-backfill-api.md).
 
 ## Live Installation Check

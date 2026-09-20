@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/http"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/notification"
+	"github.com/nuxencs/seasonpackarr/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -38,6 +40,12 @@ var startCmd = &cobra.Command{
 		// init new logger
 		log := logger.New(&snapshot)
 
+		log.Info().Msgf("Starting seasonpackarr")
+		log.Info().Msgf("Version: %s", buildinfo.Version)
+		log.Info().Msgf("Commit: %s", buildinfo.Commit)
+		log.Info().Msgf("Build date: %s", buildinfo.Date)
+		log.Info().Msgf("Log-level: %s", snapshot.LogLevel)
+
 		// init dynamic config
 		if _, err := cfg.DynamicReload(log); err != nil {
 			return fmt.Errorf("failed to start config reload watcher: %w", err)
@@ -46,13 +54,20 @@ var startCmd = &cobra.Command{
 		// init notification sender
 		noti := notification.NewDiscordSender(log, cfg)
 
-		srv := http.NewServer(log, cfg, noti)
-
-		log.Info().Msgf("Starting seasonpackarr")
-		log.Info().Msgf("Version: %s", buildinfo.Version)
-		log.Info().Msgf("Commit: %s", buildinfo.Commit)
-		log.Info().Msgf("Build date: %s", buildinfo.Date)
-		log.Info().Msgf("Log-level: %s", snapshot.LogLevel)
+		path, err := state.Path(cmp.Or(snapshot.ConfigPath, configPath))
+		if err != nil {
+			return err
+		}
+		store, err := state.Open(cmd.Context(), path, log.With().Logger())
+		if err != nil {
+			return fmt.Errorf("open database %q: %w", path, err)
+		}
+		defer func() {
+			if err := store.Close(); err != nil {
+				log.Error().Err(err).Msg("could not close database")
+			}
+		}()
+		srv := http.NewServer(log, cfg, noti, store)
 
 		ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
 		defer stop()

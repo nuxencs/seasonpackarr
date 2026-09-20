@@ -18,6 +18,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/errtrace"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
+	"github.com/nuxencs/seasonpackarr/internal/state"
 )
 
 var ErrServerClosed = http.ErrServerClosed
@@ -33,14 +34,14 @@ type Server struct {
 	httpServer http.Server
 }
 
-func NewServer(log logger.Logger, config config.Provider, notification domain.Sender) *Server {
+func NewServer(log logger.Logger, config config.Provider, notification domain.Sender, store *state.Store) *Server {
 	tasks := newTaskGroup()
 	return &Server{
 		log:         log,
 		cfg:         config,
 		noti:        notification,
 		tasks:       tasks,
-		search:      &searchRunner{log: log, cfg: config, noti: notification, tasks: tasks},
+		search:      &searchRunner{log: log, cfg: config, noti: notification, tasks: tasks, state: store},
 		searchTasks: newTaskGroup(),
 	}
 }

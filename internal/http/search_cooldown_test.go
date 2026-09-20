@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nuxencs/seasonpackarr/internal/domain"
-	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,9 +20,6 @@ func TestSearch_CooldownsAcrossRuns(t *testing.T) {
 				cfg := f.config.Snapshot()
 				cfg.Search.IndexerIDs = []int{1}
 				f.config.Store(cfg)
-				log := logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"})
-				server := NewServer(log, f.config, noopNotificationSender{})
-				f.handler = server.Handler()
 				// Multiple candidates must not cause more requests after a failure.
 				f.titles = append(f.titles, f.releaseName)
 				calls := 0
@@ -47,13 +42,14 @@ func TestSearch_CooldownsAcrossRuns(t *testing.T) {
 				if endpoint == "/api/v1/indexer" {
 					id = 0
 				}
-				require.WithinDuration(t, time.Now().Add(2*time.Hour), server.search.cooldowns[id], 2*time.Second)
-				server.search.cooldowns[id] = time.Now().Add(-time.Second)
+				require.WithinDuration(t, time.Now().Add(2*time.Hour), f.search.cooldowns[id], 2*time.Second)
+				f.restart(t)
+				f.runExact(t, true)
+				require.Equal(t, 1, calls, "restart must preserve cooldowns")
+				_, err := f.search.state.Cooldowns(t.Context(), time.Now().Add(3*time.Hour))
+				require.NoError(t, err)
 				f.runExact(t, true)
 				require.Equal(t, 2, calls, "requests resume after cooldown expiry")
-				f.handler = NewServer(log, f.config, noopNotificationSender{}).Handler()
-				f.runExact(t, true)
-				require.Equal(t, 3, calls, "restart resets in-memory cooldowns")
 			})
 		}
 	}

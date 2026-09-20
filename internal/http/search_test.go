@@ -411,9 +411,12 @@ func TestSearch_RejectsMalformedRequests(t *testing.T) {
 // fixture, and filesystem. The torrent client's network boundary is controlled.
 func TestSearchCLI_PreviewAndImport(t *testing.T) {
 	f := newSearchFixture(t, 1, 1, 0.75)
-	server := httptest.NewServer(f.handler)
-	defer server.Close()
 	for _, mode := range []string{"discovery", "verify", "import"} {
+		if mode == "import" {
+			f.restart(t)
+		}
+		server := httptest.NewServer(f.handler)
+		t.Cleanup(server.Close)
 		dryRun := mode != "import"
 		args := []string{"run", "../..", "search", "--url", server.URL, "--api", processorTestToken}
 		if dryRun {
@@ -424,6 +427,7 @@ func TestSearchCLI_PreviewAndImport(t *testing.T) {
 		}
 		command := exec.CommandContext(t.Context(), "go", args...)
 		output, err := command.CombinedOutput()
+		server.Close()
 		require.NoError(t, err, string(output))
 		var report searchReport
 		require.NoError(t, json.Unmarshal(output, &report), string(output))
