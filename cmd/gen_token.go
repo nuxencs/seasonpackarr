@@ -7,16 +7,18 @@ import (
 	"fmt"
 
 	"github.com/nuxencs/seasonpackarr/internal/api"
-
 	"github.com/spf13/cobra"
 )
 
-// genTokenCmd represents the gen-token command
-var genTokenCmd = &cobra.Command{
-	Use:   "gen-token",
-	Short: "Generate an api token",
-	Run: func(cmd *cobra.Command, args []string) {
-		key := api.GenerateToken()
-		fmt.Printf("API Token: %v\nJust copy and paste it into your config file!\n", key)
-	},
+func newGenTokenCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:     "gen-token",
+		GroupID: "tools",
+		Short:   "Generate an API token for the apiToken config setting",
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "API Token: %s\nSet apiToken in config.yaml to this value.\n", api.GenerateToken())
+			return err
+		},
+	}
 }

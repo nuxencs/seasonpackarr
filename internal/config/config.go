@@ -33,6 +33,7 @@ var configTemplate = `# yaml-language-server: $schema=https://raw.githubusercont
 # config.yaml
 
 # Hostname / IP
+# CLI commands reuse this address. Wildcard addresses become loopback addresses.
 #
 # Default: "0.0.0.0"
 #
@@ -284,6 +285,7 @@ fuzzyMatching:
   skipYearCompare: false
 
 # API Token
+# CLI commands read this token automatically. --api or SEASONPACKARR__API_TOKEN overrides it.
 # If not defined, removes api authentication
 #
 # Optional
@@ -745,7 +747,10 @@ func (c *AppConfig) resolveConfigFile(configPath string) (string, error) {
 		}
 		return filepath.Join(configPath, "config.yaml"), nil
 	}
+	return findConfigFile()
+}
 
+func findConfigFile() (string, error) {
 	locations := []string{
 		"./config.yaml",
 		"$HOME/.config/seasonpackarr/config.yaml",
@@ -753,12 +758,16 @@ func (c *AppConfig) resolveConfigFile(configPath string) (string, error) {
 	}
 	for _, location := range locations {
 		configFile := os.ExpandEnv(location)
-		if info, err := os.Stat(configFile); err == nil && !info.IsDir() {
+		info, err := os.Stat(configFile)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return "", err
+		}
+		if err == nil && !info.IsDir() {
 			return configFile, nil
 		}
 	}
 
-	return "", fmt.Errorf("could not find config file")
+	return "", fmt.Errorf("could not find config file: %w", fs.ErrNotExist)
 }
 
 func (c *AppConfig) loadSnapshot() (*domain.Config, error) {

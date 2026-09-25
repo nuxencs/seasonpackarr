@@ -4,49 +4,72 @@
 package cmd
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 )
 
-var (
-	configPath string
-	rlsName    string
-	clientName string
-	host       string
-	port       int
-	apiKey     string
-)
+func newRootCommand() *cobra.Command {
+	root := &cobra.Command{
+		Use:   "seasonpackarr",
+		Short: "Reuse downloaded episodes in season packs",
+		Long: `Reuse downloaded episodes in season packs.
 
-var rootCmd = &cobra.Command{
-	Use:   "seasonpackarr",
-	Short: "Automagically hardlink already downloaded episode files into a season folder when a matching season pack announce hits autobrr.",
-	Long: `Automagically hardlink already downloaded episode files into a season folder when a matching season pack announce hits autobrr.
+Start the service, then use candidate or match to check a pack.
+Import creates hardlinks and adds the pack to your torrent client.
+Search discovers packs through Prowlarr and imports them unless --dry-run is set.
 
-Provide a configuration file using one of the following methods:
-1. Use the --config <path> or -c <path> flag.
-2. Place a config.yaml file in the default user configuration directory (e.g., ~/.config/seasonpackarr/).
-3. Place a config.yaml file a folder inside your home directory (e.g., ~/.seasonpackarr/).
-4. Place a config.yaml file in the directory of the binary.
-
-For more information and examples, visit https://github.com/nuxencs/seasonpackarr`,
+API commands read connection settings from config.yaml and environment variables.
+Use --config for another config directory or --url for a remote service.`,
+		Example: `  seasonpackarr start --config ~/.config/seasonpackarr
+  seasonpackarr candidate "Series.S01.1080p.WEB-DL-GRP"
+  seasonpackarr match ./pack.torrent
+  seasonpackarr search --dry-run`,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+	}
+	root.AddGroup(
+		&cobra.Group{ID: "service", Title: "Service:"},
+		&cobra.Group{ID: "packs", Title: "Season packs (requires a running service):"},
+		&cobra.Group{ID: "tools", Title: "Tools:"},
+	)
+	root.AddCommand(newStartCommand(), newSearchCommand(), newGenTokenCommand(), newVersionCommand())
+	for _, name := range []string{"candidate", "match", "import"} {
+		root.AddCommand(newOperationCommand(name))
+	}
+	return root
 }
 
-func init() {
-	startCmd.Flags().StringVarP(&configPath, "config", "c", "", "path to the configuration directory")
+// resultError signals an unsuccessful outcome that has already been printed.
+type resultError struct{ code int }
 
-	testCmd.PersistentFlags().StringVarP(&clientName, "client", "n", "", "name of the client you want to test")
-	testCmd.PersistentFlags().StringVarP(&host, "host", "i", "127.0.0.1", "host used by seasonpackarr")
-	testCmd.PersistentFlags().IntVarP(&port, "port", "p", 42069, "port used by seasonpackarr")
-	testCmd.PersistentFlags().StringVarP(&apiKey, "api", "a", "", "api key used by seasonpackarr")
+func (e *resultError) Error() string { return "operation did not pass" }
 
-	rootCmd.AddCommand(genTokenCmd, startCmd, testCmd, versionCmd, newSearchCommand())
-	testCmd.AddCommand(candidateCmd, matchCmd, importCmd)
+func execute(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	cmd := newRootCommand()
+	cmd.SetArgs(args)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	if err := cmd.ExecuteContext(ctx); err != nil {
+		if result, ok := errors.AsType[*resultError](err); ok {
+			return result.code
+		}
+		fmt.Fprintln(stderr, "Error:", err)
+		return 1
+	}
+	return 0
 }
 
 func Execute() {
-	err := rootCmd.Execute()
-	if err != nil {
-		os.Exit(1)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	if code := execute(ctx, os.Args[1:], os.Stdout, os.Stderr); code != 0 {
+		os.Exit(code)
 	}
 }

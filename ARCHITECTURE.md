@@ -6,7 +6,11 @@
 
 ## Main Runtime Flow
 
-1. `main.go` calls Cobra commands in `cmd/`.
+1. `main.go` calls Cobra commands in `cmd/`. Each invocation creates a fresh
+   command tree. API commands share connection resolution, transport, and result
+   handling. Pack operations use direct `candidate`, `match`, and `import`
+   commands. CLI configuration reads are side-effect free and
+   share file discovery and environment overrides with the service.
 2. `cmd/start.go` loads config, logger, notifications, and the SQLite store, then starts the HTTP server. Signal cancellation starts a bounded graceful shutdown. The command closes the store after server shutdown.
 3. `internal/http/server.go` builds `/api/healthz`, `/api/candidate`, `/api/match`, `/api/import`, and `/api/search`.
 4. `internal/http/processor_*.go` keeps each processing stage together. The handler file owns payload decode and responses. The candidate file owns announce-only matching and inventory caching. The plan file parses torrent bytes and builds an exact side-effect-free plan. The import file reuses or rebuilds that plan, resolves the client import destination, hardlinks matched files, and imports the pack. See [docs/design-docs/qbittorrent-import-flow.md](docs/design-docs/qbittorrent-import-flow.md).

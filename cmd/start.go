@@ -28,55 +28,62 @@ type managedServer interface {
 	Shutdown(ctx context.Context) error
 }
 
-// startCmd represents the start command
-var startCmd = &cobra.Command{
-	Use:   "start",
-	Short: "Start seasonpackarr",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// read config
-		cfg := config.New(configPath, buildinfo.Version)
-		snapshot := cfg.Snapshot()
+func newStartCommand() *cobra.Command {
+	var configPath string
+	cmd := &cobra.Command{
+		Use:     "start",
+		Short:   "Start seasonpackarr",
+		GroupID: "service",
+		Args:    cobra.NoArgs,
+		Example: "  seasonpackarr start --config ./config",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// read config
+			cfg := config.New(configPath, buildinfo.Version)
+			snapshot := cfg.Snapshot()
 
-		// init new logger
-		log := logger.New(&snapshot)
+			// init new logger
+			log := logger.New(&snapshot)
 
-		log.Info().Msgf("Starting seasonpackarr")
-		log.Info().Msgf("Version: %s", buildinfo.Version)
-		log.Info().Msgf("Commit: %s", buildinfo.Commit)
-		log.Info().Msgf("Build date: %s", buildinfo.Date)
-		log.Info().Msgf("Log-level: %s", snapshot.LogLevel)
+			log.Info().Msgf("Starting seasonpackarr")
+			log.Info().Msgf("Version: %s", buildinfo.Version)
+			log.Info().Msgf("Commit: %s", buildinfo.Commit)
+			log.Info().Msgf("Build date: %s", buildinfo.Date)
+			log.Info().Msgf("Log-level: %s", snapshot.LogLevel)
 
-		// init dynamic config
-		if _, err := cfg.DynamicReload(log); err != nil {
-			return fmt.Errorf("failed to start config reload watcher: %w", err)
-		}
-
-		// init notification sender
-		noti := notification.NewDiscordSender(log, cfg)
-
-		path, err := state.Path(cmp.Or(snapshot.ConfigPath, configPath))
-		if err != nil {
-			return err
-		}
-		store, err := state.Open(cmd.Context(), path, log.With().Logger())
-		if err != nil {
-			return fmt.Errorf("open database %q: %w", path, err)
-		}
-		defer func() {
-			if err := store.Close(); err != nil {
-				log.Error().Err(err).Msg("could not close database")
+			// init dynamic config
+			if _, err := cfg.DynamicReload(log); err != nil {
+				return fmt.Errorf("failed to start config reload watcher: %w", err)
 			}
-		}()
-		srv := http.NewServer(log, cfg, noti, store)
 
-		ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
-		defer stop()
+			// init notification sender
+			noti := notification.NewDiscordSender(log, cfg)
 
-		if err := runServer(ctx, srv); err != nil {
-			return err
-		}
-		return nil
-	},
+			path, err := state.Path(cmp.Or(snapshot.ConfigPath, configPath))
+			if err != nil {
+				return err
+			}
+			store, err := state.Open(cmd.Context(), path, log.With().Logger())
+			if err != nil {
+				return fmt.Errorf("open database %q: %w", path, err)
+			}
+			defer func() {
+				if err := store.Close(); err != nil {
+					log.Error().Err(err).Msg("could not close database")
+				}
+			}()
+			srv := http.NewServer(log, cfg, noti, store)
+
+			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
+			defer stop()
+
+			if err := runServer(ctx, srv); err != nil {
+				return err
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&configPath, "config", "c", "", "configuration directory (creates config.yaml if missing)")
+	return cmd
 }
 
 func runServer(ctx context.Context, srv managedServer) error {

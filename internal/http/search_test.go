@@ -410,6 +410,10 @@ func TestSearch_RejectsMalformedRequests(t *testing.T) {
 // Exercise the shipped CLI against the real authenticated API, Prowlarr HTTP
 // fixture, and filesystem. The torrent client's network boundary is controlled.
 func TestSearchCLI_PreviewAndImport(t *testing.T) {
+	t.Setenv("SEASONPACKARR__CLIENT", "unconfigured-operator-client")
+	t.Setenv("SEASONPACKARR__PORT", "invalid")
+	t.Setenv("SEASONPACKARR__DISABLE_CONFIG_FILE", "false")
+	environment := append(cliEnvironment(), "SEASONPACKARR__DISABLE_CONFIG_FILE=true")
 	f := newSearchFixture(t, 1, 1, 0.75)
 	for _, mode := range []string{"discovery", "verify", "import"} {
 		if mode == "import" {
@@ -418,7 +422,7 @@ func TestSearchCLI_PreviewAndImport(t *testing.T) {
 		server := httptest.NewServer(f.handler)
 		t.Cleanup(server.Close)
 		dryRun := mode != "import"
-		args := []string{"run", "../..", "search", "--url", server.URL, "--api", processorTestToken}
+		args := []string{"run", "../..", "search", "--url", server.URL, "--api", processorTestToken, "--json"}
 		if dryRun {
 			args = append(args, "--dry-run")
 			if mode == "verify" {
@@ -426,6 +430,7 @@ func TestSearchCLI_PreviewAndImport(t *testing.T) {
 			}
 		}
 		command := exec.CommandContext(t.Context(), "go", args...)
+		command.Env = environment
 		output, err := command.CombinedOutput()
 		server.Close()
 		require.NoError(t, err, string(output))

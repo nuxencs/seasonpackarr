@@ -31,7 +31,7 @@ Use progressive disclosure. Do not read the whole repo up front unless the task 
 
 ## Repo Map
 
-- `cmd/`: CLI entrypoints for `start`, `test`, `candidate`, `match`, `import`, version/token helpers
+- `cmd/`: CLI entrypoints for `start`, `candidate`, `match`, `import`, `search`, version/token helpers
 - `internal/http/`: API server, auth, health, webhook handlers, processing orchestration
 - `internal/release/`: release matching logic and season-pack comparisons
 - `internal/torrents/`: torrent fetch/decode helpers
@@ -72,9 +72,9 @@ Primary local checks:
 - `gofumpt -w .` when Go files change
 - focused CLI/API smoke checks when behavior touches request flow:
   - `go run . start --config <dir>`
-  - `go run . test candidate "<release>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>"`
-  - `go run . test match "<release-or-torrent>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>"`
-  - `go run . test import "<release-or-torrent>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>"`
+  - `go run . candidate "<release>" --config <dir> --client "<name>"`
+  - `go run . match "<file.torrent>" --config <dir> --client "<name>"`
+  - `go run . import "<file.torrent>" --config <dir> --client "<name>"`
 
 CI currently enforces:
 
