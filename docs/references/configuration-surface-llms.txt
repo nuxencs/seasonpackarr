@@ -17,6 +17,8 @@ seasonpackarr configuration surface reference
 - config reload builds a new immutable snapshot, reapplies SEASONPACKARR__ environment overrides, validates it, and publishes it atomically; invalid reloads keep the last valid snapshot
 - live reload applies client connections/import policies, apiToken, smart/fuzzy matching, notifications, and logLevel
 - host/port, log file output settings, and disableConfigFile require restart
+- CLI commands read connection settings without config creation, server-only validation, or reload watchers.
+- CLI-only environment overrides: SEASONPACKARR__URL and SEASONPACKARR__CLIENT; these are not YAML keys. See docs/product-specs/cli.md for precedence and selection.
 - high-signal settings:
   - host
   - port

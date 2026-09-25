@@ -5,12 +5,8 @@ package payload
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"fmt"
 	"io"
-	"net/http"
-	"time"
 )
 
 type candidatePayload struct {
@@ -42,28 +38,4 @@ func compile(payload any) (io.Reader, error) {
 		return nil, err
 	}
 	return bytes.NewReader(data), nil
-}
-
-func Exec(ctx context.Context, url string, body io.Reader, apiToken string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("X-API-Token", apiToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	c := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	resp, err := c.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	fmt.Printf("Completed the request with the following response: %d\n"+
-		"For more details take a look at the logs!", resp.StatusCode)
-
-	return nil
 }

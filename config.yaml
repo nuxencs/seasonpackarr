@@ -2,6 +2,7 @@
 # config.yaml
 
 # Hostname / IP
+# CLI commands reuse this address. Wildcard addresses become loopback addresses.
 #
 # Default: "0.0.0.0"
 #
@@ -253,6 +254,7 @@ fuzzyMatching:
   skipYearCompare: false
 
 # API Token
+# CLI commands read this token automatically. --api or SEASONPACKARR__API_TOKEN overrides it.
 # If not defined, removes api authentication
 #
 # Optional
