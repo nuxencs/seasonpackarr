@@ -14,10 +14,11 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/nuxencs/seasonpackarr/internal/domain"
+
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
-	"github.com/nuxencs/seasonpackarr/internal/domain"
 )
 
 // ConnectionSettings contains the local settings needed to call the running service.

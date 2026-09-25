@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/nuxencs/seasonpackarr/internal/buildinfo"
+
 	"github.com/spf13/cobra"
 )
 

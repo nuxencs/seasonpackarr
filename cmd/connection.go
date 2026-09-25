@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/nuxencs/seasonpackarr/internal/config"
+
 	"github.com/spf13/cobra"
 )
 

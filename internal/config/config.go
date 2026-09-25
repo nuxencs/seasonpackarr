@@ -20,13 +20,14 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/logger"
+
 	"github.com/fsnotify/fsnotify"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/structs"
 	"github.com/knadh/koanf/v2"
-	"github.com/nuxencs/seasonpackarr/internal/domain"
-	"github.com/nuxencs/seasonpackarr/internal/logger"
 )
 
 var configTemplate = `# yaml-language-server: $schema=https://raw.githubusercontent.com/nuxencs/seasonpackarr/develop/schemas/config-schema.json

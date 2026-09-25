@@ -18,6 +18,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/notification"
 	"github.com/nuxencs/seasonpackarr/internal/state"
+
 	"github.com/spf13/cobra"
 )
 

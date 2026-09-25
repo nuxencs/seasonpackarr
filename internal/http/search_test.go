@@ -22,6 +22,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/prowlarr"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
+
 	"github.com/stretchr/testify/require"
 )
 
