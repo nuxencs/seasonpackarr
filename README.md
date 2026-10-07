@@ -221,8 +221,7 @@ Deluge requires `import.savePath`. It accepts zero or one `import.tags` entry as
 Enable Deluge's optional Label plugin to apply it. When enabled, seasonpackarr creates a missing label and assigns it.
 Deluge does not support `apiKey` or the qBittorrent-only import fields. The adapter adds the torrent stopped, applies
 its optional label, then resumes it. Deluge and libtorrent perform the initial data check before transferring pieces.
-Seasonpackarr does not wait for the check.
-The current adapter requires a v1 or hybrid
+Seasonpackarr does not wait for the check. The current adapter requires a v1 or hybrid
 torrent because it identifies the torrent by its legacy info hash. This is an adapter limitation, not a general claim
 about current Deluge releases.
 
@@ -244,7 +243,8 @@ The per-client `import` block controls how seasonpackarr imports a matched seaso
 
 seasonpackarr does not wait for the torrent client's data check, so a large pack cannot exceed autobrr's 120-second
 action timeout. When every file of the pack is already on disk, qBittorrent adds it without a hash check, and
-Transmission accepts it as complete after it checks the first piece. Otherwise the client checks the present data and
+Transmission accepts it as complete after it checks the first piece. seasonpackarr reuses only video files, so a pack
+that also contains files such as `.nfo` or subtitles counts as partial and gets a check. Otherwise the client checks the present data and
 then downloads only the missing pieces. Deluge always checks the present data. A correctly imported pack is never left
 stopped.
 
@@ -260,8 +260,9 @@ The following fields are qBittorrent-only and are rejected at startup when set o
 
 A qBittorrent client must set either `import.savePath` or `import.category`. Transmission has no categories and no
 content layout, so configure `import.savePath` or leave it empty to use the session download directory. Deluge requires
-`import.savePath`. Transmission forces a hash check after add. Deluge uses its normal initial check before transferring
-pieces. Both clients account for present data, so only genuinely missing episodes get downloaded.
+`import.savePath`. Transmission and Deluge check the present data after the add, and Transmission skips that check
+when every file is already present. Both clients account for present data, so only genuinely missing episodes get
+downloaded.
 
 #### Use multiple Sonarr instances with one qBittorrent instance
 

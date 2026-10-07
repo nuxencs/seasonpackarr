@@ -31,6 +31,10 @@ The processor resolves the destination and hardlinks the episodes it already
 has. Then it sets `ImportRequest.DataComplete`: true only when every torrent
 file (except BEP 47 padding files) exists at its import target with the
 expected size. The qBittorrent adapter uses that value to choose the add mode.
+The hardlinker reuses only `.mkv` and `.mp4` files, so a pack that also holds
+an `.nfo`, subtitles, or a sample is partial even when every episode is on
+disk. A skip-check add of such a pack would mark the missing files complete,
+so it gets a normal check instead, as it did with the old recheck flow.
 
 ```mermaid
 flowchart TD

@@ -335,6 +335,7 @@ func (q *qbitClient) Import(ctx context.Context, req ImportRequest) (ImportRepor
 	report.record(ImportStageAdd, started)
 
 	started = time.Now()
+	// only the stopped skip-check add of a complete pack must settle
 	added, err := q.waitForTorrent(ctx, lookupHash, req.DataComplete)
 	report.record(ImportStageFind, started)
 	if err != nil {
