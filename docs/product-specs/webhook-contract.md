@@ -45,6 +45,10 @@ Requests must include the configured API token. Unauthorized requests are reject
   result.
 - Torrent-client stages use the stable names `config`, `add`, `find`,
   `recheck`, and `resume`. A client omits stages that it does not perform.
+  The client-import completion log reports `data_complete`: whether every
+  torrent file was already on disk, which lets the client skip its hash check.
+- A successful `/api/import` means the client accepted the pack. The client
+  checks the present data and starts the torrent after the response.
 - Logs never include configured credentials or request authentication tokens.
 - Expected candidate and match gate rejections use informational events.
   Configuration, decoding, client, filesystem, and import failures use error

@@ -25,18 +25,12 @@ type transmissionAPI interface {
 	TorrentGet(ctx context.Context, fields []string, ids []int64) ([]transmissionrpc.Torrent, error)
 	TorrentGetHashes(ctx context.Context, fields []string, hashes []string) ([]transmissionrpc.Torrent, error)
 	TorrentAdd(ctx context.Context, payload transmissionrpc.TorrentAddPayload) (transmissionrpc.Torrent, error)
-	TorrentVerifyHashes(ctx context.Context, hashes []string) error
-	TorrentStartHashes(ctx context.Context, hashes []string) error
 	SessionArgumentsGetAll(ctx context.Context) (transmissionrpc.SessionArguments, error)
 }
 
 type transmissionClient struct {
 	c      transmissionAPI
 	policy domain.ImportPolicy
-
-	// timeouts are fields so tests can shrink them to milliseconds.
-	verifyTimeout time.Duration
-	pollInterval  time.Duration
 }
 
 func newTransmissionClient(ctx context.Context, client *domain.Client) (*transmissionClient, error) {
@@ -58,10 +52,8 @@ func newTransmissionClient(ctx context.Context, client *domain.Client) (*transmi
 	}
 
 	return &transmissionClient{
-		c:             c,
-		policy:        client.Import,
-		verifyTimeout: 10 * time.Minute,
-		pollInterval:  500 * time.Millisecond,
+		c:      c,
+		policy: client.Import,
 	}, nil
 }
 
@@ -166,15 +158,17 @@ func (t *transmissionClient) ImportDestination(ctx context.Context) (ImportDesti
 	return NewRootedImportDestination(normalizePath(downloadDir)), nil
 }
 
-// Import adds the parsed season pack to transmission (paused, into the resolved
-// import root that already holds the hardlinked episodes), forces a hash
-// verification so the present pieces are recognised, waits for it to settle,
-// then starts the torrent.
+// Import adds the parsed season pack to transmission started, into the resolved
+// import root that already holds the hardlinked episodes, and returns without
+// waiting for a verify.
 //
-// Transmission has no skip-hash-check equivalent (verified against 4.0.6 and
-// 4.1.3), so the import always verifies. Only the genuinely missing pieces are
-// downloaded once started. The returned report identifies how long each client
-// operation took.
+// Transmission has no skip-hash-check RPC option (verified against 4.0.6 and
+// 4.1.3), but its add path owns the check: a new torrent whose files all exist
+// with the expected size and an older mtime becomes a seed after a first-piece
+// check, and any other torrent is verified and then started because it was
+// added started. Hardlinks keep the source mtime, so complete packs skip the
+// full verify. The returned report identifies how long each client operation
+// took.
 func (t *transmissionClient) Import(ctx context.Context, req ImportRequest) (ImportReport, error) {
 	var report ImportReport
 	started := time.Now()
@@ -183,13 +177,13 @@ func (t *transmissionClient) Import(ctx context.Context, req ImportRequest) (Imp
 		return report, importErr(ImportStageConfig, errors.New("resolved transmission info hash is empty"))
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, t.verifyTimeout)
+	ctx, cancel := context.WithTimeout(ctx, transmissionTimeout)
 	defer cancel()
 
 	payload := transmissionrpc.TorrentAddPayload{
 		MetaInfo:    new(base64.StdEncoding.EncodeToString(req.TorrentBytes)),
 		DownloadDir: new(req.SavePath),
-		Paused:      new(true),
+		Paused:      new(false),
 	}
 	if labels := trimStrings(t.policy.Tags); len(labels) > 0 {
 		payload.Labels = labels
@@ -203,59 +197,7 @@ func (t *transmissionClient) Import(ctx context.Context, req ImportRequest) (Imp
 	}
 	report.record(ImportStageAdd, started)
 
-	started = time.Now()
-	if err := t.c.TorrentVerifyHashes(ctx, []string{req.LegacyHash}); err != nil {
-		report.record(ImportStageRecheck, started)
-		return report, importErr(ImportStageRecheck, fmt.Errorf("failed to verify torrent: %w", err))
-	}
-
-	if err := t.waitForVerify(ctx, req.LegacyHash); err != nil {
-		report.record(ImportStageRecheck, started)
-		return report, importErr(ImportStageRecheck, err)
-	}
-	report.record(ImportStageRecheck, started)
-
-	// a correctly imported torrent always starts once verification has settled
-	started = time.Now()
-	if err := t.c.TorrentStartHashes(ctx, []string{req.LegacyHash}); err != nil {
-		report.record(ImportStageResume, started)
-		return report, importErr(ImportStageResume, fmt.Errorf("failed to start torrent: %w", err))
-	}
-	report.record(ImportStageResume, started)
-
 	return report, nil
-}
-
-// waitForVerify polls until the torrent leaves the checking states. Because the
-// torrent was added paused, it settles back to stopped once verification
-// finishes. Completion is detected by "no longer checking" rather than by an
-// observed CHECK state, since a small partial verify can pass through checking
-// faster than the poll interval.
-func (t *transmissionClient) waitForVerify(ctx context.Context, hash string) error {
-	return pollUntil(ctx, t.pollInterval, func() (bool, error) {
-		ts, err := t.c.TorrentGetHashes(ctx, []string{"status", "percentDone", "recheckProgress", "errorString"}, []string{hash})
-		if err != nil {
-			return false, err
-		}
-		if len(ts) == 0 {
-			return false, nil
-		}
-
-		tr := ts[0]
-		if es := strings.TrimSpace(derefString(tr.ErrorString)); es != "" {
-			return false, fmt.Errorf("transmission reported error: %s", es)
-		}
-
-		if tr.Status == nil {
-			return false, nil
-		}
-		switch *tr.Status {
-		case transmissionrpc.TorrentStatusCheckWait, transmissionrpc.TorrentStatusCheck:
-			return false, nil
-		default:
-			return true, nil
-		}
-	})
 }
 
 func derefString(s *string) string {

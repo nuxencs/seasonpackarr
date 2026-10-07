@@ -29,6 +29,7 @@ type qbitAPI interface {
 	GetDefaultSavePath() (string, error)
 	GetAppPreferences() (qbittorrent.AppPreferences, error)
 	Recheck(hashes []string) error
+	Stop(hashes []string) error
 	Resume(hashes []string) error
 }
 
@@ -37,9 +38,8 @@ type qbitClient struct {
 	policy domain.ImportPolicy
 
 	// timeouts are fields so tests can shrink them to milliseconds.
-	findTimeout    time.Duration
-	recheckTimeout time.Duration
-	pollInterval   time.Duration
+	findTimeout  time.Duration
+	pollInterval time.Duration
 }
 
 func newQbitClient(ctx context.Context, client *domain.Client) (*qbitClient, error) {
@@ -67,11 +67,10 @@ func newQbitClient(ctx context.Context, client *domain.Client) (*qbitClient, err
 	}
 
 	return &qbitClient{
-		c:              c,
-		policy:         client.Import,
-		findTimeout:    15 * time.Second,
-		recheckTimeout: 5 * time.Minute,
-		pollInterval:   250 * time.Millisecond,
+		c:            c,
+		policy:       client.Import,
+		findTimeout:  15 * time.Second,
+		pollInterval: 250 * time.Millisecond,
 	}, nil
 }
 
@@ -285,18 +284,19 @@ func (q *qbitClient) resolveCategorySavePath(ctx context.Context, categoryName s
 	return resolve(categoryName)
 }
 
-// Import adds the parsed season pack back to qBittorrent with the hash check
-// skipped (the matched episodes are already hardlinked into place), rechecks it
-// if qBittorrent reports missing files, then resumes it unless the client is
-// configured to leave it paused. The returned report identifies how long each
-// client operation took.
+// Import adds the parsed season pack to qBittorrent and returns without waiting
+// for a hash check. A complete pack is added stopped with the hash check
+// skipped, then started once qBittorrent confirms its files. A partial pack is
+// added started with a normal check, so qBittorrent checks the hardlinked data
+// and then downloads the missing pieces by itself. The returned report
+// identifies how long each client operation took.
 func (q *qbitClient) Import(ctx context.Context, req ImportRequest) (ImportReport, error) {
 	var report ImportReport
 	started := time.Now()
 	if err := ctx.Err(); err != nil {
 		return report, err
 	}
-	opts, err := q.buildTorrentAddOptions()
+	opts, err := q.buildTorrentAddOptions(req.DataComplete)
 	if err != nil {
 		report.record(ImportStageConfig, started)
 		return report, err
@@ -312,7 +312,8 @@ func (q *qbitClient) Import(ctx context.Context, req ImportRequest) (ImportRepor
 	// An explicit save or download path opts into a pinned destination and the
 	// client's normal Auto TMM opt-out behavior.
 	if strings.TrimSpace(q.policy.SavePath) != "" || strings.TrimSpace(q.policy.DownloadPath) != "" {
-		opts.SavePath = resolvedSavePath
+		opts["savepath"] = resolvedSavePath
+		opts["autoTMM"] = "false"
 	}
 
 	lookupHash := req.LegacyHash
@@ -327,36 +328,39 @@ func (q *qbitClient) Import(ctx context.Context, req ImportRequest) (ImportRepor
 	report.record(ImportStageConfig, started)
 
 	started = time.Now()
-	if _, err := q.c.AddTorrentFromMemory(req.TorrentBytes, opts.Prepare()); err != nil {
+	if _, err := q.c.AddTorrentFromMemory(req.TorrentBytes, opts); err != nil {
 		report.record(ImportStageAdd, started)
 		return report, importErr(ImportStageAdd, fmt.Errorf("failed to add torrent to qbittorrent: %w", err))
 	}
 	report.record(ImportStageAdd, started)
 
 	started = time.Now()
-	added, err := q.waitForTorrent(ctx, lookupHash)
+	added, err := q.waitForTorrent(ctx, lookupHash, req.DataComplete)
 	report.record(ImportStageFind, started)
 	if err != nil {
 		return report, importErr(ImportStageFind, err)
 	}
 
+	// a started add can still be checking; qBittorrent starts it after the check
+	if isActiveTorrentState(added.State) || isCheckingState(added.State) {
+		return report, nil
+	}
+
+	// Only a complete skip-check add can report missingFiles, when a file changed
+	// after the processor checked it. A recheck on a stopped torrent sets the
+	// FilesChecked stop condition, and only stop clears it. Recheck, stop, then
+	// start lets qBittorrent check and start the torrent without a wait here.
 	if added.State == qbittorrent.TorrentStateMissingFiles {
 		started = time.Now()
 		if err := q.c.Recheck([]string{added.Hash}); err != nil {
 			report.record(ImportStageRecheck, started)
 			return report, importErr(ImportStageRecheck, fmt.Errorf("failed to recheck torrent: %w", err))
 		}
-
-		added, err = q.waitForRecheck(ctx, added.Hash)
-		report.record(ImportStageRecheck, started)
-		if err != nil {
-			return report, importErr(ImportStageRecheck, err)
+		if err := q.c.Stop([]string{added.Hash}); err != nil {
+			report.record(ImportStageRecheck, started)
+			return report, importErr(ImportStageRecheck, fmt.Errorf("failed to clear recheck stop condition: %w", err))
 		}
-	}
-
-	// a correctly imported torrent always starts once its data is accounted for
-	if isActiveTorrentState(added.State) {
-		return report, nil
+		report.record(ImportStageRecheck, started)
 	}
 
 	started = time.Now()
@@ -373,25 +377,23 @@ func (q *qbitClient) Import(ctx context.Context, req ImportRequest) (ImportRepor
 }
 
 // buildTorrentAddOptions maps the client's import policy onto qBittorrent add
-// options. The torrent is always added paused with the hash check skipped so it
-// can be rechecked before it starts; unset overrides are omitted so qBittorrent
-// keeps its own defaults.
-func (q *qbitClient) buildTorrentAddOptions() (*qbittorrent.TorrentAddOptions, error) {
+// parameters. A complete pack is added stopped with the hash check skipped. A
+// partial pack is added started with a normal check and no stop condition, so
+// global "add stopped" preferences cannot leave it stopped after the check.
+// Unset overrides are omitted so qBittorrent keeps its own defaults.
+func (q *qbitClient) buildTorrentAddOptions(dataComplete bool) (map[string]string, error) {
 	contentLayout, hasLayout, err := resolveContentLayout(q.policy.ContentLayout)
 	if err != nil {
 		return nil, importErr(ImportStageConfig, err)
 	}
 
 	opts := &qbittorrent.TorrentAddOptions{
-		SkipHashCheck: true,
-		Paused:        true,
+		SkipHashCheck: dataComplete,
+		Paused:        dataComplete,
 	}
 
 	if q.policy.Category != "" {
 		opts.Category = strings.TrimSpace(q.policy.Category)
-	}
-	if q.policy.SavePath != "" {
-		opts.SavePath = strings.TrimSpace(q.policy.SavePath)
 	}
 	if q.policy.DownloadPath != "" {
 		opts.DownloadPath = strings.TrimSpace(q.policy.DownloadPath)
@@ -412,7 +414,12 @@ func (q *qbitClient) buildTorrentAddOptions() (*qbittorrent.TorrentAddOptions, e
 		}
 	}
 
-	return opts, nil
+	params := opts.Prepare()
+	if !dataComplete {
+		// qBittorrent 4.5+ applies its global stop condition when this is unset.
+		params["stopCondition"] = "None"
+	}
+	return params, nil
 }
 
 func resolveContentLayout(mode string) (qbittorrent.ContentLayout, bool, error) {
@@ -430,54 +437,33 @@ func resolveContentLayout(mode string) (qbittorrent.ContentLayout, bool, error) 
 	}
 }
 
-// waitForTorrent waits for the added torrent to appear and settle out of the
-// transient checking/allocating states. This matters: after a paused skip-check
-// add, qBittorrent briefly reports checkingResumeData (with a misleading 100%
-// progress) before flipping to missingFiles when data is actually missing.
-// Returning on first appearance would miss that and resume into an errored
-// torrent, so we wait for the state to stabilise before the caller inspects it.
-func (q *qbitClient) waitForTorrent(ctx context.Context, hash string) (qbittorrent.Torrent, error) {
+// waitForTorrent waits for the added torrent to appear. With settle set, it also
+// waits for the state to leave the transient checking states. This matters for
+// a stopped skip-check add: qBittorrent briefly reports checkingResumeData (with
+// a misleading 100% progress) before flipping to missingFiles when data is
+// actually missing, and returning on first appearance would miss that. A
+// started add with a normal check must not settle, because its check can take
+// longer than the caller's request timeout.
+func (q *qbitClient) waitForTorrent(ctx context.Context, hash string, settle bool) (qbittorrent.Torrent, error) {
 	ctx, cancel := context.WithTimeout(ctx, q.findTimeout)
 	defer cancel()
 
-	var settled qbittorrent.Torrent
+	var found qbittorrent.Torrent
 	err := pollUntil(ctx, q.pollInterval, func() (bool, error) {
 		t, ok, err := q.lookupTorrent(ctx, hash)
 		if err != nil {
 			return false, err
 		}
-		if !ok || isCheckingState(t.State) {
+		if !ok || (settle && isCheckingState(t.State)) {
 			return false, nil
 		}
-		settled = t
+		found = t
 		return true, nil
 	})
 	if err != nil {
 		return qbittorrent.Torrent{}, err
 	}
-	return settled, nil
-}
-
-func (q *qbitClient) waitForRecheck(ctx context.Context, hash string) (qbittorrent.Torrent, error) {
-	ctx, cancel := context.WithTimeout(ctx, q.recheckTimeout)
-	defer cancel()
-
-	var settled qbittorrent.Torrent
-	err := pollUntil(ctx, q.pollInterval, func() (bool, error) {
-		t, ok, err := q.lookupTorrent(ctx, hash)
-		if err != nil {
-			return false, err
-		}
-		if !ok || isCheckingState(t.State) || t.State == qbittorrent.TorrentStateMissingFiles {
-			return false, nil
-		}
-		settled = t
-		return true, nil
-	})
-	if err != nil {
-		return qbittorrent.Torrent{}, err
-	}
-	return settled, nil
+	return found, nil
 }
 
 // isCheckingState reports whether the torrent is still in a transient

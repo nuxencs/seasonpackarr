@@ -221,7 +221,8 @@ Deluge requires `import.savePath`. It accepts zero or one `import.tags` entry as
 Enable Deluge's optional Label plugin to apply it. When enabled, seasonpackarr creates a missing label and assigns it.
 Deluge does not support `apiKey` or the qBittorrent-only import fields. The adapter adds the torrent stopped, applies
 its optional label, then resumes it. Deluge and libtorrent perform the initial data check before transferring pieces.
-Seasonpackarr waits until the torrent is no longer paused or checking. The current adapter requires a v1 or hybrid
+Seasonpackarr does not wait for the check.
+The current adapter requires a v1 or hybrid
 torrent because it identifies the torrent by its legacy info hash. This is an adapter limitation, not a general claim
 about current Deluge releases.
 
@@ -241,8 +242,11 @@ The per-client `import` block controls how seasonpackarr imports a matched seaso
   its optional Label plugin label. Labels use letters, digits, underscores, or hyphens and are stored in lower case.
   Defaults to `["seasonpackarr"]`.
 
-seasonpackarr adds the torrent in a stopped state. qBittorrent and Transmission complete their explicit verification
-before resume. Deluge resumes into its normal initial check. A correctly imported pack is never left stopped.
+seasonpackarr does not wait for the torrent client's data check, so a large pack cannot exceed autobrr's 120-second
+action timeout. When every file of the pack is already on disk, qBittorrent adds it without a hash check, and
+Transmission accepts it as complete after it checks the first piece. Otherwise the client checks the present data and
+then downloads only the missing pieces. Deluge always checks the present data. A correctly imported pack is never left
+stopped.
 
 The following fields are qBittorrent-only and are rejected at startup when set on a Transmission or Deluge client:
 

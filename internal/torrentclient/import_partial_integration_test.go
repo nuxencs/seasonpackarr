@@ -6,10 +6,10 @@
 package torrentclient
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -135,7 +135,7 @@ func TestQbitImport_ResumesPartialPack(t *testing.T) {
 		t.Fatalf("Import: %v", err)
 	}
 
-	// poll for a few seconds so the post-recheck resume takes effect, then report
+	// poll for a few seconds so qBittorrent's add-time check finishes, then report
 	var tor qbittorrent.Torrent
 	for i := range 20 {
 		found, ok, err := c.lookupTorrent(t.Context(), hashes.Legacy)
@@ -151,13 +151,65 @@ func TestQbitImport_ResumesPartialPack(t *testing.T) {
 	}
 	t.Logf("FINAL qbit state=%s progress=%.2f (want: downloading/stalledDL with progress ~0.33, NOT missingFiles/1.00/stopped)", tor.State, tor.Progress)
 	if tor.State == qbittorrent.TorrentStateMissingFiles {
-		t.Errorf("torrent left in missingFiles after import - recheck path did not recover it")
+		t.Errorf("torrent left in missingFiles after import - a partial pack must use a normal check")
 	}
 	if tor.Progress >= 0.99 {
 		t.Errorf("progress %.2f - a 1-of-3 partial pack should not read as complete", tor.Progress)
 	}
 	if !isActiveTorrentState(tor.State) {
-		t.Errorf("torrent not active after import (state=%s) - resume did not start it downloading the missing episodes", tor.State)
+		t.Errorf("torrent not active after import (state=%s) - qBittorrent did not start it after the check", tor.State)
+	}
+	_ = c.c.(*qbittorrent.Client).DeleteTorrents([]string{hashes.Legacy}, false)
+}
+
+// TestQbitImport_RecoversMisclassifiedCompletePack drives the complete-pack
+// fallback against a real daemon: a skip-check add of a partial pack reports
+// missingFiles, and recheck, stop, start must leave qBittorrent to check and
+// start it. This depends on stop clearing the FilesChecked stop condition.
+func TestQbitImport_RecoversMisclassifiedCompletePack(t *testing.T) {
+	host := os.Getenv("SEASONPACKARR_TEST_QBIT_HOST")
+	importDir := os.Getenv("SEASONPACKARR_TEST_IMPORT_DIR")
+	if host == "" || importDir == "" {
+		t.Skip("qBittorrent integration environment is not set")
+	}
+
+	c, err := newQbitClient(t.Context(), &domain.Client{
+		Host:     host,
+		Username: os.Getenv("SEASONPACKARR_TEST_QBIT_USER"),
+		Password: os.Getenv("SEASONPACKARR_TEST_QBIT_PASS"),
+		Import:   domain.ImportPolicy{SavePath: importDir},
+	})
+	if err != nil {
+		t.Fatalf("newQbitClient: %v", err)
+	}
+
+	_, torrentBytes, hashes := buildPartialPack(t, importDir, "AdapterFallbackQbit.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
+	report, err := c.Import(t.Context(), ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir, DataComplete: true})
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if !slices.ContainsFunc(report.Stages, func(s ImportStageReport) bool { return s.Stage == ImportStageRecheck }) {
+		t.Fatalf("stages %v: want the missingFiles fallback to run", report.Stages)
+	}
+
+	var tor qbittorrent.Torrent
+	for range 30 {
+		found, ok, err := c.lookupTorrent(t.Context(), hashes.Legacy)
+		if err != nil || !ok {
+			t.Fatalf("lookup after import: ok=%v err=%v", ok, err)
+		}
+		tor = found
+		if isActiveTorrentState(tor.State) {
+			break
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	t.Logf("FINAL qbit state=%s progress=%.2f", tor.State, tor.Progress)
+	if !isActiveTorrentState(tor.State) {
+		t.Errorf("torrent not active after the fallback (state=%s) - the recheck stop condition was not cleared", tor.State)
+	}
+	if tor.Progress <= 0 || tor.Progress >= 0.99 {
+		t.Errorf("progress %.2f - a 1-of-3 partial pack must be checked to a partial value", tor.Progress)
 	}
 	_ = c.c.(*qbittorrent.Client).DeleteTorrents([]string{hashes.Legacy}, false)
 }
@@ -186,13 +238,7 @@ func TestTransmissionImport_ResumesPartialPack(t *testing.T) {
 		t.Fatalf("Import: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(t.Context(), transmissionTimeout)
-	defer cancel()
-	ts, err := c.c.TorrentGetHashes(ctx, []string{"name", "status", "percentDone", "errorString"}, []string{hashes.Legacy})
-	if err != nil || len(ts) == 0 {
-		t.Fatalf("get after import: err=%v n=%d", err, len(ts))
-	}
-	tr := ts[0]
+	tr := waitTransmissionChecked(t, c, hashes.Legacy)
 	pd := 0.0
 	if tr.PercentDone != nil {
 		pd = *tr.PercentDone
@@ -205,8 +251,11 @@ func TestTransmissionImport_ResumesPartialPack(t *testing.T) {
 	if es := derefString(tr.ErrorString); es != "" {
 		t.Errorf("transmission reported error after import: %q", es)
 	}
-	if pd >= 1.0 {
+	if pd >= 1.0 || pd <= 0 {
 		t.Errorf("percentDone=%.2f - expected partial (only 1 of 3 episodes present)", pd)
 	}
-	_, _ = packName, cancel
+	if status == transmissionrpc.TorrentStatusStopped {
+		t.Errorf("import left the torrent stopped - Transmission must start it after the check")
+	}
+	_ = packName
 }
