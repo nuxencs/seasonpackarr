@@ -79,7 +79,18 @@ which opts that torrent out of Auto TMM.
 (The `stalled*` states just mean "no peers" in the test rig; against a real
 swarm the partial torrent is `downloading`.)
 
-A 2 GiB pack against qBittorrent 5.1.4 on 2026-10-07: the partial `Import`
+Verified on 2026-10-07 against qBittorrent 4.3.9, 4.4.5, 4.5.5, 4.6.7, 5.0.5,
+5.1.4, and 5.2.3 (WebAPI 2.8.2 to 2.15.1). With a 2 GiB pack, a category, and
+Auto TMM, every version returned a partial `Import` in 2-255 ms while it was
+still checking, with the first or the last episode missing. Complete packs
+took 0.26-1.5 seconds with no hash check. qBittorrent before 4.5 ignores the
+`stopped` and `stopCondition` add parameters and honors `paused=false`; the
+global "start paused", "add stopped", and "stop after files checked"
+preferences did not stop an import on any version. On 4.3.9 and 5.1.4 a real
+peer then supplied the missing episode, the torrent seeded at 100%, and the
+reused episodes stayed hardlinks of their sources.
+
+A 2 GiB pack against qBittorrent 5.1.4: the partial `Import`
 returned in 4-256 ms while qBittorrent was still checking. The check finished
 about 2 seconds later. The result was the same with an explicit save path, an
 explicit download path, and a category with Auto TMM, and also with the global
@@ -140,9 +151,10 @@ transient checking set (`isCheckingState`: `checkingResumeData`, `checkingDL`,
 If a file changes after the processor checked it, the complete path can still
 see `missingFiles`. The fallback calls `recheck`, then `stop`, then `start`
 without a wait: `stop` is the only call that clears the `FilesChecked` stop
-condition that `recheck` sets on a stopped torrent (qBittorrent 4.6 and 5.x).
-Observed against qBittorrent 5.1.4: `Import` returned in 0.5 seconds and the
-torrent ended at `stalledDL` 0.75 after qBittorrent's check.
+condition that `recheck` sets on a stopped torrent (qBittorrent 4.6 and 5.x;
+older releases resume the torrent after the check without that condition).
+`TestQbitImport_RecoversMisclassifiedCompletePack` pins this against a real
+daemon; without the `stop` call the torrent ends at `stoppedDL`.
 Regression-guarded by `TestQbitImport_WaitsForCheckingToSettle` (unit) and
 `TestQbitImport_ImportsCompletePack` (real daemon).
 
@@ -175,7 +187,14 @@ and returns without a forced verify:
 
 A 2 GiB pack on 2026-10-07: complete packs were seeding 10-13 ms after the
 add with no verify; partial packs returned in 2-5 ms, verified, and then
-downloaded at `percentDone 0.75`. The old adapter forced a verify, which
+downloaded at `percentDone 0.75`. The same results held with
+`incomplete-dir-enabled` and `start-added-torrents` off. When the first file
+is missing, Transmission keeps the torrent's current folder in the incomplete
+folder, but it still finds the hardlinked episodes in the download folder. A
+real peer then supplied the missing episode; at completion every file was in
+the download folder and the reused episodes stayed hardlinks of their
+sources. `TestTransmissionImport_IncompleteDirPartialPack` covers the check
+against a real daemon. The old adapter forced a verify, which
 defeated the seed shortcut for complete packs. Transmission ignores BEP 47
 padding attributes, so a hybrid torrent with padding files never qualifies for
 the shortcut and always gets a verify.

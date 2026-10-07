@@ -218,6 +218,10 @@ func TestQbitImport_ImportsCompletePack(t *testing.T) {
 
 	packName, torrentBytes, hashes := buildCompletePack(t, importDir, "IntegrationQbit.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
 	t.Logf("importing pack %q hash=%s", packName, hashes.Legacy)
+	// qBittorrent 5.2 rejects a duplicate add, so a rerun needs a clean client.
+	t.Cleanup(func() {
+		_ = c.c.(*qbittorrent.Client).DeleteTorrents([]string{hashes.Legacy}, false)
+	})
 
 	if _, err := c.Import(t.Context(), ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir, DataComplete: true}); err != nil {
 		t.Fatalf("qbit Import: %v", err)
@@ -292,6 +296,18 @@ func TestQbitImportDestination_UsesDaemonPreferences(t *testing.T) {
 				"use_category_paths_in_manual_mode": tt.manualCategoryPath,
 			}); err != nil {
 				t.Fatalf("set preferences: %v", err)
+			}
+			if tt.manualCategoryPath {
+				// qBittorrent before 4.5 has no such preference and ignores it; in
+				// manual mode it uses the default save path, which the manual
+				// global path case covers.
+				prefs, err := raw.GetAppPreferences()
+				if err != nil {
+					t.Fatalf("read preferences: %v", err)
+				}
+				if !prefs.UseCategoryPathsInManualMode {
+					t.Skip("daemon does not support category paths in manual mode")
+				}
 			}
 
 			destination, err := c.ImportDestination(t.Context())

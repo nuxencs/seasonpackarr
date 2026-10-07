@@ -137,5 +137,28 @@ real daemon. Without the `stop` call it fails with the torrent at `stoppedDL`.
 Contract note: a Deluge wait failure now reports the `resume` stage instead of
 `recheck`, because the adapter no longer waits for the check.
 
-Not verified on a live daemon: qBittorrent 4.x. Source shows 4.6 matches 5.x
-for the stop condition; 4.4 uses an older mechanism.
+Version matrix (added after review): the qBittorrent integration suite passes
+twice in a row against 4.3.9, 4.4.5, 4.5.5, 4.6.7, 5.0.5, 5.1.4, and 5.2.3. A
+2 GiB probe with a category, Auto TMM, and every global "start paused/stopped"
+and "stop after check" preference enabled gave the same results on all seven:
+
+| Case | Result on 4.3.9 to 5.2.3 |
+| --- | --- |
+| complete pack | 0.26-1.5 s, no hash check, `stalledUP` 1.00 |
+| partial, last episode missing | 3-255 ms while checking, `stalledDL` 0.75 |
+| partial, first episode missing | 2-8 ms while checking, `stalledDL` 0.75 |
+| `DataComplete` wrong (fallback) | 0.76-1.0 s, `stalledDL` 0.75 |
+
+Real download (a second client seeding the full pack over the Docker
+network): qBittorrent 4.3.9 and 5.1.4, and Transmission 4.0.6 and 4.1.3 with
+`incomplete-dir-enabled` and `start-added-torrents` off, downloaded the missing
+episode with the first or the last episode missing and finished at 100%. All
+files ended in the final folder, and the reused episodes kept the inode of
+their source files.
+
+`TestQbitImportDestination_UsesDaemonPreferences/manual_category_path` now
+skips on qBittorrent before 4.5, which has no "use category paths in manual
+mode" preference. qBittorrent 4.3.9 in manual mode saves a category torrent to
+the default save path, which is what seasonpackarr resolves.
+`TestQbitImport_ImportsCompletePack` removes its torrent on cleanup because
+qBittorrent 5.2 rejects a duplicate add.
