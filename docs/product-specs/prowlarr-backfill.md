@@ -230,8 +230,8 @@ added a stopped torrent; inspect the client before retrying.
 9. Apply current smart-mode settings. With smart mode disabled, at least one
    exact reusable file is still required. Accept the first passing pack per
    release variant. Exact preview records a proposed selection. Import creates
-   hardlinks, adds the torrent, verifies data, and starts it through the existing
-   client adapter.
+   hardlinks and adds the torrent through the existing client adapter. The
+   client checks the data and starts the torrent.
 
 Release compatibility includes the existing resolution, source, release group,
 cut, edition, repack, HDR, and streaming-service rules. Fuzzy matching options

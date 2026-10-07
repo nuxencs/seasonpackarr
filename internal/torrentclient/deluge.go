@@ -51,8 +51,7 @@ type delugeClient struct {
 	label  delugeLabelPluginFactory
 	v1     bool
 
-	// timeouts are fields so tests can shrink them to milliseconds.
-	checkTimeout time.Duration
+	// pollInterval is a field so tests can shrink it to milliseconds.
 	pollInterval time.Duration
 }
 
@@ -95,7 +94,6 @@ func newDelugeClient(ctx context.Context, client *domain.Client) (*delugeClient,
 		policy:       client.Import,
 		label:        label,
 		v1:           client.Type == "deluge-v1",
-		checkTimeout: 10 * time.Minute,
 		pollInterval: 500 * time.Millisecond,
 	}, nil
 }
@@ -260,8 +258,10 @@ func (d *delugeClient) ImportDestination(ctx context.Context) (ImportDestination
 
 // Import adds the pack stopped, applies its optional label, then resumes it.
 // Deluge/libtorrent performs its normal initial data check before it transfers
-// pieces. The adapter waits until the torrent is no longer paused or checking
-// and returns the duration of each client operation.
+// pieces. The adapter waits only until the resume takes effect, not for the
+// check, and returns the duration of each client operation. It does not use
+// Deluge 2 seed mode: when libtorrent rejects a seed-mode add, Deluge puts the
+// torrent in an error state that resume cannot clear.
 func (d *delugeClient) Import(ctx context.Context, req ImportRequest) (ImportReport, error) {
 	var report ImportReport
 	started := time.Now()
@@ -276,7 +276,7 @@ func (d *delugeClient) Import(ctx context.Context, req ImportRequest) (ImportRep
 		return report, importErr(ImportStageConfig, errors.New("resolved deluge save path is empty"))
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, d.checkTimeout)
+	ctx, cancel := context.WithTimeout(ctx, delugeTimeout)
 	defer cancel()
 
 	options := &deluge.Options{
@@ -312,17 +312,15 @@ func (d *delugeClient) Import(ctx context.Context, req ImportRequest) (ImportRep
 	d.mu.Lock()
 	err = d.c.ResumeTorrents(ctx, addedHash)
 	d.mu.Unlock()
-	report.record(ImportStageResume, started)
 	if err != nil {
+		report.record(ImportStageResume, started)
 		return report, importErr(ImportStageResume, fmt.Errorf("failed to resume torrent in deluge: %w", err))
 	}
-
-	started = time.Now()
-	if err := d.waitForStarted(ctx, addedHash); err != nil {
-		report.record(ImportStageRecheck, started)
-		return report, importErr(ImportStageRecheck, err)
+	err = d.waitForStarted(ctx, addedHash)
+	report.record(ImportStageResume, started)
+	if err != nil {
+		return report, importErr(ImportStageResume, err)
 	}
-	report.record(ImportStageRecheck, started)
 
 	return report, nil
 }
@@ -375,6 +373,9 @@ func isDelugeAlreadyAdded(err error) bool {
 		strings.Contains(strings.ToLower(rpcErr.ExceptionMessage), "already in session")
 }
 
+// waitForStarted waits until the resume takes effect. A checking torrent counts
+// as started: libtorrent continues into the transfer after its check, and the
+// check can take longer than the caller's request timeout.
 func (d *delugeClient) waitForStarted(ctx context.Context, hash string) error {
 	return pollUntil(ctx, d.pollInterval, func() (bool, error) {
 		if err := ctx.Err(); err != nil {
@@ -392,7 +393,7 @@ func (d *delugeClient) waitForStarted(ctx context.Context, hash string) error {
 		}
 
 		switch deluge.TorrentState(status.State) {
-		case deluge.StatePaused, deluge.StateChecking, deluge.StateAllocating, deluge.StateMoving:
+		case deluge.StatePaused:
 			return false, nil
 		case deluge.StateError:
 			return false, fmt.Errorf("deluge reported an error while starting torrent %s", hash)

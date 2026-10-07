@@ -25,7 +25,8 @@ Reliable does not mean perfect acceptance. It means predictable outcomes when de
 - hardlink creation isolated from matching logic
 - authenticated HTTP component coverage across candidate, pack, parse, cache invalidation, and filesystem failure paths
 - safe stack capture for unexpected filesystem, torrent-client, notification, and server errors; expected rejections and cancellation stay stack-free
-- request cancellation propagated through processing and context-aware torrent-client calls
+- request cancellation propagated through planning and hardlinking; a started torrent-client import finishes after a caller disconnect, bounded by adapter timeouts
+- torrent-client imports return before the client's data check, so a large pack cannot exceed autobrr's 120-second Webhook action timeout
 - bounded signal shutdown that drains HTTP handlers and tracked notification tasks
 - SQLite-backed RSS checkpoints, retained candidates, metadata, and Prowlarr cooldowns
   that survive restart, with Retry-After support and no automatic request retries
@@ -42,7 +43,8 @@ Reliable does not mean perfect acceptance. It means predictable outcomes when de
 ## Change Checklist
 
 - Did request validation stay strict?
-- Does cancellation stop new client work and polling promptly?
+- Does cancellation stop planning and polling promptly, without interrupting a started client import?
+- Does any client import wait for a client data check?
 - Can shutdown finish within its fixed deadline?
 - Did matching become broader or narrower? Why?
 - Can duplicate or unrelated client episodes broaden acceptance?

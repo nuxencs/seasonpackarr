@@ -119,21 +119,35 @@ func requireQbitStarted(t *testing.T, c *qbitClient, hash string) {
 	}
 }
 
+// waitTransmissionChecked polls until Transmission leaves its check states. The
+// adapter returns before the add-time check, so assertions must wait for it.
+func waitTransmissionChecked(t *testing.T, c *transmissionClient, hash string) transmissionrpc.Torrent {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	for {
+		ts, err := c.c.TorrentGetHashes(ctx, []string{"status", "percentDone", "errorString"}, []string{hash})
+		if err != nil || len(ts) == 0 {
+			t.Fatalf("get after import: err=%v n=%d", err, len(ts))
+		}
+		tr := ts[0]
+		if tr.Status != nil && *tr.Status != transmissionrpc.TorrentStatusCheckWait && *tr.Status != transmissionrpc.TorrentStatusCheck {
+			return tr
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("transmission check did not finish: %v", ctx.Err())
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
 // requireTransmissionStarted asserts the imported torrent is not left stopped
-// and has no error.
+// and has no error after its add-time check.
 func requireTransmissionStarted(t *testing.T, c *transmissionClient, hash string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), transmissionTimeout)
-	defer cancel()
-	ts, err := c.c.TorrentGetHashes(ctx, []string{"status", "percentDone", "errorString"}, []string{hash})
-	if err != nil || len(ts) == 0 {
-		t.Fatalf("get after import: err=%v n=%d", err, len(ts))
-	}
-	tr := ts[0]
-	var status transmissionrpc.TorrentStatus
-	if tr.Status != nil {
-		status = *tr.Status
-	}
+	tr := waitTransmissionChecked(t, c, hash)
+	status := *tr.Status
 	pd := 0.0
 	if tr.PercentDone != nil {
 		pd = *tr.PercentDone
@@ -204,8 +218,12 @@ func TestQbitImport_ImportsCompletePack(t *testing.T) {
 
 	packName, torrentBytes, hashes := buildCompletePack(t, importDir, "IntegrationQbit.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
 	t.Logf("importing pack %q hash=%s", packName, hashes.Legacy)
+	// qBittorrent 5.2 rejects a duplicate add, so a rerun needs a clean client.
+	t.Cleanup(func() {
+		_ = c.c.(*qbittorrent.Client).DeleteTorrents([]string{hashes.Legacy}, false)
+	})
 
-	if _, err := c.Import(t.Context(), ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
+	if _, err := c.Import(t.Context(), ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir, DataComplete: true}); err != nil {
 		t.Fatalf("qbit Import: %v", err)
 	}
 	requireQbitStarted(t, c, hashes.Legacy)
@@ -279,6 +297,18 @@ func TestQbitImportDestination_UsesDaemonPreferences(t *testing.T) {
 			}); err != nil {
 				t.Fatalf("set preferences: %v", err)
 			}
+			if tt.manualCategoryPath {
+				// qBittorrent before 4.5 has no such preference and ignores it; in
+				// manual mode it uses the default save path, which the manual
+				// global path case covers.
+				prefs, err := raw.GetAppPreferences()
+				if err != nil {
+					t.Fatalf("read preferences: %v", err)
+				}
+				if !prefs.UseCategoryPathsInManualMode {
+					t.Skip("daemon does not support category paths in manual mode")
+				}
+			}
 
 			destination, err := c.ImportDestination(t.Context())
 			if err != nil {
@@ -292,7 +322,7 @@ func TestQbitImportDestination_UsesDaemonPreferences(t *testing.T) {
 }
 
 // TestTransmissionImport_ImportsCompletePack drives transmissionClient.Import against a real
-// Transmission (add paused -> verify -> poll -> start).
+// Transmission (started add; Transmission checks and starts by itself).
 func TestTransmissionImport_ImportsCompletePack(t *testing.T) {
 	host := os.Getenv("SEASONPACKARR_TEST_TRANSMISSION_HOST")
 	importDir := os.Getenv("SEASONPACKARR_TEST_IMPORT_DIR")
@@ -314,7 +344,7 @@ func TestTransmissionImport_ImportsCompletePack(t *testing.T) {
 	packName, torrentBytes, hashes := buildCompletePack(t, importDir, "IntegrationTransmission.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
 	t.Logf("importing pack %q hash=%s", packName, hashes.Legacy)
 
-	if _, err := c.Import(t.Context(), ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
+	if _, err := c.Import(t.Context(), ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir, DataComplete: true}); err != nil {
 		t.Fatalf("transmission Import: %v", err)
 	}
 	requireTransmissionStarted(t, c, hashes.Legacy)
