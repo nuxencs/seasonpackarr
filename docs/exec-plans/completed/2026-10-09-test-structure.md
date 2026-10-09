@@ -1,0 +1,80 @@
+# Test structure and naming
+
+## goal
+
+Give the test suite one predictable layout so a reader can find, name, and set
+up a test without copying a neighbor's quirks. Start with the torrent-client
+integration tests, where file names, test names, setup, polling, and cleanup
+diverge the most.
+
+## scope
+
+Phase 1 (this plan):
+
+- one integration file per client plus one shared fixture file
+- one `Test<Client>Daemon_<Behavior>` subject for integration tests
+- shared environment gating, pack builders, import requests, and polling
+- teardown through `t.Cleanup` for every torrent the tests add
+- testify `require`/`assert` in integration tests, like the rest of the repo
+- documented rules in `ARCHITECTURE.md`
+
+Phase 2 (not started, tracked in the tech-debt tracker):
+
+- one fake vocabulary (`fake`, `stub`, `mock`, `recording`, `noop` are all used)
+- one shared captured-logger fake (`config` and `http` each define one)
+- one table-loop variable name (`tt` and `test` are both used)
+- consistent subjects in `internal/http` test files
+
+## risks
+
+- Integration tests do not run in CI. A wrong rename or a broken helper shows
+  up only when someone runs them against real daemons.
+- Removed tests drop coverage if the decision log below is wrong.
+
+## steps
+
+1. Inventory the current integration tests. [done]
+2. Move shared fixtures to `integration_test.go` and split tests by client. [done]
+3. Rename integration tests to `Test<Client>Daemon_<Behavior>`. [done]
+4. Update `ARCHITECTURE.md` and the docs that name the old tests. [done]
+5. Verify compile, skip paths, and real-daemon runs. [done]
+
+## decision log
+
+- Client axis for files, not scenario axis. Unit tests and the documented
+  `-run '^TestQbit'` commands are already per client.
+- `Daemon` in the subject separates integration tests from unit tests in `-v`
+  output. `-run 'Daemon_'` selects only integration tests, and
+  `-run '^TestQbit'` still selects both.
+- Removed `TestQbitPartialRawBehavior_ReportsPausedMissingFileState`. It only
+  logged a result. `TestQbitDaemon_RecoversMisclassifiedCompletePack` asserts
+  the same daemon behavior through the adapter: the recheck stage runs only
+  when qBittorrent reports `missingFiles` for a paused skip-check add.
+- Removed `TestTransmissionClient_ListsTorrentFiles`. It read whatever the
+  daemon held and passed with no torrents. Each client's complete-pack test now
+  asserts that `GetTorrents` and `GetFiles` report the imported pack.
+- Cleanups use a context without cancellation, because `t.Context()` is
+  canceled before cleanup functions run. The old Deluge removal used the
+  canceled context and still worked, because go-deluge did not check it. The
+  new rule does not depend on that.
+- Complete packs now use 1 MiB episodes like partial packs (before: 1 byte).
+  One pack writer serves both, and every client checks complete packs of
+  real size.
+- `transmission_test.go` and `client_test.go` moved from stdlib assertions to
+  testify, so the whole `torrentclient` package follows the documented rule.
+- Cleanup is registered before `Import`, so a failed import cannot leave a
+  torrent that blocks the next run.
+
+## verification
+
+- `go vet ./internal/torrentclient` and `go vet -tags=integration
+  ./internal/torrentclient` pass.
+- With no `SEASONPACKARR_TEST_*` variables, all nine integration tests skip
+  with one message format.
+- Real daemons in Docker on one Linux volume: qBittorrent 5.2.3, Transmission
+  4.1.3, Deluge 1.3.15, and Deluge 2.1.2. Every client passes twice in a row.
+  The second run proves cleanup, because qBittorrent 5.2 rejects a duplicate
+  add. After the runs, no daemon held a torrent.
+- Partial packs check to exactly 0.33 on every client, so
+  `assertPartialProgress` uses a 0.01 tolerance.
+- `go test ./...` and `gofumpt -l .` pass. `govulncheck ./...` reports no called vulnerabilities.

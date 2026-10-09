@@ -11,11 +11,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
+
+	"github.com/stretchr/testify/require"
 )
 
 // capturedRequest records a single decoded Transmission RPC request for assertions.
@@ -80,9 +81,7 @@ const emptySessionResp = `{}`
 func newTransmissionClientFromServer(t *testing.T, srv *httptest.Server, user, pass string) *transmissionClient {
 	t.Helper()
 	c, err := newTransmissionClient(t.Context(), &domain.Client{Host: srv.URL, Username: user, Password: pass})
-	if err != nil {
-		t.Fatalf("newTransmissionClient: %v", err)
-	}
+	require.NoError(t, err)
 	return c
 }
 
@@ -94,30 +93,23 @@ func lastRequest(t *testing.T, captured *[]capturedRequest, method string) captu
 			return (*captured)[i]
 		}
 	}
-	t.Fatalf("no captured request for method %q", method)
+	require.FailNow(t, "no captured request", "method %q", method)
 	return capturedRequest{}
 }
 
-// assertStringSlice checks that a JSON-decoded argument value is a string array
-// equal to want (order-sensitive).
-func assertStringSlice(t *testing.T, got any, want []string) {
+// requireStringSlice checks that a JSON-decoded argument value is a string
+// array equal to want (order-sensitive).
+func requireStringSlice(t *testing.T, got any, want []string) {
 	t.Helper()
 	raw, ok := got.([]any)
-	if !ok {
-		t.Fatalf("value %v (%T) is not a JSON array", got, got)
+	require.True(t, ok, "value %v (%T) is not a JSON array", got, got)
+	values := make([]string, 0, len(raw))
+	for index, element := range raw {
+		value, ok := element.(string)
+		require.True(t, ok, "element %d %v (%T) is not a string", index, element, element)
+		values = append(values, value)
 	}
-	if len(raw) != len(want) {
-		t.Fatalf("array = %v, want %v", raw, want)
-	}
-	for i, w := range want {
-		s, ok := raw[i].(string)
-		if !ok {
-			t.Fatalf("element %d %v (%T) is not a string", i, raw[i], raw[i])
-		}
-		if s != w {
-			t.Errorf("element %d = %q, want %q", i, s, w)
-		}
-	}
+	require.Equal(t, want, values)
 }
 
 func TestNewTransmissionClient_PerformsSessionHandshakeAndPing(t *testing.T) {
@@ -133,12 +125,8 @@ func TestNew_CreatesTransmissionClient(t *testing.T) {
 	t.Parallel()
 	srv, _ := transmissionTestServer(t, map[string]string{"session-get": emptySessionResp})
 	c, err := New(t.Context(), &domain.Client{Type: "transmission", Host: srv.URL})
-	if err != nil {
-		t.Fatalf("New(transmission): %v", err)
-	}
-	if c == nil {
-		t.Fatal("New(transmission) returned nil client")
-	}
+	require.NoError(t, err)
+	require.NotNil(t, c)
 }
 
 func TestTransmissionGetTorrents(t *testing.T) {
@@ -151,24 +139,14 @@ func TestTransmissionGetTorrents(t *testing.T) {
 	c := newTransmissionClientFromServer(t, srv, "", "")
 
 	torrents, err := c.GetTorrents(t.Context())
-	if err != nil {
-		t.Fatalf("GetTorrents: %v", err)
-	}
-	if len(torrents) != 1 {
-		t.Fatalf("len(torrents) = %d, want 1", len(torrents))
-	}
-	got := torrents[0]
-	if got.Hash != "abc123" || got.Name != "Show.S01" || got.SavePath != "/downloads" {
-		t.Errorf("torrent = %+v, want {Hash:abc123 Name:Show.S01 SavePath:/downloads}", got)
-	}
+	require.NoError(t, err)
+	require.Equal(t, []Torrent{{Hash: "abc123", Name: "Show.S01", SavePath: "/downloads"}}, torrents)
 
 	// Wire-format assertion: the adapter must request exactly the fields it maps,
 	// and must not scope the listing by ids.
 	req := lastRequest(t, captured, "torrent-get")
-	assertStringSlice(t, req.Arguments["fields"], []string{"hashString", "name", "downloadDir"})
-	if _, ok := req.Arguments["ids"]; ok {
-		t.Errorf("GetTorrents must not send ids, got %v", req.Arguments["ids"])
-	}
+	requireStringSlice(t, req.Arguments["fields"], []string{"hashString", "name", "downloadDir"})
+	require.NotContains(t, req.Arguments, "ids", "GetTorrents must not scope the listing")
 }
 
 func TestTransmissionGetFiles(t *testing.T) {
@@ -182,23 +160,20 @@ func TestTransmissionGetFiles(t *testing.T) {
 	c := newTransmissionClientFromServer(t, srv, "", "")
 
 	results := c.GetFiles(t.Context(), []string{"abc123", "def456"})
-	if len(results) != 2 {
-		t.Fatalf("len(results) = %d, want 2", len(results))
-	}
-	if results[0].Err != nil || results[0].Hash != "abc123" || len(results[0].Files) != 2 {
-		t.Fatalf("results[0] = %+v, want abc123 with two files", results[0])
-	}
-	if results[0].Files[0].Name != "Show.S01/E01.mkv" || results[0].Files[0].Size != 1000000 {
-		t.Errorf("results[0].Files[0] = %+v, want {Name:Show.S01/E01.mkv Size:1000000}", results[0].Files[0])
-	}
-	if results[1].Err != nil || results[1].Hash != "def456" || len(results[1].Files) != 1 {
-		t.Fatalf("results[1] = %+v, want def456 with one file", results[1])
-	}
+	require.Len(t, results, 2)
+	require.NoError(t, results[0].Err)
+	require.Equal(t, "abc123", results[0].Hash)
+	require.Len(t, results[0].Files, 2)
+	require.Equal(t, "Show.S01/E01.mkv", results[0].Files[0].Name)
+	require.EqualValues(t, 1000000, results[0].Files[0].Size)
+	require.NoError(t, results[1].Err)
+	require.Equal(t, "def456", results[1].Hash)
+	require.Len(t, results[1].Files, 1)
 
 	// Wire-format assertion: both hashes use one request with identity and files.
 	req := lastRequest(t, captured, "torrent-get")
-	assertStringSlice(t, req.Arguments["fields"], []string{"hashString", "files"})
-	assertStringSlice(t, req.Arguments["ids"], []string{"abc123", "def456"})
+	requireStringSlice(t, req.Arguments["fields"], []string{"hashString", "files"})
+	requireStringSlice(t, req.Arguments["ids"], []string{"abc123", "def456"})
 }
 
 func TestTransmissionGetFiles_ReportsMissingTorrent(t *testing.T) {
@@ -211,15 +186,9 @@ func TestTransmissionGetFiles_ReportsMissingTorrent(t *testing.T) {
 	c := newTransmissionClientFromServer(t, srv, "", "")
 
 	results := c.GetFiles(t.Context(), []string{"abc123", "notexist"})
-	if len(results) != 2 || results[0].Err != nil {
-		t.Fatalf("results = %+v, want first hash to succeed", results)
-	}
-	if results[1].Err == nil {
-		t.Fatal("expected error for missing torrent, got nil")
-	}
-	if !strings.Contains(results[1].Err.Error(), "not found") {
-		t.Errorf("error = %q, want to contain 'not found'", results[1].Err.Error())
-	}
+	require.Len(t, results, 2)
+	require.NoError(t, results[0].Err)
+	require.ErrorContains(t, results[1].Err, "not found")
 }
 
 func TestTransmissionGetFiles_ExpandsWholeCallError(t *testing.T) {
@@ -229,13 +198,10 @@ func TestTransmissionGetFiles_ExpandsWholeCallError(t *testing.T) {
 	client := newTestTransmissionClient(&stubTransmissionAPI{getErr: errBoom}, domain.ImportPolicy{})
 	results := client.GetFiles(t.Context(), []string{"one", "two"})
 
-	if len(results) != 2 {
-		t.Fatalf("len(results) = %d, want 2", len(results))
-	}
+	require.Len(t, results, 2)
 	for index, hash := range []string{"one", "two"} {
-		if results[index].Hash != hash || !errors.Is(results[index].Err, errBoom) {
-			t.Errorf("results[%d] = %+v, want hash %q wrapping boom", index, results[index], hash)
-		}
+		require.Equal(t, hash, results[index].Hash)
+		require.ErrorIs(t, results[index].Err, errBoom)
 	}
 }
 
@@ -245,12 +211,9 @@ func TestTransmissionClient_UsesBasicAuth(t *testing.T) {
 	newTransmissionClientFromServer(t, srv, "admin", "secret")
 
 	req := lastRequest(t, captured, "session-get")
-	if !req.HadAuth {
-		t.Fatal("expected basic auth header to be sent")
-	}
-	if req.User != "admin" || req.Pass != "secret" {
-		t.Errorf("BasicAuth = (%q, %q), want (admin, secret)", req.User, req.Pass)
-	}
+	require.True(t, req.HadAuth, "basic auth header was not sent")
+	require.Equal(t, "admin", req.User)
+	require.Equal(t, "secret", req.Pass)
 }
 
 func TestNewTransmissionClient_FailsFastOnConnectionError(t *testing.T) {
@@ -268,10 +231,5 @@ func TestNewTransmissionClient_FailsFastOnConnectionError(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	_, err := newTransmissionClient(t.Context(), &domain.Client{Host: srv.URL, Username: "x", Password: "y"})
-	if err == nil {
-		t.Fatal("expected error when server rejects auth, got nil")
-	}
-	if !strings.Contains(err.Error(), "connect to transmission") {
-		t.Errorf("error = %q, want to contain 'connect to transmission'", err.Error())
-	}
+	require.ErrorContains(t, err, "connect to transmission")
 }

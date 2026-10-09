@@ -312,7 +312,7 @@ SEASONPACKARR_TEST_DELUGE_USER=seasonpackarr \
 SEASONPACKARR_TEST_DELUGE_PASS=integration \
 SEASONPACKARR_TEST_IMPORT_DIR=/path/shared/with/deluge \
 go test -tags=integration -v -count=1 \
-  -run '^TestDelugeImport_ImportsAgainstDaemon$' ./internal/torrentclient
+  -run '^TestDelugeDaemon_' ./internal/torrentclient
 ```
 
 Repeat with `SEASONPACKARR_TEST_DELUGE_TYPE=deluge-v2` against a Deluge 2

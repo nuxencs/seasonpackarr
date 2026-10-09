@@ -182,34 +182,63 @@ lowercase responsibility names and one of these suffixes:
 - `<subject>_integration_test.go` for tests against real external services
 
 Hermetic tests, including HTTP tests backed by `httptest`, run in the default
-suite and use responsibility-based filenames. Torrent-client integration tests
-use the `integration` build tag, require explicit
-`SEASONPACKARR_TEST_*` connection settings, and are not part of the default CI
-workflow.
+suite and use responsibility-based filenames.
 
-Canonical commands:
+Assertions use testify. Use `require` for setup and for checks that make the
+rest of the test meaningless. Use `assert` when a test reports several facts
+about one final state. Common test helper prefixes:
+
+- `new<Thing>`: builds a client, fixture, or fake
+- `write<Thing>`: creates files on disk
+- `require<Fact>` / `assert<Fact>`: checks a fact and stops / continues on failure
+- `wait<Condition>`: polls an external service until a condition is true
+
+### Torrent-client integration tests
+
+Integration tests run against real daemons. They use the `integration` build
+tag and are not part of the CI workflow.
+
+- `internal/torrentclient/<client>_integration_test.go` holds one client's
+  tests. `integration_test.go` holds shared fixtures: environment names,
+  `requireDaemon`, the pack writers, and the shared read assertions.
+- Names are `Test<Client>Daemon_<Behavior>` (`TestQbitDaemon_ResumesPartialPack`).
+  `Daemon` separates them from the unit tests of the same adapter.
+- Each test calls `requireDaemon` first. It skips the test when the client's
+  gate variable or `SEASONPACKARR_TEST_IMPORT_DIR` is not set.
+- Packs are named after the test, so tests do not share files.
+- Each client's `import<Client>Pack` helper registers the torrent removal with
+  `t.Cleanup` before the import, so a failed run cannot block the next one.
+  Pack data stays on disk for inspection. Cleanup functions use
+  `cleanupContext`, because `t.Context` is canceled before they run.
+
+The import folder must have the same path for the test process and the daemon.
+
+| Client | Gate variable | Other variables |
+| --- | --- | --- |
+| all | `SEASONPACKARR_TEST_IMPORT_DIR` | |
+| qBittorrent | `SEASONPACKARR_TEST_QBIT_HOST` | `_QBIT_USER`, `_QBIT_PASS` |
+| Transmission | `SEASONPACKARR_TEST_TRANSMISSION_HOST` | `_TRANSMISSION_USER`, `_TRANSMISSION_PASS` |
+| Deluge | `SEASONPACKARR_TEST_DELUGE_TYPE` (`deluge-v1` or `deluge-v2`) | `_DELUGE_HOST` (`127.0.0.1`), `_DELUGE_PORT` (`58846`), `_DELUGE_USER`, `_DELUGE_PASS` |
+
+### Commands
 
 ```sh
 go test ./...
 go test -race ./...
-go test -tags=integration -count=1 -v ./internal/torrentclient
+go test -tags=integration -count=1 -v -run 'Daemon_' ./internal/torrentclient
 go test -tags=integration -count=1 -v -run '^TestQbit' ./internal/torrentclient
 go test -tags=integration -count=1 -v -run '^TestTransmission' ./internal/torrentclient
 go test -tags=integration -count=1 -v -run '^TestDeluge' ./internal/torrentclient
 ```
 
-The client-specific commands run that adapter's unit tests and tagged
-integration tests together. `-count=1` prevents cached results from hiding
-changes in an external service.
+`-run 'Daemon_'` runs only the integration tests. The client-specific commands
+run that adapter's unit tests and integration tests together. `-count=1`
+prevents cached results from hiding changes in an external service.
 
-Current explicit test coverage exists in:
+### Coverage
 
-- `internal/torrentclient/*_test.go` (unit tests plus tagged integration coverage for supported clients)
-- `internal/release/release_test.go`
-- `internal/format/format_test.go`
-- `internal/http/processor*_test.go`
-- `internal/payload/payload_test.go`
-- `internal/slices/slices_test.go`
+Packages without tests: `internal/api`, `internal/buildinfo`,
+`internal/domain`, `internal/logger`, `internal/notification`.
 
 High-value regression targets:
 

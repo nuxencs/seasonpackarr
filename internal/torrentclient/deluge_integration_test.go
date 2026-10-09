@@ -7,20 +7,23 @@ package torrentclient
 
 import (
 	"context"
-	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/autobrr/go-deluge"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
+
+	"github.com/autobrr/go-deluge"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-type delugeIntegrationAPI interface {
+// delugeTestAPI holds the RPC calls for setup and teardown that the adapter
+// does not use.
+type delugeTestAPI interface {
 	Close() error
 	DaemonVersion(context.Context) (string, error)
 	EnablePlugin(context.Context, string) error
@@ -28,165 +31,127 @@ type delugeIntegrationAPI interface {
 	RemoveTorrent(context.Context, string, bool) (bool, error)
 }
 
-type delugeIntegrationLabelAPI interface {
+type delugeTestLabelAPI interface {
 	GetTorrentLabel(string) (string, error)
 }
 
-// TestDelugeImport_ImportsAgainstDaemon drives the adapter against a real native RPC daemon.
-// It is environment-gated and is not part of the CI workflow.
-func TestDelugeImport_ImportsAgainstDaemon(t *testing.T) {
-	clientType := os.Getenv("SEASONPACKARR_TEST_DELUGE_TYPE")
-	importDir := os.Getenv("SEASONPACKARR_TEST_IMPORT_DIR")
-	if clientType == "" || importDir == "" {
-		t.Skip("Deluge integration-test environment is not set")
-	}
+func TestDelugeDaemon_ImportsCompletePack(t *testing.T) {
+	importDir := requireDaemon(t, envDelugeType)
+	c := newDelugeDaemonClient(t, importDir)
+	pack := writeCompletePack(t, importDir)
 
-	port := 58846
-	if value := os.Getenv("SEASONPACKARR_TEST_DELUGE_PORT"); value != "" {
-		parsedPort, parseErr := strconv.Atoi(value)
-		if parseErr != nil {
-			t.Fatalf("parse SEASONPACKARR_TEST_DELUGE_PORT: %v", parseErr)
-		}
-		port = parsedPort
-	}
+	importDelugePack(t, c, pack.importRequest(importDir, true))
+
+	status := waitDelugeChecked(t, c, pack.hashes.Legacy)
+	assert.InDelta(t, 100, status.Progress, 0.01, "complete pack progress")
+	assert.Equal(t, status.TotalSize, status.TotalDone, "complete pack bytes")
+	requireListedPack(t, c, pack, importDir)
+	requireFileReadLoad(t, c, pack.hashes.Legacy)
+	requireDelugeLabel(t, c, pack.hashes.Legacy, "seasonpackarr")
+}
+
+func TestDelugeDaemon_ResumesPartialPack(t *testing.T) {
+	importDir := requireDaemon(t, envDelugeType)
+	c := newDelugeDaemonClient(t, importDir)
+	pack := writePartialPack(t, importDir, 1)
+
+	importDelugePack(t, c, pack.importRequest(importDir, false))
+
+	status := waitDelugeChecked(t, c, pack.hashes.Legacy)
+	assertPartialProgress(t, float64(status.Progress)/100, 1)
+	requireDelugeLabel(t, c, pack.hashes.Legacy, "seasonpackarr")
+}
+
+// newDelugeDaemonClient connects with SEASONPACKARR_TEST_DELUGE_TYPE, checks
+// that the daemon major version matches it, and enables the Label plugin.
+func newDelugeDaemonClient(t *testing.T, importDir string) *delugeClient {
+	t.Helper()
+	clientType := os.Getenv(envDelugeType)
+	port, err := strconv.Atoi(envOrDefault(envDelugePort, "58846"))
+	require.NoError(t, err, "parse %s", envDelugePort)
+
 	c, err := newDelugeClient(t.Context(), &domain.Client{
 		Type:     clientType,
-		Host:     envOrDefault("SEASONPACKARR_TEST_DELUGE_HOST", "127.0.0.1"),
+		Host:     envOrDefault(envDelugeHost, "127.0.0.1"),
 		Port:     port,
-		Username: envOrDefault("SEASONPACKARR_TEST_DELUGE_USER", "seasonpackarr"),
-		Password: envOrDefault("SEASONPACKARR_TEST_DELUGE_PASS", "integration"),
+		Username: envOrDefault(envDelugeUser, "seasonpackarr"),
+		Password: envOrDefault(envDelugePass, "integration"),
 		Import: domain.ImportPolicy{
 			SavePath: importDir,
-			Tags:     []string{"SeasonPackArr"},
+			// Deluge stores labels in lowercase; the adapter must convert it.
+			Tags: []string{"SeasonPackArr"},
 		},
 	})
-	if err != nil {
-		t.Fatalf("connect to %s: %v", clientType, err)
-	}
+	require.NoError(t, err, "connect to %s", clientType)
 	c.pollInterval = 25 * time.Millisecond
 
-	raw, ok := c.c.(delugeIntegrationAPI)
-	if !ok {
-		t.Fatal("Deluge client does not expose integration-test operations")
-	}
+	raw := delugeDaemonAPI(t, c)
 	t.Cleanup(func() {
-		if err := raw.Close(); err != nil {
-			t.Errorf("close Deluge client: %v", err)
-		}
+		assert.NoError(t, raw.Close(), "close Deluge client")
 	})
+
 	ctx, cancel := context.WithTimeout(t.Context(), delugeTimeout)
 	defer cancel()
 	version, err := raw.DaemonVersion(ctx)
-	if err != nil {
-		t.Fatalf("read daemon version: %v", err)
-	}
-	if clientType == "deluge-v1" && !strings.HasPrefix(version, "1.") {
-		t.Fatalf("client type %s connected to daemon version %s", clientType, version)
-	}
-	if clientType == "deluge-v2" && !strings.HasPrefix(version, "2.") {
-		t.Fatalf("client type %s connected to daemon version %s", clientType, version)
-	}
+	require.NoError(t, err)
+	wantMajor := strings.TrimPrefix(clientType, "deluge-v") + "."
+	require.True(t, strings.HasPrefix(version, wantMajor), "client type %s connected to Deluge %s", clientType, version)
 	t.Logf("connected with %s to Deluge %s", clientType, version)
 
-	if err := raw.EnablePlugin(ctx, "Label"); err != nil {
-		t.Fatalf("enable Label plugin: %v", err)
-	}
+	require.NoError(t, raw.EnablePlugin(ctx, "Label"))
 	enabled, err := raw.GetEnabledPlugins(ctx)
-	if err != nil {
-		t.Fatalf("get enabled plugins: %v", err)
-	}
-	if !containsString(enabled, "Label") {
-		t.Fatalf("Label plugin was not enabled: %v", enabled)
-	}
-
-	t.Run("complete import, paths, and label", func(t *testing.T) {
-		packName := fmt.Sprintf("IntegrationDeluge%s.S01.1080p.WEB-DL.H.264-RlsGrp", strings.TrimPrefix(clientType, "deluge-"))
-		_, torrentBytes, hashes := buildCompletePack(t, importDir, packName, 3)
-		req := ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir, DataComplete: true}
-		importAndRegisterCleanup(t, c, raw, req)
-
-		status := requireDelugeStarted(t, c, hashes.Legacy)
-		if status.Progress != 100 || status.TotalDone != status.TotalSize {
-			t.Fatalf("complete import progress=%.2f totalDone=%d totalSize=%d", status.Progress, status.TotalDone, status.TotalSize)
-		}
-
-		torrents, err := c.GetTorrents(t.Context())
-		if err != nil {
-			t.Fatalf("list torrents: %v", err)
-		}
-		if len(torrents) != 1 || torrents[0].SavePath != filepath.Clean(importDir) {
-			t.Fatalf("unexpected torrents: %+v", torrents)
-		}
-		results := c.GetFiles(t.Context(), []string{hashes.Legacy})
-		if len(results) != 1 || results[0].Err != nil {
-			t.Fatalf("list files: %+v", results)
-		}
-		files := results[0].Files
-		if len(files) != 3 || !strings.HasPrefix(files[0].Name, packName+"/") {
-			t.Fatalf("unexpected files: %+v", files)
-		}
-		requireFileReadLoad(t, c, hashes.Legacy)
-		requireDelugeLabel(t, c, hashes.Legacy, "seasonpackarr")
-	})
-
-	t.Run("partial import checks present data and resumes", func(t *testing.T) {
-		packName := fmt.Sprintf("PartialDeluge%s.S01.1080p.WEB-DL.H.264-RlsGrp", strings.TrimPrefix(clientType, "deluge-"))
-		_, torrentBytes, hashes := buildPartialPack(t, importDir, packName, 3)
-		req := ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}
-		importAndRegisterCleanup(t, c, raw, req)
-
-		status := requireDelugeStarted(t, c, hashes.Legacy)
-		if status.Progress <= 0 || status.Progress >= 100 {
-			t.Fatalf("partial import progress=%.2f, want between 0 and 100", status.Progress)
-		}
-		if status.TotalDone <= 0 || status.TotalDone >= status.TotalSize {
-			t.Fatalf("partial import totalDone=%d totalSize=%d", status.TotalDone, status.TotalSize)
-		}
-		requireDelugeLabel(t, c, hashes.Legacy, "seasonpackarr")
-	})
+	require.NoError(t, err)
+	require.True(t, slices.Contains(enabled, "Label"), "Label plugin is not enabled: %v", enabled)
+	return c
 }
 
-func importAndRegisterCleanup(t *testing.T, c *delugeClient, raw delugeIntegrationAPI, req ImportRequest) {
+func delugeDaemonAPI(t *testing.T, c *delugeClient) delugeTestAPI {
 	t.Helper()
-	if _, err := c.Import(t.Context(), req); err != nil {
-		t.Fatalf("import: %v", err)
-	}
+	raw, ok := c.c.(delugeTestAPI)
+	require.True(t, ok, "adapter does not wrap a full RPC client")
+	return raw
+}
+
+// importDelugePack imports through the adapter and removes the torrent, not
+// its data, at cleanup.
+func importDelugePack(t *testing.T, c *delugeClient, req ImportRequest) ImportReport {
+	t.Helper()
+	raw := delugeDaemonAPI(t, c)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(t.Context(), delugeTimeout)
+		ctx, cancel := cleanupContext(t)
 		defer cancel()
-		if _, err := raw.RemoveTorrent(ctx, req.LegacyHash, false); err != nil {
-			t.Errorf("remove torrent: %v", err)
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		found, err := c.c.TorrentsStatus(ctx, deluge.StateUnspecified, []string{req.LegacyHash})
+		if !assert.NoError(t, err, "find torrent for removal") || len(found) == 0 {
+			return
 		}
+		_, err = raw.RemoveTorrent(ctx, req.LegacyHash, false)
+		assert.NoError(t, err, "remove torrent")
 	})
+	report, err := c.Import(t.Context(), req)
+	require.NoError(t, err)
+	return report
 }
 
-func requireDelugeStarted(t *testing.T, c *delugeClient, hash string) *deluge.TorrentStatus {
+// waitDelugeChecked waits for Deluge to leave the paused and checking states
+// after the adapter resumes the torrent.
+func waitDelugeChecked(t *testing.T, c *delugeClient, hash string) *deluge.TorrentStatus {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	var status *deluge.TorrentStatus
-	for ctx.Err() == nil {
+	status, checked := waitFor(t, func() *deluge.TorrentStatus {
 		c.mu.Lock()
-		var err error
-		status, err = c.c.TorrentStatus(ctx, hash)
-		c.mu.Unlock()
-		if err != nil {
-			t.Fatalf("read torrent status: %v", err)
-		}
-		if status != nil && deluge.TorrentState(status.State) != deluge.StatePaused && deluge.TorrentState(status.State) != deluge.StateChecking {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	if status == nil {
-		t.Fatal("torrent status is nil")
-	}
-	if deluge.TorrentState(status.State) == deluge.StatePaused {
-		t.Fatalf("torrent remained paused: %+v", status)
-	}
-	if deluge.TorrentState(status.State) == deluge.StateError {
-		t.Fatalf("torrent entered error state: %+v", status)
-	}
+		defer c.mu.Unlock()
+		status, err := c.c.TorrentStatus(t.Context(), hash)
+		require.NoError(t, err)
+		require.NotNil(t, status, "torrent %s is missing", hash)
+		return status
+	}, func(status *deluge.TorrentStatus) bool {
+		state := deluge.TorrentState(status.State)
+		return state != deluge.StatePaused && state != deluge.StateChecking
+	})
+	t.Logf("Deluge state=%s progress=%.2f", status.State, status.Progress)
+	require.True(t, checked, "torrent did not leave the paused and checking states")
+	require.NotEqual(t, deluge.StateError, deluge.TorrentState(status.State), "torrent entered the error state")
 	return status
 }
 
@@ -195,33 +160,12 @@ func requireDelugeLabel(t *testing.T, c *delugeClient, hash, want string) {
 	ctx, cancel := context.WithTimeout(t.Context(), delugeTimeout)
 	defer cancel()
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	plugin, err := c.label(ctx)
-	c.mu.Unlock()
-	if err != nil || plugin == nil {
-		t.Fatalf("load Label plugin: plugin=%v err=%v", plugin, err)
-	}
-	reader, ok := plugin.(delugeIntegrationLabelAPI)
-	if !ok {
-		t.Fatal("Label plugin does not expose label reads")
-	}
-	c.mu.Lock()
+	require.NoError(t, err)
+	reader, ok := plugin.(delugeTestLabelAPI)
+	require.True(t, ok, "Label plugin does not expose label reads")
 	got, err := reader.GetTorrentLabel(hash)
-	c.mu.Unlock()
-	if err != nil {
-		t.Fatalf("get torrent label: %v", err)
-	}
-	if got != want {
-		t.Fatalf("label=%q want=%q", got, want)
-	}
-}
-
-func containsString(values []string, want string) bool {
-	return slices.Contains(values, want)
-}
-
-func envOrDefault(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
+	require.NoError(t, err)
+	require.Equal(t, want, got)
 }

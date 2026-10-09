@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
+
 	pkgerrors "github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
@@ -102,17 +103,11 @@ func TestBuildTransmissionURL(t *testing.T) {
 			t.Parallel()
 			got, err := buildTransmissionURL(tt.client)
 			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
+				require.Error(t, err)
 				return
 			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got.String() != tt.want {
-				t.Errorf("buildTransmissionURL() = %q, want %q", got.String(), tt.want)
-			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got.String())
 		})
 	}
 }
@@ -121,13 +116,7 @@ func TestNew_RejectsUnknownClientType(t *testing.T) {
 	t.Parallel()
 
 	_, err := New(t.Context(), &domain.Client{Type: "notarealclient"})
-	if err == nil {
-		t.Fatal("expected error for unknown client type, got nil")
-	}
-	want := "unknown client type: notarealclient"
-	if err.Error() != want {
-		t.Fatalf("error = %q, want %q", err.Error(), want)
-	}
+	require.EqualError(t, err, "unknown client type: notarealclient")
 }
 
 func TestBuildHost(t *testing.T) {
@@ -222,17 +211,11 @@ func TestBuildHost(t *testing.T) {
 			t.Parallel()
 			got, err := buildHost(tt.client)
 			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
+				require.Error(t, err)
 				return
 			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tt.want {
-				t.Errorf("buildHost() = %q, want %q", got, tt.want)
-			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }

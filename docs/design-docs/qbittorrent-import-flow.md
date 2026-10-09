@@ -157,14 +157,14 @@ see `missingFiles`. The fallback calls `recheck`, then `stop`, then `start`
 without a wait: `stop` is the only call that clears the `FilesChecked` stop
 condition that `recheck` sets on a stopped torrent (qBittorrent 4.6 and 5.x;
 older releases resume the torrent after the check without that condition).
-`TestQbitImport_RecoversMisclassifiedCompletePack` pins this against a real
+`TestQbitDaemon_RecoversMisclassifiedCompletePack` pins this against a real
 daemon; without the `stop` call the torrent ends at `stoppedDL`.
 Regression-guarded by `TestQbitImport_WaitsForCheckingToSettle` (unit) and
-`TestQbitImport_ImportsCompletePack` (real daemon).
+`TestQbitDaemon_ImportsCompletePack` (real daemon).
 
 A partial pack must not settle: its check can take longer than the request
 timeout. `TestQbitImport_PartialPackReturnsWhileChecking` (unit) and
-`TestQbitImport_ResumesPartialPack` (real daemon) guard that path.
+`TestQbitDaemon_ResumesPartialPack` (real daemon) guard that path.
 
 ## Always started
 
@@ -197,7 +197,7 @@ is missing, Transmission keeps the torrent's current folder in the incomplete
 folder, but it still finds the hardlinked episodes in the download folder. A
 real peer then supplied the missing episode; at completion every file was in
 the download folder and the reused episodes stayed hardlinks of their
-sources. `TestTransmissionImport_IncompleteDirPartialPack` covers the check
+sources. `TestTransmissionDaemon_ResumesPartialPackWithIncompleteDir` covers the check
 against a real daemon. The old adapter forced a verify, which
 defeated the seed shortcut for complete packs. Transmission ignores BEP 47
 padding attributes, so a hybrid torrent with padding files never qualifies for
