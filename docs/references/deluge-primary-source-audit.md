@@ -12,7 +12,9 @@ dependency. No dependency source is copied into the seasonpackarr repository.
 Environment-gated integration tests connect to real Deluge 1.3.15, 2.0.3 and
 2.2.0 daemons. Every entry runs complete and partial imports, path and file
 reads, initial checks, resume, missing-label creation, and label assignment.
-The integration harness builds the daemon images from committed sources and
+`TestDelugeDaemon_DownloadsMissingEpisodes` also downloads the missing episode
+of a partial pack from a qBittorrent seeder in the harness, and checks that the
+reused episodes keep their inodes. The integration harness builds the daemon images from committed sources and
 runs the tests. The tests write their own packs and do not use static
 torrent data.
 
@@ -287,7 +289,7 @@ The daemon setup needs these parts:
 4. If the test and daemon share a network namespace, use the default localhost bind. If a container publishes the port to a host test process, set `allow_remote: true` or bind the RPC server to a non-loopback interface.
 5. Select `NewV1` or `NewV2` from the matrix entry. Do not select from the reported daemon version because login already requires the correct protocol framing.
 6. Enable the Label plugin in setup when the test covers labels. Confirm that `GetEnabledPlugins` contains `Label` before label assertions.
-7. Use a local torrent fixture and local data. Do not depend on trackers, peers, or public downloads.
+7. Use a local torrent fixture and local data. Do not depend on trackers, public peers, or public downloads. The real download test gets its data only from the harness seeder.
 8. Remove the torrent without deleting fixture data during cleanup. Stop the daemon even when a test fails.
 
 Sources:

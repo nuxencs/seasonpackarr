@@ -56,7 +56,7 @@ episodes download, and the reused episodes stay hardlinks.
 7. CI workflow. [done, #273]
 8. Seeder and qBittorrent real download test. [done, #274]
 9. Transmission real download test. [done, #275]
-10. Deluge real download test. [pending]
+10. Deluge real download test. [done, #276]
 11. Move this plan to `completed/`. [pending]
 
 ## decision log
@@ -148,6 +148,11 @@ episodes download, and the reused episodes stay hardlinks.
   is sufficient.
 - The committed Transmission `settings.json` turns off
   `port-forwarding-enabled`, so the daemon does not try UPnP or NAT-PMP.
+- The Deluge test reads the listen port from `core.get_listen_port`
+  (go-deluge `GetListenPort`). Deluge picks a random listen port by default
+  (`random_port`), so the port changes with each daemon start. The payload
+  byte count is `all_time_download`, which libtorrent also updates once per
+  second, so the wait includes it. The wait also needs `is_finished`.
 
 ## verification notes
 
@@ -245,3 +250,14 @@ episodes download, and the reused episodes stay hardlinks.
   - `-count=2` on `transmission-4.0.6` against the same daemons passes, so the
     torrent cleanup lets reruns pass.
   - `session-get` reports `port-forwarding-enabled` false on 4.0.6 and 4.1.3.
+- #276, 2026-10-09:
+  - `run.sh deluge-1.3.15 deluge-2.0.3 deluge-2.2.0` passes in strict mode,
+    including both subtests of `TestDelugeDaemon_DownloadsMissingEpisodes`
+    (2 to 5 seconds each). `GetListenPort` reports a random port on each
+    daemon start, for example 62158 and 51519.
+  - `all_time_download` equals exactly one episode (1048576 bytes) on all
+    three versions, because `assertDownloadedPack` checks it.
+  - `-count=2` on `deluge-2.2.0` and `deluge-1.3.15` against the same daemons
+    passes, so the torrent cleanup lets reruns pass.
+  - Deluge 1.3.15 reports `Queued` after the check, before it starts the
+    download. The test does not depend on it.
