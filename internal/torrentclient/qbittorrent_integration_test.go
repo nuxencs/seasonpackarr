@@ -93,13 +93,9 @@ func TestQbitDaemon_DownloadsMissingEpisodes(t *testing.T) {
 
 			prefs, err := qbitDaemonAPI(t, c).GetAppPreferencesCtx(t.Context())
 			require.NoError(t, err)
-			tor, complete := waitSeededDownload(t, s, pack.hashes.Legacy, host.Hostname(), prefs.ListenPort,
-				func() qbittorrent.Torrent {
-					found, ok, err := c.lookupTorrent(t.Context(), pack.hashes.Legacy)
-					require.NoError(t, err)
-					require.True(t, ok, "torrent %s is missing", pack.hashes.Legacy)
-					return found
-				}, func(tor qbittorrent.Torrent) bool {
+			peer := newPeerAddress(t, host.Hostname(), prefs.ListenPort)
+			tor, complete := waitSeededDownload(t, s, pack.hashes.Legacy, peer, readQbitTorrent(t, c, pack.hashes.Legacy),
+				func(tor qbittorrent.Torrent) bool {
 					// libtorrent adds payload to the downloaded count once per second,
 					// so the count can lag behind the progress.
 					return tor.Progress >= 1 && tor.Downloaded >= packEpisodeSize
@@ -206,14 +202,20 @@ func importQbitPack(t *testing.T, c *qbitClient, req ImportRequest) ImportReport
 // check. It returns the last state so callers can report it.
 func waitQbitActive(t *testing.T, c *qbitClient, hash string) (qbittorrent.Torrent, bool) {
 	t.Helper()
-	tor, active := waitFor(t.Context(), func() qbittorrent.Torrent {
-		found, ok, err := c.lookupTorrent(t.Context(), hash)
-		require.NoError(t, err)
-		require.True(t, ok, "torrent %s is missing", hash)
-		return found
-	}, func(tor qbittorrent.Torrent) bool {
+	tor, active := waitFor(t.Context(), readQbitTorrent(t, c, hash), func(tor qbittorrent.Torrent) bool {
 		return isActiveTorrentState(tor.State)
 	})
 	t.Logf("qBittorrent state=%s progress=%.2f", tor.State, tor.Progress)
 	return tor, active
+}
+
+// readQbitTorrent returns a waitFor read function that stops the test when the
+// torrent is missing.
+func readQbitTorrent(t *testing.T, c *qbitClient, hash string) func() qbittorrent.Torrent {
+	return func() qbittorrent.Torrent {
+		found, ok, err := c.lookupTorrent(t.Context(), hash)
+		require.NoError(t, err)
+		require.True(t, ok, "torrent %s is missing", hash)
+		return found
+	}
 }

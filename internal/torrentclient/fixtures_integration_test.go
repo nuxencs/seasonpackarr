@@ -355,13 +355,21 @@ func (s *seeder) seed(t *testing.T, name string) testPack {
 	pack := writeCompletePack(t, s.dir, name)
 	hash := pack.hashes.Legacy
 
+	lookup := func(ctx context.Context) (qbittorrent.Torrent, bool, error) {
+		found, err := s.api.GetTorrentsCtx(ctx, qbittorrent.TorrentFilterOptions{Hashes: []string{hash}})
+		if err != nil || len(found) == 0 {
+			return qbittorrent.Torrent{}, false, err
+		}
+		return found[0], true, nil
+	}
+
 	t.Cleanup(func() {
 		ctx, cancel := cleanupContext(t)
 		defer cancel()
 		assert.NoError(t, s.api.DeleteTorrentsCtx(ctx, []string{hash}, false), "remove torrent from the seeder")
 		assertRemoved(t, hash, func() (bool, error) {
-			found, err := s.api.GetTorrentsCtx(ctx, qbittorrent.TorrentFilterOptions{Hashes: []string{hash}})
-			return len(found) > 0, err
+			_, found, err := lookup(ctx)
+			return found, err
 		})
 	})
 	options := (&qbittorrent.TorrentAddOptions{SavePath: s.dir, SkipHashCheck: true}).Prepare()
@@ -369,12 +377,9 @@ func (s *seeder) seed(t *testing.T, name string) testPack {
 	require.NoError(t, err, "add torrent to the seeder")
 
 	tor, seeding := waitFor(t.Context(), func() qbittorrent.Torrent {
-		found, err := s.api.GetTorrentsCtx(t.Context(), qbittorrent.TorrentFilterOptions{Hashes: []string{hash}})
+		tor, _, err := lookup(t.Context())
 		require.NoError(t, err)
-		if len(found) == 0 {
-			return qbittorrent.Torrent{}
-		}
-		return found[0]
+		return tor
 	}, func(tor qbittorrent.Torrent) bool {
 		return tor.Progress >= 1 &&
 			(tor.State == qbittorrent.TorrentStateUploading || tor.State == qbittorrent.TorrentStateStalledUp)
@@ -383,16 +388,21 @@ func (s *seeder) seed(t *testing.T, name string) testPack {
 	return pack
 }
 
-// waitSeededDownload connects the seeder to the client under test at host and
-// port, then calls read until done reports true or daemonTimeout ends. host is
-// the client's compose service name. qBittorrent addPeers needs an IP address.
-func waitSeededDownload[T any](t *testing.T, s *seeder, hash, host string, port int, read func() T, done func(T) bool) (T, bool) {
+// newPeerAddress returns the <ip>:<port> address of the client under test that
+// qBittorrent addPeers needs. host is the client's compose service name.
+func newPeerAddress(t *testing.T, host string, port int) string {
 	t.Helper()
 	require.True(t, port > 0 && port <= 65535, "client listen port %d", port)
 	addrs, err := net.DefaultResolver.LookupNetIP(t.Context(), "ip4", host)
 	require.NoError(t, err, "resolve client host %s", host)
 	require.NotEmpty(t, addrs, "client host %s has no IPv4 address", host)
-	peer := netip.AddrPortFrom(addrs[0], uint16(port)).String()
+	return netip.AddrPortFrom(addrs[0], uint16(port)).String()
+}
+
+// waitSeededDownload connects the seeder to the client under test at peer, then
+// calls read until done reports true or daemonTimeout ends.
+func waitSeededDownload[T any](t *testing.T, s *seeder, hash, peer string, read func() T, done func(T) bool) (T, bool) {
+	t.Helper()
 	t.Logf("seeder connects to the client at %s", peer)
 
 	var added time.Time
@@ -420,12 +430,18 @@ func assertDownloadedPack(t *testing.T, importDir string, pack testPack, missing
 			continue
 		}
 		sourceInfo, err := os.Stat(sourcePath)
-		require.NoError(t, err)
+		if !assert.NoError(t, err, "source file %s", file) {
+			continue
+		}
 
 		source, err := os.ReadFile(sourcePath)
-		require.NoError(t, err)
+		if !assert.NoError(t, err, "source file %s", file) {
+			continue
+		}
 		imported, err := os.ReadFile(importPath)
-		require.NoError(t, err)
+		if !assert.NoError(t, err, "pack file %s", file) {
+			continue
+		}
 		// bytes.Equal, because a diff of two 1 MiB files is unreadable.
 		assert.True(t, bytes.Equal(source, imported), "content of %s does not match the source", file)
 

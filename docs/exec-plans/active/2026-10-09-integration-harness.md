@@ -132,6 +132,8 @@ episodes download, and the reused episodes stay hardlinks.
   and content, and only the byte count shows the redownload. libtorrent adds
   payload to the count once per second, so the qBittorrent wait includes the
   count, not only the progress.
+  The Transmission and Deluge tests must give `assertDownloadedPack` the
+  payload byte count of their client, and their wait must include it too.
 - The test repeats `addPeers` every 2 seconds until the download completes,
   so one failed connect attempt cannot stall it.
 

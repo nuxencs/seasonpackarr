@@ -267,8 +267,9 @@ locally and in the integration workflow.
   adapter. `seeder.seed` writes the full pack into the seed folder and seeds it.
   `writeLinkedPack` writes the source episodes below the import folder and
   hardlinks all except the missing one into the pack folder. After the import,
-  `waitSeededDownload` resolves the client's host name to its IP address and
-  connects the seeder to the client's listen port with `addPeers`.
+  `newPeerAddress` resolves the client's host name and listen port to the
+  `<ip>:<port>` address, and `waitSeededDownload` connects the seeder to it
+  with `addPeers`.
   `assertDownloadedPack` checks the file content, that reused episodes keep
   the inode of their source files, and that only the missing episode
   downloaded.
