@@ -28,6 +28,9 @@ import (
 // same path for this process and for the daemon.
 const (
 	envImportDir = "SEASONPACKARR_TEST_IMPORT_DIR"
+	// envRequireDaemons set to 1 fails tests whose gate settings are missing,
+	// so a harness configuration mistake cannot pass as a run of skips.
+	envRequireDaemons = "SEASONPACKARR_TEST_REQUIRE_DAEMONS"
 
 	envQbitHost = "SEASONPACKARR_TEST_QBIT_HOST"
 	envQbitUser = "SEASONPACKARR_TEST_QBIT_USER"
@@ -54,7 +57,8 @@ const (
 )
 
 // requireDaemon skips the test unless the import folder and the client's gate
-// variable are set. It returns the import folder.
+// variable are set. In strict mode it fails the test instead. It returns the
+// import folder.
 func requireDaemon(t *testing.T, gateKey string) string {
 	t.Helper()
 	var missing []string
@@ -64,7 +68,11 @@ func requireDaemon(t *testing.T, gateKey string) string {
 		}
 	}
 	if len(missing) > 0 {
-		t.Skipf("set %s to run this integration test", strings.Join(missing, " and "))
+		message := fmt.Sprintf("set %s to run this integration test", strings.Join(missing, " and "))
+		if os.Getenv(envRequireDaemons) == "1" {
+			t.Fatalf("%s: %s=1 requires every daemon setting", message, envRequireDaemons)
+		}
+		t.Skip(message)
 	}
 	return os.Getenv(envImportDir)
 }

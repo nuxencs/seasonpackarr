@@ -1,0 +1,39 @@
+# Base of the integration harness. run.sh adds one compose.<client>.yaml overlay
+# for each entry. Every container mounts the named data volume at /data, so the
+# test process and the daemons see packs and hardlinks at the same path (ADR-0001).
+services:
+  # Some hotio images refuse to run as root, so the daemons and the tests run as
+  # uid 1000. Fresh volumes belong to root until this step gives them to uid 1000.
+  volume-init:
+    image: ${GO_IMAGE:?run.sh sets GO_IMAGE from the release Dockerfile}
+    command: [find, /data, /cache, "!", -user, "1000", -exec, chown, "1000:1000", "{}", +]
+    volumes:
+      - data:/data
+      - go-cache:/cache
+
+  test:
+    image: ${GO_IMAGE:?run.sh sets GO_IMAGE from the release Dockerfile}
+    user: "1000:1000"
+    working_dir: /src
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+    environment:
+      CGO_ENABLED: "0"
+      HOME: /tmp
+      GOCACHE: /cache/build
+      GOMODCACHE: /cache/mod
+      GOTOOLCHAIN: local
+      SEASONPACKARR_TEST_IMPORT_DIR: /data/import
+      SEASONPACKARR_TEST_REQUIRE_DAEMONS: "1"
+    volumes:
+      - ../../../..:/src:ro
+      - data:/data
+      - go-cache:/cache
+
+volumes:
+  data:
+  # The Go caches outlive teardown, so each entry does not download and build again.
+  go-cache:
+    name: seasonpackarr-harness-go-cache
+    external: true

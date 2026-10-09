@@ -194,6 +194,8 @@ back into it, see [Import Policy](#import-policy).
 
 #### qBittorrent
 
+seasonpackarr supports qBittorrent 4.3.9 to 5.2.4. The integration tests run against these versions.
+
 For qBittorrent clients, you can authenticate with the traditional `username` and `password` fields, or with `apiKey`
 when using qBittorrent 5.2.0 or newer. If `apiKey` is set, seasonpackarr uses qBittorrent API key authentication for
 that client instead of username/password login.

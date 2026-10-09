@@ -237,7 +237,8 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
 ### Torrent-client integration tests
 
 Integration tests run against real daemons. They use the `integration` build
-tag and are not part of the CI workflow.
+tag and are not part of the CI workflow. The harness in
+`internal/torrentclient/testdata/harness/` starts the daemons and runs them.
 
 - `internal/torrentclient/<client>_integration_test.go` holds one client's
   tests. `fixtures_integration_test.go` holds the shared fixtures, for example
@@ -246,7 +247,10 @@ tag and are not part of the CI workflow.
 - Names are `Test<Client>Daemon_<Behavior>` (`TestQbitDaemon_ResumesPartialPack`).
   `Daemon` separates them from the unit tests of the same adapter.
 - Each test calls `requireDaemon` first. It skips the test when the client's
-  gate variable or `SEASONPACKARR_TEST_IMPORT_DIR` is not set.
+  gate variable or `SEASONPACKARR_TEST_IMPORT_DIR` is not set. When
+  `SEASONPACKARR_TEST_REQUIRE_DAEMONS=1` (strict mode), it fails the test
+  instead and names the missing settings. Skips for features that a daemon
+  version does not support stay skips in strict mode.
 - `packName` names each pack after the test, so tests do not share pack
   folders. Deluge tests add the client type, because Deluge 1 and Deluge 2 runs
   can share one import folder.
@@ -261,7 +265,7 @@ The import folder must have the same path for the test process and the daemon.
 
 | Client | Gate variable | Other variables |
 | --- | --- | --- |
-| all | `SEASONPACKARR_TEST_IMPORT_DIR` | |
+| all | `SEASONPACKARR_TEST_IMPORT_DIR` | `SEASONPACKARR_TEST_REQUIRE_DAEMONS` (`1` turns on strict mode) |
 | qBittorrent | `SEASONPACKARR_TEST_QBIT_HOST` | `_QBIT_USER`, `_QBIT_PASS` |
 | Transmission | `SEASONPACKARR_TEST_TRANSMISSION_HOST` | `_TRANSMISSION_USER`, `_TRANSMISSION_PASS` |
 | Deluge | `SEASONPACKARR_TEST_DELUGE_TYPE` (`deluge-v1` or `deluge-v2`) | `_DELUGE_HOST` (`127.0.0.1`), `_DELUGE_PORT` (`58846`), `_DELUGE_USER` (`seasonpackarr`), `_DELUGE_PASS` (`integration`) |
@@ -282,6 +286,43 @@ run that adapter's unit tests and integration tests together. Every test of an
 adapter has the client name in its name (`TestBuildDelugeSettings`,
 `TestNewTransmissionClient_UsesBasicAuth`), so the patterns are not anchored. `-count=1`
 prevents cached results from hiding changes in an external service.
+
+### Harness
+
+`internal/torrentclient/testdata/harness/run.sh` runs the integration tests
+against pinned daemon versions in Docker Compose. It needs only Docker. Local
+runs and the planned CI workflow use the same command (ADR-0001).
+
+```sh
+internal/torrentclient/testdata/harness/run.sh                # default entries, the CI set
+internal/torrentclient/testdata/harness/run.sh all            # default entries and the middle versions
+internal/torrentclient/testdata/harness/run.sh qbit-4.3.9     # one or more named entries
+internal/torrentclient/testdata/harness/run.sh list [all]     # entries as a JSON array
+```
+
+- An entry is `<client>-<version>`. The default entries are the oldest and
+  newest supported version of each client. `all` adds the middle qBittorrent
+  versions. Bump the newest pins by hand, so the oldest pins never move.
+- For each entry, the runner pulls or builds the images, starts the daemon,
+  waits for its health check, and runs that client's `Test<Client>Daemon_`
+  tests with `-tags=integration -count=1` in strict mode.
+- The tests run in a Go container that uses the Go image of the release
+  `Dockerfile`. It shares one named volume at `/data` with the daemons, and
+  the import folder is `/data/import`. The tests and the daemons run as uid
+  1000, so a daemon can write into the packs that the tests create.
+- Every entry starts with fresh containers and volumes, and the runner removes
+  them after the entry, also when it fails. Only the Go cache volume
+  `seasonpackarr-harness-go-cache` stays.
+- A failed entry writes the daemon logs to `testdata/harness/artifacts/<entry>/`,
+  which git ignores.
+- The compose project name comes from the checkout path, so two worktrees can
+  run the harness at the same time.
+- `compose.yaml` holds the Go test service. Each client adds a
+  `compose.<client>.yaml` overlay with its daemon and its test settings.
+- Daemons use committed credentials, and DHT, PEX and LPD are off. qBittorrent
+  uses hotio images and `qbittorrent/qBittorrent.conf` (`admin:integration`).
+  hotio publishes 4.3.9 only under the moving `legacy` tag, so the runner
+  pins it by digest.
 
 ### Coverage
 
