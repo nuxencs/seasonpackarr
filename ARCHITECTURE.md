@@ -237,8 +237,9 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
 ### Torrent-client integration tests
 
 Integration tests run against real daemons. They use the `integration` build
-tag and are not part of the CI workflow. The harness in
-`internal/torrentclient/testdata/harness/` starts the daemons and runs them.
+tag, so `go test ./...` does not run them. The harness in
+`internal/torrentclient/testdata/harness/` starts the daemons and runs them,
+locally and in the integration workflow.
 
 - `internal/torrentclient/<client>_integration_test.go` holds one client's
   tests. `fixtures_integration_test.go` holds the shared fixtures, for example
@@ -291,7 +292,7 @@ prevents cached results from hiding changes in an external service.
 
 `internal/torrentclient/testdata/harness/run.sh` runs the integration tests
 against pinned daemon versions in Docker Compose. It needs only Docker. Local
-runs and the planned CI workflow use the same command (ADR-0001).
+runs and the integration workflow use the same command (ADR-0001).
 
 ```sh
 internal/torrentclient/testdata/harness/run.sh                # default entries, the CI set
@@ -318,6 +319,21 @@ internal/torrentclient/testdata/harness/run.sh list [all]     # entries as a JSO
   which git ignores.
 - The compose project name comes from the checkout path, so two worktrees can
   run the harness at the same time.
+
+`.github/workflows/integration.yml` runs the harness in CI. It runs on pull
+requests and pushes to `develop` that change `internal/torrentclient/`,
+`go.mod`, `go.sum`, `Dockerfile`, or the workflow. A manual run has a `full`
+input.
+
+- A setup job reads the matrix from `run.sh list`, or `run.sh list all` when
+  `full` is set. Each entry is one parallel job that runs `run.sh <entry>`, so
+  a new runner entry needs no workflow change.
+- Jobs do not retry, and one failed entry does not cancel the others. A failed
+  job uploads its daemon logs as the `daemon-logs-<entry>` artifact.
+- The workflow sets `HARNESS_GHA_CACHE=1`, and the Deluge overlay then uses the
+  GitHub Actions layer cache with one scope for each package version. Local
+  runs leave it unset, because the default docker build driver cannot export a
+  cache.
 - `compose.yaml` holds the Go test service. Each client adds a
   `compose.<client>.yaml` overlay with its daemon and its test settings.
 - Daemons use committed credentials, and DHT, PEX and LPD are off. qBittorrent

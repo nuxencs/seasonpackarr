@@ -223,7 +223,8 @@ A 2 GiB pack on 2026-10-07: complete and partial packs on Deluge 2.1.2 and
 1.3.15 returned in 8-316 ms while Deluge was checking, then seeded or
 downloaded at 75%. Tagged integration tests against Deluge 1.3.15 and 2.1.2
 verify that complete packs seed and partial packs account for present bytes
-before they download missing pieces. The tests require externally managed
-daemons and are not part of CI. The adapter currently requires a v1 or hybrid
+before they download missing pieces. At that time, the tests required
+externally managed daemons. The harness and the integration workflow now run
+them. The adapter currently requires a v1 or hybrid
 torrent because seasonpackarr uses the legacy info hash as the daemon torrent
 ID.

@@ -53,7 +53,7 @@ episodes download, and the reused episodes stay hardlinks.
    Verification. [done, #270]
 5. Transmission entries. [done, #271]
 6. Deluge build definition and entries. [done, #272]
-7. CI workflow. [pending, #273]
+7. CI workflow. [done, #273]
 8. Seeder and qBittorrent real download test. [pending, #274]
 9. Transmission and Deluge real download tests. [pending]
 10. Move this plan to `completed/`. [pending]
@@ -101,6 +101,18 @@ episodes download, and the reused episodes stay hardlinks.
   extracts plugin eggs below HOME. The entrypoint writes `core.conf` with the
   `{"file": 1, "format": 1}` header. Without it, Deluge 1.3 and 2 log
   `Unable to open config file ... list index out of range` on every save.
+- The integration workflow reads its matrix from `run.sh list`, so it holds no
+  entry names, image tags, or build args. Entry-specific settings stay in the
+  runner and the compose overlays.
+- The Deluge layer cache is in `compose.deluge.yaml`, behind
+  `HARNESS_GHA_CACHE`, and not in a separate `build-push-action` step. A
+  separate step would copy the build args of each Deluge entry into the
+  workflow. The cache needs three settings in the job: a `docker-container`
+  builder (`setup-buildx-action`), `COMPOSE_BAKE=true` so that compose builds
+  on that builder, and the `ACTIONS_*` variables
+  (`crazy-max/ghaction-github-runtime`), which run steps do not get.
+- The workflow also runs when `Dockerfile` changes, because the runner reads
+  the Go test image from it.
 
 ## verification notes
 
@@ -147,3 +159,16 @@ episodes download, and the reused episodes stay hardlinks.
   - Deluge 2.0.3 on Python 3.11 logs `Unhandled error in Deferred` with a
     `findCaller` `TypeError` for most log calls. The Deluge audit records it.
     It is not a failure.
+- #273, 2026-10-09:
+  - `actionlint` passes on `.github/workflows/integration.yml`.
+  - `run.sh list` and `run.sh list all` give the 7 and 11 entries that the
+    setup job reads.
+  - `run.sh deluge-2.2.0` passes on a `docker-container` builder with
+    `COMPOSE_BAKE=true` and `HARNESS_GHA_CACHE` unset, so the empty cache
+    entries do not break a build.
+  - With `HARNESS_GHA_CACHE=1`, `docker compose build --print` gives
+    `cache-from` `type=gha,scope=deluge-2.2.0-1` and `cache-to`
+    `type=gha,mode=max,scope=deluge-2.2.0-1`.
+  - Not verified locally: the run on GitHub Actions, the GHA cache import on
+    a second run, and the `full` dispatch, which GitHub offers only after the
+    workflow is on `develop`.
