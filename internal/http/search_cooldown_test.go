@@ -16,7 +16,7 @@ func TestSearch_CooldownsAcrossRuns(t *testing.T) {
 	for _, endpoint := range []string{"/api/v1/indexer", "/1/api", "/1/download"} {
 		for _, status := range []int{429, 503} {
 			t.Run(fmt.Sprintf("%s/%d", endpoint, status), func(t *testing.T) {
-				f := newSearchFixture(t, 1, 1, 0.75)
+				f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 				cfg := f.config.Snapshot()
 				cfg.Search.IndexerIDs = []int{1}
 				f.config.Store(cfg)
@@ -56,7 +56,7 @@ func TestSearch_CooldownsAcrossRuns(t *testing.T) {
 }
 
 func TestSearch_TransientFailureDoesNotBlockOtherIndexers(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	failedDownloads := 0
 	f.respond = func(w stdhttp.ResponseWriter, r *stdhttp.Request) bool {
 		if r.URL.Path != "/1/download" {
@@ -81,7 +81,7 @@ func TestSearch_TransientFailureDoesNotBlockOtherIndexers(t *testing.T) {
 func TestSearch_ElapsedRetryAfterSkipsRestOfRun(t *testing.T) {
 	for _, header := range []string{"0", time.Now().Add(-time.Hour).UTC().Format(stdhttp.TimeFormat)} {
 		t.Run(header, func(t *testing.T) {
-			f := newSearchFixture(t, 1, 1, 0.75)
+			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 			cfg := f.config.Snapshot()
 			cfg.Search.IndexerIDs = []int{1}
 			f.config.Store(cfg)

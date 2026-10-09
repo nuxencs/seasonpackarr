@@ -12,15 +12,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hekmon/transmissionrpc/v3"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/errtrace"
+
+	"github.com/hekmon/transmissionrpc/v3"
 )
 
 const transmissionTimeout = 60 * time.Second
 
 // transmissionAPI is the subset of *transmissionrpc.Client the adapter uses. It
-// exists so the import machinery can be unit-tested against a stub.
+// exists so the import machinery can be unit-tested against a fake.
 type transmissionAPI interface {
 	TorrentGet(ctx context.Context, fields []string, ids []int64) ([]transmissionrpc.Torrent, error)
 	TorrentGetHashes(ctx context.Context, fields []string, hashes []string) ([]transmissionrpc.Torrent, error)

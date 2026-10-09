@@ -173,43 +173,121 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
 
 ## Testing Surface
 
-Test functions use `Test<Subject>` when the subject names the complete contract
-or groups closely related cases. They use `Test<Subject>_<Behavior>` for a
-distinct invariant. Subtest names use short, lowercase phrases. Test files use
-lowercase responsibility names and one of these suffixes:
+### Files
 
-- `<subject>_test.go` for unit, component, and contract coverage
-- `<subject>_integration_test.go` for tests against real external services
+- `<file>_test.go` tests the code in `<file>.go`. A large set can split by
+  aspect: `<file>_<aspect>_test.go` (`search_cooldown_test.go`,
+  `client_rss_test.go`, `processor_candidate_benchmark_test.go`).
+- Tests that drive several files through one entry point live with the entry
+  point. HTTP endpoint tests live in `internal/http/processor_handlers_test.go`.
+- `fixtures_test.go` holds the fakes and fixtures that more than one test file
+  of the package uses. A fake that one file uses stays in that file.
+- `<file>_integration_test.go` holds tests against real external services.
+  Their shared fixtures live in `fixtures_integration_test.go`.
+- `internal/http/cli_test.go` holds the end-to-end tests. They build the binary
+  with `buildCLI` and run it against the HTTP fixtures. They need no external
+  service and run in the default suite.
 
-Hermetic tests, including HTTP tests backed by `httptest`, run in the default
-suite and use responsibility-based filenames. Torrent-client integration tests
-use the `integration` build tag, require explicit
-`SEASONPACKARR_TEST_*` connection settings, and are not part of the default CI
-workflow.
+### Names
 
-Canonical commands:
+- Tests are `Test<Subject>_<Behavior>`, or `Test<Subject>` when one test covers
+  the whole contract. Behavior is a verb phrase (`ResumesPartialPack`), or a
+  noun phrase for the area the test covers (`InvalidAddresses`).
+- The subject is one of:
+  - the function under test (`TestEpisodeFileFromFiles_`), or a short type
+    name plus the method (`TestQbitImport_` for `qbitClient.Import`). When a
+    package has one main type, the method alone is enough
+    (`TestImportSeasonPack_` for `processor.importSeasonPack`).
+  - a type, when the test covers behavior across several of its methods
+    (`TestClient_`, `TestStore_`, `TestAPIClient_`)
+  - `<Name>Command` for a CLI command (`TestOperationCommand_`)
+  - `<Route>Endpoint` for one HTTP route (`TestImportEndpoint_`), or
+    `Endpoints` for a test across routes
+  - a named feature (`TestSearch_`, `TestRSS_`, `TestInventory_`, `TestCLI_`)
+- Subtests use short, lowercase phrases. Names and acronyms keep their case
+  (`deluge requires savePath`, `contains HDR`). A named table is `tests`, and
+  the loop variable is `tt`. A table written inline in the `range` needs no name.
+  A map table names its key and value instead (`for name, mutate := range tests`).
+- Test doubles are `fake<Thing>` (`fakeTorrentClient`, `fakeQbitAPI`), and their
+  methods use the receiver `f`. Fixtures and recorded data keep descriptive
+  names (`searchFixture`, `capturedRequest`).
+- Common helper prefixes:
+  - `new<Thing>`: builds a client, fixture, or fake
+  - `write<Thing>`: creates files on disk
+  - `require<Fact>` / `assert<Fact>`: checks a fact and stops the test (fails or
+    skips it) / continues on failure
+  - `wait<Condition>`: polls an external service until a condition is true
+
+### Assertions
+
+- Assertions use testify. Use `require` for setup and for checks that make the
+  rest of the test meaningless. Use `assert` for independent facts about one
+  final state or for table rows, so every failure shows.
+- `require` and `t.Fatal` stop the test only from the test goroutine. Inside
+  handlers served by `httptest.NewServer`, fixture callbacks that such a
+  handler runs (`respond`, `beforeSearch`), and other goroutines, use `assert`.
+  This also applies to the helpers they call (`postRaw`, not `postJSON`).
+  A handler that the test calls directly through `ServeHTTP` and
+  `httptest.NewRecorder` runs on the test goroutine and can use `require`.
+- Benchmarks keep `if err != nil { b.Fatal(err) }` in measured loops.
+- Log assertions use `internal/logger/loggertest`.
+- Every Go file groups imports as standard library, this module, then external
+  modules.
+
+### Torrent-client integration tests
+
+Integration tests run against real daemons. They use the `integration` build
+tag and are not part of the CI workflow.
+
+- `internal/torrentclient/<client>_integration_test.go` holds one client's
+  tests. `fixtures_integration_test.go` holds the shared fixtures, for example
+  the environment names, `requireDaemon`, the pack writers, `waitFor`, and the
+  shared assertions.
+- Names are `Test<Client>Daemon_<Behavior>` (`TestQbitDaemon_ResumesPartialPack`).
+  `Daemon` separates them from the unit tests of the same adapter.
+- Each test calls `requireDaemon` first. It skips the test when the client's
+  gate variable or `SEASONPACKARR_TEST_IMPORT_DIR` is not set.
+- `packName` names each pack after the test, so tests do not share pack
+  folders. Deluge tests add the client type, because Deluge 1 and Deluge 2 runs
+  can share one import folder.
+- Each client's `import<Client>Pack` helper registers the torrent removal with
+  `t.Cleanup` before the import. The cleanup asserts with `assertRemoved` that
+  the daemon no longer holds the torrent, so a run cannot leave a torrent
+  behind for the next one. Pack data stays on disk for inspection.
+- Cleanup calls that take a context use `cleanupContext`, because `t.Context`
+  is canceled before cleanup functions run.
+
+The import folder must have the same path for the test process and the daemon.
+
+| Client | Gate variable | Other variables |
+| --- | --- | --- |
+| all | `SEASONPACKARR_TEST_IMPORT_DIR` | |
+| qBittorrent | `SEASONPACKARR_TEST_QBIT_HOST` | `_QBIT_USER`, `_QBIT_PASS` |
+| Transmission | `SEASONPACKARR_TEST_TRANSMISSION_HOST` | `_TRANSMISSION_USER`, `_TRANSMISSION_PASS` |
+| Deluge | `SEASONPACKARR_TEST_DELUGE_TYPE` (`deluge-v1` or `deluge-v2`) | `_DELUGE_HOST` (`127.0.0.1`), `_DELUGE_PORT` (`58846`), `_DELUGE_USER` (`seasonpackarr`), `_DELUGE_PASS` (`integration`) |
+
+### Commands
 
 ```sh
 go test ./...
 go test -race ./...
-go test -tags=integration -count=1 -v ./internal/torrentclient
-go test -tags=integration -count=1 -v -run '^TestQbit' ./internal/torrentclient
-go test -tags=integration -count=1 -v -run '^TestTransmission' ./internal/torrentclient
-go test -tags=integration -count=1 -v -run '^TestDeluge' ./internal/torrentclient
+go test -tags=integration -count=1 -v -run 'Daemon_' ./internal/torrentclient
+go test -tags=integration -count=1 -v -run 'Qbit' ./internal/torrentclient
+go test -tags=integration -count=1 -v -run 'Transmission' ./internal/torrentclient
+go test -tags=integration -count=1 -v -run 'Deluge' ./internal/torrentclient
 ```
 
-The client-specific commands run that adapter's unit tests and tagged
-integration tests together. `-count=1` prevents cached results from hiding
-changes in an external service.
+`-run 'Daemon_'` runs only the integration tests. The client-specific commands
+run that adapter's unit tests and integration tests together. Every test of an
+adapter has the client name in its name (`TestBuildDelugeSettings`,
+`TestNewTransmissionClient_UsesBasicAuth`), so the patterns are not anchored. `-count=1`
+prevents cached results from hiding changes in an external service.
 
-Current explicit test coverage exists in:
+### Coverage
 
-- `internal/torrentclient/*_test.go` (unit tests plus tagged integration coverage for supported clients)
-- `internal/release/release_test.go`
-- `internal/format/format_test.go`
-- `internal/http/processor*_test.go`
-- `internal/payload/payload_test.go`
-- `internal/slices/slices_test.go`
+Packages without tests: `internal/api`, `internal/buildinfo`,
+`internal/domain`, `internal/logger`, `internal/logger/loggertest`,
+`internal/notification`.
 
 High-value regression targets:
 

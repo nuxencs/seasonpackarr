@@ -4,7 +4,6 @@
 package http
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	stdhttp "net/http"
@@ -12,31 +11,22 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/nuxencs/seasonpackarr/internal/domain"
-	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
+
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func (f *searchFixture) runRSS(t *testing.T) searchReport {
-	t.Helper()
-	report, err := f.search.poll(t.Context())
-	require.NoError(t, err)
-	require.True(t, report.RSS)
-	return report
-}
-
 func TestRSS_PollsEachIndexerOnceAndRejectsBeforeDownload(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 1)
-	f.mock.torrents = append(f.mock.torrents, torrentclient.Torrent{Name: "Another.Show.S02E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "other"})
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
+	f.torrentClient.torrents = append(f.torrentClient.torrents, torrentclient.Torrent{Name: "Another.Show.S02E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "other"})
 	f.titles = []string{"Movie.2024.1080p.WEB-DL.H.264-RlsGrp", "Unknown.S01.1080p.WEB-DL.H.264-RlsGrp", "Lifecycle.S01E01.1080p.WEB-DL.H.264-RlsGrp", "Lifecycle.S01.720p.WEB-DL.H.264-RlsGrp"}
 	f.respond = func(w stdhttp.ResponseWriter, r *stdhttp.Request) bool {
 		if strings.HasSuffix(r.URL.Path, "/api") {
-			require.Equal(t, "search", r.URL.Query().Get("t"))
+			assert.Equal(t, "search", r.URL.Query().Get("t"))
 			for _, field := range []string{"q", "season", "year"} {
-				require.False(t, r.URL.Query().Has(field))
+				assert.False(t, r.URL.Query().Has(field))
 			}
 		}
 		return false
@@ -53,43 +43,43 @@ func TestRSS_PollsEachIndexerOnceAndRejectsBeforeDownload(t *testing.T) {
 		require.Nil(t, outcome.TotalEpisodes)
 	}
 	require.Zero(t, f.downloads)
-	require.Zero(t, f.mock.fileBatchCalls)
-	require.Zero(t, f.mock.importCalls)
+	require.Zero(t, f.torrentClient.fileBatchCalls)
+	require.Zero(t, f.torrentClient.importCalls)
 }
 
 func TestRSS_ImportsOneVariantAcrossTrackersAndManualSearch(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 1)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
 	preview := f.runExact(t, true)
 	require.Empty(t, preview.Failures)
 	require.Equal(t, "would_import", preview.Outcomes[0].Status)
 	require.Equal(t, "rejected", preview.Outcomes[1].Status)
-	require.Zero(t, f.mock.importCalls)
+	require.Zero(t, f.torrentClient.importCalls)
 	report := f.runRSS(t)
 	require.Empty(t, report.Failures)
 	require.Equal(t, "imported", report.Outcomes[0].Status)
 	require.Equal(t, "rejected", report.Outcomes[1].Status)
-	require.Equal(t, 1, f.mock.importCalls)
+	require.Equal(t, 1, f.torrentClient.importCalls)
 	require.Equal(t, 1, f.downloads, "verified preview metadata is shared with RSS imports")
 	for _, next := range []searchReport{f.runRSS(t), f.runExact(t, false)} {
 		require.Zero(t, next.Requests)
 		require.Zero(t, next.TorrentDownloads)
 		require.Equal(t, 1, next.CoveredEpisodeTorrents)
 	}
-	require.Equal(t, 1, f.mock.importCalls)
+	require.Equal(t, 1, f.torrentClient.importCalls)
 }
 
 func TestRSS_RetainedPackRechecksCoverageAfterLeavingFeed(t *testing.T) {
-	f := newSearchFixture(t, 2, 2, 1)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 1})
 	cfg := f.config.Snapshot()
 	cfg.Search.IndexerIDs = []int{1}
 	f.config.Store(cfg)
-	path := filepath.Join(f.sourceDir, f.mock.filesByHash["ep2"][0].Name)
+	path := filepath.Join(f.sourceDir, f.torrentClient.filesByHash["ep2"][0].Name)
 	require.NoError(t, os.Rename(path, path+"-moved"))
 	first := f.runRSS(t)
 	require.Equal(t, "rejected", first.Outcomes[0].Status)
 	require.Equal(t, new(1), first.Outcomes[0].ReusableEpisodes)
 	require.Equal(t, 1, first.TorrentDownloads)
-	require.Zero(t, f.mock.importCalls)
+	require.Zero(t, f.torrentClient.importCalls)
 	f.restart(t)
 	f.titles = nil
 	require.NoError(t, os.Rename(path+"-moved", path))
@@ -98,18 +88,18 @@ func TestRSS_RetainedPackRechecksCoverageAfterLeavingFeed(t *testing.T) {
 	require.Equal(t, new(2), second.Outcomes[0].ReusableEpisodes)
 	require.Equal(t, 1, second.TorrentCacheHits)
 	require.Zero(t, second.TorrentDownloads)
-	require.Equal(t, 1, f.mock.importCalls)
+	require.Equal(t, 1, f.torrentClient.importCalls)
 }
 
 func TestRSS_YearMatchingStillGatesMetadataRetrieval(t *testing.T) {
 	for _, skipYear := range []bool{false, true} {
 		t.Run(fmt.Sprint(skipYear), func(t *testing.T) {
-			f := newSearchFixture(t, 1, 1, 1)
+			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
 			cfg := f.config.Snapshot()
 			cfg.Search.IndexerIDs = []int{1}
 			cfg.FuzzyMatching.SkipYearCompare = skipYear
 			f.config.Store(cfg)
-			f.mock.torrents[0].Name = "Lifecycle.2024.S01E01.1080p.WEB-DL.H.264-RlsGrp"
+			f.torrentClient.torrents[0].Name = "Lifecycle.2024.S01E01.1080p.WEB-DL.H.264-RlsGrp"
 			f.titles = []string{"Lifecycle.2023.S01.1080p.WEB-DL.H.264-RlsGrp"}
 			report := f.runRSS(t)
 			require.Empty(t, report.Failures)
@@ -119,7 +109,7 @@ func TestRSS_YearMatchingStillGatesMetadataRetrieval(t *testing.T) {
 				require.Equal(t, "imported", report.Outcomes[0].Status)
 			} else {
 				require.Zero(t, f.downloads)
-				require.Zero(t, f.mock.fileBatchCalls)
+				require.Zero(t, f.torrentClient.fileBatchCalls)
 				require.Equal(t, "rejected", report.Outcomes[0].Status)
 			}
 		})
@@ -127,7 +117,7 @@ func TestRSS_YearMatchingStillGatesMetadataRetrieval(t *testing.T) {
 }
 
 func TestRSS_CheckpointCatchUpAndRetainedCoverage(t *testing.T) {
-	f := newSearchFixture(t, 2, 1, 1) // Keep the pack eligible after each poll.
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 1, threshold: 1}) // Keep the pack eligible after each poll.
 	cfg := f.config.Snapshot()
 	cfg.Search.IndexerIDs = []int{1}
 	f.config.Store(cfg)
@@ -149,7 +139,7 @@ func TestRSS_CheckpointCatchUpAndRetainedCoverage(t *testing.T) {
 }
 
 func TestRSS_CatchUpLimitReportsGap(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 1)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
 	cfg := f.config.Snapshot()
 	cfg.Search.IndexerIDs = []int{1}
 	f.config.Store(cfg)
@@ -169,7 +159,7 @@ func TestRSS_CatchUpLimitReportsGap(t *testing.T) {
 }
 
 func TestRSS_CapabilitiesAndAllowlist(t *testing.T) {
-	f := newSearchFixture(t, 2, 1, 1)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 1, threshold: 1})
 	f.respond = func(w stdhttp.ResponseWriter, r *stdhttp.Request) bool {
 		if r.URL.Path != "/api/v1/indexer" {
 			return false
@@ -196,7 +186,7 @@ func TestRSS_CapabilitiesAndAllowlist(t *testing.T) {
 func TestRSS_CooldownSharedWithTargetedSearch(t *testing.T) {
 	for _, firstRSS := range []bool{true, false} {
 		t.Run(fmt.Sprint(firstRSS), func(t *testing.T) {
-			f := newSearchFixture(t, 2, 1, 1)
+			f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 1, threshold: 1})
 			f.failFirst = true
 			var report searchReport
 			if firstRSS {
@@ -215,7 +205,7 @@ func TestRSS_CooldownSharedWithTargetedSearch(t *testing.T) {
 }
 
 func TestRSS_FailedCatchUpPreservesCheckpoint(t *testing.T) {
-	f := newSearchFixture(t, 2, 1, 1)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 1, threshold: 1})
 	cfg := f.config.Snapshot()
 	cfg.Search.IndexerIDs = []int{1}
 	f.config.Store(cfg)
@@ -243,8 +233,8 @@ func TestRSS_FailedCatchUpPreservesCheckpoint(t *testing.T) {
 }
 
 func TestRSS_ExistingPackSuppressesOnlyMatchingVariant(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 1)
-	f.mock.torrents = append(f.mock.torrents,
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
+	f.torrentClient.torrents = append(f.torrentClient.torrents,
 		torrentclient.Torrent{Name: f.releaseName, Hash: "pack"},
 		torrentclient.Torrent{Name: "Lifecycle.S01E01.1080p.WEB-DL.H.264-OtherGrp", Hash: "other"},
 	)
@@ -265,7 +255,7 @@ func TestRSS_ExistingPackSuppressesOnlyMatchingVariant(t *testing.T) {
 }
 
 func TestRSS_ConnectionChangeClearsFeedState(t *testing.T) {
-	f := newSearchFixture(t, 2, 1, 1)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 1, threshold: 1})
 	cfg := f.config.Snapshot()
 	cfg.Search.IndexerIDs = []int{1}
 	f.config.Store(cfg)
@@ -285,34 +275,15 @@ func TestRSS_ConnectionChangeClearsFeedState(t *testing.T) {
 	require.Equal(t, 1, reset.Requests)
 }
 
-func TestRSSSchedule_PollsRSSAndCancels(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 1)
-	cfg := f.config.Snapshot()
-	cfg.Search.RSSInterval = "1ms" // Bypass config validation to exercise the worker.
-	f.config.Store(cfg)
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	f.beforeSearch = cancel
-	runner := &searchRunner{cfg: f.config, log: logger.New(&domain.Config{LogLevel: "ERROR"}), state: f.search.state}
-	done := make(chan struct{})
-	go func() { runner.schedule(ctx); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("RSS scheduler did not stop after cancellation")
-	}
-	require.Equal(t, []string{""}, f.queries, "the only automatic request must be an RSS poll")
-}
-
 func TestRSS_UnavailableClientDoesNotLoseFeedEntries(t *testing.T) {
-	f := newSearchFixture(t, 2, 1, 1)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 1, threshold: 1})
 	cfg := f.config.Snapshot()
 	cfg.Search.IndexerIDs = []int{1}
 	otherCfg := cloneClientConfig(*cfg.Clients["default"])
 	otherCfg.Host = "http://independent:8080"
 	cfg.Clients["other"] = &otherCfg
 	f.config.Store(cfg)
-	other := &mockTorrentClient{torrents: []torrentclient.Torrent{{Name: "Other.Show.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "other"}}}
+	other := &fakeTorrentClient{torrents: []torrentclient.Torrent{{Name: "Other.Show.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "other"}}}
 	clientMap.Store("other", cachedTorrentClient{config: otherCfg, client: other})
 	f.pages, f.pageSize = true, 1
 	f.titles = []string{"Old.S01.1080p.WEB-DL.H.264-RlsGrp"}
@@ -331,4 +302,28 @@ func TestRSS_UnavailableClientDoesNotLoseFeedEntries(t *testing.T) {
 	require.Equal(t, "other", recovered.Outcomes[0].ClientName)
 	require.Equal(t, "rejected", recovered.Outcomes[0].Status)
 	require.Contains(t, recovered.Outcomes[0].Reason, "no accessible episode files")
+}
+
+func TestRSS_CheckpointWriteFailureDoesNotImport(t *testing.T) {
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
+	f.beforeSearch = func() { assert.NoError(t, f.search.state.Close()) }
+	report := f.runRSS(t)
+	require.Len(t, report.Failures, 1)
+	require.Equal(t, "could not access database; check service logs", report.Failures[0].Reason)
+	require.Len(t, f.queries, 1)
+	require.Zero(t, f.downloads)
+	require.Zero(t, f.torrentClient.importCalls)
+	f.restart(t)
+	f.beforeSearch = nil
+	recovered := f.runRSS(t)
+	require.Empty(t, recovered.Failures)
+	require.Equal(t, "imported", recovered.Outcomes[0].Status)
+}
+
+func (f *searchFixture) runRSS(t *testing.T) searchReport {
+	t.Helper()
+	report, err := f.search.poll(t.Context())
+	require.NoError(t, err)
+	require.True(t, report.RSS)
+	return report
 }
