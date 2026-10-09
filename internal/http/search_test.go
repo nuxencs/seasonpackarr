@@ -20,7 +20,7 @@ import (
 )
 
 func TestSearch_PreviewGroupsEpisodesAndSelectsOneVariant(t *testing.T) {
-	f := newSearchFixture(t, 3, 3, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 3, clientEpisodes: 3, threshold: 0.75})
 	report := f.runExact(t, true)
 	require.Empty(t, report.Failures)
 	require.Equal(t, 1, report.Groups)
@@ -38,7 +38,7 @@ func TestSearch_PreviewGroupsEpisodesAndSelectsOneVariant(t *testing.T) {
 }
 
 func TestSearch_ImportsOnceAndSkipsExistingPackAcrossTrackers(t *testing.T) {
-	f := newSearchFixture(t, 2, 2, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.75})
 	first := f.runExact(t, false)
 	require.Equal(t, "imported", first.Outcomes[0].Status)
 	require.Equal(t, 1, f.torrentClient.importCalls)
@@ -68,7 +68,7 @@ func TestSearch_RespectsSmartMode(t *testing.T) {
 		{"disabled", false, 0.75, "would_import"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			f := newSearchFixture(t, 2, 1, tt.threshold)
+			f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 1, threshold: tt.threshold})
 			cfg := f.config.Snapshot()
 			cfg.SmartMode = tt.enabled
 			f.config.Store(cfg)
@@ -82,7 +82,7 @@ func TestSearch_RespectsSmartMode(t *testing.T) {
 }
 
 func TestSearch_FailedTrackerDoesNotBlockOthers(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	f.failFirst = true
 	report := f.runExact(t, true)
 	require.Len(t, report.Failures, 1)
@@ -93,7 +93,7 @@ func TestSearch_FailedTrackerDoesNotBlockOthers(t *testing.T) {
 }
 
 func TestSearch_RejectsIncompatibleResultsBeforeDownload(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	f.titles = []string{"Other.S01.1080p.WEB-DL.H.264-RlsGrp", "Lifecycle.S02.1080p.WEB-DL.H.264-RlsGrp", "Lifecycle.S01.2160p.WEB-DL.H.265-RlsGrp", "Lifecycle.S01.1080p.WEB-DL.H.264-OtherGrp"}
 	report := f.runExact(t, true)
 	for _, outcome := range report.Outcomes {
@@ -104,7 +104,7 @@ func TestSearch_RejectsIncompatibleResultsBeforeDownload(t *testing.T) {
 }
 
 func TestSearch_AuthAndOverlappingRuns(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	unauth := httptest.NewRecorder()
 	f.handler.ServeHTTP(unauth, httptest.NewRequest("POST", "/api/search", strings.NewReader(`{"dryRun":true}`)))
 	require.Equal(t, 401, unauth.Code)
@@ -129,7 +129,7 @@ func TestSearch_AuthAndOverlappingRuns(t *testing.T) {
 }
 
 func TestSearch_ConcurrentWebhookCannotAddAnotherVariantCopy(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	importing, resume := make(chan struct{}), make(chan struct{})
 	cfg := f.config.Snapshot()
 	clientMap.Store("default", cachedTorrentClient{config: *cfg.Clients["default"], client: &fakeSearchClient{fakeTorrentClient: f.torrentClient, importing: importing, resume: resume}})
@@ -145,7 +145,7 @@ func TestSearch_ConcurrentWebhookCannotAddAnotherVariantCopy(t *testing.T) {
 }
 
 func TestSearch_SeparateReleaseVariantsShareQuery(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	otherPack := "Lifecycle.S01.2160p.WEB-DL.H.265-OtherGrp"
 	otherEpisode := "Lifecycle.S01E01.2160p.WEB-DL.H.265-OtherGrp"
 	f.titles = append(f.titles, otherPack)
@@ -165,7 +165,7 @@ func TestSearch_SeparateReleaseVariantsShareQuery(t *testing.T) {
 }
 
 func TestSearch_GroupIdentityAndUnrelatedTorrents(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	for _, name := range []string{
 		"Example.2024.S01E01.1080p.WEB-DL.H.264-RlsGrp",
 		"Example.2025.S01E01.1080p.WEB-DL.H.264-RlsGrp",
@@ -187,7 +187,7 @@ func TestSearch_GroupIdentityAndUnrelatedTorrents(t *testing.T) {
 }
 
 func TestSearch_PaginationFindsPackAfterRejectedResult(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	f.pages = true
 	f.pageSize = 1
 	f.titles = []string{"Unrelated.S01.1080p.WEB-DL.H.264-RlsGrp", f.releaseName}
@@ -199,7 +199,7 @@ func TestSearch_PaginationFindsPackAfterRejectedResult(t *testing.T) {
 }
 
 func TestSearch_PreviewDeduplicatesClientAliases(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	cfg := f.config.Snapshot()
 	alias := cloneClientConfig(*cfg.Clients["default"])
 	alias.Import.Category = "other-category"
@@ -218,7 +218,7 @@ func TestSearch_PreviewDeduplicatesClientAliases(t *testing.T) {
 }
 
 func TestSearch_HonorsRateLimitAcrossRuns(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	f.failFirst = true
 	first := f.runExact(t, true)
 	require.Len(t, first.Failures, 1)
@@ -231,7 +231,7 @@ func TestSearch_HonorsRateLimitAcrossRuns(t *testing.T) {
 }
 
 func TestSearch_RejectsMalformedRequests(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	for _, body := range []string{`{"verify":true}`, "null", `{"unknown":true}`, `{} {}`, `{"dryRun":true} trailing`} {
 		response := f.postRaw(t, "/api/search", []byte(body), processorTestToken)
 		require.Equal(t, 400, response.Code)
@@ -242,7 +242,7 @@ func TestSearch_RejectsMalformedRequests(t *testing.T) {
 func TestSearch_QueryOmitsYearButMatchingRespectsSettings(t *testing.T) {
 	for _, skipYear := range []bool{false, true} {
 		t.Run(fmt.Sprintf("skip year %t", skipYear), func(t *testing.T) {
-			f := newSearchFixture(t, 1, 1, 0.75)
+			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 			cfg := f.config.Snapshot()
 			cfg.Search.IndexerIDs = []int{1}
 			cfg.FuzzyMatching.SkipYearCompare = skipYear
@@ -276,7 +276,7 @@ func TestSearch_QueryOmitsYearButMatchingRespectsSettings(t *testing.T) {
 }
 
 func TestSearch_DryRunDoesNotRetrieveFilesOrMetadata(t *testing.T) {
-	f := newSearchFixture(t, 10, 1, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 10, clientEpisodes: 1, threshold: 0.75})
 	// Even an inaccessible source must not turn discovery into exact verification.
 	require.NoError(t, os.Rename(f.sourceDir, f.sourceDir+"-moved"))
 	response := f.postJSON(t, "/api/search", map[string]any{"dryRun": true})
@@ -306,7 +306,7 @@ func TestSearch_IndexerAllowlist(t *testing.T) {
 		{"partial", []int{2, 99}, 2, 1, 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			f := newSearchFixture(t, 1, 1, 0.75)
+			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 			cfg := f.config.Snapshot()
 			cfg.Search.IndexerIDs = tt.ids
 			f.config.Store(cfg)
@@ -324,7 +324,7 @@ func TestSearch_IndexerAllowlist(t *testing.T) {
 func TestSearch_PreflightStopsBeforeMetadata(t *testing.T) {
 	for _, mode := range []string{"missing", "empty", "wrong size", "directory", "client error"} {
 		t.Run(mode, func(t *testing.T) {
-			f := newSearchFixture(t, 1, 1, 0.75)
+			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 			path := filepath.Join(f.sourceDir, f.torrentClient.filesByHash["ep1"][0].Name)
 			switch mode {
 			case "missing":
@@ -354,7 +354,7 @@ func TestSearch_PreflightStopsBeforeMetadata(t *testing.T) {
 }
 
 func TestSearch_MetadataReuseRechecksSourcesAndSettings(t *testing.T) {
-	f := newSearchFixture(t, 2, 2, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.75})
 	cfg := f.config.Snapshot()
 	cfg.Search.IndexerIDs = []int{1}
 	f.config.Store(cfg)
@@ -392,7 +392,7 @@ func TestSearch_MetadataReuseRechecksSourcesAndSettings(t *testing.T) {
 func TestSearch_MetadataConnectionChangeAndInvalidResponse(t *testing.T) {
 	for _, invalid := range []bool{false, true} {
 		t.Run(fmt.Sprint(invalid), func(t *testing.T) {
-			f := newSearchFixture(t, 1, 1, 0.75)
+			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 			cfg := f.config.Snapshot()
 			cfg.Search.IndexerIDs = []int{1}
 			f.config.Store(cfg)
@@ -414,7 +414,7 @@ func TestSearch_MetadataConnectionChangeAndInvalidResponse(t *testing.T) {
 func TestSearch_ExistingPackSkipsQueriesInEveryMode(t *testing.T) {
 	for _, req := range []SearchRequest{{DryRun: true}, {DryRun: true, Verify: true}, {}} {
 		t.Run(fmt.Sprintf("dry=%t verify=%t", req.DryRun, req.Verify), func(t *testing.T) {
-			f := newSearchFixture(t, 1, 1, 0.75)
+			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 			f.torrentClient.torrents = append(f.torrentClient.torrents, torrentclient.Torrent{Name: f.releaseName, Hash: "pack"})
 			response := f.postJSON(t, "/api/search", req)
 			require.Equal(t, 200, response.Code, response.Body.String())
@@ -458,7 +458,7 @@ func TestSearch_ExistingPackRespectsVariantAndFuzzySettings(t *testing.T) {
 		{name: "simplify WEB", pack: "Lifecycle.S01.1080p.WEB.H.264-RlsGrp", fuzzy: domain.FuzzyMatching{SimplifyWebCompare: true}, covered: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			f := newSearchFixture(t, 1, 1, 0.75)
+			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 			cfg := f.config.Snapshot()
 			cfg.FuzzyMatching = tt.fuzzy
 			f.config.Store(cfg)
@@ -481,7 +481,7 @@ func TestSearch_ExistingPackRespectsVariantAndFuzzySettings(t *testing.T) {
 }
 
 func TestSearch_ExistingPackKeepsUncoveredVariantInSameSeason(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	otherPack := "Lifecycle.S01.2160p.WEB-DL.H.265-OtherGrp"
 	otherEpisode := "Lifecycle.S01E01.2160p.WEB-DL.H.265-OtherGrp"
 	f.titles = append(f.titles, otherPack)
@@ -505,7 +505,7 @@ func TestSearch_ExistingPackKeepsUncoveredVariantInSameSeason(t *testing.T) {
 }
 
 func TestSearch_ExistingPackDoesNotSuppressIndependentClient(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	other := &fakeTorrentClient{torrents: []torrentclient.Torrent{f.torrentClient.torrents[0]}}
 	f.torrentClient.torrents = append(f.torrentClient.torrents, torrentclient.Torrent{Name: f.releaseName, Hash: "pack"})
 	cfg := f.config.Snapshot()
@@ -530,7 +530,7 @@ func TestSearch_ExistingPackDoesNotSuppressIndependentClient(t *testing.T) {
 }
 
 func TestSearch_RemovingExistingPackRestoresQuery(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	f.torrentClient.torrents = append(f.torrentClient.torrents, torrentclient.Torrent{Name: f.releaseName, Hash: "pack"})
 	first := f.runExact(t, true)
 	require.Zero(t, first.Requests)

@@ -16,7 +16,7 @@ import (
 )
 
 func TestSearch_MetadataSurvivesRestartButDecisionsDoNot(t *testing.T) {
-	f := newSearchFixture(t, 2, 2, 1)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 1})
 	cfg := f.config.Snapshot()
 	cfg.Search.IndexerIDs = []int{1}
 	f.config.Store(cfg)
@@ -36,7 +36,7 @@ func TestSearch_MetadataSurvivesRestartButDecisionsDoNot(t *testing.T) {
 }
 
 func TestSearch_DatabaseFailureStopsDiscovery(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 1)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
 	require.NoError(t, f.search.state.Close())
 	response := f.postJSON(t, "/api/search", map[string]any{"dryRun": false})
 	require.Equal(t, 500, response.Code)
@@ -49,7 +49,7 @@ func TestSearch_DatabaseFailureStopsDiscovery(t *testing.T) {
 func TestSearch_MetadataFailureDoesNotImport(t *testing.T) {
 	for _, stage := range []string{"read", "write"} {
 		t.Run(stage, func(t *testing.T) {
-			f := newSearchFixture(t, 1, 1, 1)
+			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
 			f.pages, f.pageSize = true, 1
 			if stage == "read" {
 				f.beforeSearch = func() { assert.NoError(t, f.search.state.Close()) }

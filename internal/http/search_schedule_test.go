@@ -27,7 +27,7 @@ func TestRSSSchedule_OptInAndReload(t *testing.T) {
 }
 
 func TestRSSSchedule_CancellationStopsWorker(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	runner := &searchRunner{cfg: f.config}
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
@@ -42,7 +42,7 @@ func TestRSSSchedule_CancellationStopsWorker(t *testing.T) {
 }
 
 func TestRSSSchedule_PollsRSSAndCancels(t *testing.T) {
-	f := newSearchFixture(t, 1, 1, 1)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
 	cfg := f.config.Snapshot()
 	cfg.Search.RSSInterval = "1ms" // Bypass config validation to exercise the worker.
 	f.config.Store(cfg)

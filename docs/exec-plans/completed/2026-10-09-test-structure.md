@@ -94,6 +94,12 @@ Phase 2, every other test:
 - Review follow-up: `loggertest.Events` is a snapshot type with `Require` and
   `RequireField`, and field values are strings. JSON numbers decode as
   `float64`, so an `any` value could never match an `int`.
+- Second review: `internal/http` fixtures take a `fixtureOptions` struct, so
+  call sites name the pack size, client episodes, threshold, and logger.
+- Second review: the client-specific `-run` patterns are not anchored. Tests
+  such as `TestBuildDelugeSettings` have the client name in the middle.
+- Second review: `waitFor` takes a context, so `assertRemoved` can use it from
+  a cleanup, where `t.Context` is already canceled.
 - `loggertest.Logger.Fatal` panics instead of exiting. No production code
   under test calls `Fatal`.
 
@@ -111,7 +117,8 @@ Phase 2, every other test:
   `assertPartialProgress` uses a 0.01 tolerance.
 - `go test ./...` and `gofumpt -l .` pass. `govulncheck ./...` reports no called vulnerabilities.
 - Phase 2: `go test -list '.*' ./...` lists 234 tests and benchmarks before and
-  after. The diff contains only the planned renames. The integration list is
+  after phase 2, and 235 after the review follow-up split the Deluge listing
+  test. The diff contains only the planned renames. The integration list is
   unchanged.
 - Phase 2: `go vet ./...`, `go vet -tags=integration ./internal/torrentclient`,
   `go test ./...`, `go test -race ./...`, and `gofumpt -l .` pass.

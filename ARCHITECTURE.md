@@ -199,8 +199,9 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
   - `<Route>Endpoint` for one HTTP route (`TestImportEndpoint_`), or
     `Endpoints` for a test across routes
   - a named feature (`TestSearch_`, `TestRSS_`, `TestInventory_`)
-- Subtests use short, lowercase phrases. Tables are `tests`, and the loop
-  variable is `tt`.
+- Subtests use short, lowercase phrases. Names and acronyms keep their case
+  (`deluge requires savePath`, `contains HDR`). Tables are `tests`, and the
+  loop variable is `tt`.
 - Test doubles are `fake<Thing>` (`fakeTorrentClient`, `fakeQbitAPI`). Fixtures
   and recorded data keep descriptive names (`searchFixture`, `capturedRequest`).
 - Common helper prefixes:
@@ -253,7 +254,7 @@ The import folder must have the same path for the test process and the daemon.
 | all | `SEASONPACKARR_TEST_IMPORT_DIR` | |
 | qBittorrent | `SEASONPACKARR_TEST_QBIT_HOST` | `_QBIT_USER`, `_QBIT_PASS` |
 | Transmission | `SEASONPACKARR_TEST_TRANSMISSION_HOST` | `_TRANSMISSION_USER`, `_TRANSMISSION_PASS` |
-| Deluge | `SEASONPACKARR_TEST_DELUGE_TYPE` (`deluge-v1` or `deluge-v2`) | `_DELUGE_HOST` (`127.0.0.1`), `_DELUGE_PORT` (`58846`), `_DELUGE_USER`, `_DELUGE_PASS` |
+| Deluge | `SEASONPACKARR_TEST_DELUGE_TYPE` (`deluge-v1` or `deluge-v2`) | `_DELUGE_HOST` (`127.0.0.1`), `_DELUGE_PORT` (`58846`), `_DELUGE_USER` (`seasonpackarr`), `_DELUGE_PASS` (`integration`) |
 
 ### Commands
 
@@ -261,13 +262,15 @@ The import folder must have the same path for the test process and the daemon.
 go test ./...
 go test -race ./...
 go test -tags=integration -count=1 -v -run 'Daemon_' ./internal/torrentclient
-go test -tags=integration -count=1 -v -run '^TestQbit' ./internal/torrentclient
-go test -tags=integration -count=1 -v -run '^TestTransmission' ./internal/torrentclient
-go test -tags=integration -count=1 -v -run '^TestDeluge' ./internal/torrentclient
+go test -tags=integration -count=1 -v -run 'Qbit' ./internal/torrentclient
+go test -tags=integration -count=1 -v -run 'Transmission' ./internal/torrentclient
+go test -tags=integration -count=1 -v -run 'Deluge' ./internal/torrentclient
 ```
 
 `-run 'Daemon_'` runs only the integration tests. The client-specific commands
-run that adapter's unit tests and integration tests together. `-count=1`
+run that adapter's unit tests and integration tests together. Every test of an
+adapter has the client name in its name (`TestBuildDelugeSettings`,
+`TestNewTransmissionClient_UsesBasicAuth`), so the patterns are not anchored. `-count=1`
 prevents cached results from hiding changes in an external service.
 
 ### Coverage

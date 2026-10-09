@@ -38,7 +38,7 @@ func TestCandidateEndpoint_LogsStructuredCompatibilityMismatch(t *testing.T) {
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
 
 	log := loggertest.New()
-	f := newProcessorHTTPFixtureWithLogger(t, 2, 2, 0.5, log)
+	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.5, log: log})
 	f.torrentClient.torrents[0].Name = "Lifecycle.S01E01.1080p.BluRay.H.264-RlsGrp"
 	cfg := f.config.Snapshot()
 	cfg.FuzzyMatching.SimplifyWebCompare = true
@@ -65,7 +65,7 @@ func TestCandidateEndpoint_LogsEachMatchingClientReleaseAtDebug(t *testing.T) {
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
 
 	log := loggertest.New()
-	f := newProcessorHTTPFixtureWithLogger(t, 2, 2, 0.5, log)
+	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.5, log: log})
 
 	response := f.postJSON(t, "/api/candidate", map[string]any{
 		"name":       f.releaseName,
@@ -87,7 +87,7 @@ func TestMatchEndpoint_LogsUnmatchedTorrentEpisode(t *testing.T) {
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
 
 	log := loggertest.New()
-	f := newProcessorHTTPFixtureWithLogger(t, 2, 1, 0.5, log)
+	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 1, threshold: 0.5, log: log})
 
 	response := f.postJSON(t, "/api/match", f.packPayload())
 	require.Equal(t, domain.StatusSuccessfulMatch.Code(), response.Code)
@@ -111,7 +111,7 @@ func TestMatchEndpoint_LogsReasonWhenNoEpisodeIsReusable(t *testing.T) {
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
 
 	log := loggertest.New()
-	f := newProcessorHTTPFixtureWithLogger(t, 1, 1, 0, log)
+	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0, log: log})
 	f.torrentClient.filesByHash["ep1"][0].Size = 2
 
 	response := f.postJSON(t, "/api/match", f.packPayload())
@@ -136,7 +136,7 @@ func TestMatchEndpoint_LogsBelowThresholdAsExpectedRejection(t *testing.T) {
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
 
 	log := loggertest.New()
-	f := newProcessorHTTPFixtureWithLogger(t, 2, 1, 0.75, log)
+	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 1, threshold: 0.75, log: log})
 
 	response := f.postJSON(t, "/api/match", f.packPayload())
 	require.Equal(t, domain.StatusBelowThreshold.Code(), response.Code)
@@ -153,7 +153,7 @@ func TestImportEndpoint_LogsClientImportStageTiming(t *testing.T) {
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
 
 	log := loggertest.New()
-	f := newProcessorHTTPFixtureWithLogger(t, 2, 2, 0.75, log)
+	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.75, log: log})
 	f.torrentClient.importReport = torrentclient.ImportReport{Stages: []torrentclient.ImportStageReport{
 		{Stage: torrentclient.ImportStageConfig, Duration: 2 * time.Millisecond},
 		{Stage: torrentclient.ImportStageAdd, Duration: 12 * time.Millisecond},
@@ -200,7 +200,7 @@ func TestImportEndpoint_LogsTotalTimingOnImportFailure(t *testing.T) {
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
 
 	log := loggertest.New()
-	f := newProcessorHTTPFixtureWithLogger(t, 1, 1, 0, log)
+	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0, log: log})
 	f.torrentClient.importReport = torrentclient.ImportReport{Stages: []torrentclient.ImportStageReport{
 		{Stage: torrentclient.ImportStageConfig, Duration: time.Millisecond},
 		{Stage: torrentclient.ImportStageAdd, Duration: 12 * time.Millisecond},
@@ -230,7 +230,7 @@ func TestImportEndpoint_LogsFailedDestinationResolutionTiming(t *testing.T) {
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
 
 	log := loggertest.New()
-	f := newProcessorHTTPFixtureWithLogger(t, 1, 1, 0, log)
+	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0, log: log})
 
 	matchResponse := f.postJSON(t, "/api/match", f.packPayload())
 	require.Equal(t, domain.StatusSuccessfulMatch.Code(), matchResponse.Code)
@@ -257,7 +257,7 @@ func TestImportEndpoint_LogsFailedPlanRebuildTiming(t *testing.T) {
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
 
 	log := loggertest.New()
-	f := newProcessorHTTPFixtureWithLogger(t, 1, 1, 0, log)
+	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0, log: log})
 	f.torrentClient.filesByHash["ep1"][0].Size = 2
 
 	importResponse := f.postJSON(t, "/api/import", f.packPayload())
@@ -275,7 +275,7 @@ func TestImportEndpoint_LogsFailedPlanRebuildTiming(t *testing.T) {
 }
 
 func TestEndpoints_ImportReusesAcceptedPlan(t *testing.T) {
-	f := newProcessorHTTPFixture(t, 2, 2, 0.75)
+	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.75})
 
 	candidate := f.postJSON(t, "/api/candidate", map[string]any{
 		"name":       f.releaseName,
@@ -310,7 +310,7 @@ func TestImportEndpoint_RefreshesPlanWhenSourceMoves(t *testing.T) {
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
 
 	log := loggertest.New()
-	f := newProcessorHTTPFixtureWithLogger(t, 2, 2, 1, log)
+	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 1, log: log})
 
 	matchResponse := f.postJSON(t, "/api/match", f.packPayload())
 	require.Equal(t, domain.StatusSuccessfulMatch.Code(), matchResponse.Code)
@@ -335,10 +335,7 @@ func TestImportEndpoint_RefreshesPlanWhenSourceMoves(t *testing.T) {
 	require.True(t, f.torrentClient.importCalled)
 
 	logs := log.Events(t)
-	missing := logs.RequireField(t, "hardlink source is missing",
-		"source",
-		filepath.Join(f.sourceDir, episodeFile),
-	)
+	missing := logs.RequireField(t, "hardlink source is missing", "source", filepath.Join(f.sourceDir, episodeFile))
 	require.Equal(t, "warn", missing["level"])
 	refresh := logs.Require(t, "import plan refreshed after missing hardlink source")
 	require.Equal(t, true, refresh["successful"])
@@ -352,7 +349,7 @@ func TestImportEndpoint_RefreshesAtMostOnceWhenSourceMovesAgain(t *testing.T) {
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
 
 	log := loggertest.New()
-	f := newProcessorHTTPFixtureWithLogger(t, 2, 2, 1, log)
+	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 1, log: log})
 
 	matchResponse := f.postJSON(t, "/api/match", f.packPayload())
 	require.Equal(t, domain.StatusSuccessfulMatch.Code(), matchResponse.Code)
@@ -396,7 +393,7 @@ func TestImportEndpoint_RefreshesAtMostOnceWhenSourceMovesAgain(t *testing.T) {
 }
 
 func TestImportEndpoint_RejectsRefreshedPlanBelowThreshold(t *testing.T) {
-	f := newProcessorHTTPFixture(t, 2, 2, 1)
+	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 1})
 
 	matchResponse := f.postJSON(t, "/api/match", f.packPayload())
 	require.Equal(t, domain.StatusSuccessfulMatch.Code(), matchResponse.Code)
@@ -421,7 +418,7 @@ func TestImportEndpoint_RejectsRefreshedPlanBelowThreshold(t *testing.T) {
 }
 
 func TestEndpoints_AcceptMP4EpisodesAndIgnoreExtraVideos(t *testing.T) {
-	f := newProcessorHTTPFixture(t, 1, 1, 1)
+	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
 	episodeRelease := "Lifecycle.S01E01.1080p.WEB-DL.H.264-RlsGrp"
 	episodeFile := episodeRelease + ".mp4"
 	writeEpisode(t, filepath.Join(f.sourceDir, episodeFile))
@@ -457,7 +454,7 @@ func TestEndpoints_FailuresDoNotMutateClientOrFilesystem(t *testing.T) {
 	t.Run("authentication", func(t *testing.T) {
 		for _, path := range []string{"/api/candidate", "/api/match", "/api/import"} {
 			t.Run(path, func(t *testing.T) {
-				f := newProcessorHTTPFixture(t, 1, 1, 0)
+				f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 				body, err := json.Marshal(f.packPayload())
 				require.NoError(t, err)
 				for _, token := range []string{"", "wrong-token"} {
@@ -475,7 +472,7 @@ func TestEndpoints_FailuresDoNotMutateClientOrFilesystem(t *testing.T) {
 	})
 
 	t.Run("invalid JSON", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 1, 1, 0)
+		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		res := f.postRaw(t, "/api/match", []byte(`{"name":`), processorTestToken)
 		require.Equal(t, domain.StatusDecodingError.Code(), res.Code)
 		require.Zero(t, f.torrentClient.torrentCalls)
@@ -483,7 +480,7 @@ func TestEndpoints_FailuresDoNotMutateClientOrFilesystem(t *testing.T) {
 	})
 
 	t.Run("unknown client", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 1, 1, 0)
+		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		payload := f.packPayload()
 		payload["clientname"] = "missing"
 		res := f.postJSON(t, "/api/match", payload)
@@ -493,7 +490,7 @@ func TestEndpoints_FailuresDoNotMutateClientOrFilesystem(t *testing.T) {
 	})
 
 	t.Run("match missing torrent bytes", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 1, 1, 0)
+		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		res := f.postJSON(t, "/api/match", map[string]any{"name": f.releaseName, "clientname": "default"})
 		require.Equal(t, domain.StatusTorrentBytesError.Code(), res.Code)
 		require.Zero(t, f.torrentClient.torrentCalls)
@@ -501,7 +498,7 @@ func TestEndpoints_FailuresDoNotMutateClientOrFilesystem(t *testing.T) {
 	})
 
 	t.Run("import missing torrent bytes", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 1, 1, 0)
+		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		res := f.postJSON(t, "/api/import", map[string]any{"name": f.releaseName, "clientname": "default"})
 		require.Equal(t, domain.StatusTorrentBytesError.Code(), res.Code)
 		require.Zero(t, f.torrentClient.torrentCalls)
@@ -509,7 +506,7 @@ func TestEndpoints_FailuresDoNotMutateClientOrFilesystem(t *testing.T) {
 	})
 
 	t.Run("invalid base64", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 1, 1, 0)
+		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		payload := f.packPayload()
 		payload["torrent"] = "%%%"
 		res := f.postJSON(t, "/api/match", payload)
@@ -520,7 +517,7 @@ func TestEndpoints_FailuresDoNotMutateClientOrFilesystem(t *testing.T) {
 	})
 
 	t.Run("malformed torrent metadata", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 1, 1, 0)
+		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		payload := f.packPayload()
 		payload["torrent"] = base64.StdEncoding.EncodeToString([]byte("not-a-torrent"))
 		res := f.postJSON(t, "/api/match", payload)
@@ -531,7 +528,7 @@ func TestEndpoints_FailuresDoNotMutateClientOrFilesystem(t *testing.T) {
 	})
 
 	t.Run("torrent without episode files", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 1, 1, 0)
+		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		infoBytes, err := bencode.Marshal(metainfo.Info{
 			Name:        f.releaseName,
 			PieceLength: 256 * 1024,
@@ -550,7 +547,7 @@ func TestEndpoints_FailuresDoNotMutateClientOrFilesystem(t *testing.T) {
 	})
 
 	t.Run("below threshold", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 4, 2, 0.75)
+		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 4, clientEpisodes: 2, threshold: 0.75})
 		res := f.postJSON(t, "/api/match", f.packPayload())
 		require.Equal(t, domain.StatusBelowThreshold.Code(), res.Code)
 		require.Zero(t, f.torrentClient.importCalls)
@@ -561,7 +558,7 @@ func TestEndpoints_FailuresDoNotMutateClientOrFilesystem(t *testing.T) {
 func TestEndpoints_RemovedWebhookRoutesReturnNotFound(t *testing.T) {
 	for _, path := range []string{"/api/pack", "/api/parse"} {
 		t.Run(path, func(t *testing.T) {
-			f := newProcessorHTTPFixture(t, 1, 1, 0)
+			f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 			res := f.postJSON(t, path, f.packPayload())
 			require.Equal(t, stdhttp.StatusNotFound, res.Code)
 			require.Empty(t, res.Header().Get("Location"))
@@ -577,7 +574,7 @@ func TestEndpoints_RemovedWebhookRoutesReturnNotFound(t *testing.T) {
 
 func TestImportEndpoint_RebuildsUnavailableOrInvalidPlans(t *testing.T) {
 	t.Run("missing after restart", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 1, 1, 0)
+		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
 		planMap = xsync.NewMapOf[importPlanCacheKey, cachedImportPlan]()
@@ -591,7 +588,7 @@ func TestImportEndpoint_RebuildsUnavailableOrInvalidPlans(t *testing.T) {
 	})
 
 	t.Run("expired", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 1, 1, 0)
+		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
 		hashes, err := torrents.InfoHashes(f.torrent)
@@ -610,7 +607,7 @@ func TestImportEndpoint_RebuildsUnavailableOrInvalidPlans(t *testing.T) {
 	})
 
 	t.Run("release name changed", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 1, 1, 0)
+		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
 		payload := f.packPayload()
@@ -622,7 +619,7 @@ func TestImportEndpoint_RebuildsUnavailableOrInvalidPlans(t *testing.T) {
 	})
 
 	t.Run("torrent identity changed", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 1, 1, 0)
+		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 		changedTorrent, err := torrents.TorrentFromRls(f.releaseName, 2)
 		require.NoError(t, err)
@@ -637,7 +634,7 @@ func TestImportEndpoint_RebuildsUnavailableOrInvalidPlans(t *testing.T) {
 	})
 
 	t.Run("fuzzy matching changed", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 1, 1, 0)
+		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
 		changed := f.config.Snapshot()
@@ -652,7 +649,7 @@ func TestImportEndpoint_RebuildsUnavailableOrInvalidPlans(t *testing.T) {
 	})
 
 	t.Run("client configuration changed", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 1, 1, 0)
+		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
 		changed := f.config.Snapshot()
@@ -672,7 +669,7 @@ func TestImportEndpoint_RebuildsUnavailableOrInvalidPlans(t *testing.T) {
 
 func TestImportEndpoint_MutationFailuresRemainSafeAndRetryable(t *testing.T) {
 	t.Run("import failure refreshes state for retry", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 1, 1, 0)
+		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 		f.torrentClient.importErr = errors.New("import failed")
 
@@ -690,7 +687,7 @@ func TestImportEndpoint_MutationFailuresRemainSafeAndRetryable(t *testing.T) {
 	})
 
 	t.Run("one conflicting target does not block safe links", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 2, 2, 0)
+		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0})
 		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
 		targetDir := filepath.Join(f.importDir, f.releaseName)
@@ -708,7 +705,7 @@ func TestImportEndpoint_MutationFailuresRemainSafeAndRetryable(t *testing.T) {
 	})
 
 	t.Run("smart mode retains safe links when achieved coverage is below threshold", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 3, 3, 0.75)
+		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 3, clientEpisodes: 3, threshold: 0.75})
 		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
 		targetDir := filepath.Join(f.importDir, f.releaseName)
@@ -734,7 +731,7 @@ func TestImportEndpoint_MutationFailuresRemainSafeAndRetryable(t *testing.T) {
 	})
 
 	t.Run("all conflicting targets prevent import", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, 1, 1, 0)
+		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
 		targetDir := filepath.Join(f.importDir, f.releaseName)

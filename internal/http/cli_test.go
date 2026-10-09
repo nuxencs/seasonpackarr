@@ -31,7 +31,7 @@ func TestCLI_CheckAndImportFromLocalConfig(t *testing.T) {
 		genericRoot bool
 	}{{name: "embedded name"}, {name: "release override", genericRoot: true}} {
 		t.Run(tt.name, func(t *testing.T) {
-			f := newProcessorHTTPFixture(t, 1, 1, 0.75)
+			f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 			packName := f.releaseName
 			if tt.genericRoot {
 				packName = "Lifecycle.S01"
@@ -151,7 +151,7 @@ func TestCLI_SearchPreviewAndImport(t *testing.T) {
 	t.Setenv("SEASONPACKARR__DISABLE_CONFIG_FILE", "false")
 	environment := append(cliEnvironment(), "SEASONPACKARR__DISABLE_CONFIG_FILE=true")
 	binary := buildCLI(t)
-	f := newSearchFixture(t, 1, 1, 0.75)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	for _, mode := range []string{"discovery", "verify", "import"} {
 		if mode == "import" {
 			f.restart(t)

@@ -105,13 +105,16 @@ func importTransmissionPack(t *testing.T, c *transmissionClient, req ImportReque
 	t.Cleanup(func() {
 		ctx, cancel := cleanupContext(t)
 		defer cancel()
-		found, err := raw.TorrentGetHashes(ctx, []string{"id"}, []string{req.LegacyHash})
+		lookup := func() ([]transmissionrpc.Torrent, error) {
+			return raw.TorrentGetHashes(ctx, []string{"id"}, []string{req.LegacyHash})
+		}
+		found, err := lookup()
 		if !assert.NoError(t, err, "find torrent for removal") || len(found) == 0 || found[0].ID == nil {
 			return
 		}
 		assert.NoError(t, raw.TorrentRemove(ctx, transmissionrpc.TorrentRemovePayload{IDs: []int64{*found[0].ID}}), "remove torrent")
 		assertRemoved(t, ctx, req.LegacyHash, func() (bool, error) {
-			found, err := raw.TorrentGetHashes(ctx, []string{"id"}, []string{req.LegacyHash})
+			found, err := lookup()
 			return len(found) > 0, err
 		})
 	})
@@ -124,7 +127,7 @@ func importTransmissionPack(t *testing.T, c *transmissionClient, req ImportReque
 // returns before it, so assertions on progress must wait.
 func waitTransmissionChecked(t *testing.T, c *transmissionClient, hash string) transmissionrpc.Torrent {
 	t.Helper()
-	tr, checked := waitFor(t, func() transmissionrpc.Torrent {
+	tr, checked := waitFor(t.Context(), func() transmissionrpc.Torrent {
 		found, err := c.c.TorrentGetHashes(t.Context(), []string{"status", "percentDone", "errorString"}, []string{hash})
 		require.NoError(t, err)
 		require.Len(t, found, 1, "torrent %s is missing", hash)

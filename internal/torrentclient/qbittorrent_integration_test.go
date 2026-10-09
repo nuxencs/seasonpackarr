@@ -27,7 +27,7 @@ func TestQbitDaemon_ImportsCompletePack(t *testing.T) {
 	importQbitPack(t, c, pack.importRequest(importDir, true))
 
 	tor, active := waitQbitActive(t, c, pack.hashes.Legacy)
-	require.True(t, active, "import left the torrent in state %s, but it must start", tor.State)
+	assert.True(t, active, "import left the torrent in state %s, but it must start", tor.State)
 	requireListedPack(t, c, pack, importDir)
 	requireFileReadLoad(t, c, pack.hashes.Legacy)
 }
@@ -159,7 +159,7 @@ func importQbitPack(t *testing.T, c *qbitClient, req ImportRequest) ImportReport
 // check. It returns the last state so callers can report it.
 func waitQbitActive(t *testing.T, c *qbitClient, hash string) (qbittorrent.Torrent, bool) {
 	t.Helper()
-	tor, active := waitFor(t, func() qbittorrent.Torrent {
+	tor, active := waitFor(t.Context(), func() qbittorrent.Torrent {
 		found, ok, err := c.lookupTorrent(t.Context(), hash)
 		require.NoError(t, err)
 		require.True(t, ok, "torrent %s is missing", hash)

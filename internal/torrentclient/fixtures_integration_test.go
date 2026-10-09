@@ -178,26 +178,22 @@ func torrentFromDir(t *testing.T, dir string) []byte {
 // hash. Cleanups use it so a test cannot leave a torrent behind for the next run.
 func assertRemoved(t *testing.T, ctx context.Context, hash string, present func() (bool, error)) {
 	t.Helper()
-	for {
-		found, err := present()
-		if !assert.NoError(t, err, "check removal of torrent %s", hash) || !found {
-			return
-		}
-		select {
-		case <-ctx.Done():
-			assert.Fail(t, "daemon still holds the torrent after removal", hash)
-			return
-		case <-time.After(100 * time.Millisecond):
-		}
+	var err error
+	_, removed := waitFor(ctx, func() bool {
+		var found bool
+		found, err = present()
+		return found
+	}, func(found bool) bool { return err != nil || !found })
+	if assert.NoError(t, err, "check removal of torrent %s", hash) {
+		assert.True(t, removed, "daemon still holds the torrent %s after removal", hash)
 	}
 }
 
-// waitFor calls read until done reports true or daemonTimeout ends. It
-// returns the last value and whether done reported true, so the caller can
+// waitFor calls read until done reports true, ctx ends, or daemonTimeout ends.
+// It returns the last value and whether done reported true, so the caller can
 // assert on the final daemon state.
-func waitFor[T any](t *testing.T, read func() T, done func(T) bool) (T, bool) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), daemonTimeout)
+func waitFor[T any](ctx context.Context, read func() T, done func(T) bool) (T, bool) {
+	ctx, cancel := context.WithTimeout(ctx, daemonTimeout)
 	defer cancel()
 	for {
 		value := read()

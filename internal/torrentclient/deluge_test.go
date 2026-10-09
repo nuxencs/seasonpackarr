@@ -200,7 +200,7 @@ func TestDelugeGetTorrents(t *testing.T) {
 	require.Equal(t, 1, api.torrentCalls, "GetTorrents uses one status call")
 }
 
-func TestDelugeGetFiles(t *testing.T) {
+func TestDelugeGetFiles_ReturnsFilesPerRequestedHash(t *testing.T) {
 	t.Parallel()
 
 	api := newListingDelugeAPI()

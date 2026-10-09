@@ -21,7 +21,7 @@ import (
 const qbitFileReadWorkers = 4
 
 // qbitAPI is the subset of *qbittorrent.Client the adapter uses. It exists so
-// the import machinery can be unit-tested against a stub without a live client.
+// the import machinery can be unit-tested against a fake without a live client.
 type qbitAPI interface {
 	GetTorrents(o qbittorrent.TorrentFilterOptions) ([]qbittorrent.Torrent, error)
 	GetFilesInformation(hash string) (*qbittorrent.TorrentFiles, error)

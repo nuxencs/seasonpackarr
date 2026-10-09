@@ -71,17 +71,16 @@ type processorHTTPFixture struct {
 	importDir     string
 }
 
-func newProcessorHTTPFixture(t *testing.T, torrentEpisodes, clientEpisodes int, threshold float32) processorHTTPFixture {
-	return newProcessorHTTPFixtureWithLogger(t, torrentEpisodes, clientEpisodes, threshold,
-		logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}))
+// fixtureOptions sets the season pack and the client inventory that a fixture
+// starts with.
+type fixtureOptions struct {
+	packEpisodes   int           // episodes in the season pack torrent
+	clientEpisodes int           // episodes from E01 that the client already holds
+	threshold      float32       // smart-mode threshold; 0 accepts any coverage
+	log            logger.Logger // nil logs errors only
 }
 
-func newProcessorHTTPFixtureWithLogger(
-	t *testing.T,
-	torrentEpisodes, clientEpisodes int,
-	threshold float32,
-	log logger.Logger,
-) processorHTTPFixture {
+func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFixture {
 	t.Helper()
 	resetProcessorGlobals()
 
@@ -92,14 +91,14 @@ func newProcessorHTTPFixtureWithLogger(
 	require.NoError(t, os.MkdirAll(importDir, 0o755))
 
 	releaseName := "Lifecycle.S01.1080p.WEB-DL.H.264-RlsGrp"
-	torrentBytes, err := torrents.TorrentFromRls(releaseName, torrentEpisodes)
+	torrentBytes, err := torrents.TorrentFromRls(releaseName, opts.packEpisodes)
 	require.NoError(t, err)
 
 	torrentClient := &fakeTorrentClient{
 		filesByHash: make(map[string][]torrentclient.File),
 		importRoot:  importDir,
 	}
-	for episode := 1; episode <= clientEpisodes; episode++ {
+	for episode := 1; episode <= opts.clientEpisodes; episode++ {
 		episodeRelease := fmt.Sprintf("Lifecycle.S01E%02d.1080p.WEB-DL.H.264-RlsGrp", episode)
 		episodeFile := episodeRelease + ".mkv"
 		hash := fmt.Sprintf("ep%d", episode)
@@ -122,7 +121,7 @@ func newProcessorHTTPFixtureWithLogger(
 	cfg := &fakeConfig{config: domain.Config{
 		Clients:            map[string]*domain.Client{"default": clientCfg},
 		SmartMode:          true,
-		SmartModeThreshold: threshold,
+		SmartModeThreshold: opts.threshold,
 		APIToken:           processorTestToken,
 	}}
 	clientMap.Store("default", cachedTorrentClient{config: cloneClientConfig(*clientCfg), client: torrentClient})
@@ -131,6 +130,10 @@ func newProcessorHTTPFixtureWithLogger(
 	store, err := state.Open(t.Context(), statePath, zerolog.Nop())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
+	log := opts.log
+	if log == nil {
+		log = logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"})
+	}
 	server := NewServer(
 		log,
 		cfg,
@@ -330,9 +333,9 @@ type searchFixture struct {
 	torrentByTitle map[string][]byte
 }
 
-func newSearchFixture(t *testing.T, packEpisodes, clientEpisodes int, threshold float32) *searchFixture {
+func newSearchFixture(t *testing.T, opts fixtureOptions) *searchFixture {
 	t.Helper()
-	f := &searchFixture{processorHTTPFixture: newProcessorHTTPFixture(t, packEpisodes, clientEpisodes, threshold)}
+	f := &searchFixture{processorHTTPFixture: newProcessorHTTPFixture(t, opts)}
 	f.titles = []string{f.releaseName}
 	server := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		if r.Header.Get("X-Api-Key") != "prowlarr-test-key" {

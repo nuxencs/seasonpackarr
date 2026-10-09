@@ -59,6 +59,8 @@ func TestDelugeDaemon_ResumesPartialPack(t *testing.T) {
 
 	status := waitDelugeChecked(t, c, pack.hashes.Legacy)
 	assertPartialProgress(t, float64(status.Progress)/100, 1)
+	assert.Positive(t, status.TotalDone, "the check must find the present episode")
+	assert.Less(t, status.TotalDone, status.TotalSize, "a partial pack must not read as complete")
 	requireDelugeLabel(t, c, pack.hashes.Legacy, "seasonpackarr")
 }
 
@@ -90,7 +92,7 @@ func newDelugeDaemonClient(t *testing.T, importDir string) *delugeClient {
 		assert.NoError(t, raw.Close(), "close Deluge client")
 	})
 
-	ctx, cancel := context.WithTimeout(t.Context(), delugeTimeout)
+	ctx, cancel := context.WithTimeout(t.Context(), daemonTimeout)
 	defer cancel()
 	version, err := raw.DaemonVersion(ctx)
 	require.NoError(t, err)
@@ -146,7 +148,7 @@ func importDelugePack(t *testing.T, c *delugeClient, req ImportRequest) ImportRe
 // after the adapter resumes the torrent.
 func waitDelugeChecked(t *testing.T, c *delugeClient, hash string) *deluge.TorrentStatus {
 	t.Helper()
-	status, checked := waitFor(t, func() *deluge.TorrentStatus {
+	status, checked := waitFor(t.Context(), func() *deluge.TorrentStatus {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		status, err := c.c.TorrentStatus(t.Context(), hash)
@@ -165,7 +167,7 @@ func waitDelugeChecked(t *testing.T, c *delugeClient, hash string) *deluge.Torre
 
 func requireDelugeLabel(t *testing.T, c *delugeClient, hash, want string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), delugeTimeout)
+	ctx, cancel := context.WithTimeout(t.Context(), daemonTimeout)
 	defer cancel()
 	c.mu.Lock()
 	defer c.mu.Unlock()

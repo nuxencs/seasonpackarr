@@ -52,9 +52,8 @@ func BenchmarkInventoryWarmRefresh(b *testing.B) {
 		b.Run(strconv.Itoa(torrentCount), func(b *testing.B) {
 			p, _, clientConfig := newInventoryBenchmarkProcessor(torrentCount)
 			resetInventoryBenchmarkCache(b)
-			if _, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{}); err != nil {
-				b.Fatal(err)
-			}
+			_, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
+			require.NoError(b, err)
 			b.ReportAllocs()
 			b.ResetTimer()
 
@@ -86,9 +85,8 @@ func BenchmarkInventoryRefreshChurn(b *testing.B) {
 			p := newTestProcessor(torrentClient)
 			clientConfig := inventoryBenchmarkClientConfig()
 			resetInventoryBenchmarkCache(b)
-			if _, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{}); err != nil {
-				b.Fatal(err)
-			}
+			_, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
+			require.NoError(b, err)
 			b.ReportAllocs()
 			b.ResetTimer()
 
@@ -120,9 +118,8 @@ func BenchmarkInventoryCachedAccess(b *testing.B) {
 		b.Run(strconv.Itoa(torrentCount), func(b *testing.B) {
 			p, _, clientConfig := newInventoryBenchmarkProcessor(torrentCount)
 			resetInventoryBenchmarkCache(b)
-			if _, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{}); err != nil {
-				b.Fatal(err)
-			}
+			_, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
+			require.NoError(b, err)
 			b.ReportAllocs()
 			b.ResetTimer()
 
@@ -143,17 +140,13 @@ func BenchmarkInventoryTitleLookup(b *testing.B) {
 			p, _, clientConfig := newInventoryBenchmarkProcessor(torrentCount)
 			resetInventoryBenchmarkCache(b)
 			entries, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
-			if err != nil {
-				b.Fatal(err)
-			}
+			require.NoError(b, err)
 			var title string
 			for candidateTitle := range entries {
 				title = candidateTitle
 				break
 			}
-			if title == "" {
-				b.Fatal("inventory has no title bucket")
-			}
+			require.NotEmpty(b, title, "inventory has no title bucket")
 			b.ReportAllocs()
 			b.ResetTimer()
 

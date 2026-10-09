@@ -207,7 +207,7 @@ func TestQbitBuildTorrentAddOptions(t *testing.T) {
 	})
 }
 
-func TestQbitImportDestination(t *testing.T) {
+func TestQbitImportDestination_ResolvesPolicyAndDaemonPaths(t *testing.T) {
 	tests := []struct {
 		name        string
 		policy      domain.ImportPolicy

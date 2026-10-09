@@ -151,7 +151,7 @@ func TestTransmissionGetTorrents(t *testing.T) {
 	require.NotContains(t, req.Arguments, "ids", "GetTorrents must not scope the listing")
 }
 
-func TestTransmissionGetFiles(t *testing.T) {
+func TestTransmissionGetFiles_ReadsAllHashesInOneRequest(t *testing.T) {
 	t.Parallel()
 	// The server response order differs from the requested hash order.
 	const resp = `{"torrents":[{"hashString":"DEF456","files":[{"name":"Other.S01/E01.mkv","length":2000000}]},{"hashString":"abc123","files":[{"name":"Show.S01/E01.mkv","length":1000000},{"name":"Show.S01/E02.mkv","length":1050000}]}]}`
