@@ -6,7 +6,7 @@ ARG DEBIAN_RELEASE
 FROM debian:${DEBIAN_RELEASE}-slim
 
 ARG DEBIAN_RELEASE
-ARG DELUGE_VERSION
+ARG DELUGE_PACKAGE_VERSION
 
 # Buster left the Debian mirrors, and its archive has expired Release files.
 RUN if [ "$DEBIAN_RELEASE" = buster ]; then \
@@ -17,7 +17,7 @@ RUN if [ "$DEBIAN_RELEASE" = buster ]; then \
 		printf '%s\n' 'Acquire::Check-Valid-Until "false";' >/etc/apt/apt.conf.d/99archive; \
 	fi && \
 	apt-get update && \
-	DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "deluged=${DELUGE_VERSION}" && \
+	DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "deluged=${DELUGE_PACKAGE_VERSION}" && \
 	rm -rf /var/lib/apt/lists/*
 
 # Same uid as the test container, so the daemon can write into its packs. Deluge

@@ -90,15 +90,15 @@ configure_entry() {
 		log_files=()
 		# deluge/Dockerfile installs the exact Debian package version.
 		case $1 in
-		deluge-1.3.15) DELUGE_DEBIAN_RELEASE=buster DELUGE_VERSION=1.3.15-2 DELUGE_CLIENT_TYPE=deluge-v1 ;;
-		deluge-2.0.3) DELUGE_DEBIAN_RELEASE=bookworm DELUGE_VERSION=2.0.3-4 DELUGE_CLIENT_TYPE=deluge-v2 ;;
-		deluge-2.2.0) DELUGE_DEBIAN_RELEASE=trixie DELUGE_VERSION=2.2.0-1 DELUGE_CLIENT_TYPE=deluge-v2 ;;
+		deluge-1.3.15) DELUGE_DEBIAN_RELEASE=buster DELUGE_PACKAGE_VERSION=1.3.15-2 DELUGE_CLIENT_TYPE=deluge-v1 ;;
+		deluge-2.0.3) DELUGE_DEBIAN_RELEASE=bookworm DELUGE_PACKAGE_VERSION=2.0.3-4 DELUGE_CLIENT_TYPE=deluge-v2 ;;
+		deluge-2.2.0) DELUGE_DEBIAN_RELEASE=trixie DELUGE_PACKAGE_VERSION=2.2.0-1 DELUGE_CLIENT_TYPE=deluge-v2 ;;
 		*)
 			printf 'no Deluge package for %s\n' "$1" >&2
 			exit 2
 			;;
 		esac
-		export DELUGE_DEBIAN_RELEASE DELUGE_VERSION DELUGE_CLIENT_TYPE
+		export DELUGE_DEBIAN_RELEASE DELUGE_PACKAGE_VERSION DELUGE_CLIENT_TYPE
 		;;
 	esac
 }

@@ -2,12 +2,12 @@
 # packages, and deluge/entrypoint.sh writes the auth and core.conf files.
 services:
   deluge:
-    image: seasonpackarr-harness-deluge:${DELUGE_VERSION:?run.sh sets DELUGE_VERSION from the entry}
+    image: seasonpackarr-harness-deluge:${DELUGE_PACKAGE_VERSION:?run.sh sets DELUGE_PACKAGE_VERSION from the entry}
     build:
       context: ./deluge
       args:
         DEBIAN_RELEASE: ${DELUGE_DEBIAN_RELEASE:?run.sh sets DELUGE_DEBIAN_RELEASE from the entry}
-        DELUGE_VERSION: ${DELUGE_VERSION:?run.sh sets DELUGE_VERSION from the entry}
+        DELUGE_PACKAGE_VERSION: ${DELUGE_PACKAGE_VERSION:?run.sh sets DELUGE_PACKAGE_VERSION from the entry}
     depends_on:
       volume-init:
         condition: service_completed_successfully

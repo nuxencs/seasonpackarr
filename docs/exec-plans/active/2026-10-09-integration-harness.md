@@ -139,7 +139,8 @@ episodes download, and the reused episodes stay hardlinks.
     in strict mode on all three versions, with no skips. The tests report
     daemon versions 1.3.15, 2.0.3 and 2.2.0.
   - After a clean stop, the `core.conf` that each daemon saved has `dht`,
-    `lsd`, `utpex` and `new_release_check` false and `daemon_port` 58846.
+    `lsd`, `utpex`, `upnp`, `natpmp` and `new_release_check` false and
+    `daemon_port` 58846.
   - A forced failure (wrong password) exits 1, writes `deluge.log` to
     `artifacts/deluge-2.2.0/`, and leaves no containers or project volumes.
   - `run.sh list` prints the seven default entries.
