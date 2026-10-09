@@ -193,8 +193,8 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
 - Tests are `Test<Subject>_<Behavior>`, or `Test<Subject>` when one test covers
   the whole contract. Behavior is a verb phrase (`ResumesPartialPack`).
 - The subject is one of:
-  - the function or method under test, without the receiver
-    (`TestEpisodeFileFromFiles_`, `TestQbitImport_`)
+  - the function under test (`TestEpisodeFileFromFiles_`), or a short type
+    name plus the method (`TestQbitImport_` for `qbitClient.Import`)
   - `<Name>Command` for a CLI command (`TestOperationCommand_`)
   - `<Route>Endpoint` for one HTTP route (`TestImportEndpoint_`), or
     `Endpoints` for a test across routes
@@ -213,7 +213,7 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
 
 - Assertions use testify. Use `require` for setup and for checks that make the
   rest of the test meaningless. Use `assert` for independent facts about one
-  final state, so every failure shows.
+  final state or for table rows, so every failure shows.
 - `require` and `t.Fatal` stop the test only from the test goroutine. Inside
   `httptest` handlers, fixture callbacks that a handler runs (`respond`,
   `beforeSearch`), and other goroutines, use `assert`.
