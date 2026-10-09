@@ -48,15 +48,6 @@ logLevel: "INFO"
 	require.Equal(t, "", snapshot.Notifications.Discord)
 }
 
-func writeTestConfig(t *testing.T, content string) string {
-	t.Helper()
-
-	configFile := filepath.Join(t.TempDir(), "config.yaml")
-	require.NoError(t, os.WriteFile(configFile, []byte(content), 0o644))
-
-	return configFile
-}
-
 func loadTestKoanf(t *testing.T, content string) *koanf.Koanf {
 	t.Helper()
 
@@ -570,21 +561,6 @@ clients:
 		require.FailNow(t, "timed out waiting for reload after config symlink replacement")
 	}
 	require.Equal(t, "after", cfg.Snapshot().Clients["default"].Import.Category)
-}
-
-func newTestAppConfig(t *testing.T, contents string) (*AppConfig, string) {
-	t.Helper()
-	configFile := writeTestConfig(t, contents)
-	cfg := &AppConfig{configFile: configFile, version: "test"}
-	snapshot, err := cfg.loadSnapshot()
-	require.NoError(t, err)
-	cfg.current.Store(snapshot)
-	return cfg, configFile
-}
-
-func writeConfigFile(t *testing.T, configFile, contents string) {
-	t.Helper()
-	require.NoError(t, os.WriteFile(configFile, []byte(contents), 0o644))
 }
 
 func TestValidateClientConfig(t *testing.T) {

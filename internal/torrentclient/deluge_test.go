@@ -166,10 +166,10 @@ func TestBuildDelugeSettings(t *testing.T) {
 	}
 }
 
-func TestDelugeClient_ListsTorrentsAndFiles(t *testing.T) {
-	t.Parallel()
-
-	api := &fakeDelugeAPI{
+// newListingDelugeAPI returns a fake daemon with two torrents. Only one of them
+// reports files, and they use different save path fields.
+func newListingDelugeAPI() *fakeDelugeAPI {
+	return &fakeDelugeAPI{
 		torrents: map[string]*deluge.TorrentStatus{
 			"bbbb": {Hash: "bbbb", Name: "Show.S01E02", DownloadLocation: "/downloads"},
 			"aaaa": {
@@ -183,6 +183,12 @@ func TestDelugeClient_ListsTorrentsAndFiles(t *testing.T) {
 			},
 		},
 	}
+}
+
+func TestDelugeGetTorrents(t *testing.T) {
+	t.Parallel()
+
+	api := newListingDelugeAPI()
 	client := newTestDelugeClient(api, domain.ImportPolicy{})
 
 	torrents, err := client.GetTorrents(t.Context())
@@ -191,6 +197,14 @@ func TestDelugeClient_ListsTorrentsAndFiles(t *testing.T) {
 		{Hash: "aaaa", Name: "Show.S01E01", SavePath: "/legacy-downloads"},
 		{Hash: "bbbb", Name: "Show.S01E02", SavePath: "/downloads"},
 	}, torrents)
+	require.Equal(t, 1, api.torrentCalls, "GetTorrents uses one status call")
+}
+
+func TestDelugeGetFiles(t *testing.T) {
+	t.Parallel()
+
+	api := newListingDelugeAPI()
+	client := newTestDelugeClient(api, domain.ImportPolicy{})
 
 	results := client.GetFiles(t.Context(), []string{"AAAA", "missing"})
 	require.Len(t, results, 2)
@@ -201,7 +215,7 @@ func TestDelugeClient_ListsTorrentsAndFiles(t *testing.T) {
 		{Name: "Show.S01/Show.S01E02.mkv", Size: 200},
 	}, results[0].Files)
 	require.Error(t, results[1].Err)
-	require.Equal(t, 2, api.torrentCalls, "GetTorrents and GetFiles each use one status call")
+	require.Equal(t, 1, api.torrentCalls, "GetFiles uses one status call for every hash")
 	require.Equal(t, []string{"AAAA", "missing"}, api.gotTorrentIDs)
 }
 
@@ -231,7 +245,7 @@ func TestDelugeGetFiles_RejectsEmptyV1Status(t *testing.T) {
 	require.Error(t, results[0].Err)
 }
 
-func TestDelugeV1GetFiles_FiltersUnknownAndDuplicateHashes(t *testing.T) {
+func TestDelugeGetFiles_V1FiltersUnknownAndDuplicateHashes(t *testing.T) {
 	t.Parallel()
 
 	api := &fakeDelugeAPI{

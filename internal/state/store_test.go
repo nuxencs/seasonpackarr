@@ -16,15 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newTestStore(t *testing.T) (*Store, string) {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "state %#", "seasonpackarr.db")
-	s, err := Open(t.Context(), path, zerolog.Nop())
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, s.Close()) })
-	return s, path
-}
-
 func TestStore_RestartAndConnectionIsolation(t *testing.T) {
 	for _, change := range []string{"none", "url", "key"} {
 		t.Run(change, func(t *testing.T) {

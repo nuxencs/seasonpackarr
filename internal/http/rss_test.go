@@ -319,3 +319,11 @@ func TestRSS_CheckpointWriteFailureDoesNotImport(t *testing.T) {
 	require.Empty(t, recovered.Failures)
 	require.Equal(t, "imported", recovered.Outcomes[0].Status)
 }
+
+func (f *searchFixture) runRSS(t *testing.T) searchReport {
+	t.Helper()
+	report, err := f.search.poll(t.Context())
+	require.NoError(t, err)
+	require.True(t, report.RSS)
+	return report
+}

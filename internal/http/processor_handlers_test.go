@@ -51,7 +51,7 @@ func TestCandidateEndpoint_LogsStructuredCompatibilityMismatch(t *testing.T) {
 	require.Equal(t, domain.StatusSuccessfulMatch.Code(), response.Code)
 
 	logs := log.Events(t)
-	mismatch := loggertest.RequireEvent(t, logs, "client release is not compatible")
+	mismatch := logs.Require(t, "client release is not compatible")
 	require.Equal(t, "compatibility_mismatch", mismatch["reason"])
 	require.Equal(t, "source", mismatch["field"])
 	require.Equal(t, "WEB-DL", mismatch["want"])
@@ -76,7 +76,7 @@ func TestCandidateEndpoint_LogsEachMatchingClientReleaseAtDebug(t *testing.T) {
 	logs := log.Events(t)
 	for episode := 1; episode <= 2; episode++ {
 		clientRelease := fmt.Sprintf("Lifecycle.S01E%02d.1080p.WEB-DL.H.264-RlsGrp", episode)
-		matched := loggertest.RequireEventField(t, logs, "client release passed candidate gate", "client_release", clientRelease)
+		matched := logs.RequireField(t, "client release passed candidate gate", "client_release", clientRelease)
 		require.Equal(t, "debug", matched["level"])
 	}
 }
@@ -93,11 +93,11 @@ func TestMatchEndpoint_LogsUnmatchedTorrentEpisode(t *testing.T) {
 	require.Equal(t, domain.StatusSuccessfulMatch.Code(), response.Code)
 
 	logs := log.Events(t)
-	unmatched := loggertest.RequireEvent(t, logs, "torrent episode is not reusable")
+	unmatched := logs.Require(t, "torrent episode is not reusable")
 	require.Equal(t, "Lifecycle.S01E02.1080p.WEB-DL.H.264-RlsGrp.mkv", filepath.Base(unmatched["torrent_path"].(string)))
 	require.Equal(t, "source_episode_not_found", unmatched["reason"])
 
-	summary := loggertest.RequireEvent(t, logs, "season pack import plan built")
+	summary := logs.Require(t, "season pack import plan built")
 	require.Equal(t, float64(1), summary["reusable_episodes"])
 	require.Equal(t, float64(2), summary["total_episodes"])
 	require.Equal(t, float64(1), summary["unmatched_episodes"])
@@ -118,14 +118,14 @@ func TestMatchEndpoint_LogsReasonWhenNoEpisodeIsReusable(t *testing.T) {
 	require.Equal(t, domain.StatusFailedMatchToTorrentEps.Code(), response.Code)
 
 	logs := log.Events(t)
-	unmatched := loggertest.RequireEvent(t, logs, "torrent episode is not reusable")
+	unmatched := logs.Require(t, "torrent episode is not reusable")
 	require.Equal(t, "compatibility_mismatch", unmatched["reason"])
 	require.Equal(t, []any{map[string]any{
 		"field": "size",
 		"want":  float64(1),
 		"got":   float64(2),
 	}}, unmatched["mismatches"])
-	rejection := loggertest.RequireEvent(t, logs, "season pack rejected")
+	rejection := logs.Require(t, "season pack rejected")
 	require.Equal(t, "info", rejection["level"])
 	require.Equal(t, "could not match episodes to files in pack", rejection["error"])
 }
@@ -142,7 +142,7 @@ func TestMatchEndpoint_LogsBelowThresholdAsExpectedRejection(t *testing.T) {
 	require.Equal(t, domain.StatusBelowThreshold.Code(), response.Code)
 
 	logs := log.Events(t)
-	rejection := loggertest.RequireEvent(t, logs, "season pack rejected")
+	rejection := logs.Require(t, "season pack rejected")
 	require.Equal(t, "info", rejection["level"])
 	require.Equal(t, "number of matches below threshold", rejection["error"])
 }
@@ -170,16 +170,16 @@ func TestImportEndpoint_LogsClientImportStageTiming(t *testing.T) {
 	require.Equal(t, domain.StatusSuccessfulHardlink.Code(), importResponse.Code)
 
 	logs := log.Events(t)
-	plan := loggertest.RequireEvent(t, logs, "import plan resolved")
+	plan := logs.Require(t, "import plan resolved")
 	require.Equal(t, "cache", plan["plan_source"])
 	require.Contains(t, plan, "duration_ms")
 
-	destination := loggertest.RequireEvent(t, logs, "import destination resolved")
+	destination := logs.Require(t, "import destination resolved")
 	require.Equal(t, "info", destination["level"])
 	require.Equal(t, true, destination["successful"])
 	require.Contains(t, destination, "duration_ms")
 
-	hardlinks := loggertest.RequireEvent(t, logs, "hardlink stage completed")
+	hardlinks := logs.Require(t, "hardlink stage completed")
 	require.Equal(t, float64(2), hardlinks["linked_episodes"])
 	require.Contains(t, hardlinks, "duration_ms")
 	for _, event := range logs {
@@ -187,10 +187,10 @@ func TestImportEndpoint_LogsClientImportStageTiming(t *testing.T) {
 		require.False(t, strings.HasPrefix(message, "hardlinked "), "legacy hardlink summary must be absent")
 	}
 
-	recheck := loggertest.RequireEventField(t, logs, "torrent client import stage finished", "stage", "recheck")
+	recheck := logs.RequireField(t, "torrent client import stage finished", "stage", "recheck")
 	require.Equal(t, float64(35_000), recheck["duration_ms"])
 
-	completed := loggertest.RequireEvent(t, logs, "season pack import completed")
+	completed := logs.Require(t, "season pack import completed")
 	require.Contains(t, completed, "total_duration_ms")
 }
 
@@ -218,7 +218,7 @@ func TestImportEndpoint_LogsTotalTimingOnImportFailure(t *testing.T) {
 	require.Equal(t, domain.StatusAddTorrentError.Code(), importResponse.Code)
 
 	logs := log.Events(t)
-	completed := loggertest.RequireEvent(t, logs, "season pack import completed")
+	completed := logs.Require(t, "season pack import completed")
 	require.Equal(t, false, completed["successful"])
 	require.Equal(t, float64(domain.StatusAddTorrentError), completed["status_code"])
 	require.Contains(t, completed, "total_duration_ms")
@@ -244,7 +244,7 @@ func TestImportEndpoint_LogsFailedDestinationResolutionTiming(t *testing.T) {
 	require.Equal(t, domain.StatusImportConfigError.Code(), importResponse.Code)
 
 	logs := log.Events(t)
-	destination := loggertest.RequireEvent(t, logs, "import destination resolved")
+	destination := logs.Require(t, "import destination resolved")
 	require.Equal(t, "info", destination["level"])
 	require.Equal(t, false, destination["successful"])
 	require.Contains(t, destination, "duration_ms")
@@ -264,12 +264,12 @@ func TestImportEndpoint_LogsFailedPlanRebuildTiming(t *testing.T) {
 	require.Equal(t, domain.StatusFailedMatchToTorrentEps.Code(), importResponse.Code)
 
 	logs := log.Events(t)
-	plan := loggertest.RequireEvent(t, logs, "import plan resolved")
+	plan := logs.Require(t, "import plan resolved")
 	require.Equal(t, "rebuilt", plan["plan_source"])
 	require.Equal(t, false, plan["successful"])
 	require.Contains(t, plan, "duration_ms")
 
-	completed := loggertest.RequireEvent(t, logs, "season pack import completed")
+	completed := logs.Require(t, "season pack import completed")
 	require.Equal(t, false, completed["successful"])
 	require.Contains(t, completed, "total_duration_ms")
 }
@@ -335,17 +335,14 @@ func TestImportEndpoint_RefreshesPlanWhenSourceMoves(t *testing.T) {
 	require.True(t, f.torrentClient.importCalled)
 
 	logs := log.Events(t)
-	missing := loggertest.RequireEventField(
-		t,
-		logs,
-		"hardlink source is missing",
+	missing := logs.RequireField(t, "hardlink source is missing",
 		"source",
 		filepath.Join(f.sourceDir, episodeFile),
 	)
 	require.Equal(t, "warn", missing["level"])
-	refresh := loggertest.RequireEvent(t, logs, "import plan refreshed after missing hardlink source")
+	refresh := logs.Require(t, "import plan refreshed after missing hardlink source")
 	require.Equal(t, true, refresh["successful"])
-	hardlinks := loggertest.RequireEvent(t, logs, "hardlink stage completed")
+	hardlinks := logs.Require(t, "hardlink stage completed")
 	require.Equal(t, float64(2), hardlinks["linked_episodes"])
 }
 

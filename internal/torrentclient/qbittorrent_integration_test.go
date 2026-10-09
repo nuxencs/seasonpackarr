@@ -22,7 +22,7 @@ import (
 func TestQbitDaemon_ImportsCompletePack(t *testing.T) {
 	importDir := requireDaemon(t, envQbitHost)
 	c := newQbitDaemonClient(t, domain.ImportPolicy{SavePath: importDir, Tags: []string{"seasonpackarr"}})
-	pack := writeCompletePack(t, importDir)
+	pack := writeCompletePack(t, importDir, packName(t))
 
 	importQbitPack(t, c, pack.importRequest(importDir, true))
 
@@ -35,7 +35,7 @@ func TestQbitDaemon_ImportsCompletePack(t *testing.T) {
 func TestQbitDaemon_ResumesPartialPack(t *testing.T) {
 	importDir := requireDaemon(t, envQbitHost)
 	c := newQbitDaemonClient(t, domain.ImportPolicy{SavePath: importDir})
-	pack := writePartialPack(t, importDir, 1)
+	pack := writePartialPack(t, importDir, packName(t), 1)
 
 	importQbitPack(t, c, pack.importRequest(importDir, false))
 
@@ -51,7 +51,7 @@ func TestQbitDaemon_ResumesPartialPack(t *testing.T) {
 func TestQbitDaemon_RecoversMisclassifiedCompletePack(t *testing.T) {
 	importDir := requireDaemon(t, envQbitHost)
 	c := newQbitDaemonClient(t, domain.ImportPolicy{SavePath: importDir})
-	pack := writePartialPack(t, importDir, 1)
+	pack := writePartialPack(t, importDir, packName(t), 1)
 
 	report := importQbitPack(t, c, pack.importRequest(importDir, true))
 	require.Contains(t, importStageNames(report), ImportStageRecheck, "the missingFiles fallback must run")
@@ -142,7 +142,13 @@ func importQbitPack(t *testing.T, c *qbitClient, req ImportRequest) ImportReport
 	t.Helper()
 	raw := qbitDaemonAPI(t, c)
 	t.Cleanup(func() {
+		ctx, cancel := cleanupContext(t)
+		defer cancel()
 		assert.NoError(t, raw.DeleteTorrents([]string{req.LegacyHash}, false), "remove torrent")
+		assertRemoved(t, ctx, req.LegacyHash, func() (bool, error) {
+			found, err := raw.GetTorrents(qbittorrent.TorrentFilterOptions{Hashes: []string{req.LegacyHash}})
+			return len(found) > 0, err
+		})
 	})
 	report, err := c.Import(t.Context(), req)
 	require.NoError(t, err)

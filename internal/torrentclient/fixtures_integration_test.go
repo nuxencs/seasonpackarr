@@ -69,13 +69,6 @@ func requireDaemon(t *testing.T, hostKey string) string {
 	return os.Getenv(envImportDir)
 }
 
-func envOrDefault(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
-}
-
 // cleanupContext is for t.Cleanup functions: t.Context is canceled before they run.
 func cleanupContext(t *testing.T) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(t.Context()), daemonTimeout)
@@ -99,26 +92,32 @@ func (p testPack) importRequest(savePath string, dataComplete bool) ImportReques
 	}
 }
 
-// writeCompletePack writes every episode of a pack named after the test.
-func writeCompletePack(t *testing.T, importDir string) testPack {
+// packName names a pack after the test, so tests do not share pack folders in
+// one import folder. parts are added for runs of one test against different
+// daemons, such as the Deluge client type.
+func packName(t *testing.T, parts ...string) string {
+	name := strings.ReplaceAll(strings.TrimPrefix(t.Name(), "Test"), "/", ".")
+	return strings.Join(append([]string{name}, parts...), ".") + ".S01.1080p.WEB-DL.H.264-RlsGrp"
+}
+
+// writeCompletePack writes every episode of the pack name.
+func writeCompletePack(t *testing.T, importDir, name string) testPack {
 	t.Helper()
-	return writePack(t, importDir, 0)
+	return writePack(t, importDir, name, 0)
 }
 
 // writePartialPack builds the .torrent for every episode, then keeps only the
 // 1-based episode keep on disk, like an import that reuses one episode.
-func writePartialPack(t *testing.T, importDir string, keep int) testPack {
+func writePartialPack(t *testing.T, importDir, name string, keep int) testPack {
 	t.Helper()
 	require.True(t, keep >= 1 && keep <= packEpisodes, "keep=%d", keep)
-	return writePack(t, importDir, keep)
+	return writePack(t, importDir, name, keep)
 }
 
 // writePack keeps every episode when keep is 0.
-func writePack(t *testing.T, importDir string, keep int) testPack {
+func writePack(t *testing.T, importDir, name string, keep int) testPack {
 	t.Helper()
 
-	// The test name keeps packs of different tests apart in a shared folder.
-	name := strings.TrimPrefix(t.Name(), "Test") + ".S01.1080p.WEB-DL.H.264-RlsGrp"
 	packDir := filepath.Join(importDir, name)
 	require.NoError(t, os.MkdirAll(packDir, 0o755))
 
@@ -173,6 +172,24 @@ func torrentFromDir(t *testing.T, dir string) []byte {
 	var torrent bytes.Buffer
 	require.NoError(t, (&metainfo.MetaInfo{InfoBytes: infoBytes}).Write(&torrent))
 	return torrent.Bytes()
+}
+
+// assertRemoved waits until present reports that the daemon no longer holds
+// hash. Cleanups use it so a test cannot leave a torrent behind for the next run.
+func assertRemoved(t *testing.T, ctx context.Context, hash string, present func() (bool, error)) {
+	t.Helper()
+	for {
+		found, err := present()
+		if !assert.NoError(t, err, "check removal of torrent %s", hash) || !found {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			assert.Fail(t, "daemon still holds the torrent after removal", hash)
+			return
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }
 
 // waitFor calls read until done reports true or daemonTimeout ends. It

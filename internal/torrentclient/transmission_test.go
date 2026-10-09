@@ -207,7 +207,7 @@ func TestTransmissionGetFiles_ExpandsWholeCallError(t *testing.T) {
 	}
 }
 
-func TestTransmissionClient_UsesBasicAuth(t *testing.T) {
+func TestNewTransmissionClient_UsesBasicAuth(t *testing.T) {
 	t.Parallel()
 	srv, captured := transmissionTestServer(t, map[string]string{"session-get": emptySessionResp})
 	newTransmissionClientFromServer(t, srv, "admin", "secret")

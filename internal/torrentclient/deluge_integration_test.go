@@ -38,7 +38,7 @@ type delugeTestLabelAPI interface {
 func TestDelugeDaemon_ImportsCompletePack(t *testing.T) {
 	importDir := requireDaemon(t, envDelugeType)
 	c := newDelugeDaemonClient(t, importDir)
-	pack := writeCompletePack(t, importDir)
+	pack := writeCompletePack(t, importDir, packName(t, os.Getenv(envDelugeType)))
 
 	importDelugePack(t, c, pack.importRequest(importDir, true))
 
@@ -53,7 +53,7 @@ func TestDelugeDaemon_ImportsCompletePack(t *testing.T) {
 func TestDelugeDaemon_ResumesPartialPack(t *testing.T) {
 	importDir := requireDaemon(t, envDelugeType)
 	c := newDelugeDaemonClient(t, importDir)
-	pack := writePartialPack(t, importDir, 1)
+	pack := writePartialPack(t, importDir, packName(t, os.Getenv(envDelugeType)), 1)
 
 	importDelugePack(t, c, pack.importRequest(importDir, false))
 
@@ -120,14 +120,22 @@ func importDelugePack(t *testing.T, c *delugeClient, req ImportRequest) ImportRe
 	t.Cleanup(func() {
 		ctx, cancel := cleanupContext(t)
 		defer cancel()
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		found, err := c.c.TorrentsStatus(ctx, deluge.StateUnspecified, []string{req.LegacyHash})
-		if !assert.NoError(t, err, "find torrent for removal") || len(found) == 0 {
+		// The session list, not a status read: Deluge 1.3 returns an empty status
+		// for a removed hash, which go-deluge cannot decode.
+		present := func() (bool, error) {
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			ids, err := c.c.SessionState(ctx)
+			return slices.ContainsFunc(ids, func(id string) bool { return strings.EqualFold(id, req.LegacyHash) }), err
+		}
+		if found, err := present(); !assert.NoError(t, err, "find torrent for removal") || !found {
 			return
 		}
-		_, err = raw.RemoveTorrent(ctx, req.LegacyHash, false)
+		c.mu.Lock()
+		_, err := raw.RemoveTorrent(ctx, req.LegacyHash, false)
+		c.mu.Unlock()
 		assert.NoError(t, err, "remove torrent")
+		assertRemoved(t, ctx, req.LegacyHash, present)
 	})
 	report, err := c.Import(t.Context(), req)
 	require.NoError(t, err)
@@ -168,4 +176,11 @@ func requireDelugeLabel(t *testing.T, c *delugeClient, hash, want string) {
 	got, err := reader.GetTorrentLabel(hash)
 	require.NoError(t, err)
 	require.Equal(t, want, got)
+}
+
+func envOrDefault(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
 }

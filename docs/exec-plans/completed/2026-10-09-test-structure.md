@@ -82,6 +82,18 @@ Phase 2, every other test:
   moved test keeps its exact body.
 - `cli_test.go` builds the binary once per test with `buildCLI`. The search
   CLI test used `go run` three times.
+- Review follow-up: each `import<Client>Pack` cleanup asserts with
+  `assertRemoved` that the daemon no longer holds the torrent. This replaces
+  the old Deluge check that the whole daemon held exactly one torrent, which
+  fails on a daemon with other torrents. A run with the qBittorrent removal
+  disabled fails with "daemon still holds the torrent after removal".
+- Review follow-up: the Deluge removal check reads the session list. Deluge 1.3
+  returns an empty status for a removed hash, which go-deluge cannot decode.
+- Review follow-up: Deluge pack names include the client type, so Deluge 1 and
+  Deluge 2 runs on one import folder do not share pack folders.
+- Review follow-up: `loggertest.Events` is a snapshot type with `Require` and
+  `RequireField`, and field values are strings. JSON numbers decode as
+  `float64`, so an `any` value could never match an `int`.
 - `loggertest.Logger.Fatal` panics instead of exiting. No production code
   under test calls `Fatal`.
 
@@ -104,3 +116,8 @@ Phase 2, every other test:
 - Phase 2: `go vet ./...`, `go vet -tags=integration ./internal/torrentclient`,
   `go test ./...`, `go test -race ./...`, and `gofumpt -l .` pass.
   `deadcode -test ./...` reports the same finding as before.
+- Review follow-up: real daemons pass twice in a row on qBittorrent 5.2.3,
+  Transmission 4.1.3, Deluge 1.3.15, and Deluge 2.1.2, with no torrent left
+  behind. `go test -race ./...`, both `go vet` runs, and `gofumpt -l .` pass.
+  The test list differs from phase 2 only by the planned renames and the split
+  of the Deluge listing test.

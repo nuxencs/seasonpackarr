@@ -20,7 +20,7 @@ import (
 func TestTransmissionDaemon_ImportsCompletePack(t *testing.T) {
 	importDir := requireDaemon(t, envTransmissionHost)
 	c := newTransmissionDaemonClient(t, domain.ImportPolicy{SavePath: importDir, Tags: []string{"seasonpackarr"}})
-	pack := writeCompletePack(t, importDir)
+	pack := writeCompletePack(t, importDir, packName(t))
 
 	importTransmissionPack(t, c, pack.importRequest(importDir, true))
 
@@ -33,7 +33,7 @@ func TestTransmissionDaemon_ImportsCompletePack(t *testing.T) {
 func TestTransmissionDaemon_ResumesPartialPack(t *testing.T) {
 	importDir := requireDaemon(t, envTransmissionHost)
 	c := newTransmissionDaemonClient(t, domain.ImportPolicy{SavePath: importDir})
-	pack := writePartialPack(t, importDir, 1)
+	pack := writePartialPack(t, importDir, packName(t), 1)
 
 	importTransmissionPack(t, c, pack.importRequest(importDir, false))
 
@@ -67,7 +67,7 @@ func TestTransmissionDaemon_ResumesPartialPackWithIncompleteDir(t *testing.T) {
 		IncompleteDirEnabled: new(true),
 		IncompleteDir:        new(incompleteDir),
 	}))
-	pack := writePartialPack(t, importDir, packEpisodes)
+	pack := writePartialPack(t, importDir, packName(t), packEpisodes)
 
 	importTransmissionPack(t, c, pack.importRequest(importDir, false))
 
@@ -110,6 +110,10 @@ func importTransmissionPack(t *testing.T, c *transmissionClient, req ImportReque
 			return
 		}
 		assert.NoError(t, raw.TorrentRemove(ctx, transmissionrpc.TorrentRemovePayload{IDs: []int64{*found[0].ID}}), "remove torrent")
+		assertRemoved(t, ctx, req.LegacyHash, func() (bool, error) {
+			found, err := raw.TorrentGetHashes(ctx, []string{"id"}, []string{req.LegacyHash})
+			return len(found) > 0, err
+		})
 	})
 	report, err := c.Import(t.Context(), req)
 	require.NoError(t, err)

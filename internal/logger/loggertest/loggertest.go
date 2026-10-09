@@ -7,6 +7,7 @@ package loggertest
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -26,6 +27,7 @@ type Logger struct {
 
 var _ logger.Logger = (*Logger)(nil)
 
+// New returns a Logger that records events in memory.
 func New() *Logger {
 	l := &Logger{}
 	l.log = zerolog.New(lockedWriter{l})
@@ -51,7 +53,9 @@ func (l *Logger) Info() *zerolog.Event         { return l.log.Info() }
 func (l *Logger) Trace() *zerolog.Event        { return l.log.Trace() }
 func (l *Logger) Debug() *zerolog.Event        { return l.log.Debug() }
 func (l *Logger) With() zerolog.Context        { return l.log.With() }
-func (l *Logger) SetLogLevel(string)           {}
+
+// SetLogLevel does nothing: the Logger records every level so tests can assert on it.
+func (l *Logger) SetLogLevel(string) {}
 
 // String returns every recorded event as JSON lines.
 func (l *Logger) String() string {
@@ -67,41 +71,52 @@ func (l *Logger) Reset() {
 	l.out.Reset()
 }
 
-// Events decodes every recorded event.
-func (l *Logger) Events(t testing.TB) []map[string]any {
+// Event is one decoded log event.
+type Event map[string]any
+
+// Events is a snapshot of the recorded events.
+type Events []Event
+
+// Events decodes the events recorded so far. Later events do not change the
+// returned snapshot.
+func (l *Logger) Events(t testing.TB) Events {
 	t.Helper()
-	var events []map[string]any
+	var events Events
 	for line := range bytes.SplitSeq([]byte(l.String()), []byte("\n")) {
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
 		}
-		var event map[string]any
+		var event Event
 		require.NoError(t, json.Unmarshal(line, &event))
 		events = append(events, event)
 	}
 	return events
 }
 
-// RequireEvent returns the first event with message.
-func RequireEvent(t testing.TB, events []map[string]any, message string) map[string]any {
+// Require returns the first event with message.
+func (e Events) Require(t testing.TB, message string) Event {
 	t.Helper()
-	for _, event := range events {
-		if event["message"] == message {
-			return event
-		}
-	}
-	require.FailNow(t, "missing log event", "message %q in %#v", message, events)
-	return nil
+	return e.require(t, fmt.Sprintf("message %q", message), func(event Event) bool {
+		return event["message"] == message
+	})
 }
 
-// RequireEventField returns the first event with message and field set to value.
-func RequireEventField(t testing.TB, events []map[string]any, message, field string, value any) map[string]any {
+// RequireField returns the first event with message and the string field set
+// to value.
+func (e Events) RequireField(t testing.TB, message, field, value string) Event {
 	t.Helper()
-	for _, event := range events {
-		if event["message"] == message && event[field] == value {
+	return e.require(t, fmt.Sprintf("message %q with %s=%q", message, field, value), func(event Event) bool {
+		return event["message"] == message && event[field] == value
+	})
+}
+
+func (e Events) require(t testing.TB, want string, match func(Event) bool) Event {
+	t.Helper()
+	for _, event := range e {
+		if match(event) {
 			return event
 		}
 	}
-	require.FailNow(t, "missing log event", "message %q with %s=%v in %#v", message, field, value, events)
+	require.FailNow(t, "missing log event", "%s in %#v", want, e)
 	return nil
 }

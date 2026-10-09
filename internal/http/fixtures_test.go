@@ -403,14 +403,6 @@ func (f *searchFixture) runExact(t *testing.T, dryRun bool) searchReport {
 	return report
 }
 
-func (f *searchFixture) runRSS(t *testing.T) searchReport {
-	t.Helper()
-	report, err := f.search.poll(t.Context())
-	require.NoError(t, err)
-	require.True(t, report.RSS)
-	return report
-}
-
 func (f *searchFixture) restart(t *testing.T) {
 	t.Helper()
 	require.NoError(t, f.search.state.Close())

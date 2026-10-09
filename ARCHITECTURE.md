@@ -215,8 +215,10 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
   rest of the test meaningless. Use `assert` for independent facts about one
   final state or for table rows, so every failure shows.
 - `require` and `t.Fatal` stop the test only from the test goroutine. Inside
-  `httptest` handlers, fixture callbacks that a handler runs (`respond`,
-  `beforeSearch`), and other goroutines, use `assert`.
+  handlers served by `httptest.NewServer`, fixture callbacks that such a
+  handler runs (`respond`, `beforeSearch`), and other goroutines, use `assert`.
+  A handler that the test calls directly through `ServeHTTP` and
+  `httptest.NewRecorder` runs on the test goroutine and can use `require`.
 - Benchmarks keep `if err != nil { b.Fatal(err) }` in measured loops.
 - Log assertions use `internal/logger/loggertest`.
 - Every Go file groups imports as standard library, this module, then external
@@ -234,11 +236,15 @@ tag and are not part of the CI workflow.
   `Daemon` separates them from the unit tests of the same adapter.
 - Each test calls `requireDaemon` first. It skips the test when the client's
   gate variable or `SEASONPACKARR_TEST_IMPORT_DIR` is not set.
-- Packs are named after the test, so tests do not share files.
+- `packName` names each pack after the test, so tests do not share pack
+  folders. Deluge tests add the client type, because Deluge 1 and Deluge 2 runs
+  can share one import folder.
 - Each client's `import<Client>Pack` helper registers the torrent removal with
-  `t.Cleanup` before the import, so a failed run cannot block the next one.
-  Pack data stays on disk for inspection. Cleanup functions use
-  `cleanupContext`, because `t.Context` is canceled before they run.
+  `t.Cleanup` before the import. The cleanup asserts with `assertRemoved` that
+  the daemon no longer holds the torrent, so a run cannot leave a torrent
+  behind for the next one. Pack data stays on disk for inspection.
+- Cleanup calls that take a context use `cleanupContext`, because `t.Context`
+  is canceled before cleanup functions run.
 
 The import folder must have the same path for the test process and the daemon.
 
@@ -267,7 +273,8 @@ prevents cached results from hiding changes in an external service.
 ### Coverage
 
 Packages without tests: `internal/api`, `internal/buildinfo`,
-`internal/domain`, `internal/logger`, `internal/notification`.
+`internal/domain`, `internal/logger`, `internal/logger/loggertest`,
+`internal/notification`.
 
 High-value regression targets:
 
