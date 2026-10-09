@@ -215,3 +215,10 @@ episodes download, and the reused episodes stay hardlinks.
     `qbit-qbittorrent.log`.
   - `run.sh transmission-4.1.3 deluge-2.2.0` still passes with the seeder in
     the base compose file.
+  - On PR #278, `transmission-4.0.6` failed once in
+    `TestTransmissionDaemon_ResumesPartialPack` with `stopped` at 0.33. A
+    rerun passed. In Transmission 4.0.6 the verify thread queues the torrent
+    start as a separate session step (`tr_torrentOnVerifyDone`), so a read
+    between the check and the start sees `stopped`.
+    `waitTransmissionChecked` now waits until the torrent is also started or
+    reports an error. `run.sh transmission-4.0.6 transmission-4.1.3` passes.

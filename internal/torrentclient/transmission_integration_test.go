@@ -123,19 +123,26 @@ func importTransmissionPack(t *testing.T, c *transmissionClient, req ImportReque
 	return report
 }
 
-// waitTransmissionChecked waits for the add-time check to finish. The adapter
-// returns before it, so assertions on progress must wait.
+// waitTransmissionChecked waits for the add-time check to finish and the
+// torrent to start or report an error. The adapter returns before the check,
+// so assertions on progress must wait. Transmission starts the torrent in a
+// second session step after the check, and a read between the two sees stopped.
 func waitTransmissionChecked(t *testing.T, c *transmissionClient, hash string) transmissionrpc.Torrent {
 	t.Helper()
-	tr, checked := waitFor(t.Context(), func() transmissionrpc.Torrent {
+	checking := func(tr transmissionrpc.Torrent) bool {
+		return tr.Status == nil || *tr.Status == transmissionrpc.TorrentStatusCheckWait || *tr.Status == transmissionrpc.TorrentStatusCheck
+	}
+	// A torrent that stays stopped ends the wait at the timeout, and
+	// assertTransmissionStarted reports it.
+	tr, _ := waitFor(t.Context(), func() transmissionrpc.Torrent {
 		found, err := c.c.TorrentGetHashes(t.Context(), []string{"status", "percentDone", "errorString"}, []string{hash})
 		require.NoError(t, err)
 		require.Len(t, found, 1, "torrent %s is missing", hash)
 		return found[0]
 	}, func(tr transmissionrpc.Torrent) bool {
-		return tr.Status != nil && *tr.Status != transmissionrpc.TorrentStatusCheckWait && *tr.Status != transmissionrpc.TorrentStatusCheck
+		return !checking(tr) && (*tr.Status != transmissionrpc.TorrentStatusStopped || derefString(tr.ErrorString) != "")
 	})
-	require.True(t, checked, "Transmission did not finish its check")
+	require.False(t, checking(tr), "Transmission did not finish its check")
 	t.Logf("Transmission status=%s percentDone=%.2f error=%q", *tr.Status, transmissionPercentDone(tr), derefString(tr.ErrorString))
 	return tr
 }
