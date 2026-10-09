@@ -215,6 +215,8 @@ not assume a port if it is left unset).
 
 #### Deluge
 
+seasonpackarr supports Deluge 1.3.15, and 2.0.3 to 2.2.0. The integration tests check 1.3.15, 2.0.3 and 2.2.0.
+
 Deluge support uses the native daemon RPC interface through
 [`autobrr/go-deluge`](https://github.com/autobrr/go-deluge). Set `type: "deluge-v1"` for Deluge 1.3 or
 `type: "deluge-v2"` for Deluge 2. The two protocol generations have different wire formats, so the type must match

@@ -1,0 +1,32 @@
+# Deluge overlay. deluge/Dockerfile builds one image for each entry from Debian
+# packages, and deluge/entrypoint.sh writes the auth and core.conf files.
+services:
+  deluge:
+    image: seasonpackarr-harness-deluge:${DELUGE_VERSION:?run.sh sets DELUGE_VERSION from the entry}
+    build:
+      context: ./deluge
+      args:
+        DEBIAN_RELEASE: ${DELUGE_DEBIAN_RELEASE:?run.sh sets DELUGE_DEBIAN_RELEASE from the entry}
+        DELUGE_VERSION: ${DELUGE_VERSION:?run.sh sets DELUGE_VERSION from the entry}
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+    volumes:
+      - data:/data
+    healthcheck:
+      # The images have no curl or nc. bash opens the RPC port directly.
+      test: [CMD, bash, -c, "exec 3<>/dev/tcp/127.0.0.1/58846"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  test:
+    depends_on:
+      deluge:
+        condition: service_healthy
+    environment:
+      SEASONPACKARR_TEST_DELUGE_TYPE: ${DELUGE_CLIENT_TYPE:?run.sh sets DELUGE_CLIENT_TYPE from the entry}
+      SEASONPACKARR_TEST_DELUGE_HOST: deluge
+      SEASONPACKARR_TEST_DELUGE_PORT: "58846"
+      SEASONPACKARR_TEST_DELUGE_USER: seasonpackarr
+      SEASONPACKARR_TEST_DELUGE_PASS: integration

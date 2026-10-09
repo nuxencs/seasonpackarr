@@ -13,7 +13,11 @@
 set -euo pipefail
 
 # Oldest and newest supported version of each client. Bump the newest by hand.
-default_entries=(qbit-4.3.9 qbit-5.2.4 transmission-4.0.6 transmission-4.1.3)
+default_entries=(
+	qbit-4.3.9 qbit-5.2.4
+	transmission-4.0.6 transmission-4.1.3
+	deluge-1.3.15 deluge-2.0.3 deluge-2.2.0
+)
 # Middle versions that only `all` runs. hotio publishes no 4.4.x image.
 extra_entries=(qbit-4.5.5 qbit-4.6.7 qbit-5.0.5 qbit-5.1.4)
 
@@ -78,6 +82,23 @@ configure_entry() {
 			;;
 		esac
 		export TRANSMISSION_IMAGE
+		;;
+	deluge-*)
+		client=deluge
+		test_pattern=DelugeDaemon_
+		# deluged --do-not-daemonize logs to the container output.
+		log_files=()
+		# deluge/Dockerfile installs the exact Debian package version.
+		case $1 in
+		deluge-1.3.15) DELUGE_DEBIAN_RELEASE=buster DELUGE_VERSION=1.3.15-2 DELUGE_CLIENT_TYPE=deluge-v1 ;;
+		deluge-2.0.3) DELUGE_DEBIAN_RELEASE=bookworm DELUGE_VERSION=2.0.3-4 DELUGE_CLIENT_TYPE=deluge-v2 ;;
+		deluge-2.2.0) DELUGE_DEBIAN_RELEASE=trixie DELUGE_VERSION=2.2.0-1 DELUGE_CLIENT_TYPE=deluge-v2 ;;
+		*)
+			printf 'no Deluge package for %s\n' "$1" >&2
+			exit 2
+			;;
+		esac
+		export DELUGE_DEBIAN_RELEASE DELUGE_VERSION DELUGE_CLIENT_TYPE
 		;;
 	esac
 }

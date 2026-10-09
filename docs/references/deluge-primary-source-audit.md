@@ -9,11 +9,12 @@ Seasonpackarr selects `deluge-v1` or `deluge-v2` explicitly and keeps
 optional Label plugin. It imports go-deluge v1.4.0 as a normal Go module
 dependency. No dependency source is copied into the seasonpackarr repository.
 
-Environment-gated local tests connect to real Deluge 1.3.15 and 2.1.2 daemons.
-Both entries run complete and partial imports, path and file reads, initial
-checks, resume, missing-label creation, and label assignment. Daemon fixtures
-and test data are not stored in this repository. These tests are not part of
-CI.
+Environment-gated integration tests connect to real Deluge 1.3.15, 2.0.3 and
+2.2.0 daemons. Every entry runs complete and partial imports, path and file
+reads, initial checks, resume, missing-label creation, and label assignment.
+The integration harness builds the daemon images from committed sources and
+runs the tests. The tests write their own packs and do not use static
+torrent data.
 
 ## Inspected revisions
 
@@ -275,8 +276,8 @@ Use a two-entry matrix. Each entry must start a real daemon and run the seasonpa
 
 | Matrix entry | Daemon | Client constructor | Required fixture |
 | --- | --- | --- | --- |
-| `deluge-v1` | Deluge 1.3.15 with its compatible Python 2 and libtorrent stack | `deluge.NewV1` | BitTorrent v1 torrent |
-| `deluge-v2` | A pinned Deluge 2 release, preferably the oldest supported release and optionally the newest supported release | `deluge.NewV2` | BitTorrent v1 torrent, plus pure v2 when claimed |
+| `deluge-v1` | Deluge 1.3.15 with its compatible Python 2 and libtorrent stack (harness entry `deluge-1.3.15`) | `deluge.NewV1` | BitTorrent v1 torrent |
+| `deluge-v2` | The oldest and newest supported Deluge 2 releases (harness entries `deluge-2.0.3` and `deluge-2.2.0`) | `deluge.NewV2` | BitTorrent v1 torrent, plus pure v2 when claimed |
 
 The daemon setup needs these parts:
 
@@ -301,23 +302,19 @@ The inspected `go-deluge` GitHub workflow does not run its real-daemon integrati
 
 Source: [`.github/workflows/go.yml` lines 32-70](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/.github/workflows/go.yml#L32-L70). Local path: `<oss>/go-deluge/.github/workflows/go.yml:32`.
 
-Run each integration-test matrix entry from the repository root after starting the
-matching daemon and setting its connection environment:
+The integration harness implements this setup. `deluge/Dockerfile` in
+`internal/torrentclient/testdata/harness/` installs the exact Debian
+`deluged` package of each entry, and `deluge/entrypoint.sh` writes the auth
+entry and a `core.conf` with DHT, PEX and LPD off. Run the entries from the
+repository root:
 
 ```sh
-SEASONPACKARR_TEST_DELUGE_TYPE=deluge-v1 \
-SEASONPACKARR_TEST_DELUGE_HOST=127.0.0.1 \
-SEASONPACKARR_TEST_DELUGE_PORT=58846 \
-SEASONPACKARR_TEST_DELUGE_USER=seasonpackarr \
-SEASONPACKARR_TEST_DELUGE_PASS=integration \
-SEASONPACKARR_TEST_IMPORT_DIR=/path/shared/with/deluge \
-go test -tags=integration -v -count=1 \
-  -run '^TestDelugeDaemon_' ./internal/torrentclient
+internal/torrentclient/testdata/harness/run.sh deluge-1.3.15 deluge-2.0.3 deluge-2.2.0
 ```
 
-Repeat with `SEASONPACKARR_TEST_DELUGE_TYPE=deluge-v2` against a Deluge 2
-daemon. The repository does not provide daemon images, static torrent data, or
-a fixture runner.
+The runner sets the `SEASONPACKARR_TEST_DELUGE_*` variables and the import
+folder for each entry. `ARCHITECTURE.md` "Testing Surface" describes the
+variables for a run against another daemon.
 
 ## Fresh-daemon log classification
 
@@ -344,6 +341,14 @@ Sources:
 - Synchronous `core.add_torrent_file` call: [`deluge/core/core.py` lines 457-481](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/core.py#L457-L481).
 - Synchronous and asynchronous manager paths: [`deluge/core/torrentmanager.py` lines 497-626](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrentmanager.py#L497-L626).
 - Warning in the asynchronous alert handler: [`deluge/core/torrentmanager.py` lines 1247-1265](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrentmanager.py#L1247-L1265).
+
+Deluge 2.0.3 on Python 3.8 or later cannot write its own log records. Its
+`Logging.findCaller` override does not accept the `stacklevel` argument that
+newer Python versions pass, so most log calls raise `TypeError` and Twisted
+logs `Unhandled error in Deferred` with that traceback. The harness entry
+`deluge-2.0.3` (Debian bookworm, Python 3.11) shows this on every start. The
+RPC calls are not affected, and the integration tests pass. Deluge 2.2.0 on
+trixie logs normally.
 
 ## Minimum end-to-end assertions
 

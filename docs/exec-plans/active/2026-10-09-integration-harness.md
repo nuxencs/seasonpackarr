@@ -52,7 +52,7 @@ episodes download, and the reused episodes stay hardlinks.
 4. Docs: README qBittorrent versions, "Testing Surface", AGENTS.md
    Verification. [done, #270]
 5. Transmission entries. [done, #271]
-6. Deluge build definition and entries. [pending, #272]
+6. Deluge build definition and entries. [done, #272]
 7. CI workflow. [pending, #273]
 8. Seeder and qBittorrent real download test. [pending, #274]
 9. Transmission and Deluge real download tests. [pending]
@@ -89,6 +89,18 @@ episodes download, and the reused episodes stay hardlinks.
   DHT and PEX and enable the incomplete and watch folders at `/downloads` and
   `/watch`, which the harness does not mount. The credentials still come from
   `USER` and `PASS`.
+- Deluge images are built from Debian packages with one `deluge/Dockerfile`.
+  The build args are the Debian release and the exact `deluged` package
+  version (`1.3.15-2` buster, `2.0.3-4` bookworm, `2.2.0-1` trixie). Only
+  buster gets other apt sources, because it moved to `archive.debian.org`.
+  The base image follows `debian:<release>-slim`. The exact pin is the package
+  version: when a Debian update replaces it on the mirror, the build fails
+  and does not silently test another version. Deluge 2.0.3 from bookworm
+  passed the suite, so it stays the oldest supported Deluge 2 version.
+- The Deluge image runs as uid 1000 with `HOME=/config`, because Deluge 1.3
+  extracts plugin eggs below HOME. The entrypoint writes `core.conf` with the
+  `{"file": 1, "format": 1}` header. Without it, Deluge 1.3 and 2 log
+  `Unable to open config file ... list index out of range` on every save.
 
 ## verification notes
 
@@ -122,3 +134,15 @@ episodes download, and the reused episodes stay hardlinks.
   - Open for #274: on start, 4.1.3 looks up its public IPv4 address
     (`ip-cache.cc`), and `port-forwarding-enabled` stays at its default (on).
     The real download test needs no internet access.
+- #272, 2026-10-09:
+  - `run.sh deluge-1.3.15 deluge-2.0.3 deluge-2.2.0` passes both Deluge tests
+    in strict mode on all three versions, with no skips. The tests report
+    daemon versions 1.3.15, 2.0.3 and 2.2.0.
+  - After a clean stop, the `core.conf` that each daemon saved has `dht`,
+    `lsd`, `utpex` and `new_release_check` false and `daemon_port` 58846.
+  - A forced failure (wrong password) exits 1, writes `deluge.log` to
+    `artifacts/deluge-2.2.0/`, and leaves no containers or project volumes.
+  - `run.sh list` prints the seven default entries.
+  - Deluge 2.0.3 on Python 3.11 logs `Unhandled error in Deferred` with a
+    `findCaller` `TypeError` for most log calls. The Deluge audit records it.
+    It is not a failure.

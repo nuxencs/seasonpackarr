@@ -328,7 +328,14 @@ internal/torrentclient/testdata/harness/run.sh list [all]     # entries as a JSO
   variables. The runner pins their build tags (`4.1.3-r0-ls363`), because the
   plain version tags move with each weekly rebuild. The daemon starts from
   `transmission/settings.json`, which also turns off the incomplete and watch
-  folders of the image defaults.
+  folders of the image defaults. Deluge has no maintained images, so the
+  runner builds `deluge/Dockerfile` from Debian packages: 1.3.15 from the
+  buster archive, 2.0.3 from bookworm, and 2.2.0 from trixie. The build args
+  are the Debian release and the exact `deluged` package version. The base
+  image follows the Debian release, and the build fails when the mirror no
+  longer has the pinned package version. `deluge/entrypoint.sh` writes the
+  auth entry (`seasonpackarr:integration:10`) and `core.conf`, then starts
+  `deluged` on all interfaces.
 
 ### Coverage
 
