@@ -105,7 +105,7 @@ BigCache is not in the common benchmark. It needs a key codec and a full plan se
 
 ## Local inventory benchmark results
 
-The inventory benchmark runs the real `getAllTorrents` path and real `rls.ParseString` and `format.ComparableTitle` calls. Its synthetic client has 20 episodes per comparable title, unique 40-character hashes, realistic release names, and distinct save paths. The benchmark covers 1,000, 5,000, 10,000, and 50,000 torrents. The code is in `internal/http/processor_inventory_benchmark_test.go`.
+The inventory benchmark runs the real `getAllTorrents` path and real `rls.ParseString` and `format.ComparableTitle` calls. Its synthetic client has 20 episodes per comparable title, unique 40-character hashes, realistic release names, and distinct save paths. The benchmark covers 1,000, 5,000, 10,000, and 50,000 torrents. The code is in `internal/http/processor_candidate_benchmark_test.go`.
 
 ### Baseline
 

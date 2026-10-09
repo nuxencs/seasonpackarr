@@ -18,14 +18,6 @@ type testStackTracer interface {
 	StackTrace() pkgerrors.StackTrace
 }
 
-func importStageNames(report ImportReport) []ImportStage {
-	stages := make([]ImportStage, len(report.Stages))
-	for index, stage := range report.Stages {
-		stages[index] = stage.Stage
-	}
-	return stages
-}
-
 func TestImportErr_TracesOperationalFailuresOnly(t *testing.T) {
 	sentinel := errors.New("client failed")
 	operationalErr := importErr(ImportStageAdd, sentinel)
@@ -37,79 +29,6 @@ func TestImportErr_TracesOperationalFailuresOnly(t *testing.T) {
 	configErr := importErr(ImportStageConfig, sentinel)
 	_, traced = errors.AsType[testStackTracer](configErr)
 	require.False(t, traced)
-}
-
-func TestBuildTransmissionURL(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name    string
-		client  *domain.Client
-		want    string
-		wantErr bool
-	}{
-		{
-			name:    "empty host",
-			client:  &domain.Client{Host: ""},
-			wantErr: true,
-		},
-		{
-			name:   "bare hostname appends rpc path",
-			client: &domain.Client{Host: "localhost"},
-			want:   "http://localhost/transmission/rpc",
-		},
-		{
-			name:   "bare hostname with port field",
-			client: &domain.Client{Host: "localhost", Port: 9091},
-			want:   "http://localhost:9091/transmission/rpc",
-		},
-		{
-			name:   "hostname with http scheme",
-			client: &domain.Client{Host: "http://myhost"},
-			want:   "http://myhost/transmission/rpc",
-		},
-		{
-			name:   "hostname with https scheme",
-			client: &domain.Client{Host: "https://myhost"},
-			want:   "https://myhost/transmission/rpc",
-		},
-		{
-			name:   "ip address with port field",
-			client: &domain.Client{Host: "192.168.1.1", Port: 9091},
-			want:   "http://192.168.1.1:9091/transmission/rpc",
-		},
-		{
-			name:   "existing port overridden by port field",
-			client: &domain.Client{Host: "http://localhost:8080", Port: 9091},
-			want:   "http://localhost:9091/transmission/rpc",
-		},
-		{
-			name:   "zero port field does not append port",
-			client: &domain.Client{Host: "http://localhost", Port: 0},
-			want:   "http://localhost/transmission/rpc",
-		},
-		{
-			name:   "credentials embedded as user info",
-			client: &domain.Client{Host: "localhost", Port: 9091, Username: "admin", Password: "secret"},
-			want:   "http://admin:secret@localhost:9091/transmission/rpc",
-		},
-		{
-			name:   "username only still embeds user info",
-			client: &domain.Client{Host: "localhost", Username: "admin"},
-			want:   "http://admin:@localhost/transmission/rpc",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := buildTransmissionURL(tt.client)
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, tt.want, got.String())
-		})
-	}
 }
 
 func TestNew_RejectsUnknownClientType(t *testing.T) {

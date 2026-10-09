@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +25,7 @@ func TestConnection_ConfigAndFlagPrecedence(t *testing.T) {
 	var gotClient, gotToken string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct{ ClientName string }
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 		gotClient, gotToken = body.ClientName, r.Header.Get("X-API-Token")
 		w.WriteHeader(250)
 	}))
@@ -81,8 +82,8 @@ func TestConnection_MultipleClientsAndSearchSelection(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct{ ClientName string }
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
-		require.Empty(t, body.ClientName)
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		assert.Empty(t, body.ClientName)
 		fmt.Fprint(w, `{"dryRun":true,"outcomes":[],"failures":[]}`)
 	}))
 	defer server.Close()

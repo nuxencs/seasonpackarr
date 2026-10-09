@@ -77,12 +77,12 @@ func TestAPI_CancellationStopsSearch(t *testing.T) {
 		require.Equal(t, 1, code)
 		require.Contains(t, stderr.String(), "context canceled")
 	case <-time.After(3 * time.Second):
-		t.Fatal("search did not stop after cancellation")
+		require.FailNow(t, "search did not stop after cancellation")
 	}
 	select {
 	case <-stopped:
 	case <-time.After(3 * time.Second):
-		t.Fatal("service did not observe cancellation")
+		require.FailNow(t, "service did not observe cancellation")
 	}
 }
 

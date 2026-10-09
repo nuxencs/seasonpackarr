@@ -11,11 +11,12 @@ import (
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/prowlarr"
+
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
 
-func testStore(t *testing.T) (*Store, string) {
+func newTestStore(t *testing.T) (*Store, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "state %#", "seasonpackarr.db")
 	s, err := Open(t.Context(), path, zerolog.Nop())
@@ -27,7 +28,7 @@ func testStore(t *testing.T) (*Store, string) {
 func TestStore_RestartAndConnectionIsolation(t *testing.T) {
 	for _, change := range []string{"none", "url", "key"} {
 		t.Run(change, func(t *testing.T) {
-			s, path := testStore(t)
+			s, path := newTestStore(t)
 			ctx := t.Context()
 			now := time.Now()
 			require.NoError(t, s.UseConnection(ctx, "http://prowlarr", "secret"))
@@ -81,7 +82,7 @@ func TestStore_RestartAndConnectionIsolation(t *testing.T) {
 }
 
 func TestStore_PrivateFileAndSchema(t *testing.T) {
-	s, path := testStore(t)
+	s, path := newTestStore(t)
 	info, err := os.Stat(path)
 	require.NoError(t, err)
 	if runtime.GOOS != "windows" {
@@ -117,7 +118,7 @@ func TestStore_RejectsInvalidFiles(t *testing.T) {
 }
 
 func TestStore_StartupPrunesExpiredState(t *testing.T) {
-	s, path := testStore(t)
+	s, path := newTestStore(t)
 	ctx := t.Context()
 	now := time.Now().Add(-8 * 24 * time.Hour)
 	result := prowlarr.Result{Title: "expired", GUID: "expired"}

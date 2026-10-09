@@ -9,7 +9,7 @@ diverge the most.
 
 ## scope
 
-Phase 1 (this plan):
+Phase 1, integration tests:
 
 - one integration file per client plus one shared fixture file
 - one `Test<Client>Daemon_<Behavior>` subject for integration tests
@@ -18,12 +18,18 @@ Phase 1 (this plan):
 - testify `require`/`assert` in integration tests, like the rest of the repo
 - documented rules in `ARCHITECTURE.md`
 
-Phase 2 (not started, tracked in the tech-debt tracker):
+Phase 2, every other test:
 
-- one fake vocabulary (`fake`, `stub`, `mock`, `recording`, `noop` are all used)
-- one shared captured-logger fake (`config` and `http` each define one)
-- one table-loop variable name (`tt` and `test` are both used)
-- consistent subjects in `internal/http` test files
+- test files named after the production file they test, plus
+  `fixtures_test.go` for shared fakes and fixtures
+- one fake vocabulary: `fake<Thing>` replaces `stub`, `mock`, `recording`,
+  `noop`, `static`, and `mutable` doubles
+- one captured logger: `internal/logger/loggertest` replaces the copies in
+  `config` and `http`
+- one table loop variable (`tt`) and table name (`tests`)
+- subjects that name the function, command, endpoint, or feature under test
+- testify everywhere, and `assert` instead of `require` off the test goroutine
+- one import grouping in every Go file
 
 ## risks
 
@@ -34,10 +40,13 @@ Phase 2 (not started, tracked in the tech-debt tracker):
 ## steps
 
 1. Inventory the current integration tests. [done]
-2. Move shared fixtures to `integration_test.go` and split tests by client. [done]
+2. Move shared fixtures to `fixtures_integration_test.go` and split tests by client. [done]
 3. Rename integration tests to `Test<Client>Daemon_<Behavior>`. [done]
 4. Update `ARCHITECTURE.md` and the docs that name the old tests. [done]
 5. Verify compile, skip paths, and real-daemon runs. [done]
+6. Phase 2: rename fakes, share the logger fake, and fix off-goroutine `require`. [done]
+7. Phase 2: move tests to the files of the code they test and rename subjects. [done]
+8. Phase 2: convert the remaining stdlib assertions and align import groups. [done]
 
 ## decision log
 
@@ -65,6 +74,17 @@ Phase 2 (not started, tracked in the tech-debt tracker):
 - Cleanup is registered before `Import`, so a failed import cannot leave a
   torrent that blocks the next run.
 
+- `require` inside `httptest` handlers and fixture callbacks (56 calls in
+  `cmd`, `http`, and `prowlarr`) became `assert`. `FailNow` from a handler
+  goroutine ends that goroutine, not the test, so the failure report could be
+  wrong.
+- Declarations moved with a script that copies them byte for byte, so every
+  moved test keeps its exact body.
+- `cli_test.go` builds the binary once per test with `buildCLI`. The search
+  CLI test used `go run` three times.
+- `loggertest.Logger.Fatal` panics instead of exiting. No production code
+  under test calls `Fatal`.
+
 ## verification
 
 - `go vet ./internal/torrentclient` and `go vet -tags=integration
@@ -78,3 +98,9 @@ Phase 2 (not started, tracked in the tech-debt tracker):
 - Partial packs check to exactly 0.33 on every client, so
   `assertPartialProgress` uses a 0.01 tolerance.
 - `go test ./...` and `gofumpt -l .` pass. `govulncheck ./...` reports no called vulnerabilities.
+- Phase 2: `go test -list '.*' ./...` lists 234 tests and benchmarks before and
+  after. The diff contains only the planned renames. The integration list is
+  unchanged.
+- Phase 2: `go vet ./...`, `go vet -tags=integration ./internal/torrentclient`,
+  `go test ./...`, `go test -race ./...`, and `gofumpt -l .` pass.
+  `deadcode -test ./...` reports the same finding as before.

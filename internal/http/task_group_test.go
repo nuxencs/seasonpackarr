@@ -33,7 +33,7 @@ func TestTaskGroup_RejectsTasksAfterShutdownStarts(t *testing.T) {
 	tasks.Go(func(context.Context) { ran <- struct{}{} })
 	select {
 	case <-ran:
-		t.Fatal("task started after shutdown")
+		require.FailNow(t, "task started after shutdown")
 	case <-time.After(10 * time.Millisecond):
 	}
 }

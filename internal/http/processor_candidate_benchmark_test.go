@@ -16,6 +16,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 
 	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/stretchr/testify/require"
 )
 
 const inventoryBenchmarkClientName = "benchmark"
@@ -81,8 +82,8 @@ func BenchmarkInventoryRefreshChurn(b *testing.B) {
 			changedCount := torrentCount * churnPercent / 100
 			inventoryA := inventoryBenchmarkTorrentsWithVariant(torrentCount, changedCount, "A")
 			inventoryB := inventoryBenchmarkTorrentsWithVariant(torrentCount, changedCount, "B")
-			client := &mockTorrentClient{torrents: inventoryA}
-			p := newTestProcessor(client)
+			torrentClient := &fakeTorrentClient{torrents: inventoryA}
+			p := newTestProcessor(torrentClient)
 			clientConfig := inventoryBenchmarkClientConfig()
 			resetInventoryBenchmarkCache(b)
 			if _, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{}); err != nil {
@@ -94,9 +95,9 @@ func BenchmarkInventoryRefreshChurn(b *testing.B) {
 			index := 0
 			for b.Loop() {
 				if index%2 == 0 {
-					client.torrents = inventoryB
+					torrentClient.torrents = inventoryB
 				} else {
-					client.torrents = inventoryA
+					torrentClient.torrents = inventoryA
 				}
 				cached, ok := entryMap.Load(inventoryBenchmarkClientName)
 				if !ok {
@@ -163,15 +164,14 @@ func BenchmarkInventoryTitleLookup(b *testing.B) {
 	}
 }
 
-func TestInventoryRetainedMemory(t *testing.T) {
+func TestInventory_RetainedMemory(t *testing.T) {
 	torrentCountText := os.Getenv("INVENTORY_TORRENTS")
 	if torrentCountText == "" {
 		t.Skip("set INVENTORY_TORRENTS")
 	}
 	torrentCount, err := strconv.Atoi(torrentCountText)
-	if err != nil || torrentCount < 1 {
-		t.Fatalf("invalid INVENTORY_TORRENTS %q", torrentCountText)
-	}
+	require.NoError(t, err, "parse INVENTORY_TORRENTS")
+	require.Positive(t, torrentCount, "INVENTORY_TORRENTS")
 
 	entryMap = xsync.NewMapOf[string, *entryCache]()
 	clientConfig := inventoryBenchmarkClientConfig()
@@ -179,21 +179,17 @@ func TestInventoryRetainedMemory(t *testing.T) {
 	var before runtime.MemStats
 	runtime.ReadMemStats(&before)
 
-	client := &mockTorrentClient{torrents: inventoryBenchmarkTorrents(torrentCount)}
-	p := newTestProcessor(client)
+	torrentClient := &fakeTorrentClient{torrents: inventoryBenchmarkTorrents(torrentCount)}
+	p := newTestProcessor(torrentClient)
 	entries, err := p.getAllTorrents(t.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	client.torrents = nil
+	require.NoError(t, err)
+	torrentClient.torrents = nil
 
 	debug.FreeOSMemory()
 	var after runtime.MemStats
 	runtime.ReadMemStats(&after)
 	cached, ok := entryMap.Load(inventoryBenchmarkClientName)
-	if !ok {
-		t.Fatal("inventory snapshot missing")
-	}
+	require.True(t, ok, "inventory snapshot missing")
 	runtime.KeepAlive(entries)
 	runtime.KeepAlive(cached)
 	runtime.KeepAlive(p)
@@ -210,9 +206,9 @@ func TestInventoryRetainedMemory(t *testing.T) {
 	)
 }
 
-func newInventoryBenchmarkProcessor(torrentCount int) (*processor, *mockTorrentClient, domain.Client) {
-	client := &mockTorrentClient{torrents: inventoryBenchmarkTorrents(torrentCount)}
-	return newTestProcessor(client), client, inventoryBenchmarkClientConfig()
+func newInventoryBenchmarkProcessor(torrentCount int) (*processor, *fakeTorrentClient, domain.Client) {
+	torrentClient := &fakeTorrentClient{torrents: inventoryBenchmarkTorrents(torrentCount)}
+	return newTestProcessor(torrentClient), torrentClient, inventoryBenchmarkClientConfig()
 }
 
 func inventoryBenchmarkClientConfig() domain.Client {

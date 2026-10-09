@@ -173,25 +173,54 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
 
 ## Testing Surface
 
-Test functions use `Test<Subject>` when the subject names the complete contract
-or groups closely related cases. They use `Test<Subject>_<Behavior>` for a
-distinct invariant. Subtest names use short, lowercase phrases. Test files use
-lowercase responsibility names and one of these suffixes:
+### Files
 
-- `<subject>_test.go` for unit, component, and contract coverage
-- `<subject>_integration_test.go` for tests against real external services
+- `<file>_test.go` tests the code in `<file>.go`. A large set can split by
+  aspect: `<file>_<aspect>_test.go` (`search_cooldown_test.go`,
+  `client_rss_test.go`, `processor_candidate_benchmark_test.go`).
+- Tests that drive several files through one entry point live with the entry
+  point. HTTP endpoint tests live in `internal/http/processor_handlers_test.go`.
+- `fixtures_test.go` holds the fakes and fixtures that more than one test file
+  of the package uses. A fake that one file uses stays in that file.
+- `<file>_integration_test.go` holds tests against real external services.
+  Their shared fixtures live in `fixtures_integration_test.go`.
+- `internal/http/cli_test.go` holds the end-to-end tests. They build the binary
+  with `buildCLI` and run it against the HTTP fixtures. They need no external
+  service and run in the default suite.
 
-Hermetic tests, including HTTP tests backed by `httptest`, run in the default
-suite and use responsibility-based filenames.
+### Names
 
-Assertions use testify. Use `require` for setup and for checks that make the
-rest of the test meaningless. Use `assert` when a test reports several facts
-about one final state. Common test helper prefixes:
+- Tests are `Test<Subject>_<Behavior>`, or `Test<Subject>` when one test covers
+  the whole contract. Behavior is a verb phrase (`ResumesPartialPack`).
+- The subject is one of:
+  - the function or method under test, without the receiver
+    (`TestEpisodeFileFromFiles_`, `TestQbitImport_`)
+  - `<Name>Command` for a CLI command (`TestOperationCommand_`)
+  - `<Route>Endpoint` for one HTTP route (`TestImportEndpoint_`), or
+    `Endpoints` for a test across routes
+  - a named feature (`TestSearch_`, `TestRSS_`, `TestInventory_`)
+- Subtests use short, lowercase phrases. Tables are `tests`, and the loop
+  variable is `tt`.
+- Test doubles are `fake<Thing>` (`fakeTorrentClient`, `fakeQbitAPI`). Fixtures
+  and recorded data keep descriptive names (`searchFixture`, `capturedRequest`).
+- Common helper prefixes:
+  - `new<Thing>`: builds a client, fixture, or fake
+  - `write<Thing>`: creates files on disk
+  - `require<Fact>` / `assert<Fact>`: checks a fact and stops / continues on failure
+  - `wait<Condition>`: polls an external service until a condition is true
 
-- `new<Thing>`: builds a client, fixture, or fake
-- `write<Thing>`: creates files on disk
-- `require<Fact>` / `assert<Fact>`: checks a fact and stops / continues on failure
-- `wait<Condition>`: polls an external service until a condition is true
+### Assertions
+
+- Assertions use testify. Use `require` for setup and for checks that make the
+  rest of the test meaningless. Use `assert` for independent facts about one
+  final state, so every failure shows.
+- `require` and `t.Fatal` stop the test only from the test goroutine. Inside
+  `httptest` handlers, fixture callbacks that a handler runs (`respond`,
+  `beforeSearch`), and other goroutines, use `assert`.
+- Benchmarks keep `if err != nil { b.Fatal(err) }` in measured loops.
+- Log assertions use `internal/logger/loggertest`.
+- Every Go file groups imports as standard library, this module, then external
+  modules.
 
 ### Torrent-client integration tests
 
@@ -199,7 +228,7 @@ Integration tests run against real daemons. They use the `integration` build
 tag and are not part of the CI workflow.
 
 - `internal/torrentclient/<client>_integration_test.go` holds one client's
-  tests. `integration_test.go` holds shared fixtures: environment names,
+  tests. `fixtures_integration_test.go` holds shared fixtures: environment names,
   `requireDaemon`, the pack writers, and the shared read assertions.
 - Names are `Test<Client>Daemon_<Behavior>` (`TestQbitDaemon_ResumesPartialPack`).
   `Daemon` separates them from the unit tests of the same adapter.

@@ -5,6 +5,7 @@ package http
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -24,18 +25,15 @@ import (
 )
 
 func TestCLI_CheckAndImportFromLocalConfig(t *testing.T) {
-	binary := filepath.Join(t.TempDir(), "seasonpackarr")
-	build := exec.CommandContext(t.Context(), "go", "build", "-o", binary, "../..")
-	output, err := build.CombinedOutput()
-	require.NoError(t, err, string(output))
-	for _, test := range []struct {
+	binary := buildCLI(t)
+	for _, tt := range []struct {
 		name        string
 		genericRoot bool
 	}{{name: "embedded name"}, {name: "release override", genericRoot: true}} {
-		t.Run(test.name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			f := newProcessorHTTPFixture(t, 1, 1, 0.75)
 			packName := f.releaseName
-			if test.genericRoot {
+			if tt.genericRoot {
 				packName = "Lifecycle.S01"
 				meta, err := metainfo.Load(bytes.NewReader(f.torrent))
 				require.NoError(t, err)
@@ -59,7 +57,7 @@ func TestCLI_CheckAndImportFromLocalConfig(t *testing.T) {
 			importCalls := func() int {
 				requests.Lock()
 				defer requests.Unlock()
-				return f.mock.importCalls
+				return f.torrentClient.importCalls
 			}
 			u, err := url.Parse(server.URL)
 			require.NoError(t, err)
@@ -100,7 +98,7 @@ func TestCLI_CheckAndImportFromLocalConfig(t *testing.T) {
 			stdout, _ = run(0, "candidate", f.releaseName)
 			require.Contains(t, stdout, "Candidate accepted")
 			packArgs := []string{"download.torrent"}
-			if test.genericRoot {
+			if tt.genericRoot {
 				stdout, _ = run(2, "match", "download.torrent")
 				require.Contains(t, stdout, "no matching releases")
 				packArgs = append(packArgs, "--release", f.releaseName)
@@ -126,6 +124,15 @@ func TestCLI_CheckAndImportFromLocalConfig(t *testing.T) {
 	}
 }
 
+// buildCLI builds the shipped binary so CLI tests run what users run.
+func buildCLI(t *testing.T) string {
+	t.Helper()
+	binary := filepath.Join(t.TempDir(), "seasonpackarr")
+	output, err := exec.CommandContext(t.Context(), "go", "build", "-o", binary, "../..").CombinedOutput()
+	require.NoError(t, err, string(output))
+	return binary
+}
+
 func cliEnvironment() []string {
 	var environment []string
 	for _, entry := range os.Environ() {
@@ -134,4 +141,51 @@ func cliEnvironment() []string {
 		}
 	}
 	return environment
+}
+
+// Exercise the shipped CLI against the real authenticated API, Prowlarr HTTP
+// fixture, and filesystem. The torrent client's network boundary is controlled.
+func TestCLI_SearchPreviewAndImport(t *testing.T) {
+	t.Setenv("SEASONPACKARR__CLIENT", "unconfigured-operator-client")
+	t.Setenv("SEASONPACKARR__PORT", "invalid")
+	t.Setenv("SEASONPACKARR__DISABLE_CONFIG_FILE", "false")
+	environment := append(cliEnvironment(), "SEASONPACKARR__DISABLE_CONFIG_FILE=true")
+	binary := buildCLI(t)
+	f := newSearchFixture(t, 1, 1, 0.75)
+	for _, mode := range []string{"discovery", "verify", "import"} {
+		if mode == "import" {
+			f.restart(t)
+		}
+		server := httptest.NewServer(f.handler)
+		t.Cleanup(server.Close)
+		dryRun := mode != "import"
+		args := []string{"search", "--url", server.URL, "--api", processorTestToken, "--json"}
+		if dryRun {
+			args = append(args, "--dry-run")
+			if mode == "verify" {
+				args = append(args, "--verify")
+			}
+		}
+		command := exec.CommandContext(t.Context(), binary, args...)
+		command.Env = environment
+		output, err := command.CombinedOutput()
+		server.Close()
+		require.NoError(t, err, string(output))
+		var report searchReport
+		require.NoError(t, json.Unmarshal(output, &report), string(output))
+		require.Equal(t, dryRun, report.DryRun)
+		if mode == "discovery" {
+			require.Equal(t, "candidate", report.Outcomes[0].Status)
+			require.Zero(t, f.downloads)
+			require.Zero(t, f.torrentClient.fileCalls)
+		} else if dryRun {
+			require.Equal(t, "would_import", report.Outcomes[0].Status)
+			require.Zero(t, f.torrentClient.importCalls)
+		} else {
+			require.Equal(t, "imported", report.Outcomes[0].Status)
+			require.Equal(t, 1, f.torrentClient.importCalls)
+			require.Equal(t, 1, report.TorrentCacheHits)
+			require.Zero(t, report.TorrentDownloads)
+		}
+	}
 }

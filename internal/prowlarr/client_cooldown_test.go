@@ -52,25 +52,22 @@ func TestClient_CooldownResponses(t *testing.T) {
 	}
 }
 
-type cooldownTransport func(*http.Request) (*http.Response, error)
+type fakeFailingBody struct{}
 
-func (f cooldownTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+func (fakeFailingBody) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
 
-type failedResponseBody struct{}
-
-func (failedResponseBody) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
-func (failedResponseBody) Close() error             { return nil }
+func (fakeFailingBody) Close() error { return nil }
 
 func TestClient_CooldownTransportAndCancellation(t *testing.T) {
 	for _, tt := range []struct {
 		name         string
-		transport    cooldownTransport
+		transport    fakeTransport
 		canceled     bool
 		wantCooldown bool
 	}{
 		{name: "transport", wantCooldown: true, transport: func(*http.Request) (*http.Response, error) { return nil, errors.New("secret connection failure") }},
 		{name: "response read", wantCooldown: true, transport: func(*http.Request) (*http.Response, error) {
-			return &http.Response{StatusCode: 200, Body: failedResponseBody{}}, nil
+			return &http.Response{StatusCode: 200, Body: fakeFailingBody{}}, nil
 		}},
 		{name: "permanent error", transport: func(*http.Request) (*http.Response, error) {
 			return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader("secret"))}, nil
