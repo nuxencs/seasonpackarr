@@ -23,6 +23,7 @@ artifacts_dir="$harness_dir/artifacts"
 # One project per checkout, so two worktrees can run at the same time.
 project="seasonpackarr-harness-$(printf '%s' "$repo_root" | cksum | cut -d ' ' -f 1)"
 
+# usage prints the Usage lines of the header comment, lines 4 to 8 of this file.
 usage() {
 	sed -n '4,8s/^# \{0,1\}//p' "${BASH_SOURCE[0]}" >&2
 	exit 2
@@ -46,13 +47,15 @@ is_known_entry() {
 	return 1
 }
 
-# configure_entry sets client, test_pattern, and the image variables that the
-# client's compose overlay reads.
+# configure_entry sets client, test_pattern, log_files, and the image variables
+# that the client's compose overlay reads. log_files lists <service>:<path>
+# entries for daemon logs that are not on stdout.
 configure_entry() {
 	case $1 in
 	qbit-*)
 		client=qbit
 		test_pattern=QbitDaemon_
+		log_files=(qbit:/config/data/logs/qbittorrent.log)
 		QBIT_IMAGE="ghcr.io/hotio/qbittorrent:release-${1#qbit-}"
 		if [[ $1 == qbit-4.3.9 ]]; then
 			# hotio publishes 4.3.9 only under the moving legacy tag.
@@ -77,18 +80,15 @@ teardown() {
 }
 
 save_logs() {
-	local dir="$artifacts_dir/$1" service
+	local dir="$artifacts_dir/$1" service log_file
 	mkdir -p "$dir"
 	for service in $(compose ps --all --services); do
 		[[ $service == test ]] && continue
 		compose logs --no-color --timestamps "$service" >"$dir/$service.log" 2>&1 || true
 	done
-	case $client in
-	qbit)
-		# qBittorrent writes its event log to the config volume, not to stdout.
-		compose cp qbit:/config/data/logs/qbittorrent.log "$dir/qbittorrent.log" >/dev/null 2>&1 || true
-		;;
-	esac
+	for log_file in "${log_files[@]}"; do
+		compose cp "$log_file" "$dir/$(basename "$log_file")" >/dev/null 2>&1 || true
+	done
 	printf 'saved daemon logs to %s\n' "$dir" >&2
 }
 

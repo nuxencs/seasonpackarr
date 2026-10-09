@@ -302,7 +302,8 @@ internal/torrentclient/testdata/harness/run.sh list [all]     # entries as a JSO
 
 - An entry is `<client>-<version>`. The default entries are the oldest and
   newest supported version of each client. `all` adds the middle qBittorrent
-  versions. Bump the newest pins by hand, so the oldest pins never move.
+  versions. Bump the newest pins by hand. An automatic bump tool would also
+  move the oldest pins.
 - For each entry, the runner pulls or builds the images, starts the daemon,
   waits for its health check, and runs that client's `Test<Client>Daemon_`
   tests with `-tags=integration -count=1` in strict mode.

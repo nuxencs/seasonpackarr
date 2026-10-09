@@ -33,7 +33,7 @@ services:
 
 volumes:
   data:
-  # The Go caches outlive teardown, so each entry does not download and build again.
+  # run.sh creates this volume. It outlives teardown, so entries share the Go caches.
   go-cache:
     name: seasonpackarr-harness-go-cache
     external: true

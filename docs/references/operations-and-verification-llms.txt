@@ -3,6 +3,7 @@ seasonpackarr operations and verification reference
 - primary local check: go test -v ./...
 - security check: govulncheck ./...
 - formatting for Go changes: gofumpt -w .
+- torrent client adapter changes: internal/torrentclient/testdata/harness/run.sh [all | <entry>...]
 - smoke flows:
   - go run . start --config <dir>
   - go run . candidate "<release>" --config <dir> [--client <name>]
