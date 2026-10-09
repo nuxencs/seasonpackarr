@@ -19,6 +19,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/errtrace"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
+
 	"github.com/rs/zerolog"
 )
 

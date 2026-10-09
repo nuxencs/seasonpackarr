@@ -12,9 +12,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/autobrr/go-qbittorrent"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/errtrace"
+
+	"github.com/autobrr/go-qbittorrent"
 )
 
 const qbitFileReadWorkers = 4
