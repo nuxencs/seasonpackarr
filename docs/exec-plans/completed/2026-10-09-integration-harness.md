@@ -272,6 +272,10 @@ episodes download, and the reused episodes stay hardlinks.
     each). That commit predates the Transmission and Deluge download tests. A
     dispatch on a branch works because the workflow is already registered
     from the PR runs.
+  - A second `full` dispatch at `e0dedee` passes the setup job and all 11
+    entry jobs (56 to 101 seconds each). `DownloadsMissingEpisodes` passes in
+    every entry. The pull request run at `e0dedee` passes the 7 default
+    entries.
   - With `SEASONPACKARR_TEST_QBIT_HOST` removed from `compose.qbit.yaml`,
     `run.sh qbit-5.2.4` exits 1. Strict mode fails all five
     `TestQbitDaemon_` tests and names the missing setting. The runner saves
