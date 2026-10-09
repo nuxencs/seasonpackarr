@@ -51,7 +51,7 @@ episodes download, and the reused episodes stay hardlinks.
 3. Strict mode in `requireDaemon`. [done, #270]
 4. Docs: README qBittorrent versions, "Testing Surface", AGENTS.md
    Verification. [done, #270]
-5. Transmission entries. [pending, #271]
+5. Transmission entries. [done, #271]
 6. Deluge build definition and entries. [pending, #272]
 7. CI workflow. [pending, #273]
 8. Seeder and qBittorrent real download test. [pending, #274]
@@ -79,6 +79,16 @@ episodes download, and the reused episodes stay hardlinks.
   refuses `PUID=0` ("Running as root is not supported"), and the daemon must
   be able to write into the packs that the tests create. A root
   `volume-init` step gives the fresh volumes to uid 1000 first.
+- Transmission images are linuxserver build tags (`4.0.6-r4-ls311`,
+  `4.1.3-r0-ls363`), not the plain version tags. linuxserver rebuilds every
+  version weekly on Alpine edge under the same plain tag, so only a build tag
+  keeps a result from changing without a commit.
+- Transmission starts from a committed partial `settings.json`. The image
+  copies its own defaults only when the file is missing, and Transmission
+  fills the missing keys with its built-in defaults. The image defaults turn on
+  DHT and PEX and enable the incomplete and watch folders at `/downloads` and
+  `/watch`, which the harness does not mount. The credentials still come from
+  `USER` and `PASS`.
 
 ## verification notes
 
@@ -97,3 +107,18 @@ episodes download, and the reused episodes stay hardlinks.
     `SEASONPACKARR_TEST_QBIT_HOST` and `SEASONPACKARR_TEST_IMPORT_DIR`. Without
     strict mode the test skips.
   - The runner works with macOS `/bin/bash` 3.2.
+- #271, 2026-10-09:
+  - `run.sh transmission-4.0.6 transmission-4.1.3` passes all three
+    Transmission tests in strict mode on both versions.
+  - `session-get` reports versions 4.0.6 and 4.1.3, `dht-enabled`,
+    `pex-enabled`, `lpd-enabled` and `incomplete-dir-enabled` false. An RPC
+    call without credentials gets 401.
+  - A forced failure (wrong password) exits 1 with macOS `/bin/bash` 3.2,
+    writes `transmission.log` to `artifacts/transmission-4.1.3/`, and leaves
+    no containers or project volumes.
+  - `run.sh qbit-5.2.4` still passes after the `save_logs` change.
+  - Fresh 4.1.3 daemons log `ERR ... Couldn't read '/config/queue.json'`
+    once. It is not a failure.
+  - Open for #274: on start, 4.1.3 looks up its public IPv4 address
+    (`ip-cache.cc`), and `port-forwarding-enabled` stays at its default (on).
+    The real download test needs no internet access.

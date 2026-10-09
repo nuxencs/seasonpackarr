@@ -207,6 +207,8 @@ qui keeps the qBittorrent session and handles authentication for proxied clients
 
 #### Transmission
 
+seasonpackarr supports Transmission 4.0.6 to 4.1.3. The integration tests check 4.0.6 and 4.1.3.
+
 For Transmission clients, set `type: "transmission"` and provide `username` and `password` for the Transmission RPC
 interface (no `apiKey` field). Transmission listens on port `9091` by default, so set `port: 9091` (seasonpackarr does
 not assume a port if it is left unset).

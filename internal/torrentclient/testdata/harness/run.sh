@@ -13,7 +13,7 @@
 set -euo pipefail
 
 # Oldest and newest supported version of each client. Bump the newest by hand.
-default_entries=(qbit-4.3.9 qbit-5.2.4)
+default_entries=(qbit-4.3.9 qbit-5.2.4 transmission-4.0.6 transmission-4.1.3)
 # Middle versions that only `all` runs. hotio publishes no 4.4.x image.
 extra_entries=(qbit-4.5.5 qbit-4.6.7 qbit-5.0.5 qbit-5.1.4)
 
@@ -63,6 +63,22 @@ configure_entry() {
 		fi
 		export QBIT_IMAGE
 		;;
+	transmission-*)
+		client=transmission
+		test_pattern=TransmissionDaemon_
+		# transmission-daemon -f logs to the container output, which save_logs captures.
+		log_files=()
+		# Plain version tags move with every weekly rebuild. The build tags do not.
+		case $1 in
+		transmission-4.0.6) TRANSMISSION_IMAGE=lscr.io/linuxserver/transmission:4.0.6-r4-ls311 ;;
+		transmission-4.1.3) TRANSMISSION_IMAGE=lscr.io/linuxserver/transmission:4.1.3-r0-ls363 ;;
+		*)
+			printf 'no Transmission image for %s\n' "$1" >&2
+			exit 2
+			;;
+		esac
+		export TRANSMISSION_IMAGE
+		;;
 	esac
 }
 
@@ -86,7 +102,8 @@ save_logs() {
 		[[ $service == test ]] && continue
 		compose logs --no-color --timestamps "$service" >"$dir/$service.log" 2>&1 || true
 	done
-	for log_file in "${log_files[@]}"; do
+	# The + form expands an empty array without an unbound error in bash 3.2.
+	for log_file in ${log_files[@]+"${log_files[@]}"}; do
 		compose cp "$log_file" "$dir/$(basename "$log_file")" >/dev/null 2>&1 || true
 	done
 	printf 'saved daemon logs to %s\n' "$dir" >&2

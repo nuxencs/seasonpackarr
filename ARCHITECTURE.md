@@ -323,7 +323,12 @@ internal/torrentclient/testdata/harness/run.sh list [all]     # entries as a JSO
 - Daemons use committed credentials, and DHT, PEX and LPD are off. qBittorrent
   uses hotio images and `qbittorrent/qBittorrent.conf` (`admin:integration`).
   hotio publishes 4.3.9 only under the moving `legacy` tag, so the runner
-  pins it by digest.
+  pins it by digest. Transmission uses linuxserver images, which set the RPC
+  credentials (`admin:integration`) from the `USER` and `PASS` environment
+  variables. The runner pins their build tags (`4.1.3-r0-ls363`), because the
+  plain version tags move with each weekly rebuild. The daemon starts from
+  `transmission/settings.json`, which also turns off the incomplete and watch
+  folders of the image defaults.
 
 ### Coverage
 

@@ -1,0 +1,7 @@
+{
+    "dht-enabled": false,
+    "incomplete-dir-enabled": false,
+    "lpd-enabled": false,
+    "pex-enabled": false,
+    "watch-dir-enabled": false
+}
