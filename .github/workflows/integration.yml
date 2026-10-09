@@ -1,13 +1,16 @@
 name: Integration
 
-# Runs the torrent client integration tests against real daemons through the
-# harness runner. The runner owns the entries, so new entries need no change here.
+# The harness runner owns the entries, so new entries need no change here.
 on:
   push:
     branches:
       - 'develop'
     paths:
       - 'internal/torrentclient/**'
+      # Internal packages that the torrent client tests import.
+      - 'internal/domain/**'
+      - 'internal/errtrace/**'
+      - 'internal/torrents/**'
       - 'go.mod'
       - 'go.sum'
       # run.sh reads the Go test image from the release Dockerfile.
@@ -16,6 +19,9 @@ on:
   pull_request:
     paths:
       - 'internal/torrentclient/**'
+      - 'internal/domain/**'
+      - 'internal/errtrace/**'
+      - 'internal/torrents/**'
       - 'go.mod'
       - 'go.sum'
       - 'Dockerfile'
@@ -23,7 +29,7 @@ on:
   workflow_dispatch:
     inputs:
       full:
-        description: 'Also run the middle qBittorrent versions'
+        description: 'Run all entries (run.sh list all)'
         type: boolean
         default: false
 

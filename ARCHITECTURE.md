@@ -319,21 +319,6 @@ internal/torrentclient/testdata/harness/run.sh list [all]     # entries as a JSO
   which git ignores.
 - The compose project name comes from the checkout path, so two worktrees can
   run the harness at the same time.
-
-`.github/workflows/integration.yml` runs the harness in CI. It runs on pull
-requests and pushes to `develop` that change `internal/torrentclient/`,
-`go.mod`, `go.sum`, `Dockerfile`, or the workflow. A manual run has a `full`
-input.
-
-- A setup job reads the matrix from `run.sh list`, or `run.sh list all` when
-  `full` is set. Each entry is one parallel job that runs `run.sh <entry>`, so
-  a new runner entry needs no workflow change.
-- Jobs do not retry, and one failed entry does not cancel the others. A failed
-  job uploads its daemon logs as the `daemon-logs-<entry>` artifact.
-- The workflow sets `HARNESS_GHA_CACHE=1`, and the Deluge overlay then uses the
-  GitHub Actions layer cache with one scope for each package version. Local
-  runs leave it unset, because the default docker build driver cannot export a
-  cache.
 - `compose.yaml` holds the Go test service. Each client adds a
   `compose.<client>.yaml` overlay with its daemon and its test settings.
 - Daemons use committed credentials, and DHT, PEX and LPD are off. qBittorrent
@@ -352,6 +337,21 @@ input.
   longer has the pinned package version. `deluge/entrypoint.sh` writes the
   auth entry (`seasonpackarr:integration:10`) and `core.conf`, then starts
   `deluged` on all interfaces.
+
+`.github/workflows/integration.yml` runs the harness in CI. It runs on pull
+requests and pushes to `develop` that change the torrent client package, the
+internal packages that its tests import, `go.mod`, `go.sum`, `Dockerfile`, or
+the workflow. A manual run has a `full` input.
+
+- A setup job reads the matrix from `run.sh list`, or `run.sh list all` when
+  `full` is set. Each entry is one parallel job that runs `run.sh <entry>`, so
+  a new runner entry needs no workflow change.
+- Jobs do not retry, and one failed entry does not cancel the others. A failed
+  job uploads its daemon logs as the `daemon-logs-<entry>` artifact.
+- The workflow sets `HARNESS_GHA_CACHE=1`, and the Deluge overlay then uses the
+  GitHub Actions layer cache with one scope for each package version. Local
+  runs leave it unset, because the default docker build driver cannot export a
+  cache.
 
 ### Coverage
 

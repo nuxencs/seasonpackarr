@@ -10,11 +10,12 @@ services:
         DELUGE_PACKAGE_VERSION: ${DELUGE_PACKAGE_VERSION:?run.sh sets DELUGE_PACKAGE_VERSION from the entry}
       # The integration workflow sets HARNESS_GHA_CACHE. Local builds leave the
       # entries empty, because the default docker driver cannot export a cache.
-      # One scope per version, so parallel jobs do not overwrite each other.
+      # One scope per version, so parallel jobs do not overwrite each other. A
+      # cache service error must not fail the tests.
       cache_from:
         - ${HARNESS_GHA_CACHE:+type=gha,scope=deluge-${DELUGE_PACKAGE_VERSION}}
       cache_to:
-        - ${HARNESS_GHA_CACHE:+type=gha,mode=max,scope=deluge-${DELUGE_PACKAGE_VERSION}}
+        - ${HARNESS_GHA_CACHE:+type=gha,mode=max,ignore-error=true,scope=deluge-${DELUGE_PACKAGE_VERSION}}
     depends_on:
       volume-init:
         condition: service_completed_successfully

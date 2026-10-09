@@ -107,12 +107,17 @@ episodes download, and the reused episodes stay hardlinks.
 - The Deluge layer cache is in `compose.deluge.yaml`, behind
   `HARNESS_GHA_CACHE`, and not in a separate `build-push-action` step. A
   separate step would copy the build args of each Deluge entry into the
-  workflow. The cache needs three settings in the job: a `docker-container`
-  builder (`setup-buildx-action`), `COMPOSE_BAKE=true` so that compose builds
-  on that builder, and the `ACTIONS_*` variables
-  (`crazy-max/ghaction-github-runtime`), which run steps do not get.
+  workflow. The cache needs three settings in the job:
+  - a `docker-container` builder from `setup-buildx-action`
+  - `COMPOSE_BAKE=true`, so that compose builds on that builder
+  - the `ACTIONS_*` variables from `crazy-max/ghaction-github-runtime`, because
+    run steps do not get them
+- The cache export has `ignore-error=true`, so a cache service error does not
+  fail the tests.
 - The workflow also runs when `Dockerfile` changes, because the runner reads
-  the Go test image from it.
+  the Go test image from it. It also runs when `internal/domain`,
+  `internal/errtrace`, or `internal/torrents` change, because the torrent
+  client tests import them.
 
 ## verification notes
 
@@ -168,7 +173,7 @@ episodes download, and the reused episodes stay hardlinks.
     entries do not break a build.
   - With `HARNESS_GHA_CACHE=1`, `docker compose build --print` gives
     `cache-from` `type=gha,scope=deluge-2.2.0-1` and `cache-to`
-    `type=gha,mode=max,scope=deluge-2.2.0-1`.
+    `type=gha,mode=max,ignore-error=true,scope=deluge-2.2.0-1`.
   - Not verified locally: the run on GitHub Actions, the GHA cache import on
     a second run, and the `full` dispatch, which GitHub offers only after the
     workflow is on `develop`.
