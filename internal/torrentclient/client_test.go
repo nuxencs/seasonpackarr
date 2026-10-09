@@ -138,3 +138,11 @@ func TestBuildHost(t *testing.T) {
 		})
 	}
 }
+
+func TestNew_CreatesTransmissionClient(t *testing.T) {
+	t.Parallel()
+	srv, _ := transmissionTestServer(t, map[string]string{"session-get": emptySessionResp})
+	c, err := New(t.Context(), &domain.Client{Type: "transmission", Host: srv.URL})
+	require.NoError(t, err)
+	require.NotNil(t, c)
+}

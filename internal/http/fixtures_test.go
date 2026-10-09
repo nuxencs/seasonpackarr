@@ -47,16 +47,16 @@ type fakeConfig struct {
 	config domain.Config
 }
 
-func (c *fakeConfig) Snapshot() domain.Config {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.config
+func (f *fakeConfig) Snapshot() domain.Config {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.config
 }
 
-func (c *fakeConfig) Store(config domain.Config) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.config = config
+func (f *fakeConfig) Store(config domain.Config) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.config = config
 }
 
 type processorHTTPFixture struct {

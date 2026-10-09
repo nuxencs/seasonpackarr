@@ -55,10 +55,10 @@ const (
 
 // requireDaemon skips the test unless the import folder and the client's gate
 // variable are set. It returns the import folder.
-func requireDaemon(t *testing.T, hostKey string) string {
+func requireDaemon(t *testing.T, gateKey string) string {
 	t.Helper()
 	var missing []string
-	for _, key := range []string{hostKey, envImportDir} {
+	for _, key := range []string{gateKey, envImportDir} {
 		if os.Getenv(key) == "" {
 			missing = append(missing, key)
 		}
@@ -178,10 +178,9 @@ func torrentFromDir(t *testing.T, dir string) []byte {
 // hash. Cleanups use it so a test cannot leave a torrent behind for the next run.
 func assertRemoved(t *testing.T, hash string, present func() (bool, error)) {
 	t.Helper()
-	ctx, cancel := cleanupContext(t)
-	defer cancel()
 	var err error
-	_, removed := waitFor(ctx, func() bool {
+	// waitFor bounds the wait; t.Context is already canceled in a cleanup.
+	_, removed := waitFor(context.WithoutCancel(t.Context()), func() bool {
 		var found bool
 		found, err = present()
 		return found

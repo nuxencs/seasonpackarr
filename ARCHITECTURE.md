@@ -203,12 +203,14 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
   - `<Name>Command` for a CLI command (`TestOperationCommand_`)
   - `<Route>Endpoint` for one HTTP route (`TestImportEndpoint_`), or
     `Endpoints` for a test across routes
-  - a named feature (`TestSearch_`, `TestRSS_`, `TestInventory_`)
+  - a named feature (`TestSearch_`, `TestRSS_`, `TestInventory_`, `TestCLI_`)
 - Subtests use short, lowercase phrases. Names and acronyms keep their case
   (`deluge requires savePath`, `contains HDR`). A named table is `tests`, and
   the loop variable is `tt`. A table written inline in the `range` needs no name.
-- Test doubles are `fake<Thing>` (`fakeTorrentClient`, `fakeQbitAPI`). Fixtures
-  and recorded data keep descriptive names (`searchFixture`, `capturedRequest`).
+  A map table names its key and value instead (`for name, mutate := range tests`).
+- Test doubles are `fake<Thing>` (`fakeTorrentClient`, `fakeQbitAPI`), and their
+  methods use the receiver `f`. Fixtures and recorded data keep descriptive
+  names (`searchFixture`, `capturedRequest`).
 - Common helper prefixes:
   - `new<Thing>`: builds a client, fixture, or fake
   - `write<Thing>`: creates files on disk

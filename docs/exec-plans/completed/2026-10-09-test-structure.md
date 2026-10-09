@@ -109,6 +109,10 @@ Phase 2, every other test:
   main type, and `require<Fact>` stops the test by failing or skipping it.
 - Third review: tests that post from a goroutine encode the body first and call
   `postRaw`, which makes no assertions. `postJSON` uses `require`.
+- Fourth review: fakes use the receiver `f`, map tables name their key and
+  value, and `TestCLI_` is a named feature. `TestNew_CreatesTransmissionClient`
+  moved to `client_test.go` next to the other `New` test, so the Transmission
+  test server moved to `fixtures_test.go`.
 - `loggertest.Logger.Fatal` panics instead of exiting. No production code
   under test calls `Fatal`.
 
