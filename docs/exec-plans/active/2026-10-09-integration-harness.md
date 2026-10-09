@@ -174,6 +174,11 @@ episodes download, and the reused episodes stay hardlinks.
   - With `HARNESS_GHA_CACHE=1`, `docker compose build --print` gives
     `cache-from` `type=gha,scope=deluge-2.2.0-1` and `cache-to`
     `type=gha,mode=max,ignore-error=true,scope=deluge-2.2.0-1`.
-  - Not verified locally: the run on GitHub Actions, the GHA cache import on
-    a second run, and the `full` dispatch, which GitHub offers only after the
-    workflow is on `develop`.
+  - On PR #278, the workflow ran the setup job and the 7 default entries as
+    parallel jobs, and all passed (53 to 91 seconds each). The runtime step
+    exposed `ACTIONS_RESULTS_URL` and `ACTIONS_CACHE_SERVICE_V2`, and the
+    first Deluge build exported its cache to gha.
+  - A re-run of the `deluge-2.2.0` job imported the gha cache, and the
+    `apt-get install` layer was `CACHED`.
+  - Not verified: the `full` dispatch, which GitHub offers only after the
+    workflow is on `develop`, and a failed job that uploads its logs.
