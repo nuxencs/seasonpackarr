@@ -20,6 +20,8 @@ default_entries=(
 )
 # Middle versions that only `all` runs. hotio publishes no 4.4.x image.
 extra_entries=(qbit-4.5.5 qbit-4.6.7 qbit-5.0.5 qbit-5.1.4)
+# Every entry seeds its download test from this qBittorrent. Bump it with the newest qBittorrent entry.
+export SEEDER_IMAGE=ghcr.io/hotio/qbittorrent:release-5.2.4
 
 harness_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd "$harness_dir/../../../.." && pwd)
@@ -55,11 +57,12 @@ is_known_entry() {
 # that the client's compose overlay reads. log_files lists <service>:<path>
 # entries for daemon logs that are not on stdout.
 configure_entry() {
+	log_files=(seeder:/config/data/logs/qbittorrent.log)
 	case $1 in
 	qbit-*)
 		client=qbit
 		test_pattern=QbitDaemon_
-		log_files=(qbit:/config/data/logs/qbittorrent.log)
+		log_files+=(qbit:/config/data/logs/qbittorrent.log)
 		QBIT_IMAGE="ghcr.io/hotio/qbittorrent:release-${1#qbit-}"
 		if [[ $1 == qbit-4.3.9 ]]; then
 			# hotio publishes 4.3.9 only under the moving legacy tag.
@@ -71,7 +74,6 @@ configure_entry() {
 		client=transmission
 		test_pattern=TransmissionDaemon_
 		# transmission-daemon -f logs to the container output, which save_logs captures.
-		log_files=()
 		# Plain version tags move with every weekly rebuild. The build tags do not.
 		case $1 in
 		transmission-4.0.6) TRANSMISSION_IMAGE=lscr.io/linuxserver/transmission:4.0.6-r4-ls311 ;;
@@ -87,7 +89,6 @@ configure_entry() {
 		client=deluge
 		test_pattern=DelugeDaemon_
 		# deluged --do-not-daemonize logs to the container output.
-		log_files=()
 		# deluge/Dockerfile installs the exact Debian package version.
 		case $1 in
 		deluge-1.3.15) DELUGE_DEBIAN_RELEASE=buster DELUGE_PACKAGE_VERSION=1.3.15-2 DELUGE_CLIENT_TYPE=deluge-v1 ;;
@@ -123,9 +124,9 @@ save_logs() {
 		[[ $service == test ]] && continue
 		compose logs --no-color --timestamps "$service" >"$dir/$service.log" 2>&1 || true
 	done
-	# The + form expands an empty array without an unbound error in bash 3.2.
-	for log_file in ${log_files[@]+"${log_files[@]}"}; do
-		compose cp "$log_file" "$dir/$(basename "$log_file")" >/dev/null 2>&1 || true
+	# The service prefix keeps the seeder and qbit logs apart.
+	for log_file in "${log_files[@]}"; do
+		compose cp "$log_file" "$dir/${log_file%%:*}-$(basename "$log_file")" >/dev/null 2>&1 || true
 	done
 	printf 'saved daemon logs to %s\n' "$dir" >&2
 }

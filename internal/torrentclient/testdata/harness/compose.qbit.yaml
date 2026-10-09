@@ -1,35 +1,14 @@
 # qBittorrent overlay. hotio images read /config/config/qBittorrent.conf.
 services:
   qbit:
+    # The client under test starts like the seeder, with its own image and
+    # config volume.
+    extends:
+      file: compose.yaml
+      service: seeder
     image: ${QBIT_IMAGE:?run.sh sets QBIT_IMAGE from the entry}
-    # qBittorrent rewrites its config, so it gets a copy in a fresh volume, not
-    # the committed file. The copy must belong to PUID, and exec keeps s6 /init
-    # as PID 1.
-    entrypoint:
-      - /bin/sh
-      - -c
-      - >-
-        mkdir -p /config/config &&
-        cp /harness/qBittorrent.conf /config/config/qBittorrent.conf &&
-        chown -R 1000:1000 /config/config &&
-        exec /init
-    depends_on:
-      volume-init:
-        condition: service_completed_successfully
-    environment:
-      # Same uid as the test container, so the daemon can write into its packs.
-      PUID: "1000"
-      PGID: "1000"
     volumes:
-      - ./qbittorrent/qBittorrent.conf:/harness/qBittorrent.conf:ro
       - qbit-config:/config
-      - data:/data
-    healthcheck:
-      # WebUI\LocalHostAuth=false lets the check skip the login.
-      test: [CMD, curl, -fsS, http://127.0.0.1:8080/api/v2/app/version]
-      interval: 2s
-      timeout: 5s
-      retries: 60
 
   test:
     depends_on:

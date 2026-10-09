@@ -54,7 +54,7 @@ episodes download, and the reused episodes stay hardlinks.
 5. Transmission entries. [done, #271]
 6. Deluge build definition and entries. [done, #272]
 7. CI workflow. [done, #273]
-8. Seeder and qBittorrent real download test. [pending, #274]
+8. Seeder and qBittorrent real download test. [done, #274]
 9. Transmission and Deluge real download tests. [pending]
 10. Move this plan to `completed/`. [pending]
 
@@ -119,6 +119,22 @@ episodes download, and the reused episodes stay hardlinks.
   `internal/errtrace`, or `internal/torrents` change, because the torrent
   client tests import them.
 
+- The seeder is in the base `compose.yaml`, so every entry starts it and the
+  test service waits for its health check. The `qbit` overlay `extends` the
+  seeder service and replaces only the image and the config volume, so one
+  definition starts both qBittorrent daemons.
+- The download test hardlinks the reused episodes from a source folder below
+  the import folder, not from the seed folder. The seeder and the client under
+  test then share no inodes, and the inode check compares against files that
+  only the test writes.
+- The download test also checks that the client downloaded exactly one
+  episode. A client that rewrites a hardlinked file in place keeps its inode
+  and content, and only the byte count shows the redownload. libtorrent adds
+  payload to the count once per second, so the qBittorrent wait includes the
+  count, not only the progress.
+- The test repeats `addPeers` every 2 seconds until the download completes,
+  so one failed connect attempt cannot stall it.
+
 ## verification notes
 
 - #270, 2026-10-09:
@@ -182,3 +198,18 @@ episodes download, and the reused episodes stay hardlinks.
     `apt-get install` layer was `CACHED`.
   - Not verified: the `full` dispatch, which GitHub offers only after the
     workflow is on `develop`, and a failed job that uploads its logs.
+- #274, 2026-10-09:
+  - `run.sh qbit-5.2.4 qbit-4.3.9` passes in strict mode, including both
+    subtests of `TestQbitDaemon_DownloadsMissingEpisodes` (4 to 8 seconds
+    each).
+  - Before the seeder service existed, strict mode failed the test and named
+    `SEASONPACKARR_TEST_SEEDER_HOST` and `SEASONPACKARR_TEST_SEED_DIR`.
+  - `-count=2` against the same daemons passes, so the torrent cleanup on the
+    seeder and the client lets reruns pass.
+  - A fixture change that copies the reused episodes instead of hardlinking
+    them fails the inode check for both reused episodes.
+  - A failed entry writes `seeder.log` and `seeder-qbittorrent.log` next to the
+    client logs. The qBittorrent log of the client is now
+    `qbit-qbittorrent.log`.
+  - `run.sh transmission-4.1.3 deluge-2.2.0` still passes with the seeder in
+    the base compose file.

@@ -243,8 +243,8 @@ locally and in the integration workflow.
 
 - `internal/torrentclient/<client>_integration_test.go` holds one client's
   tests. `fixtures_integration_test.go` holds the shared fixtures, for example
-  the environment names, `requireDaemon`, the pack writers, `waitFor`, and the
-  shared assertions.
+  the environment names, `requireDaemon`, the pack writers, `waitFor`, the
+  seeder helpers, and the shared assertions.
 - Names are `Test<Client>Daemon_<Behavior>` (`TestQbitDaemon_ResumesPartialPack`).
   `Daemon` separates them from the unit tests of the same adapter.
 - Each test calls `requireDaemon` first. It skips the test when the client's
@@ -261,6 +261,17 @@ locally and in the integration workflow.
   behind for the next one. Pack data stays on disk for inspection.
 - Cleanup calls that take a context use `cleanupContext`, because `t.Context`
   is canceled before cleanup functions run.
+- `Test<Client>Daemon_DownloadsMissingEpisodes` checks the core promise with a
+  real download, for a missing first and a missing last episode. `newSeeder`
+  controls the seeder daemon with go-qbittorrent directly, not through an
+  adapter. `seeder.seed` writes the full pack into the seed folder and seeds it.
+  `writeLinkedPack` writes the source episodes below the import folder and
+  hardlinks all except the missing one into the pack folder. After the import,
+  `waitSeededDownload` resolves the client's host name to its IP address and
+  connects the seeder to the client's listen port with `addPeers`.
+  `assertDownloadedPack` checks the file content, that reused episodes keep
+  the inode of their source files, and that only the missing episode
+  downloaded.
 
 The import folder must have the same path for the test process and the daemon.
 
@@ -270,6 +281,11 @@ The import folder must have the same path for the test process and the daemon.
 | qBittorrent | `SEASONPACKARR_TEST_QBIT_HOST` | `_QBIT_USER`, `_QBIT_PASS` |
 | Transmission | `SEASONPACKARR_TEST_TRANSMISSION_HOST` | `_TRANSMISSION_USER`, `_TRANSMISSION_PASS` |
 | Deluge | `SEASONPACKARR_TEST_DELUGE_TYPE` (`deluge-v1` or `deluge-v2`) | `_DELUGE_HOST` (`127.0.0.1`), `_DELUGE_PORT` (`58846`), `_DELUGE_USER` (`seasonpackarr`), `_DELUGE_PASS` (`integration`) |
+| Seeder (download tests) | `SEASONPACKARR_TEST_SEEDER_HOST` and `SEASONPACKARR_TEST_SEED_DIR` | `_SEEDER_USER`, `_SEEDER_PASS` |
+
+The seed folder must be on the same volume as the import folder. The seeder
+must reach the client under test at the host name in the client's host
+setting, so the download tests need the harness network.
 
 ### Commands
 
@@ -319,8 +335,13 @@ internal/torrentclient/testdata/harness/run.sh list [all]     # entries as a JSO
   which git ignores.
 - The compose project name comes from the checkout path, so two worktrees can
   run the harness at the same time.
-- `compose.yaml` holds the Go test service. Each client adds a
+- `compose.yaml` holds the Go test service and the seeder. Each client adds a
   `compose.<client>.yaml` overlay with its daemon and its test settings.
+- The seeder is hotio qBittorrent 5.2.4 (`SEEDER_IMAGE` in `run.sh`) with the
+  committed `qBittorrent.conf`. It runs in every entry, and the tests start
+  only after its health check. Its seed folder is `/data/seed`. The `qbit`
+  service extends the seeder service, so both qBittorrent daemons start the
+  same way. Bump the seeder pin with the newest qBittorrent entry.
 - Daemons use committed credentials, and DHT, PEX and LPD are off. qBittorrent
   uses hotio images and `qbittorrent/qBittorrent.conf` (`admin:integration`).
   hotio publishes 4.3.9 only under the moving `legacy` tag, so the runner

@@ -1,6 +1,8 @@
 # Base of the integration harness. run.sh adds one compose.<client>.yaml overlay
 # for each entry. Every container mounts the named data volume at /data, so the
 # test process and the daemons see packs and hardlinks at the same path (ADR-0001).
+# The seeder runs in every entry, because the download test of every client
+# gets the missing episodes from it.
 services:
   # Some hotio images refuse to run as root, so the daemons and the tests run as
   # uid 1000. Fresh volumes belong to root until this step gives them to uid 1000.
@@ -11,6 +13,41 @@ services:
       - data:/data
       - go-cache:/cache
 
+  # qBittorrent that seeds full packs to the client under test. The committed
+  # config turns off DHT, PEX and LPD, so it finds peers only through addPeers.
+  # compose.qbit.yaml extends this service, so both qBittorrent daemons start
+  # the same way.
+  seeder:
+    image: ${SEEDER_IMAGE:?run.sh sets SEEDER_IMAGE}
+    # qBittorrent rewrites its config, so it gets a copy in a fresh volume, not
+    # the committed file. The copy must belong to PUID, and exec keeps s6 /init
+    # as PID 1.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        mkdir -p /config/config &&
+        cp /harness/qBittorrent.conf /config/config/qBittorrent.conf &&
+        chown -R 1000:1000 /config/config &&
+        exec /init
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+    environment:
+      # Same uid as the test container, so the daemon can read and write its packs.
+      PUID: "1000"
+      PGID: "1000"
+    volumes:
+      - ./qbittorrent/qBittorrent.conf:/harness/qBittorrent.conf:ro
+      - seeder-config:/config
+      - data:/data
+    healthcheck:
+      # WebUI\LocalHostAuth=false lets the check skip the login.
+      test: [CMD, curl, -fsS, http://127.0.0.1:8080/api/v2/app/version]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
   test:
     image: ${GO_IMAGE:?run.sh sets GO_IMAGE from the release Dockerfile}
     user: "1000:1000"
@@ -18,6 +55,8 @@ services:
     depends_on:
       volume-init:
         condition: service_completed_successfully
+      seeder:
+        condition: service_healthy
     environment:
       CGO_ENABLED: "0"
       HOME: /tmp
@@ -26,6 +65,10 @@ services:
       GOTOOLCHAIN: local
       SEASONPACKARR_TEST_IMPORT_DIR: /data/import
       SEASONPACKARR_TEST_REQUIRE_DAEMONS: "1"
+      SEASONPACKARR_TEST_SEEDER_HOST: http://seeder:8080
+      SEASONPACKARR_TEST_SEEDER_USER: admin
+      SEASONPACKARR_TEST_SEEDER_PASS: integration
+      SEASONPACKARR_TEST_SEED_DIR: /data/seed
     volumes:
       - ../../../..:/src:ro
       - data:/data
@@ -33,6 +76,7 @@ services:
 
 volumes:
   data:
+  seeder-config:
   # run.sh creates this volume. It outlives teardown, so entries share the Go caches.
   go-cache:
     name: seasonpackarr-harness-go-cache
