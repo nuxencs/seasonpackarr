@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestConnection_ConfigAndFlagPrecedence(t *testing.T) {
+func TestConnectionOptions_ConfigAndFlagPrecedence(t *testing.T) {
 	isolateCLI(t)
 	t.Setenv("SEASONPACKARR__DISABLE_CONFIG_FILE", "")
 	var gotClient, gotToken string
@@ -70,7 +70,7 @@ func TestConnection_ConfigAndFlagPrecedence(t *testing.T) {
 	}
 }
 
-func TestConnection_MultipleClientsAndSearchSelection(t *testing.T) {
+func TestConnectionOptions_MultipleClientsAndSearchSelection(t *testing.T) {
 	isolateCLI(t)
 	t.Setenv("SEASONPACKARR__DISABLE_CONFIG_FILE", "")
 	dir := t.TempDir()
@@ -92,7 +92,7 @@ func TestConnection_MultipleClientsAndSearchSelection(t *testing.T) {
 	require.Contains(t, stdout, "No season-pack results.")
 }
 
-func TestConnection_InvalidAddresses(t *testing.T) {
+func TestConnectionOptions_InvalidAddresses(t *testing.T) {
 	isolateCLI(t)
 	for _, flags := range [][]string{
 		{"--url", "https://user:secret@example.com"},
@@ -115,7 +115,7 @@ func TestConnection_InvalidAddresses(t *testing.T) {
 	}
 }
 
-func TestConnection_ValidatesOnlyEffectivePort(t *testing.T) {
+func TestConnectionOptions_ValidatesOnlyEffectivePort(t *testing.T) {
 	isolateCLI(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(250)

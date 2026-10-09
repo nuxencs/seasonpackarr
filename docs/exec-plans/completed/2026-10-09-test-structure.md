@@ -100,6 +100,9 @@ Phase 2, every other test:
   such as `TestBuildDelugeSettings` have the client name in the middle.
 - Second review: `waitFor` takes a context, so `assertRemoved` can use it from
   a cleanup, where `t.Context` is already canceled.
+- Second review: a type is a valid subject when a test covers behavior across
+  several of its methods. `cmd` tests became `TestAPIClient_` and
+  `TestConnectionOptions_`; `prowlarr` keeps `TestClient_`.
 - `loggertest.Logger.Fatal` panics instead of exiting. No production code
   under test calls `Fatal`.
 

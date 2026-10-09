@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAPI_RedirectDoesNotForwardCredentials(t *testing.T) {
+func TestAPIClient_RedirectDoesNotForwardCredentials(t *testing.T) {
 	isolateCLI(t)
 	var calls atomic.Int32
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +35,7 @@ func TestAPI_RedirectDoesNotForwardCredentials(t *testing.T) {
 	require.Zero(t, calls.Load())
 }
 
-func TestAPI_ServerErrorRedactsTokenAndControlCharacters(t *testing.T) {
+func TestAPIClient_ServerErrorRedactsTokenAndControlCharacters(t *testing.T) {
 	isolateCLI(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
@@ -49,7 +49,7 @@ func TestAPI_ServerErrorRedactsTokenAndControlCharacters(t *testing.T) {
 	require.Contains(t, stdout, "[redacted]")
 }
 
-func TestAPI_CancellationStopsSearch(t *testing.T) {
+func TestAPIClient_CancellationStopsSearch(t *testing.T) {
 	isolateCLI(t)
 	started, stopped := make(chan struct{}), make(chan struct{})
 	release := make(chan struct{})
@@ -86,7 +86,7 @@ func TestAPI_CancellationStopsSearch(t *testing.T) {
 	}
 }
 
-func TestAPI_RejectsOversizedResponses(t *testing.T) {
+func TestAPIClient_RejectsOversizedResponses(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, strings.Repeat("x", (32<<20)+1))
 	}))

@@ -195,6 +195,8 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
 - The subject is one of:
   - the function under test (`TestEpisodeFileFromFiles_`), or a short type
     name plus the method (`TestQbitImport_` for `qbitClient.Import`)
+  - a type, when the test covers behavior across several of its methods
+    (`TestClient_`, `TestStore_`, `TestAPIClient_`)
   - `<Name>Command` for a CLI command (`TestOperationCommand_`)
   - `<Route>Endpoint` for one HTTP route (`TestImportEndpoint_`), or
     `Endpoints` for a test across routes
