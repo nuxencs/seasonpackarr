@@ -9,7 +9,7 @@ Design docs capture stable reasoning about how this system should work.
 | `core-beliefs.md` | Agent-first operating beliefs for this repo | Verified against repo structure and workflows | 2026-08-09 |
 | `season-pack-lifecycle.md` | End-to-end processing and operator log model from webhook to import | Verified against `cmd/start.go`, `internal/http/*`, `internal/release/*` | 2026-08-12 |
 | `matching-and-hardlinking.md` | Safety, diagnostics, and correctness constraints for matching and file linking | Verified against `internal/release/*`, `internal/files/*` | 2026-08-12 |
-| `qbittorrent-import-flow.md` | `/api/import` client import flow, timings, and complete-vs-partial behavior | Verified against `internal/torrentclient/*`, real qBittorrent 4.3.9 to 5.2.3, Transmission 4.0.6 and 4.1.3 (with and without an incomplete folder), Deluge 1.3.15, and Deluge 2.1.2 | 2026-10-07 |
+| `qbittorrent-import-flow.md` | `/api/import` client import flow, timings, and complete-vs-partial behavior | Verified against `internal/torrentclient/*`. Timings measured on real qBittorrent 4.3.9 to 5.2.3, Transmission 4.0.6 and 4.1.3 (with and without an incomplete folder), Deluge 1.3.15, and Deluge 2.1.2 (2026-10-07). Behavior checked by the integration harness on qBittorrent 4.3.9 to 5.2.4, Transmission 4.0.6 and 4.1.3, and Deluge 1.3.15, 2.0.3 and 2.2.0 | 2026-10-09 |
 
 ## Usage
 

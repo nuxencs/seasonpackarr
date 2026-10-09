@@ -57,7 +57,8 @@ episodes download, and the reused episodes stay hardlinks.
 8. Seeder and qBittorrent real download test. [done, #274]
 9. Transmission real download test. [done, #275]
 10. Deluge real download test. [done, #276]
-11. Move this plan to `completed/`. [pending]
+11. Full matrix verification, docs close-out, and move this plan to
+    `completed/`. [done, #277]
 
 ## decision log
 
@@ -215,8 +216,8 @@ episodes download, and the reused episodes stay hardlinks.
     first Deluge build exported its cache to gha.
   - A re-run of the `deluge-2.2.0` job imported the gha cache, and the
     `apt-get install` layer was `CACHED`.
-  - Not verified: the `full` dispatch, which GitHub offers only after the
-    workflow is on `develop`, and a failed job that uploads its logs.
+  - Not verified: a failed job that uploads its logs. #277 verified the
+    `full` dispatch.
 - #274, 2026-10-09:
   - `run.sh qbit-5.2.4 qbit-4.3.9` passes in strict mode, including both
     subtests of `TestQbitDaemon_DownloadsMissingEpisodes` (4 to 8 seconds
@@ -261,3 +262,27 @@ episodes download, and the reused episodes stay hardlinks.
     passes, so the torrent cleanup lets reruns pass.
   - Deluge 1.3.15 reports `Queued` after the check, before it starts the
     download. The test does not depend on it.
+- #277, 2026-10-09:
+  - `run.sh all` passes all 11 entries locally in strict mode. The only skip
+    is the "manual category path" subtest on qBittorrent 4.3.9. Each entry's
+    test run takes 6 to 30 seconds. After the run, no containers or project
+    volumes are left, and `artifacts/` is empty.
+  - A `full` dispatch of the integration workflow on the branch
+    (`gh workflow run Integration --ref test/integration-harness -f full=true`)
+    passes the setup job and all 11 entry jobs (56 to 116 seconds each). A
+    dispatch on a branch works because the workflow is already registered
+    from the PR runs.
+  - With `SEASONPACKARR_TEST_QBIT_HOST` removed from `compose.qbit.yaml`,
+    `run.sh qbit-5.2.4` exits 1. Strict mode fails all five
+    `TestQbitDaemon_` tests and names the missing setting. The runner saves
+    the daemon logs and leaves no containers or project volumes. On the host,
+    `SEASONPACKARR_TEST_REQUIRE_DAEMONS=1` with no daemon settings fails all
+    12 `Daemon_` tests, and without it they skip.
+  - The README states qBittorrent 4.3.9 to 5.2.4, Transmission 4.0.6 to
+    4.1.3, and Deluge 1.3.15 and 2.0.3 to 2.2.0, which match the runner
+    entries.
+  - Docs audit: no doc outside the completed plans describes the manual
+    daemon setup or the uncommitted Deluge images. The qBittorrent import flow
+    design doc, its index row, and the Deluge audit no longer name Deluge
+    2.1.2 as a tested version.
+  - Not verified: a failed CI job that uploads its logs.

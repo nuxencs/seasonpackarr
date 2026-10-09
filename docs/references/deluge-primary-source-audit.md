@@ -274,7 +274,7 @@ Correction for seasonpackarr: the broad claim that Deluge does not support pure 
 
 ## Native RPC integration-test setup
 
-Use a two-entry matrix. Each entry must start a real daemon and run the seasonpackarr adapter against native RPC.
+Use one matrix row for each protocol generation. Each harness entry must start a real daemon and run the seasonpackarr adapter against native RPC.
 
 | Matrix entry | Daemon | Client constructor | Required fixture |
 | --- | --- | --- | --- |
@@ -330,13 +330,14 @@ Deluge 1.3 logs an error when its first state save tries to back up a state
 file that does not exist yet. The save that follows succeeds. This is a
 first-run fixture condition, not a failed torrent import.
 
-Deluge 2.1.2 can log `Torrent id not in torrents loading list` after
-`core.add_torrent_file`. That RPC uses the synchronous torrent-manager `add`
-path, which creates the torrent object directly. Libtorrent later emits an
-`add_torrent_alert`. Its handler only looks in the `torrents_loading` map used
-by `add_async`, logs the warning when the synchronously added torrent is not
-there, and returns. The torrent is already present and the integration test
-continues to verify its state, path, files, progress, and label.
+Deluge 2 can log `Torrent id not in torrents loading list` after
+`core.add_torrent_file` (observed on Deluge 2.1.2). That RPC uses the
+synchronous torrent-manager `add` path, which creates the torrent object
+directly. Libtorrent later emits an `add_torrent_alert`. Its handler only
+looks in the `torrents_loading` map used by `add_async`, logs the warning when
+the synchronously added torrent is not there, and returns. The torrent is
+already present and the integration test continues to verify its state, path,
+files, progress, and label.
 
 Sources:
 
