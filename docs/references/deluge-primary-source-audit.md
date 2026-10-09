@@ -14,9 +14,9 @@ Environment-gated integration tests connect to real Deluge 1.3.15, 2.0.3 and
 reads, initial checks, resume, missing-label creation, and label assignment.
 `TestDelugeDaemon_DownloadsMissingEpisodes` also downloads the missing episode
 of a partial pack from a qBittorrent seeder in the harness, and checks that the
-reused episodes keep their inodes. The integration harness builds the daemon images from committed sources and
-runs the tests. The tests write their own packs and do not use static
-torrent data.
+reused episodes keep their inodes. The integration harness builds the daemon
+images from committed sources and runs the tests. The tests write their own
+packs and do not use static torrent data.
 
 ## Inspected revisions
 

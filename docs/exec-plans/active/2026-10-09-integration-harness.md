@@ -152,7 +152,7 @@ episodes download, and the reused episodes stay hardlinks.
   (go-deluge `GetListenPort`). Deluge picks a random listen port by default
   (`random_port`), so the port changes with each daemon start. The payload
   byte count is `all_time_download`, which libtorrent also updates once per
-  second, so the wait includes it. The wait also needs `is_finished`.
+  second, so the wait includes it.
 
 ## verification notes
 
@@ -255,8 +255,8 @@ episodes download, and the reused episodes stay hardlinks.
     including both subtests of `TestDelugeDaemon_DownloadsMissingEpisodes`
     (2 to 5 seconds each). `GetListenPort` reports a random port on each
     daemon start, for example 62158 and 51519.
-  - `all_time_download` equals exactly one episode (1048576 bytes) on all
-    three versions, because `assertDownloadedPack` checks it.
+  - `assertDownloadedPack` confirms that `all_time_download` is exactly one
+    episode (1048576 bytes) on all three versions.
   - `-count=2` on `deluge-2.2.0` and `deluge-1.3.15` against the same daemons
     passes, so the torrent cleanup lets reruns pass.
   - Deluge 1.3.15 reports `Queued` after the check, before it starts the

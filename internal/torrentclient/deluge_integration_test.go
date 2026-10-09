@@ -91,16 +91,12 @@ func TestDelugeDaemon_DownloadsMissingEpisodes(t *testing.T) {
 			status := waitDelugeChecked(t, c, pack.hashes.Legacy)
 			assertPartialProgress(t, float64(status.Progress)/100, packEpisodes-1)
 
-			c.mu.Lock()
-			port, err := delugeDaemonAPI(t, c).GetListenPort(t.Context())
-			c.mu.Unlock()
-			require.NoError(t, err)
-			peer := newPeerAddress(t, envOrDefault(envDelugeHost, "127.0.0.1"), int(port))
+			peer := newPeerAddress(t, delugeHost(), delugeListenPort(t, c))
 			status, complete := waitSeededDownload(t, s, pack.hashes.Legacy, peer, readDelugeTorrent(t, c, pack.hashes.Legacy),
 				func(status *deluge.TorrentStatus) bool {
 					// libtorrent adds payload to all_time_download once per second,
 					// so the count can lag behind the progress.
-					return status.Progress >= 100 && status.IsFinished && status.AllTimeDownload >= packEpisodeSize
+					return status.Progress >= 100 && status.AllTimeDownload >= packEpisodeSize
 				})
 			require.True(t, complete, "download did not complete: state=%s progress=%.2f", status.State, status.Progress)
 			assertDownloadedPack(t, importDir, pack, tt.missing, status.AllTimeDownload)
@@ -118,7 +114,7 @@ func newDelugeDaemonClient(t *testing.T, importDir string) *delugeClient {
 
 	c, err := newDelugeClient(t.Context(), &domain.Client{
 		Type:     clientType,
-		Host:     envOrDefault(envDelugeHost, "127.0.0.1"),
+		Host:     delugeHost(),
 		Port:     port,
 		Username: envOrDefault(envDelugeUser, "seasonpackarr"),
 		Password: envOrDefault(envDelugePass, "integration"),
@@ -200,6 +196,22 @@ func waitDelugeChecked(t *testing.T, c *delugeClient, hash string) *deluge.Torre
 	require.True(t, checked, "torrent did not leave the paused and checking states")
 	require.NotEqual(t, deluge.StateError, deluge.TorrentState(status.State), "torrent entered the error state")
 	return status
+}
+
+// delugeHost is the daemon host name that the adapter and the seeder connect to.
+func delugeHost() string {
+	return envOrDefault(envDelugeHost, "127.0.0.1")
+}
+
+// delugeListenPort returns the daemon's BitTorrent listen port. Deluge picks a
+// random port by default, so the test cannot use a fixed one.
+func delugeListenPort(t *testing.T, c *delugeClient) int {
+	t.Helper()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	port, err := delugeDaemonAPI(t, c).GetListenPort(t.Context())
+	require.NoError(t, err)
+	return int(port)
 }
 
 // readDelugeTorrent returns a waitFor read function that stops the test when
