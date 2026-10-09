@@ -53,7 +53,7 @@ const (
 	daemonTimeout   = 30 * time.Second
 )
 
-// requireDaemon skips the test unless the import folder and the daemon address
+// requireDaemon skips the test unless the import folder and the client's gate
 // variable are set. It returns the import folder.
 func requireDaemon(t *testing.T, hostKey string) string {
 	t.Helper()
@@ -176,8 +176,10 @@ func torrentFromDir(t *testing.T, dir string) []byte {
 
 // assertRemoved waits until present reports that the daemon no longer holds
 // hash. Cleanups use it so a test cannot leave a torrent behind for the next run.
-func assertRemoved(t *testing.T, ctx context.Context, hash string, present func() (bool, error)) {
+func assertRemoved(t *testing.T, hash string, present func() (bool, error)) {
 	t.Helper()
+	ctx, cancel := cleanupContext(t)
+	defer cancel()
 	var err error
 	_, removed := waitFor(ctx, func() bool {
 		var found bool
@@ -217,8 +219,8 @@ func assertPartialProgress(t *testing.T, progress float64, present int) {
 	assert.InDelta(t, want, progress, 0.01, "the check must find exactly the %d present of %d episodes", present, packEpisodes)
 }
 
-// requireListedPack asserts that the adapter's read path reports the imported
-// pack with its save path and every file.
+// requireListedPack stops the test unless the adapter's read path reports the
+// imported pack with its save path and every file.
 func requireListedPack(t *testing.T, client TorrentClient, pack testPack, savePath string) {
 	t.Helper()
 

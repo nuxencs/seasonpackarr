@@ -142,10 +142,8 @@ func importQbitPack(t *testing.T, c *qbitClient, req ImportRequest) ImportReport
 	t.Helper()
 	raw := qbitDaemonAPI(t, c)
 	t.Cleanup(func() {
-		ctx, cancel := cleanupContext(t)
-		defer cancel()
 		assert.NoError(t, raw.DeleteTorrents([]string{req.LegacyHash}, false), "remove torrent")
-		assertRemoved(t, ctx, req.LegacyHash, func() (bool, error) {
+		assertRemoved(t, req.LegacyHash, func() (bool, error) {
 			found, err := raw.GetTorrents(qbittorrent.TorrentFilterOptions{Hashes: []string{req.LegacyHash}})
 			return len(found) > 0, err
 		})

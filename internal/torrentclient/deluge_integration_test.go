@@ -137,7 +137,7 @@ func importDelugePack(t *testing.T, c *delugeClient, req ImportRequest) ImportRe
 		_, err := raw.RemoveTorrent(ctx, req.LegacyHash, false)
 		c.mu.Unlock()
 		assert.NoError(t, err, "remove torrent")
-		assertRemoved(t, ctx, req.LegacyHash, present)
+		assertRemoved(t, req.LegacyHash, present)
 	})
 	report, err := c.Import(t.Context(), req)
 	require.NoError(t, err)

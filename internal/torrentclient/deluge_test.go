@@ -42,52 +42,52 @@ type fakeDelugeLabelAPI struct {
 	addLabels []string
 }
 
-func (s *fakeDelugeLabelAPI) GetLabels(context.Context) ([]string, error) { return s.labels, nil }
+func (f *fakeDelugeLabelAPI) GetLabels(context.Context) ([]string, error) { return f.labels, nil }
 
-func (s *fakeDelugeLabelAPI) SetTorrentLabel(_ context.Context, _, label string) error {
-	s.setLabels = append(s.setLabels, label)
+func (f *fakeDelugeLabelAPI) SetTorrentLabel(_ context.Context, _, label string) error {
+	f.setLabels = append(f.setLabels, label)
 	return nil
 }
 
-func (s *fakeDelugeLabelAPI) AddLabel(_ context.Context, label string) error {
-	s.addLabels = append(s.addLabels, label)
+func (f *fakeDelugeLabelAPI) AddLabel(_ context.Context, label string) error {
+	f.addLabels = append(f.addLabels, label)
 	return nil
 }
 
-func (s *fakeDelugeAPI) Connect(context.Context) error { return nil }
+func (f *fakeDelugeAPI) Connect(context.Context) error { return nil }
 
-func (s *fakeDelugeAPI) SessionState(context.Context) ([]string, error) {
-	s.sessionCalls++
-	return s.sessionHashes, s.sessionErr
+func (f *fakeDelugeAPI) SessionState(context.Context) ([]string, error) {
+	f.sessionCalls++
+	return f.sessionHashes, f.sessionErr
 }
 
-func (s *fakeDelugeAPI) TorrentsStatus(_ context.Context, _ deluge.TorrentState, ids []string) (map[string]*deluge.TorrentStatus, error) {
-	s.torrentCalls++
-	s.gotTorrentIDs = append([]string(nil), ids...)
-	return s.torrents, s.torrentsErr
+func (f *fakeDelugeAPI) TorrentsStatus(_ context.Context, _ deluge.TorrentState, ids []string) (map[string]*deluge.TorrentStatus, error) {
+	f.torrentCalls++
+	f.gotTorrentIDs = append([]string(nil), ids...)
+	return f.torrents, f.torrentsErr
 }
 
-func (s *fakeDelugeAPI) TorrentStatus(context.Context, string) (*deluge.TorrentStatus, error) {
-	if len(s.statuses) == 0 {
-		return s.status, nil
+func (f *fakeDelugeAPI) TorrentStatus(context.Context, string) (*deluge.TorrentStatus, error) {
+	if len(f.statuses) == 0 {
+		return f.status, nil
 	}
-	index := s.statusAt
-	if index >= len(s.statuses) {
-		index = len(s.statuses) - 1
+	index := f.statusAt
+	if index >= len(f.statuses) {
+		index = len(f.statuses) - 1
 	}
-	s.statusAt++
-	return s.statuses[index], nil
+	f.statusAt++
+	return f.statuses[index], nil
 }
 
-func (s *fakeDelugeAPI) AddTorrentFile(_ context.Context, name, content string, options *deluge.Options) (string, error) {
-	s.addedName = name
-	s.addedContent = content
-	s.addedOptions = options
-	return s.addedHash, s.addErr
+func (f *fakeDelugeAPI) AddTorrentFile(_ context.Context, name, content string, options *deluge.Options) (string, error) {
+	f.addedName = name
+	f.addedContent = content
+	f.addedOptions = options
+	return f.addedHash, f.addErr
 }
 
-func (s *fakeDelugeAPI) ResumeTorrents(_ context.Context, ids ...string) error {
-	s.resumed = append(s.resumed, ids...)
+func (f *fakeDelugeAPI) ResumeTorrents(_ context.Context, ids ...string) error {
+	f.resumed = append(f.resumed, ids...)
 	return nil
 }
 

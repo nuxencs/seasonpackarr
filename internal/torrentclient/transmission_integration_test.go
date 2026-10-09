@@ -113,7 +113,7 @@ func importTransmissionPack(t *testing.T, c *transmissionClient, req ImportReque
 			return
 		}
 		assert.NoError(t, raw.TorrentRemove(ctx, transmissionrpc.TorrentRemovePayload{IDs: []int64{*found[0].ID}}), "remove torrent")
-		assertRemoved(t, ctx, req.LegacyHash, func() (bool, error) {
+		assertRemoved(t, req.LegacyHash, func() (bool, error) {
 			found, err := lookup()
 			return len(found) > 0, err
 		})

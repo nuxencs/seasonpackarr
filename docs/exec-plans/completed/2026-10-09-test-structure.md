@@ -51,10 +51,10 @@ Phase 2, every other test:
 ## decision log
 
 - Client axis for files, not scenario axis. Unit tests and the documented
-  `-run '^TestQbit'` commands are already per client.
+  client `-run` commands are already per client.
 - `Daemon` in the subject separates integration tests from unit tests in `-v`
-  output. `-run 'Daemon_'` selects only integration tests, and
-  `-run '^TestQbit'` still selects both.
+  output. `-run 'Daemon_'` selects only integration tests, and the client
+  patterns (`-run 'Qbit'`) still select both.
 - Removed `TestQbitPartialRawBehavior_ReportsPausedMissingFileState`. It only
   logged a result. `TestQbitDaemon_RecoversMisclassifiedCompletePack` asserts
   the same daemon behavior through the adapter: the recheck stage runs only
@@ -103,6 +103,12 @@ Phase 2, every other test:
 - Second review: a type is a valid subject when a test covers behavior across
   several of its methods. `cmd` tests became `TestAPIClient_` and
   `TestConnectionOptions_`; `prowlarr` keeps `TestClient_`.
+- Third review: rules changed to match the code where a rename buys little.
+  Behavior can be a noun phrase for the area a test covers, inline tables in a
+  `range` need no name, a method alone is a subject when the package has one
+  main type, and `require<Fact>` stops the test by failing or skipping it.
+- Third review: tests that post from a goroutine encode the body first and call
+  `postRaw`, which makes no assertions. `postJSON` uses `require`.
 - `loggertest.Logger.Fatal` panics instead of exiting. No production code
   under test calls `Fatal`.
 

@@ -191,10 +191,13 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
 ### Names
 
 - Tests are `Test<Subject>_<Behavior>`, or `Test<Subject>` when one test covers
-  the whole contract. Behavior is a verb phrase (`ResumesPartialPack`).
+  the whole contract. Behavior is a verb phrase (`ResumesPartialPack`), or a
+  noun phrase for the area the test covers (`InvalidAddresses`).
 - The subject is one of:
   - the function under test (`TestEpisodeFileFromFiles_`), or a short type
-    name plus the method (`TestQbitImport_` for `qbitClient.Import`)
+    name plus the method (`TestQbitImport_` for `qbitClient.Import`). When a
+    package has one main type, the method alone is enough
+    (`TestImportSeasonPack_` for `processor.importSeasonPack`).
   - a type, when the test covers behavior across several of its methods
     (`TestClient_`, `TestStore_`, `TestAPIClient_`)
   - `<Name>Command` for a CLI command (`TestOperationCommand_`)
@@ -202,14 +205,15 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
     `Endpoints` for a test across routes
   - a named feature (`TestSearch_`, `TestRSS_`, `TestInventory_`)
 - Subtests use short, lowercase phrases. Names and acronyms keep their case
-  (`deluge requires savePath`, `contains HDR`). Tables are `tests`, and the
-  loop variable is `tt`.
+  (`deluge requires savePath`, `contains HDR`). A named table is `tests`, and
+  the loop variable is `tt`. A table written inline in the `range` needs no name.
 - Test doubles are `fake<Thing>` (`fakeTorrentClient`, `fakeQbitAPI`). Fixtures
   and recorded data keep descriptive names (`searchFixture`, `capturedRequest`).
 - Common helper prefixes:
   - `new<Thing>`: builds a client, fixture, or fake
   - `write<Thing>`: creates files on disk
-  - `require<Fact>` / `assert<Fact>`: checks a fact and stops / continues on failure
+  - `require<Fact>` / `assert<Fact>`: checks a fact and stops the test (fails or
+    skips it) / continues on failure
   - `wait<Condition>`: polls an external service until a condition is true
 
 ### Assertions
@@ -220,6 +224,7 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
 - `require` and `t.Fatal` stop the test only from the test goroutine. Inside
   handlers served by `httptest.NewServer`, fixture callbacks that such a
   handler runs (`respond`, `beforeSearch`), and other goroutines, use `assert`.
+  This also applies to the helpers they call (`postRaw`, not `postJSON`).
   A handler that the test calls directly through `ServeHTTP` and
   `httptest.NewRecorder` runs on the test goroutine and can use `require`.
 - Benchmarks keep `if err != nil { b.Fatal(err) }` in measured loops.
@@ -233,8 +238,9 @@ Integration tests run against real daemons. They use the `integration` build
 tag and are not part of the CI workflow.
 
 - `internal/torrentclient/<client>_integration_test.go` holds one client's
-  tests. `fixtures_integration_test.go` holds shared fixtures: environment names,
-  `requireDaemon`, the pack writers, and the shared read assertions.
+  tests. `fixtures_integration_test.go` holds the shared fixtures, for example
+  the environment names, `requireDaemon`, the pack writers, `waitFor`, and the
+  shared assertions.
 - Names are `Test<Client>Daemon_<Behavior>` (`TestQbitDaemon_ResumesPartialPack`).
   `Daemon` separates them from the unit tests of the same adapter.
 - Each test calls `requireDaemon` first. It skips the test when the client's

@@ -245,22 +245,22 @@ type fakeTransmissionAPI struct {
 	sessionDir string
 }
 
-func (s *fakeTransmissionAPI) TorrentGet(context.Context, []string, []int64) ([]transmissionrpc.Torrent, error) {
+func (f *fakeTransmissionAPI) TorrentGet(context.Context, []string, []int64) ([]transmissionrpc.Torrent, error) {
 	return nil, nil
 }
 
-func (s *fakeTransmissionAPI) TorrentGetHashes(context.Context, []string, []string) ([]transmissionrpc.Torrent, error) {
-	return nil, s.getErr
+func (f *fakeTransmissionAPI) TorrentGetHashes(context.Context, []string, []string) ([]transmissionrpc.Torrent, error) {
+	return nil, f.getErr
 }
 
-func (s *fakeTransmissionAPI) TorrentAdd(_ context.Context, payload transmissionrpc.TorrentAddPayload) (transmissionrpc.Torrent, error) {
-	s.addCalled = true
-	s.addPayload = payload
+func (f *fakeTransmissionAPI) TorrentAdd(_ context.Context, payload transmissionrpc.TorrentAddPayload) (transmissionrpc.Torrent, error) {
+	f.addCalled = true
+	f.addPayload = payload
 	return transmissionrpc.Torrent{}, nil
 }
 
-func (s *fakeTransmissionAPI) SessionArgumentsGetAll(context.Context) (transmissionrpc.SessionArguments, error) {
-	dir := s.sessionDir
+func (f *fakeTransmissionAPI) SessionArgumentsGetAll(context.Context) (transmissionrpc.SessionArguments, error) {
+	dir := f.sessionDir
 	return transmissionrpc.SessionArguments{DownloadDir: &dir}, nil
 }
 

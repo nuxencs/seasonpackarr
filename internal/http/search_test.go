@@ -120,7 +120,8 @@ func TestSearch_AuthAndOverlappingRuns(t *testing.T) {
 		}
 	}
 	first := make(chan *httptest.ResponseRecorder, 1)
-	go func() { first <- f.postJSON(t, "/api/search", map[string]any{"dryRun": true}) }()
+	firstBody := encodeJSON(t, map[string]any{"dryRun": true})
+	go func() { first <- f.postRaw(t, "/api/search", firstBody, processorTestToken) }()
 	<-started
 	second := f.postJSON(t, "/api/search", map[string]any{"dryRun": true})
 	require.Equal(t, 409, second.Code)
@@ -134,10 +135,12 @@ func TestSearch_ConcurrentWebhookCannotAddAnotherVariantCopy(t *testing.T) {
 	cfg := f.config.Snapshot()
 	clientMap.Store("default", cachedTorrentClient{config: *cfg.Clients["default"], client: &fakeSearchClient{fakeTorrentClient: f.torrentClient, importing: importing, resume: resume}})
 	first := make(chan *httptest.ResponseRecorder, 1)
-	go func() { first <- f.postJSON(t, "/api/search", map[string]any{"dryRun": false}) }()
+	searchBody := encodeJSON(t, map[string]any{"dryRun": false})
+	go func() { first <- f.postRaw(t, "/api/search", searchBody, processorTestToken) }()
 	<-importing
 	second := make(chan *httptest.ResponseRecorder, 1)
-	go func() { second <- f.postJSON(t, "/api/import", f.packPayload()) }()
+	importBody := encodeJSON(t, f.packPayload())
+	go func() { second <- f.postRaw(t, "/api/import", importBody, processorTestToken) }()
 	close(resume)
 	require.Equal(t, 200, (<-first).Code)
 	require.Equal(t, domain.StatusAlreadyInClient.Code(), (<-second).Code)

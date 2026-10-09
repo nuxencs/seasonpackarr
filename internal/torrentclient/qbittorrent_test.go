@@ -44,70 +44,70 @@ type fakeQbitAPI struct {
 	maxFileReads   int
 }
 
-func (s *fakeQbitAPI) GetTorrents(o qbittorrent.TorrentFilterOptions) ([]qbittorrent.Torrent, error) {
-	if len(o.Hashes) == 0 || len(s.lookupSeq) == 0 {
+func (f *fakeQbitAPI) GetTorrents(o qbittorrent.TorrentFilterOptions) ([]qbittorrent.Torrent, error) {
+	if len(o.Hashes) == 0 || len(f.lookupSeq) == 0 {
 		return nil, nil
 	}
-	s.lookups = append(s.lookups, append([]string(nil), o.Hashes...))
-	idx := s.lookupIdx
-	if idx >= len(s.lookupSeq) {
-		idx = len(s.lookupSeq) - 1
+	f.lookups = append(f.lookups, append([]string(nil), o.Hashes...))
+	idx := f.lookupIdx
+	if idx >= len(f.lookupSeq) {
+		idx = len(f.lookupSeq) - 1
 	}
-	s.lookupIdx++
-	return []qbittorrent.Torrent{s.lookupSeq[idx]}, nil
+	f.lookupIdx++
+	return []qbittorrent.Torrent{f.lookupSeq[idx]}, nil
 }
 
-func (s *fakeQbitAPI) GetFilesInformation(hash string) (*qbittorrent.TorrentFiles, error) {
-	s.fileMu.Lock()
-	s.activeFileRead++
-	s.maxFileReads = max(s.maxFileReads, s.activeFileRead)
-	files := s.filesByHash[hash]
-	err := s.fileErrByHash[hash]
-	delay := s.fileDelay
-	s.fileMu.Unlock()
+func (f *fakeQbitAPI) GetFilesInformation(hash string) (*qbittorrent.TorrentFiles, error) {
+	f.fileMu.Lock()
+	f.activeFileRead++
+	f.maxFileReads = max(f.maxFileReads, f.activeFileRead)
+	files := f.filesByHash[hash]
+	err := f.fileErrByHash[hash]
+	delay := f.fileDelay
+	f.fileMu.Unlock()
 
 	time.Sleep(delay)
 
-	s.fileMu.Lock()
-	s.activeFileRead--
-	s.fileMu.Unlock()
+	f.fileMu.Lock()
+	f.activeFileRead--
+	f.fileMu.Unlock()
 	if err != nil {
 		return nil, err
 	}
 	return &files, nil
 }
 
-func (s *fakeQbitAPI) AddTorrentFromMemory(buf []byte, options map[string]string) (*qbittorrent.TorrentAddResponse, error) {
-	s.addBytes = append([]byte(nil), buf...)
-	s.addOptions = make(map[string]string, len(options))
-	maps.Copy(s.addOptions, options)
+func (f *fakeQbitAPI) AddTorrentFromMemory(buf []byte, options map[string]string) (*qbittorrent.TorrentAddResponse, error) {
+	f.addBytes = append([]byte(nil), buf...)
+	f.addOptions = make(map[string]string, len(options))
+	maps.Copy(f.addOptions, options)
 	return &qbittorrent.TorrentAddResponse{}, nil
 }
 
-func (s *fakeQbitAPI) GetCategories() (map[string]qbittorrent.Category, error) {
-	return s.categories, s.categoryErr
+func (f *fakeQbitAPI) GetCategories() (map[string]qbittorrent.Category, error) {
+	return f.categories, f.categoryErr
 }
 
-func (s *fakeQbitAPI) GetDefaultSavePath() (string, error) {
-	return s.defaultSave, s.defaultErr
+func (f *fakeQbitAPI) GetDefaultSavePath() (string, error) {
+	return f.defaultSave, f.defaultErr
 }
 
-func (s *fakeQbitAPI) GetAppPreferences() (qbittorrent.AppPreferences, error) {
-	return s.preferences, s.prefsErr
+func (f *fakeQbitAPI) GetAppPreferences() (qbittorrent.AppPreferences, error) {
+	return f.preferences, f.prefsErr
 }
 
-func (s *fakeQbitAPI) Recheck(hashes []string) error {
-	s.recheckCalls = append(s.recheckCalls, append([]string(nil), hashes...))
+func (f *fakeQbitAPI) Recheck(hashes []string) error {
+	f.recheckCalls = append(f.recheckCalls, append([]string(nil), hashes...))
 	return nil
 }
 
-func (s *fakeQbitAPI) Stop(hashes []string) error {
-	s.stopCalls = append(s.stopCalls, append([]string(nil), hashes...))
+func (f *fakeQbitAPI) Stop(hashes []string) error {
+	f.stopCalls = append(f.stopCalls, append([]string(nil), hashes...))
 	return nil
 }
 
-func (s *fakeQbitAPI) Resume(hashes []string) error {
-	s.resumeCalls = append(s.resumeCalls, append([]string(nil), hashes...))
+func (f *fakeQbitAPI) Resume(hashes []string) error {
+	f.resumeCalls = append(f.resumeCalls, append([]string(nil), hashes...))
 	return nil
 }
 

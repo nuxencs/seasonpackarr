@@ -155,11 +155,17 @@ func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFix
 
 func (f processorHTTPFixture) postJSON(t *testing.T, path string, payload any) *httptest.ResponseRecorder {
 	t.Helper()
-	body, err := json.Marshal(payload)
-	require.NoError(t, err)
-	return f.postRaw(t, path, body, processorTestToken)
+	return f.postRaw(t, path, encodeJSON(t, payload), processorTestToken)
 }
 
+func encodeJSON(t *testing.T, payload any) []byte {
+	t.Helper()
+	body, err := json.Marshal(payload)
+	require.NoError(t, err)
+	return body
+}
+
+// postRaw makes no assertions, so a goroutine can call it. postJSON cannot.
 func (f processorHTTPFixture) postRaw(t *testing.T, path string, body []byte, token string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequestWithContext(t.Context(), stdhttp.MethodPost, path, bytes.NewReader(body))
@@ -209,64 +215,64 @@ type fakeTorrentClient struct {
 	importCtxErr        error
 }
 
-func (m *fakeTorrentClient) GetTorrents(ctx context.Context) ([]torrentclient.Torrent, error) {
-	m.torrentCalls++
-	if m.getTorrents != nil {
-		return m.getTorrents(ctx)
+func (f *fakeTorrentClient) GetTorrents(ctx context.Context) ([]torrentclient.Torrent, error) {
+	f.torrentCalls++
+	if f.getTorrents != nil {
+		return f.getTorrents(ctx)
 	}
-	return m.torrents, m.torrentsErr
+	return f.torrents, f.torrentsErr
 }
 
-func (m *fakeTorrentClient) GetFiles(_ context.Context, hashes []string) []torrentclient.FileResult {
-	m.fileBatchCalls++
-	m.fileCalls += len(hashes)
-	m.gotHashes = append([]string(nil), hashes...)
+func (f *fakeTorrentClient) GetFiles(_ context.Context, hashes []string) []torrentclient.FileResult {
+	f.fileBatchCalls++
+	f.fileCalls += len(hashes)
+	f.gotHashes = append([]string(nil), hashes...)
 	if len(hashes) > 0 {
-		m.gotHash = hashes[0]
+		f.gotHash = hashes[0]
 	}
 
 	results := make([]torrentclient.FileResult, len(hashes))
 	for index, hash := range hashes {
 		results[index].Hash = hash
-		if m.filesErr != nil {
-			results[index].Err = m.filesErr
+		if f.filesErr != nil {
+			results[index].Err = f.filesErr
 			continue
 		}
-		if err := m.fileErrByHash[hash]; err != nil {
+		if err := f.fileErrByHash[hash]; err != nil {
 			results[index].Err = err
 			continue
 		}
-		if m.filesByHash != nil {
-			results[index].Files = m.filesByHash[hash]
+		if f.filesByHash != nil {
+			results[index].Files = f.filesByHash[hash]
 			continue
 		}
-		results[index].Files = m.files
+		results[index].Files = f.files
 	}
-	if m.afterGetFiles != nil {
-		m.afterGetFiles()
+	if f.afterGetFiles != nil {
+		f.afterGetFiles()
 	}
 	return results
 }
 
-func (m *fakeTorrentClient) ImportDestination(context.Context) (torrentclient.ImportDestination, error) {
-	if m.onImportDestination != nil {
-		m.onImportDestination()
+func (f *fakeTorrentClient) ImportDestination(context.Context) (torrentclient.ImportDestination, error) {
+	if f.onImportDestination != nil {
+		f.onImportDestination()
 	}
-	if m.importRootErr != nil {
-		return torrentclient.ImportDestination{}, m.importRootErr
+	if f.importRootErr != nil {
+		return torrentclient.ImportDestination{}, f.importRootErr
 	}
-	if m.flatImport {
-		return torrentclient.NewFlatImportDestination(m.importRoot), nil
+	if f.flatImport {
+		return torrentclient.NewFlatImportDestination(f.importRoot), nil
 	}
-	return torrentclient.NewRootedImportDestination(m.importRoot), nil
+	return torrentclient.NewRootedImportDestination(f.importRoot), nil
 }
 
-func (m *fakeTorrentClient) Import(ctx context.Context, req torrentclient.ImportRequest) (torrentclient.ImportReport, error) {
-	m.importCalled = true
-	m.importCalls++
-	m.importReq = req
-	m.importCtxErr = ctx.Err()
-	return m.importReport, m.importErr
+func (f *fakeTorrentClient) Import(ctx context.Context, req torrentclient.ImportRequest) (torrentclient.ImportReport, error) {
+	f.importCalled = true
+	f.importCalls++
+	f.importReq = req
+	f.importCtxErr = ctx.Err()
+	return f.importReport, f.importErr
 }
 
 func newTestProcessor(client torrentclient.TorrentClient) *processor {
@@ -299,22 +305,22 @@ type fakeSearchClient struct {
 	resume    chan struct{}
 }
 
-func (m *fakeSearchClient) Import(ctx context.Context, req torrentclient.ImportRequest) (torrentclient.ImportReport, error) {
-	if m.importing != nil {
-		close(m.importing)
+func (f *fakeSearchClient) Import(ctx context.Context, req torrentclient.ImportRequest) (torrentclient.ImportReport, error) {
+	if f.importing != nil {
+		close(f.importing)
 		select {
-		case <-m.resume:
+		case <-f.resume:
 		case <-ctx.Done():
 			return torrentclient.ImportReport{}, ctx.Err()
 		}
 	}
-	report, err := m.fakeTorrentClient.Import(ctx, req)
+	report, err := f.fakeTorrentClient.Import(ctx, req)
 	if err == nil {
 		info, parseErr := torrents.Info(req.TorrentBytes)
 		if parseErr != nil {
 			return report, parseErr
 		}
-		m.torrents = append(m.torrents, torrentclient.Torrent{Name: info.BestName(), Hash: req.LegacyHash, SavePath: req.SavePath})
+		f.torrents = append(f.torrents, torrentclient.Torrent{Name: info.BestName(), Hash: req.LegacyHash, SavePath: req.SavePath})
 	}
 	return report, err
 }

@@ -27,15 +27,15 @@ func newFakeManagedServer() *fakeManagedServer {
 	}
 }
 
-func (s *fakeManagedServer) Open(context.Context) error {
-	close(s.started)
-	<-s.stopped
+func (f *fakeManagedServer) Open(context.Context) error {
+	close(f.started)
+	<-f.stopped
 	return nil
 }
 
-func (s *fakeManagedServer) Shutdown(ctx context.Context) error {
-	s.shutdownCall <- ctx
-	s.stopOnce.Do(func() { close(s.stopped) })
+func (f *fakeManagedServer) Shutdown(ctx context.Context) error {
+	f.shutdownCall <- ctx
+	f.stopOnce.Do(func() { close(f.stopped) })
 	return nil
 }
 
