@@ -3,5 +3,6 @@
     "incomplete-dir-enabled": false,
     "lpd-enabled": false,
     "pex-enabled": false,
+    "port-forwarding-enabled": false,
     "watch-dir-enabled": false
 }

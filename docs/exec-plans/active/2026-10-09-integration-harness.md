@@ -55,8 +55,9 @@ episodes download, and the reused episodes stay hardlinks.
 6. Deluge build definition and entries. [done, #272]
 7. CI workflow. [done, #273]
 8. Seeder and qBittorrent real download test. [done, #274]
-9. Transmission and Deluge real download tests. [pending]
-10. Move this plan to `completed/`. [pending]
+9. Transmission real download test. [done, #275]
+10. Deluge real download test. [pending]
+11. Move this plan to `completed/`. [pending]
 
 ## decision log
 
@@ -136,6 +137,17 @@ episodes download, and the reused episodes stay hardlinks.
   payload byte count of their client, and their wait must include it too.
 - The test repeats `addPeers` every 2 seconds until the download completes,
   so one failed connect attempt cannot stall it.
+- The Transmission test reads the listen port from the session `peer-port`
+  and the payload byte count from `downloadedEver`. Its wait also needs status
+  `seeding`, because Transmission downloads into `<file>.part` and renames the
+  file when it completes.
+- A Transmission download starts about 10 seconds after the seeder connects.
+  Transmission sets its interest in a peer only in `rechokePulse`, which runs
+  every 10 seconds (`RechokePeriod` in `peer-mgr.cc`, 4.0.6 and 4.1). The
+  worst case is one period plus the transfer, so the 30 second daemon timeout
+  stays enough.
+- The committed Transmission `settings.json` turns off
+  `port-forwarding-enabled`, so the daemon does not try UPnP or NAT-PMP.
 
 ## verification notes
 
@@ -166,9 +178,9 @@ episodes download, and the reused episodes stay hardlinks.
   - `run.sh qbit-5.2.4` still passes after the `save_logs` change.
   - Fresh 4.1.3 daemons log `ERR ... Couldn't read '/config/queue.json'`
     once. It is not a failure.
-  - Open for #274: on start, 4.1.3 looks up its public IPv4 address
-    (`ip-cache.cc`), and `port-forwarding-enabled` stays at its default (on).
-    The real download test needs no internet access.
+  - On start, 4.1.3 looks up its public IPv4 address (`ip-cache.cc`). The
+    real download test needs no internet access. #275 turned off
+    `port-forwarding-enabled`.
 - #272, 2026-10-09:
   - `run.sh deluge-1.3.15 deluge-2.0.3 deluge-2.2.0` passes both Deluge tests
     in strict mode on all three versions, with no skips. The tests report
@@ -222,3 +234,14 @@ episodes download, and the reused episodes stay hardlinks.
     between the check and the start sees `stopped`.
     `waitTransmissionChecked` now waits until the torrent is also started or
     reports an error. `run.sh transmission-4.0.6 transmission-4.1.3` passes.
+- #275, 2026-10-09:
+  - `run.sh transmission-4.0.6 transmission-4.1.3` passes in strict mode,
+    including both subtests of `TestTransmissionDaemon_DownloadsMissingEpisodes`
+    (12 to 15 seconds each). The seeder connects to the session `peer-port`
+    51413.
+  - Polls every 100 ms show about 10 seconds with no data after the connect,
+    then the transfer in about 1 second, and `downloadedEver` of exactly
+    1048576 bytes.
+  - `-count=2` on `transmission-4.0.6` against the same daemons passes, so the
+    torrent cleanup lets reruns pass.
+  - `session-get` reports `port-forwarding-enabled` false on 4.0.6 and 4.1.3.
