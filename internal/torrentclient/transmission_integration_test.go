@@ -103,7 +103,10 @@ func TestTransmissionDaemon_DownloadsMissingEpisodes(t *testing.T) {
 
 			importTransmissionPack(t, c, pack.importRequest(importDir, false))
 			tr := waitTransmissionChecked(t, c, pack.hashes.Legacy)
-			assertTransmissionStarted(t, tr)
+			if !assertTransmissionStarted(t, tr) {
+				// A stopped torrent cannot download, so the wait would only time out.
+				t.FailNow()
+			}
 			assertPartialProgress(t, transmissionPercentDone(tr), packEpisodes-1)
 
 			session, err := transmissionDaemonAPI(t, c).SessionArgumentsGetAll(t.Context())
@@ -190,8 +193,8 @@ func waitTransmissionChecked(t *testing.T, c *transmissionClient, hash string) t
 	return tr
 }
 
-// readTransmissionTorrent returns a reader of the torrent hash for waitFor. It
-// stops the test when the daemon does not hold the torrent.
+// readTransmissionTorrent returns a waitFor read function that stops the test
+// when the torrent is missing.
 func readTransmissionTorrent(t *testing.T, c *transmissionClient, hash string) func() transmissionrpc.Torrent {
 	return func() transmissionrpc.Torrent {
 		fields := []string{"status", "percentDone", "errorString", "downloadedEver"}
@@ -202,10 +205,11 @@ func readTransmissionTorrent(t *testing.T, c *transmissionClient, hash string) f
 	}
 }
 
-func assertTransmissionStarted(t *testing.T, tr transmissionrpc.Torrent) {
+// assertTransmissionStarted reports whether the torrent started without an error.
+func assertTransmissionStarted(t *testing.T, tr transmissionrpc.Torrent) bool {
 	t.Helper()
-	assert.Empty(t, derefString(tr.ErrorString), "Transmission reported an error after import")
-	assert.NotEqual(t, transmissionrpc.TorrentStatusStopped, *tr.Status, "import left the torrent stopped")
+	noError := assert.Empty(t, derefString(tr.ErrorString), "Transmission reported an error after import")
+	return assert.NotEqual(t, transmissionrpc.TorrentStatusStopped, *tr.Status, "import left the torrent stopped") && noError
 }
 
 func transmissionPercentDone(tr transmissionrpc.Torrent) float64 {

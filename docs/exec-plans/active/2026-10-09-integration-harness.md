@@ -144,8 +144,8 @@ episodes download, and the reused episodes stay hardlinks.
 - A Transmission download starts about 10 seconds after the seeder connects.
   Transmission sets its interest in a peer only in `rechokePulse`, which runs
   every 10 seconds (`RechokePeriod` in `peer-mgr.cc`, 4.0.6 and 4.1). The
-  worst case is one period plus the transfer, so the 30 second daemon timeout
-  stays enough.
+  worst case is one period plus the transfer, so the 30-second daemon timeout
+  is sufficient.
 - The committed Transmission `settings.json` turns off
   `port-forwarding-enabled`, so the daemon does not try UPnP or NAT-PMP.
 
@@ -239,9 +239,9 @@ episodes download, and the reused episodes stay hardlinks.
     including both subtests of `TestTransmissionDaemon_DownloadsMissingEpisodes`
     (12 to 15 seconds each). The seeder connects to the session `peer-port`
     51413.
-  - Polls every 100 ms show about 10 seconds with no data after the connect,
-    then the transfer in about 1 second, and `downloadedEver` of exactly
-    1048576 bytes.
+  - Polls every 100 ms show that no data arrives for about 10 seconds after
+    the seeder connects. Then the transfer takes about 1 second.
+    `downloadedEver` is exactly 1048576 bytes.
   - `-count=2` on `transmission-4.0.6` against the same daemons passes, so the
     torrent cleanup lets reruns pass.
   - `session-get` reports `port-forwarding-enabled` false on 4.0.6 and 4.1.3.
