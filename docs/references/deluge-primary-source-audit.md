@@ -274,7 +274,7 @@ Correction for seasonpackarr: the broad claim that Deluge does not support pure 
 
 ## Native RPC integration-test setup
 
-Use one matrix row for each protocol generation. Each harness entry must start a real daemon and run the seasonpackarr adapter against native RPC.
+Use one matrix entry for each protocol generation. A matrix entry has one or more harness entries. Each harness entry must start a real daemon and run the seasonpackarr adapter against native RPC.
 
 | Matrix entry | Daemon | Client constructor | Required fixture |
 | --- | --- | --- | --- |

@@ -57,8 +57,7 @@ episodes download, and the reused episodes stay hardlinks.
 8. Seeder and qBittorrent real download test. [done, #274]
 9. Transmission real download test. [done, #275]
 10. Deluge real download test. [done, #276]
-11. Full matrix verification, docs close-out, and move this plan to
-    `completed/`. [done, #277]
+11. Full matrix verification and close-out. [done, #277]
 
 ## decision log
 
@@ -263,13 +262,14 @@ episodes download, and the reused episodes stay hardlinks.
   - Deluge 1.3.15 reports `Queued` after the check, before it starts the
     download. The test does not depend on it.
 - #277, 2026-10-09:
-  - `run.sh all` passes all 11 entries locally in strict mode. The only skip
+  - At `a6b25c9`, `run.sh all` passes all 11 entries locally in strict mode. The only skip
     is the "manual category path" subtest on qBittorrent 4.3.9. Each entry's
     test run takes 6 to 30 seconds. After the run, no containers or project
     volumes are left, and `artifacts/` is empty.
   - A `full` dispatch of the integration workflow on the branch
     (`gh workflow run Integration --ref test/integration-harness -f full=true`)
-    passes the setup job and all 11 entry jobs (56 to 116 seconds each). A
+    at `1255712` passes the setup job and all 11 entry jobs (56 to 116 seconds
+    each). That commit predates the Transmission and Deluge download tests. A
     dispatch on a branch works because the workflow is already registered
     from the PR runs.
   - With `SEASONPACKARR_TEST_QBIT_HOST` removed from `compose.qbit.yaml`,
@@ -283,6 +283,9 @@ episodes download, and the reused episodes stay hardlinks.
     entries.
   - Docs audit: no doc outside the completed plans describes the manual
     daemon setup or the uncommitted Deluge images. The qBittorrent import flow
-    design doc, its index row, and the Deluge audit no longer name Deluge
-    2.1.2 as a tested version.
-  - Not verified: a failed CI job that uploads its logs.
+    design doc, its index row, and the Deluge audit no longer list Deluge
+    2.1.2 among the harness-tested versions. They keep it only for the dated
+    2026-10-07 timings and one log observation.
+  - Accepted gap, not tracked: no failed CI job has uploaded its logs yet.
+    The upload step is a standard `actions/upload-artifact` step with
+    `if: failure()`, and a forced CI failure needs a throwaway commit.
