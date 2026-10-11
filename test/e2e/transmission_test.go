@@ -54,13 +54,13 @@ func newTransmission(t *testing.T) *transmission {
 	return &transmission{api: api, host: host.Hostname()}
 }
 
-func (tr *transmission) configName() string {
+func (tc *transmission) configName() string {
 	return transmissionClientName
 }
 
-func (tr *transmission) add(ctx context.Context, torrent []byte, dir string) error {
+func (tc *transmission) add(ctx context.Context, torrent []byte, dir string) error {
 	// Transmission checks the files of a new torrent before it starts it.
-	_, err := tr.api.TorrentAdd(ctx, transmissionrpc.TorrentAddPayload{
+	_, err := tc.api.TorrentAdd(ctx, transmissionrpc.TorrentAddPayload{
 		MetaInfo:    new(base64.StdEncoding.EncodeToString(torrent)),
 		DownloadDir: new(dir),
 		Paused:      new(false),
@@ -68,25 +68,25 @@ func (tr *transmission) add(ctx context.Context, torrent []byte, dir string) err
 	return err
 }
 
-func (tr *transmission) remove(ctx context.Context, hash string) error {
-	found, err := tr.api.TorrentGetHashes(ctx, []string{"id"}, []string{hash})
+func (tc *transmission) remove(ctx context.Context, hash string) error {
+	found, err := tc.api.TorrentGetHashes(ctx, []string{"id"}, []string{hash})
 	if err != nil || len(found) == 0 {
 		return err
 	}
 	if found[0].ID == nil {
 		return fmt.Errorf("torrent %s has no id", hash)
 	}
-	return tr.api.TorrentRemove(ctx, transmissionrpc.TorrentRemovePayload{IDs: []int64{*found[0].ID}})
+	return tc.api.TorrentRemove(ctx, transmissionrpc.TorrentRemovePayload{IDs: []int64{*found[0].ID}})
 }
 
-func (tr *transmission) state(ctx context.Context, hash string) (torrentState, error) {
-	found, err := tr.api.TorrentGetHashes(ctx, transmissionFields, []string{hash})
+func (tc *transmission) state(ctx context.Context, hash string) (torrentState, error) {
+	found, err := tc.api.TorrentGetHashes(ctx, transmissionFields, []string{hash})
 	if err != nil || len(found) == 0 {
 		return torrentState{}, err
 	}
 	tor := found[0]
 	if tor.Status == nil || tor.PercentDone == nil || tor.DownloadedEver == nil {
-		return torrentState{}, fmt.Errorf("torrent %s misses a requested field", hash)
+		return torrentState{}, fmt.Errorf("torrent %s does not have a requested field", hash)
 	}
 	status := *tor.Status
 	clientState := status.String()
@@ -97,18 +97,18 @@ func (tr *transmission) state(ctx context.Context, hash string) (torrentState, e
 		present:     true,
 		progress:    *tor.PercentDone,
 		downloaded:  *tor.DownloadedEver,
-		downloading: status == transmissionrpc.TorrentStatusDownload || status == transmissionrpc.TorrentStatusDownloadWait,
-		// Transmission downloads into <file>.part and renames the file when it
-		// completes. Seeding comes after the rename.
-		seeding:     status == transmissionrpc.TorrentStatusSeed && *tor.PercentDone >= 1,
+		downloading: status == transmissionrpc.TorrentStatusDownload,
+		// Transmission renames each <file>.part when the file completes, so a
+		// seeding pack has its final file names for the byte checks.
+		seeding:     status == transmissionrpc.TorrentStatusSeed,
 		clientState: clientState,
 	}, nil
 }
 
-func (tr *transmission) peerAddress(t *testing.T) string {
+func (tc *transmission) peerAddress(t *testing.T) string {
 	t.Helper()
-	session, err := tr.api.SessionArgumentsGetAll(t.Context())
+	session, err := tc.api.SessionArgumentsGetAll(t.Context())
 	require.NoError(t, err, "read the Transmission session")
 	require.NotNil(t, session.PeerPort, "session has no peer-port")
-	return daemontest.PeerAddress(t, tr.host, int(*session.PeerPort))
+	return daemontest.PeerAddress(t, tc.host, int(*session.PeerPort))
 }
