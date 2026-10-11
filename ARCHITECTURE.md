@@ -157,6 +157,8 @@ Preferred dependency direction:
    - `internal/release/` should not know HTTP details
    - `internal/files/` should not know webhook payloads
 4. `internal/domain/` holds cross-package data shapes and status concepts
+5. test helper packages (`internal/logger/loggertest`, `internal/daemontest`)
+   import `testing`, so only `_test.go` files may import them
 
 If a change starts pushing transport concerns into matching logic or file ops, stop and re-check the boundary.
 
@@ -183,7 +185,8 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
 - `fixtures_test.go` holds the fakes and fixtures that more than one test file
   of the package uses. A fake that one file uses stays in that file.
 - `<file>_integration_test.go` holds tests against real external services.
-  Their shared fixtures live in `fixtures_integration_test.go`.
+  Their shared fixtures live in `fixtures_integration_test.go`. Helpers that
+  every test against a real daemon uses live in `internal/daemontest`.
 - `internal/http/cli_test.go` holds the end-to-end tests. They build the binary
   with `buildCLI` and run it against the HTTP fixtures. They need no external
   service and run in the default suite.
@@ -367,7 +370,8 @@ test/harness/run.sh list [all]     # entries as a JSON array
 `.github/workflows/integration.yml` runs the harness in CI. It runs on pull
 requests and pushes to `develop` that change the torrent client package, the
 harness, the internal packages that its tests import (including
-`internal/daemontest`), `go.mod`, `go.sum`, `Dockerfile`, or the workflow. A manual run has a `full` input.
+`internal/daemontest`), `go.mod`, `go.sum`, `Dockerfile`, or the workflow. A
+manual run has a `full` input.
 
 - A setup job reads the matrix from `run.sh list`, or `run.sh list all` when
   `full` is set. Each entry is one parallel job that runs `run.sh <entry>`, so

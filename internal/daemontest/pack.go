@@ -38,8 +38,8 @@ type Pack struct {
 	Hashes   torrents.Hashes
 }
 
-// PackName names a pack after the test, so tests do not share pack folders in
-// one folder. parts are added for runs of one test against different daemons,
+// PackName names a pack after the test, so tests that write into one import or
+// seed folder do not share pack folders. parts are added for runs of one test against different daemons,
 // such as the Deluge client type.
 func PackName(t *testing.T, parts ...string) string {
 	name := strings.ReplaceAll(strings.TrimPrefix(t.Name(), "Test"), "/", ".")
