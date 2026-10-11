@@ -24,7 +24,7 @@ extra_entries=(qbit-4.5.5 qbit-4.6.7 qbit-5.0.5 qbit-5.1.4)
 export SEEDER_IMAGE=ghcr.io/hotio/qbittorrent:release-5.2.4
 
 harness_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-repo_root=$(cd "$harness_dir/../../../.." && pwd)
+repo_root=$(cd "$harness_dir/../.." && pwd)
 artifacts_dir="$harness_dir/artifacts"
 # One project per checkout, so two worktrees can run at the same time.
 project="seasonpackarr-harness-$(printf '%s' "$repo_root" | cksum | cut -d ' ' -f 1)"

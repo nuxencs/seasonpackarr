@@ -305,13 +305,13 @@ The inspected `go-deluge` GitHub workflow does not run its real-daemon integrati
 Source: [`.github/workflows/go.yml` lines 32-70](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/.github/workflows/go.yml#L32-L70). Local path: `<oss>/go-deluge/.github/workflows/go.yml:32`.
 
 The integration harness implements this setup. `deluge/Dockerfile` in
-`internal/torrentclient/testdata/harness/` installs the exact Debian
+`test/harness/` installs the exact Debian
 `deluged` package of each entry, and `deluge/entrypoint.sh` writes the auth
 entry and a `core.conf` with DHT, PEX and LPD off. Run the entries from the
 repository root:
 
 ```sh
-internal/torrentclient/testdata/harness/run.sh deluge-1.3.15 deluge-2.0.3 deluge-2.2.0
+test/harness/run.sh deluge-1.3.15 deluge-2.0.3 deluge-2.2.0
 ```
 
 The runner sets the `SEASONPACKARR_TEST_DELUGE_*` variables and the import

@@ -237,14 +237,18 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
 ### Torrent-client integration tests
 
 Integration tests run against real daemons. They use the `integration` build
-tag, so `go test ./...` does not run them. The harness in
-`internal/torrentclient/testdata/harness/` starts the daemons and runs them,
-locally and in the integration workflow.
+tag, so `go test ./...` does not run them. The harness in `test/harness/`
+starts the daemons and runs them, locally and in the integration workflow.
 
 - `internal/torrentclient/<client>_integration_test.go` holds one client's
-  tests. `fixtures_integration_test.go` holds the shared fixtures, for example
-  the environment names, `requireDaemon`, the pack writers, `waitFor`, the
-  seeder helpers, and the shared assertions.
+  tests. `fixtures_integration_test.go` holds the integration fixtures: the
+  client environment names, `requireDaemon`, `importRequest`, and the shared
+  assertions.
+- `internal/daemontest` holds the helpers that every test against a real
+  daemon uses: the settings gate `RequireSettings`, the bounded waits
+  `WaitFor` and `WaitSeededDownload`, the pack and torrent builders, the
+  seeder, and the peer address lookup `PeerAddress`. It has no build tag, so
+  `go vet ./...` checks it without Docker.
 - Names are `Test<Client>Daemon_<Behavior>` (`TestQbitDaemon_ResumesPartialPack`).
   `Daemon` separates them from the unit tests of the same adapter.
 - Each test calls `requireDaemon` first. It skips the test when the client's
@@ -252,24 +256,24 @@ locally and in the integration workflow.
   `SEASONPACKARR_TEST_REQUIRE_DAEMONS=1` (strict mode), it fails the test
   instead and names the missing settings. Skips for features that a daemon
   version does not support stay skips in strict mode.
-- `packName` names each pack after the test, so tests do not share pack
+- `daemontest.PackName` names each pack after the test, so tests do not share pack
   folders. Deluge tests add the client type, because Deluge 1 and Deluge 2 runs
   can share one import folder.
 - Each client's `import<Client>Pack` helper registers the torrent removal with
-  `t.Cleanup` before the import. The cleanup asserts with `assertRemoved` that
+  `t.Cleanup` before the import. The cleanup asserts with `daemontest.AssertRemoved` that
   the daemon no longer holds the torrent, so a run cannot leave a torrent
   behind for the next one. Pack data stays on disk for inspection.
-- Cleanup calls that take a context use `cleanupContext`, because `t.Context`
-  is canceled before cleanup functions run.
+- Cleanup calls that take a context use `daemontest.CleanupContext`, because
+  `t.Context` is canceled before cleanup functions run.
 - `Test<Client>Daemon_DownloadsMissingEpisodes` checks the core promise with a
-  real download, for a missing first and a missing last episode. `newSeeder`
-  controls the seeder daemon with go-qbittorrent directly, not through an
-  adapter. `seeder.seed` writes the full pack into the seed folder and seeds it.
-  `writeLinkedPack` writes the source episodes below the import folder and
-  hardlinks all except the missing one into the pack folder. After the import,
-  `newPeerAddress` resolves the client's host name and listen port to the
-  `<ip>:<port>` address, and `waitSeededDownload` connects the seeder to it
-  with `addPeers`.
+  real download, for a missing first and a missing last episode.
+  `daemontest.NewSeeder` controls the seeder daemon with go-qbittorrent
+  directly, not through an adapter. `Seeder.Seed` writes the full pack into the
+  seed folder and seeds it. `daemontest.WriteLinkedPack` writes the source
+  episodes below the import folder and hardlinks all except the missing one
+  into the pack folder. After the import, `daemontest.PeerAddress` resolves the
+  client's host name and listen port to the `<ip>:<port>` address, and
+  `daemontest.WaitSeededDownload` connects the seeder to it with `addPeers`.
   `assertDownloadedPack` checks the file content, that reused episodes keep
   the inode of their source files, and that only the missing episode
   downloaded.
@@ -307,15 +311,15 @@ prevents cached results from hiding changes in an external service.
 
 ### Harness
 
-`internal/torrentclient/testdata/harness/run.sh` runs the integration tests
+`test/harness/run.sh` runs the integration tests
 against pinned daemon versions in Docker Compose. It needs only Docker. Local
 runs and the integration workflow use the same command (ADR-0001).
 
 ```sh
-internal/torrentclient/testdata/harness/run.sh                # default entries, the CI set
-internal/torrentclient/testdata/harness/run.sh all            # default entries and the middle versions
-internal/torrentclient/testdata/harness/run.sh qbit-4.3.9     # one or more named entries
-internal/torrentclient/testdata/harness/run.sh list [all]     # entries as a JSON array
+test/harness/run.sh                # default entries, the CI set
+test/harness/run.sh all            # default entries and the middle versions
+test/harness/run.sh qbit-4.3.9     # one or more named entries
+test/harness/run.sh list [all]     # entries as a JSON array
 ```
 
 - An entry is `<client>-<version>`. The default entries are the oldest and
@@ -332,7 +336,7 @@ internal/torrentclient/testdata/harness/run.sh list [all]     # entries as a JSO
 - Every entry starts with fresh containers and volumes, and the runner removes
   them after the entry, also when it fails. Only the Go cache volume
   `seasonpackarr-harness-go-cache` stays.
-- A failed entry writes the daemon logs to `testdata/harness/artifacts/<entry>/`,
+- A failed entry writes the daemon logs to `test/harness/artifacts/<entry>/`,
   which git ignores.
 - The compose project name comes from the checkout path, so two worktrees can
   run the harness at the same time.
@@ -362,8 +366,8 @@ internal/torrentclient/testdata/harness/run.sh list [all]     # entries as a JSO
 
 `.github/workflows/integration.yml` runs the harness in CI. It runs on pull
 requests and pushes to `develop` that change the torrent client package, the
-internal packages that its tests import, `go.mod`, `go.sum`, `Dockerfile`, or
-the workflow. A manual run has a `full` input.
+harness, the internal packages that its tests import (including
+`internal/daemontest`), `go.mod`, `go.sum`, `Dockerfile`, or the workflow. A manual run has a `full` input.
 
 - A setup job reads the matrix from `run.sh list`, or `run.sh list all` when
   `full` is set. Each entry is one parallel job that runs `run.sh <entry>`, so
@@ -378,8 +382,8 @@ the workflow. A manual run has a `full` input.
 ### Coverage
 
 Packages without tests: `internal/api`, `internal/buildinfo`,
-`internal/domain`, `internal/logger`, `internal/logger/loggertest`,
-`internal/notification`.
+`internal/daemontest`, `internal/domain`, `internal/logger`,
+`internal/logger/loggertest`, `internal/notification`.
 
 High-value regression targets:
 

@@ -7,7 +7,9 @@ on:
       - 'develop'
     paths:
       - 'internal/torrentclient/**'
+      - 'test/harness/**'
       # Internal packages that the torrent client tests import.
+      - 'internal/daemontest/**'
       - 'internal/domain/**'
       - 'internal/errtrace/**'
       - 'internal/torrents/**'
@@ -19,6 +21,8 @@ on:
   pull_request:
     paths:
       - 'internal/torrentclient/**'
+      - 'test/harness/**'
+      - 'internal/daemontest/**'
       - 'internal/domain/**'
       - 'internal/errtrace/**'
       - 'internal/torrents/**'
@@ -57,9 +61,9 @@ jobs:
           FULL: ${{ inputs.full }}
         run: |
           if [[ $FULL == true ]]; then
-            entries=$(internal/torrentclient/testdata/harness/run.sh list all)
+            entries=$(test/harness/run.sh list all)
           else
-            entries=$(internal/torrentclient/testdata/harness/run.sh list)
+            entries=$(test/harness/run.sh list)
           fi
           echo "entries: ${entries}"
           echo "entries=${entries}" >> "$GITHUB_OUTPUT"
@@ -94,13 +98,13 @@ jobs:
       - name: Run harness
         env:
           ENTRY: ${{ matrix.entry }}
-        run: internal/torrentclient/testdata/harness/run.sh "$ENTRY"
+        run: test/harness/run.sh "$ENTRY"
 
       - name: Upload daemon logs
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: daemon-logs-${{ matrix.entry }}
-          path: internal/torrentclient/testdata/harness/artifacts/${{ matrix.entry }}
+          path: test/harness/artifacts/${{ matrix.entry }}
           # A failure before the daemons start leaves no logs.
           if-no-files-found: warn

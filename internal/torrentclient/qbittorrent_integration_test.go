@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nuxencs/seasonpackarr/internal/daemontest"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 
 	"github.com/autobrr/go-qbittorrent"
@@ -23,24 +24,24 @@ import (
 func TestQbitDaemon_ImportsCompletePack(t *testing.T) {
 	importDir := requireDaemon(t, envQbitHost)
 	c := newQbitDaemonClient(t, domain.ImportPolicy{SavePath: importDir, Tags: []string{"seasonpackarr"}})
-	pack := writeCompletePack(t, importDir, packName(t))
+	pack := daemontest.WriteCompletePack(t, importDir, daemontest.PackName(t))
 
-	importQbitPack(t, c, pack.importRequest(importDir, true))
+	importQbitPack(t, c, importRequest(pack, importDir, true))
 
-	tor, active := waitQbitActive(t, c, pack.hashes.Legacy)
+	tor, active := waitQbitActive(t, c, pack.Hashes.Legacy)
 	assert.True(t, active, "import left the torrent in state %s, but it must start", tor.State)
 	requireListedPack(t, c, pack, importDir)
-	requireFileReadLoad(t, c, pack.hashes.Legacy)
+	requireFileReadLoad(t, c, pack.Hashes.Legacy)
 }
 
 func TestQbitDaemon_ResumesPartialPack(t *testing.T) {
 	importDir := requireDaemon(t, envQbitHost)
 	c := newQbitDaemonClient(t, domain.ImportPolicy{SavePath: importDir})
-	pack := writePartialPack(t, importDir, packName(t), 1)
+	pack := daemontest.WritePartialPack(t, importDir, daemontest.PackName(t), 1)
 
-	importQbitPack(t, c, pack.importRequest(importDir, false))
+	importQbitPack(t, c, importRequest(pack, importDir, false))
 
-	tor, active := waitQbitActive(t, c, pack.hashes.Legacy)
+	tor, active := waitQbitActive(t, c, pack.Hashes.Legacy)
 	assert.True(t, active, "qBittorrent did not start the torrent after its check: state=%s", tor.State)
 	assertPartialProgress(t, tor.Progress, 1)
 }
@@ -52,12 +53,12 @@ func TestQbitDaemon_ResumesPartialPack(t *testing.T) {
 func TestQbitDaemon_RecoversMisclassifiedCompletePack(t *testing.T) {
 	importDir := requireDaemon(t, envQbitHost)
 	c := newQbitDaemonClient(t, domain.ImportPolicy{SavePath: importDir})
-	pack := writePartialPack(t, importDir, packName(t), 1)
+	pack := daemontest.WritePartialPack(t, importDir, daemontest.PackName(t), 1)
 
-	report := importQbitPack(t, c, pack.importRequest(importDir, true))
+	report := importQbitPack(t, c, importRequest(pack, importDir, true))
 	require.Contains(t, importStageNames(report), ImportStageRecheck, "the missingFiles fallback must run")
 
-	tor, active := waitQbitActive(t, c, pack.hashes.Legacy)
+	tor, active := waitQbitActive(t, c, pack.Hashes.Legacy)
 	assert.True(t, active, "torrent not active after the fallback: state=%s", tor.State)
 	assertPartialProgress(t, tor.Progress, 1)
 }
@@ -67,7 +68,7 @@ func TestQbitDaemon_RecoversMisclassifiedCompletePack(t *testing.T) {
 // the reused episodes stay hardlinks of their source files.
 func TestQbitDaemon_DownloadsMissingEpisodes(t *testing.T) {
 	importDir := requireDaemon(t, envQbitHost)
-	s := newSeeder(t)
+	s := daemontest.NewSeeder(t)
 	c := newQbitDaemonClient(t, domain.ImportPolicy{SavePath: importDir})
 	host, err := url.Parse(os.Getenv(envQbitHost))
 	require.NoError(t, err)
@@ -77,28 +78,28 @@ func TestQbitDaemon_DownloadsMissingEpisodes(t *testing.T) {
 		missing int
 	}{
 		{name: "first episode missing", missing: 1},
-		{name: "last episode missing", missing: packEpisodes},
+		{name: "last episode missing", missing: daemontest.PackEpisodes},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			name := packName(t)
-			seeded := s.seed(t, name)
-			pack := writeLinkedPack(t, importDir, name, tt.missing)
-			require.Equal(t, seeded.hashes, pack.hashes, "the seeder and the import must have the same torrent")
+			name := daemontest.PackName(t)
+			seeded := s.Seed(t, name)
+			pack := daemontest.WriteLinkedPack(t, importDir, name, tt.missing)
+			require.Equal(t, seeded.Hashes, pack.Hashes, "the seeder and the import must have the same torrent")
 
-			importQbitPack(t, c, pack.importRequest(importDir, false))
-			tor, active := waitQbitActive(t, c, pack.hashes.Legacy)
+			importQbitPack(t, c, importRequest(pack, importDir, false))
+			tor, active := waitQbitActive(t, c, pack.Hashes.Legacy)
 			require.True(t, active, "qBittorrent did not start the torrent after its check: state=%s", tor.State)
-			assertPartialProgress(t, tor.Progress, packEpisodes-1)
+			assertPartialProgress(t, tor.Progress, daemontest.PackEpisodes-1)
 
 			prefs, err := qbitDaemonAPI(t, c).GetAppPreferencesCtx(t.Context())
 			require.NoError(t, err)
-			peer := newPeerAddress(t, host.Hostname(), prefs.ListenPort)
-			tor, complete := waitSeededDownload(t, s, pack.hashes.Legacy, peer, readQbitTorrent(t, c, pack.hashes.Legacy),
+			peer := daemontest.PeerAddress(t, host.Hostname(), prefs.ListenPort)
+			tor, complete := daemontest.WaitSeededDownload(t, s, pack.Hashes.Legacy, peer, readQbitTorrent(t, c, pack.Hashes.Legacy),
 				func(tor qbittorrent.Torrent) bool {
 					// libtorrent adds payload to the downloaded count once per second,
 					// so the count can lag behind the progress.
-					return tor.Progress >= 1 && tor.Downloaded >= packEpisodeSize
+					return tor.Progress >= 1 && tor.Downloaded >= daemontest.PackEpisodeSize
 				})
 			require.True(t, complete, "download did not complete: state=%s progress=%.2f", tor.State, tor.Progress)
 			assertDownloadedPack(t, importDir, pack, tt.missing, tor.Downloaded)
@@ -188,7 +189,7 @@ func importQbitPack(t *testing.T, c *qbitClient, req ImportRequest) ImportReport
 	raw := qbitDaemonAPI(t, c)
 	t.Cleanup(func() {
 		assert.NoError(t, raw.DeleteTorrents([]string{req.LegacyHash}, false), "remove torrent")
-		assertRemoved(t, req.LegacyHash, func() (bool, error) {
+		daemontest.AssertRemoved(t, req.LegacyHash, func() (bool, error) {
 			found, err := raw.GetTorrents(qbittorrent.TorrentFilterOptions{Hashes: []string{req.LegacyHash}})
 			return len(found) > 0, err
 		})
@@ -202,14 +203,14 @@ func importQbitPack(t *testing.T, c *qbitClient, req ImportRequest) ImportReport
 // check. It returns the last state so callers can report it.
 func waitQbitActive(t *testing.T, c *qbitClient, hash string) (qbittorrent.Torrent, bool) {
 	t.Helper()
-	tor, active := waitFor(t.Context(), readQbitTorrent(t, c, hash), func(tor qbittorrent.Torrent) bool {
+	tor, active := daemontest.WaitFor(t.Context(), readQbitTorrent(t, c, hash), func(tor qbittorrent.Torrent) bool {
 		return isActiveTorrentState(tor.State)
 	})
 	t.Logf("qBittorrent state=%s progress=%.2f", tor.State, tor.Progress)
 	return tor, active
 }
 
-// readQbitTorrent returns a waitFor read function that stops the test when the
+// readQbitTorrent returns a daemontest.WaitFor read function that stops the test when the
 // torrent is missing.
 func readQbitTorrent(t *testing.T, c *qbitClient, hash string) func() qbittorrent.Torrent {
 	return func() qbittorrent.Torrent {
