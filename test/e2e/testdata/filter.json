@@ -1,0 +1,44 @@
+{
+  "name": "seasonpackarr-${CLIENT_NAME}",
+  "enabled": true,
+  "seasons": "1-99",
+  "episodes": "0",
+  "resolutions": ["1080p", "1080i"],
+  "external": [
+    {
+      "name": "candidate",
+      "index": 1,
+      "type": "WEBHOOK",
+      "enabled": true,
+      "on_error": "REJECT",
+      "webhook_host": "${SEASONPACKARR_URL}/api/candidate",
+      "webhook_method": "POST",
+      "webhook_headers": "X-API-Token=${API_TOKEN}",
+      "webhook_expect_status": 250,
+      "webhook_data": "{\n  \"name\": \"{{ .TorrentName }}\",\n  \"clientname\": \"${CLIENT_NAME}\"\n}"
+    },
+    {
+      "name": "match",
+      "index": 0,
+      "type": "WEBHOOK",
+      "enabled": true,
+      "on_error": "REJECT",
+      "webhook_host": "${SEASONPACKARR_URL}/api/match",
+      "webhook_method": "POST",
+      "webhook_headers": "X-API-Token=${API_TOKEN}",
+      "webhook_expect_status": 250,
+      "webhook_data": "{\n  \"name\": \"{{ .TorrentName }}\",\n  \"torrent\": \"{{ .TorrentDataRawBytes | js }}\",\n  \"clientname\": \"${CLIENT_NAME}\"\n}"
+    }
+  ],
+  "actions": [
+    {
+      "name": "import",
+      "type": "WEBHOOK",
+      "enabled": true,
+      "webhook_type": "JSON",
+      "webhook_method": "POST",
+      "webhook_host": "${SEASONPACKARR_URL}/api/import?apikey=${API_TOKEN}",
+      "webhook_data": "{\n  \"name\":\"{{ .TorrentName }}\", \n  \"torrent\":\"{{ .TorrentDataRawBytes | js }}\",\n  \"clientname\": \"${CLIENT_NAME}\"\n}"
+    }
+  ]
+}

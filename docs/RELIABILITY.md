@@ -35,7 +35,8 @@ Reliable does not mean perfect acceptance. It means predictable outcomes when de
 
 ## Known Reliability Gaps
 
-- no external autobrr-to-real-client end-to-end harness
+- the end-to-end tests cover only the qBittorrent partial pack. Transmission, Deluge, complete packs, and
+  candidate rejection are still open (#279)
 - expected filter rejections and operational errors do not have separate outcome classes
 - torrent-derived target paths do not enforce containment beneath the import root
 - no automated stale-doc detection for operational procedures

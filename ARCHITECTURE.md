@@ -175,6 +175,18 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
 
 ## Testing Surface
 
+### Layers
+
+Three test layers use real processes. They are test terms, not product terms,
+so the glossary does not define them.
+
+- A *CLI test* builds the binary and runs it against the HTTP fixtures with a
+  fake torrent client. It needs no external service.
+- An *integration test* runs one client adapter against a real daemon.
+- An *end-to-end test* runs real autobrr, the seasonpackarr release image, a
+  real client, and a real seeder over real network boundaries, with no fakes.
+  It sends one announce into autobrr and checks only what a user can see.
+
 ### Files
 
 - `<file>_test.go` tests the code in `<file>.go`. A large set can split by
@@ -187,9 +199,12 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
 - `<file>_integration_test.go` holds tests against real external services.
   Their shared fixtures live in `fixtures_integration_test.go`. Helpers that
   every test against a real daemon uses live in `internal/daemontest`.
-- `internal/http/cli_test.go` holds the end-to-end tests. They build the binary
+- `internal/http/cli_test.go` holds the CLI tests. They build the binary
   with `buildCLI` and run it against the HTTP fixtures. They need no external
   service and run in the default suite.
+- `test/e2e/` holds the end-to-end tests. `harness_test.go` sets up autobrr and
+  serves the `.torrent` files, and `<client>_test.go` holds one client's
+  scenarios. `testdata/filter.json` is the autobrr filter.
 
 ### Names
 
@@ -295,6 +310,58 @@ The seed folder must be on the same volume as the import folder. The seeder
 must reach the client under test at the host name in the client's host
 setting, so the download tests need the harness network.
 
+### End-to-end tests
+
+End-to-end tests use the `e2e` build tag, so `go test ./...` does not run
+them. `test/harness/run.sh e2e` runs them. ADR-0002 explains why they drive a
+real autobrr.
+
+- The only seam is the outside of the whole system. A test sends one announce
+  line through autobrr's announce-process endpoint, and checks only the client
+  API, the `/data` filesystem, and the autobrr release status. It does not
+  call the seasonpackarr API or a production package. It uses
+  `internal/daemontest` for setup and waits.
+- Names are `Test<Client>E2E_<Behavior>` (`TestQbitE2E_DownloadsMissingEpisodes`).
+- `requireHarness` gates every test with `daemontest.RequireSettings`, so
+  strict mode fails a test with missing settings. Once for each test process,
+  it creates the first autobrr user, logs in, creates an API key, waits until
+  autobrr loaded the custom definition, and creates the indexer and then its
+  enabled IRC network. The network server does not exist. autobrr retries the
+  connection with a backoff and keeps the network enabled and the announce
+  queue intact, so the announce-process endpoint works without IRC.
+- The driver serves the `.torrent` files over HTTP on the port of
+  `SEASONPACKARR_TEST_E2E_TORRENT_URL`. autobrr keeps only the path of the
+  announced URL and joins it to the indexer `base_url`, which the driver sets
+  to that URL.
+- `testdata/filter.json` holds the README filter: the candidate and match
+  external webhooks with `POST`, the `X-API-Token` header, expected status
+  `250`, and the README `Data (JSON)` templates, plus the Webhook action to
+  `/api/import?apikey=` with the README `Payload (JSON)`. The driver fills in
+  `${SEASONPACKARR_URL}`, `${API_TOKEN}`, and `${CLIENT_NAME}`. autobrr runs
+  the external entry with the highest `index` first. `POST /api/filters`
+  stores only the base filter, so the driver then updates the stored filter
+  with its indexer, external webhooks, and action. The README stays hand-written.
+- `packName` makes a unique release name with a letters-only title, so reruns
+  do not share releases and both release parsers see the plain title.
+- The client already holds the present episodes as real single-episode
+  torrents (`daemontest.WriteEpisode`), which it checked and seeds before the
+  announce. The seeder holds the full pack.
+- autobrr only queues the announce. The test waits with bounded polling for
+  the autobrr release to finish its actions, then for the client state. autobrr
+  stores a release only when a filter approves it, and the Webhook action
+  ignores the import response, so the client and the disk are the truth.
+- Each test removes its torrents from the client and the seeder at cleanup.
+
+| Setting | Value in the harness |
+| --- | --- |
+| `SEASONPACKARR_TEST_E2E_AUTOBRR_URL` | `http://autobrr:7474` |
+| `SEASONPACKARR_TEST_E2E_SEASONPACKARR_URL` | `http://seasonpackarr:42069` |
+| `SEASONPACKARR_TEST_E2E_API_TOKEN` | the `apiToken` of `test/harness/seasonpackarr/config.yaml` |
+| `SEASONPACKARR_TEST_E2E_TORRENT_URL` | `http://test:8000` |
+
+The tests also read `SEASONPACKARR_TEST_IMPORT_DIR`, the seeder settings, and
+the settings of the client under test from the integration table.
+
 ### Commands
 
 ```sh
@@ -314,16 +381,21 @@ prevents cached results from hiding changes in an external service.
 
 ### Harness
 
-`test/harness/run.sh` runs the integration tests
-against pinned daemon versions in Docker Compose. It needs only Docker. Local
-runs and the integration workflow use the same command (ADR-0001).
+`test/harness/run.sh` runs the integration and end-to-end tests against
+pinned daemon versions in Docker Compose. It needs only Docker. Local runs and
+the integration workflow use the same command (ADR-0001). The workflow does not
+run the end-to-end entries yet.
 
 ```sh
-test/harness/run.sh                # default entries, the CI set
+test/harness/run.sh                # default integration entries, the CI set
 test/harness/run.sh all            # default entries and the middle versions
-test/harness/run.sh qbit-4.3.9     # one or more named entries
-test/harness/run.sh list [all]     # entries as a JSON array
+test/harness/run.sh e2e            # every end-to-end entry
+test/harness/run.sh qbit-4.3.9     # one or more named entries, also e2e-qbit
+test/harness/run.sh list [all]     # integration entries as a JSON array
+test/harness/run.sh list e2e       # end-to-end entries as a JSON array
 ```
+
+The no-argument run, `all`, and `list [all]` stay integration-only.
 
 - An entry is `<client>-<version>`. The default entries are the oldest and
   newest supported version of each client. `all` adds the middle qBittorrent
@@ -345,6 +417,22 @@ test/harness/run.sh list [all]     # entries as a JSON array
   run the harness at the same time.
 - `compose.yaml` holds the Go test service and the seeder. Each client adds a
   `compose.<client>.yaml` overlay with its daemon and its test settings.
+- An end-to-end entry is `e2e-<client>`. It uses the daemon image of the
+  newest default integration entry of that client, so one bump updates both
+  layers. It adds `compose.e2e.yaml` with autobrr and seasonpackarr and runs
+  `Test<Client>E2E_` with `-tags=e2e` in strict mode. The test container runs
+  with `--use-aliases`, so autobrr reaches its torrent server at `test`.
+- autobrr is pinned by tag and digest in `compose.e2e.yaml` and bumped by
+  hand. It starts with an empty `/config` tmpfs and loads
+  `autobrr/definitions/`. It calls the external webhooks with a fixed 120
+  second timeout, far above a match on a cold inventory.
+- seasonpackarr runs from an image that the runner builds once for each call
+  from `ci.Dockerfile`, the file of the published release image. It runs as
+  uid 1000 with `seasonpackarr/config.yaml` mounted read-only into its
+  `/config` volume: an API token, one entry for each client, smart mode with
+  a threshold below the partial-pack coverage, the import policy on
+  `/data/import`, and no notifications. A failed end-to-end entry also saves
+  the autobrr and seasonpackarr logs.
 - The seeder is hotio qBittorrent 5.2.4 (`SEEDER_IMAGE` in `run.sh`) with the
   committed `qBittorrent.conf`. It runs in every entry, and the tests start
   only after its health check. Its seed folder is `/data/seed`. The `qbit`

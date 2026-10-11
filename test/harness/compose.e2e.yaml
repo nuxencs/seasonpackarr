@@ -1,0 +1,76 @@
+# End-to-end overlay. run.sh adds it after the client overlay of an e2e-<client>
+# entry. autobrr gets the announces, and seasonpackarr runs from the image that
+# run.sh builds from ci.Dockerfile. ADR-0002 explains the real autobrr.
+services:
+  volume-init:
+    # seasonpackarr validates import.savePath at startup, so /data/import must
+    # exist first. It runs as uid 1000 and writes its database into /config.
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        mkdir -p /data/import &&
+        find /data /cache /seasonpackarr-config ! -user 1000 -exec chown 1000:1000 {} +
+    volumes:
+      - seasonpackarr-config:/seasonpackarr-config
+
+  # The test driver sets autobrr up over its REST API: user, API key, indexer,
+  # IRC network, and filter. Bump the tag and the digest together, by hand.
+  # autobrr calls the external webhooks with a fixed 120 second client timeout
+  # (internal/filter/service.go in v1.88.0), which no setting changes. A match on
+  # a cold inventory in these tests reads a few torrents and takes about a second.
+  autobrr:
+    image: ghcr.io/autobrr/autobrr:v1.88.0@sha256:e200008d43fe6cd2d944c9bcf20900cfb8ba8a8e509625bb78ee51910b994005
+    environment:
+      AUTOBRR__CHECK_FOR_UPDATES: "false"
+      AUTOBRR__CUSTOM_DEFINITIONS: /definitions
+      AUTOBRR__LOG_LEVEL: DEBUG
+    volumes:
+      - ./autobrr/definitions:/definitions:ro
+    # autobrr writes its config and database into /config. Each entry starts empty.
+    tmpfs:
+      - /config
+    healthcheck:
+      test: [CMD, curl, -fsS, http://127.0.0.1:7474/api/healthz/liveness]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  seasonpackarr:
+    image: ${SEASONPACKARR_IMAGE:?run.sh builds SEASONPACKARR_IMAGE from ci.Dockerfile}
+    # run.sh builds the image from ci.Dockerfile, the file of the release image,
+    # once for each call. No registry has it.
+    pull_policy: never
+    # The same uid as the clients, so a client can write the missing episodes
+    # into the pack folders that seasonpackarr creates.
+    user: "1000:1000"
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+    volumes:
+      - seasonpackarr-config:/config
+      - ./seasonpackarr/config.yaml:/config/config.yaml:ro
+      - data:/data
+    healthcheck:
+      test: [CMD, curl, -fsS, http://127.0.0.1:42069/api/healthz/liveness]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  test:
+    depends_on:
+      autobrr:
+        condition: service_healthy
+      seasonpackarr:
+        condition: service_healthy
+    environment:
+      SEASONPACKARR_TEST_E2E_AUTOBRR_URL: http://autobrr:7474
+      SEASONPACKARR_TEST_E2E_SEASONPACKARR_URL: http://seasonpackarr:42069
+      # Same as apiToken in seasonpackarr/config.yaml.
+      SEASONPACKARR_TEST_E2E_API_TOKEN: e2e-harness-token
+      # The driver serves the .torrent files on this port. run.sh starts the
+      # test with --use-aliases, so autobrr reaches it at the service name.
+      SEASONPACKARR_TEST_E2E_TORRENT_URL: http://test:8000
+
+volumes:
+  seasonpackarr-config:

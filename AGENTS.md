@@ -41,6 +41,7 @@ Use progressive disclosure. Do not read the whole repo up front unless the task 
 - `internal/notification/`: Discord notifications
 - `schemas/`: JSON schema for config surface
 - `test/harness/`: Docker Compose harness that runs the tests against real torrent client daemons
+- `test/e2e/`: end-to-end tests from an autobrr announce to a seeding pack
 - `internal/daemontest/`: helpers shared by the tests against real daemons (seeder, pack builders, waits)
 - `distrib/`, `Dockerfile`, `ci.Dockerfile`: runtime packaging
 
@@ -75,6 +76,11 @@ Primary local checks:
 - `test/harness/run.sh` when torrent client adapter code changes. It runs the
   integration suites against real daemons in Docker Compose. Pass entry names, for example `qbit-4.3.9`, to run
   one client version, `all` for the full version range, or `list [all]` to print the entries.
+- `test/harness/run.sh e2e` before you claim that a change to the request flow, planning, hardlinks, client
+  adapters, config loading, or the image works. It runs the end-to-end tests: real autobrr gets one announce, and the
+  seasonpackarr release image, a real client, and the seeder take it to a seeding pack. Pass `e2e-qbit` to run one
+  client, or `list e2e` to print the entries. The terms end-to-end, integration, and CLI test are defined in
+  `ARCHITECTURE.md` under Testing Surface.
 - focused CLI/API smoke checks when behavior touches request flow:
   - `go run . start --config <dir>`
   - `go run . candidate "<release>" --config <dir> --client "<name>"`

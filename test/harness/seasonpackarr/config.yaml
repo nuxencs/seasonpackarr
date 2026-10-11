@@ -1,0 +1,30 @@
+# seasonpackarr config for the end-to-end entries. compose.e2e.yaml mounts it
+# read-only at /config/config.yaml. test/e2e/testdata/filter.json sends the
+# same API token and client names to autobrr.
+host: "0.0.0.0"
+port: 42069
+
+apiToken: "e2e-harness-token"
+
+clients:
+  qbit:
+    type: "qbittorrent"
+    host: "qbit"
+    port: 8080
+    username: "admin"
+    password: "integration"
+    import:
+      # The shared /data volume, at the same path as in the clients (ADR-0001).
+      savePath: "/data/import"
+      tags: [ "seasonpackarr" ]
+
+logLevel: "DEBUG"
+
+# The partial pack reuses 2 of its 3 episodes, a coverage of 0.67.
+smartMode: true
+smartModeThreshold: 0.5
+
+notifications:
+  notificationLevel: [ "MATCH", "ERROR" ]
+  # Empty turns off notifications.
+  discord: ""

@@ -35,7 +35,7 @@ func RequireSettings(t *testing.T, keys ...string) {
 		}
 	}
 	if len(missing) > 0 {
-		message := fmt.Sprintf("set %s to run this integration test", strings.Join(missing, " and "))
+		message := fmt.Sprintf("set %s to run this test", strings.Join(missing, " and "))
 		if os.Getenv(envRequireDaemons) == "1" {
 			t.Fatalf("%s: %s=1 requires every daemon setting", message, envRequireDaemons)
 		}

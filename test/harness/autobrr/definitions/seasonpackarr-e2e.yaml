@@ -1,0 +1,34 @@
+---
+# Minimal custom indexer for the end-to-end entries. The tests send announce
+# lines through autobrr's announce-process endpoint, so no IRC server exists.
+# autobrr keeps only the path of the announced URL and joins it to the indexer
+# base_url, which the test driver sets to its own torrent server.
+version: 2
+name: Seasonpackarr E2E
+identifier: seasonpackarr-e2e
+description: Announces of the seasonpackarr end-to-end tests.
+language: en-us
+urls:
+  - http://test:8000/
+privacy: private
+protocol: torrent
+supports:
+  - irc
+source: custom
+
+irc:
+  network: Seasonpackarr E2E
+  # Lowercase, because autobrr looks up the network server in lowercase.
+  server: irc.seasonpackarr-e2e.invalid
+  port: 6667
+  tls: false
+  channels:
+    - name: "#announces"
+      announcers:
+        - e2e-bot
+      parse:
+        type: single
+        lines:
+          - pattern: 'New Torrent: (?P<torrentName>\S+) \| (?P<torrentUrl>\S+)'
+        match:
+          downloadurl: "{{ .torrentUrl }}"

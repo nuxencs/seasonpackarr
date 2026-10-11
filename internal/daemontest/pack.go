@@ -69,13 +69,11 @@ func writePack(t *testing.T, dir, name string, keep int) Pack {
 	require.NoError(t, os.RemoveAll(packDir))
 	require.NoError(t, os.MkdirAll(packDir, 0o755))
 
-	content := make([]byte, PackEpisodeSize)
 	episodes := make([]string, 0, PackEpisodes)
 	for episode := 1; episode <= PackEpisodes; episode++ {
-		file := strings.Replace(name, ".S01.", fmt.Sprintf(".S01E%02d.", episode), 1) + ".mkv"
+		file := episodeRelease(name, episode) + ".mkv"
 		episodes = append(episodes, file)
-		content[0] = byte(episode)
-		require.NoError(t, os.WriteFile(filepath.Join(packDir, file), content, 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(packDir, file), episodeContent(episode), 0o644))
 	}
 
 	torrent := torrentFromDir(t, packDir)
@@ -90,6 +88,48 @@ func writePack(t *testing.T, dir, name string, keep int) Pack {
 		}
 	}
 	return Pack{Name: name, Episodes: episodes, Torrent: torrent, Hashes: hashes}
+}
+
+// Episode is a single-episode release on disk plus its .torrent.
+type Episode struct {
+	// Name is the release name and the name of its folder.
+	Name string
+	// File is the episode file name, the same as in the pack.
+	File    string
+	Torrent []byte
+	Hashes  torrents.Hashes
+}
+
+// WriteEpisode writes the 1-based episode of the pack name into dir as its own
+// release: a folder named after the episode release that holds the pack's
+// episode file with the same bytes. A client that holds it can reuse it for the pack.
+func WriteEpisode(t *testing.T, dir, packName string, episode int) Episode {
+	t.Helper()
+	require.True(t, episode >= 1 && episode <= PackEpisodes, "episode=%d", episode)
+
+	name := episodeRelease(packName, episode)
+	releaseDir := filepath.Join(dir, name)
+	require.NoError(t, os.RemoveAll(releaseDir))
+	require.NoError(t, os.MkdirAll(releaseDir, 0o755))
+	file := name + ".mkv"
+	require.NoError(t, os.WriteFile(filepath.Join(releaseDir, file), episodeContent(episode), 0o644))
+
+	torrent := torrentFromDir(t, releaseDir)
+	hashes, err := torrents.InfoHashes(torrent)
+	require.NoError(t, err)
+	return Episode{Name: name, File: file, Torrent: torrent, Hashes: hashes}
+}
+
+// episodeRelease names the 1-based episode of the pack name.
+func episodeRelease(packName string, episode int) string {
+	return strings.Replace(packName, ".S01.", fmt.Sprintf(".S01E%02d.", episode), 1)
+}
+
+// episodeContent is the content of the 1-based episode in every pack.
+func episodeContent(episode int) []byte {
+	content := make([]byte, PackEpisodeSize)
+	content[0] = byte(episode)
+	return content
 }
 
 // SourceDir is the folder of the episodes that an import reuses. It is below

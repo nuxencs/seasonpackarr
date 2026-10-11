@@ -51,6 +51,11 @@ func NewSeeder(t *testing.T) *Seeder {
 	return &Seeder{api: api, dir: os.Getenv(envSeedDir)}
 }
 
+// Dir is the seed folder that holds the complete packs.
+func (s *Seeder) Dir() string {
+	return s.dir
+}
+
 // Seed writes the complete pack name into the seed folder and adds it to the
 // seeder, complete and started. It removes the torrent, not its data, at cleanup.
 func (s *Seeder) Seed(t *testing.T, name string) Pack {
