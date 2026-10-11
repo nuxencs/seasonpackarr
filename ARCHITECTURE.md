@@ -329,19 +329,22 @@ real autobrr.
   a torrent, read the state of a torrent (present, progress, downloaded bytes,
   downloading, seeding), and the address at which the seeder reaches it.
 - The scenarios are:
-  - `PartialPack`: the client has two of three episodes. The pack reuses them
+  - `partial pack`: the client has two of three episodes. The pack reuses them
     as hardlinks, downloads only the missing episode from the seeder, and seeds.
-  - `CompletePack`: the client has every episode, and no seeder has the pack.
+  - `complete pack`: the client has every episode, and no seeder has the pack.
     The pack seeds with 0 downloaded bytes, and every episode is a hardlink.
-  - `CandidateRejection`: the client has one episode in another resolution.
+  - `candidate rejection`: the client has one episode in another resolution.
     autobrr stores no release row for a rejected announce, so the test reads
     autobrr's log through `GET /api/logs/files/autobrr.log`
-    (`AUTOBRR__LOG_PATH` in `compose.e2e.yaml`). The log must hold the
-    rejection by the candidate webhook (`got 200 want: 250`). The client must
-    not have the pack, and the files below `/data` must not change.
-- `CandidateRejection` runs last. seasonpackarr caches the client inventory for
+    (`AUTOBRR__LOG_PATH` in `compose.e2e.yaml`). The log must show that the
+    filter rejected the release, and that the `candidate` webhook got status
+    `200` for the same trace ID. The client must not have the pack, and the
+    files below `/data` must not change.
+- `candidate rejection` runs last. seasonpackarr caches the client inventory for
   30 seconds and only an import refreshes it, so a scenario after a rejection
-  would get an inventory without its own episodes.
+  would get an inventory without its own episodes. For the same reason, the
+  scenarios cannot run in parallel or twice in one stack (`-count=2`). Each
+  runner call starts a fresh stack.
 - `requireHarness` gates every test with `daemontest.RequireSettings`, so
   strict mode fails a test with missing settings. Once for each test process,
   it creates the first autobrr user, logs in, creates an API key, waits until

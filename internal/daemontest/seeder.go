@@ -93,6 +93,12 @@ func (s *Seeder) Seed(t *testing.T, name string) Pack {
 	return pack
 }
 
+// QbitSeeding reports whether qBittorrent has all data of tor and uploads it.
+func QbitSeeding(tor qbittorrent.Torrent) bool {
+	return tor.Progress >= 1 &&
+		(tor.State == qbittorrent.TorrentStateUploading || tor.State == qbittorrent.TorrentStateStalledUp)
+}
+
 // PeerAddress returns the <ip>:<port> address of the client under test that
 // qBittorrent addPeers needs. host is the client's compose service name.
 func PeerAddress(t *testing.T, host string, port int) string {

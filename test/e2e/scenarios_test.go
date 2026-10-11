@@ -6,9 +6,11 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -46,8 +48,8 @@ type torrentState struct {
 	downloading bool
 	// seeding is true when the client has all data and uploads it.
 	seeding bool
-	// raw is the state name of the client, for failure messages.
-	raw string
+	// clientState is the state name of the client, for failure messages.
+	clientState string
 }
 
 // runScenarios runs every scenario against c. The order is fixed: seasonpackarr
@@ -58,13 +60,13 @@ func runScenarios(t *testing.T, c client) {
 	h := requireHarness(t)
 	h.ensureFilter(t, c.configName())
 
-	t.Run("PartialPack", func(t *testing.T) { partialPack(t, h, c) })
-	t.Run("CompletePack", func(t *testing.T) { completePack(t, h, c) })
-	t.Run("CandidateRejection", func(t *testing.T) { candidateRejection(t, h, c) })
+	t.Run("partial pack", func(t *testing.T) { partialPack(t, h, c) })
+	t.Run("complete pack", func(t *testing.T) { completePack(t, h, c) })
+	t.Run("candidate rejection", func(t *testing.T) { candidateRejection(t, h, c) })
 }
 
-// partialPack: the client has two of the three episodes as their own torrents,
-// and one announce must end in a seeding pack that reuses them and downloads
+// partialPack runs the partial pack: the client has two of the three episodes
+// as their own torrents, and one announce must end in a seeding pack that reuses them and downloads
 // only the missing episode from the seeder.
 func partialPack(t *testing.T, h *harness, c client) {
 	s := daemontest.NewSeeder(t)
@@ -100,17 +102,17 @@ func partialPack(t *testing.T, h *harness, c client) {
 	for index, file := range pack.Episodes {
 		imported := filepath.Join(packDir, file)
 		if episode, ok := present[index+1]; ok {
-			daemontest.AssertHardlinked(t, filepath.Join(sourceDir, episode.Name, episode.File), imported)
+			assertHardlinked(t, filepath.Join(sourceDir, episode.Name, episode.File), imported)
 			continue
 		}
-		daemontest.AssertSameBytes(t, filepath.Join(s.Dir(), name, file), imported)
+		assertSameBytes(t, filepath.Join(s.Dir(), name, file), imported)
 	}
 	// Episodes fill whole pieces, so the missing episode is exactly its size.
 	assert.Equal(t, int64(daemontest.PackEpisodeSize), st.downloaded, "only the missing episode may download")
 }
 
-// completePack: the client has every episode as its own torrent, and one
-// announce must end in a seeding pack that downloads nothing. No seeder has the
+// completePack runs the complete pack: the client has every episode as its own
+// torrent, and one announce must end in a seeding pack that downloads nothing. No seeder has the
 // pack, so the pack can seed only from the hardlinked episodes.
 func completePack(t *testing.T, h *harness, c client) {
 	name := packName()
@@ -127,20 +129,19 @@ func completePack(t *testing.T, h *harness, c client) {
 	h.announce(t, name, pack.Torrent)
 	h.requireImportSent(t, name)
 
-	st, seeding := daemontest.WaitFor(t.Context(), func() torrentState { return readState(t, c, hash) },
-		func(st torrentState) bool { return st.seeding })
-	require.True(t, seeding, "pack %s is not complete and seeding: %s", name, st)
+	st := waitSeeding(t, c, hash, name)
 
 	packDir := filepath.Join(h.importDir, name)
 	for index, file := range pack.Episodes {
 		episode := episodes[index]
-		daemontest.AssertHardlinked(t, filepath.Join(sourceDir, episode.Name, episode.File), filepath.Join(packDir, file))
+		assertHardlinked(t, filepath.Join(sourceDir, episode.Name, episode.File), filepath.Join(packDir, file))
 	}
 	assert.Zero(t, st.downloaded, "the pack must not download episode data")
 }
 
-// candidateRejection: the client has only an episode of the show in another
-// resolution, so the candidate check rejects the announce. autobrr must log the
+// candidateRejection runs the candidate rejection: the client has only an
+// episode of the show in another resolution, so the candidate check rejects the
+// announce. autobrr must log the
 // rejection by the candidate webhook, and nothing may reach the client or /data.
 func candidateRejection(t *testing.T, h *harness, c client) {
 	name := packName()
@@ -157,9 +158,9 @@ func candidateRejection(t *testing.T, h *harness, c client) {
 
 	// autobrr stores no release for a rejected announce, so its log is the
 	// proof that it processed the announce and the candidate webhook rejected it.
-	rejections := h.autobrr.waitRejection(t, filterConfig(t, c.configName())["name"].(string), name)
+	rej := h.autobrr.waitRejection(t, filterConfig(t, c.configName())["name"].(string), name)
 	// seasonpackarr answers 200 (no matches) when no client episode is compatible.
-	assert.Contains(t, rejections, "[external webhook status code] not matching: got 200 want: 250",
+	assert.Equal(t, rejection{webhook: "candidate", status: 200}, rej,
 		"autobrr must reject the announce at the candidate webhook")
 
 	rls, err := h.autobrr.findRelease(name)
@@ -179,10 +180,18 @@ func addEpisode(t *testing.T, c client, dir, name string, episode int) daemontes
 	removeAtCleanup(t, c, hash)
 	require.NoError(t, c.add(t.Context(), ep.Torrent, dir), "add episode %s to the client", ep.Name)
 
+	waitSeeding(t, c, hash, ep.Name)
+	return ep
+}
+
+// waitSeeding waits until the client seeds the torrent hash of the release
+// name, and returns its state.
+func waitSeeding(t *testing.T, c client, hash, name string) torrentState {
+	t.Helper()
 	st, seeding := daemontest.WaitFor(t.Context(), func() torrentState { return readState(t, c, hash) },
 		func(st torrentState) bool { return st.seeding })
-	require.True(t, seeding, "client does not seed episode %s: %s", ep.Name, st)
-	return ep
+	require.True(t, seeding, "client does not seed %s: %s", name, st)
+	return st
 }
 
 // removeAtCleanup removes the torrent hash, not its data, when the test ends,
@@ -211,7 +220,7 @@ func (st torrentState) String() string {
 	if !st.present {
 		return "not in the client"
 	}
-	return fmt.Sprintf("state=%s progress=%.2f downloaded=%d", st.raw, st.progress, st.downloaded)
+	return fmt.Sprintf("state=%s progress=%.2f downloaded=%d", st.clientState, st.progress, st.downloaded)
 }
 
 // listFiles returns the path of every file and folder below dir.
@@ -223,4 +232,32 @@ func listFiles(t *testing.T, dir string) []string {
 		return err
 	}), "list %s", dir)
 	return paths
+}
+
+// assertHardlinked checks that imported is the same file as source, so the
+// pack reuses the source episode and the client did not rewrite it.
+func assertHardlinked(t *testing.T, source, imported string) {
+	t.Helper()
+	sourceInfo, err := os.Stat(source)
+	if !assert.NoError(t, err, "source episode") {
+		return
+	}
+	importedInfo, err := os.Stat(imported)
+	if assert.NoError(t, err, "reused episode is not in the pack") {
+		assert.True(t, os.SameFile(sourceInfo, importedInfo), "reused episode %s must keep the inode of its source", imported)
+	}
+}
+
+// assertSameBytes checks that the downloaded episode has the seeder's bytes.
+func assertSameBytes(t *testing.T, seeded, downloaded string) {
+	t.Helper()
+	want, err := os.ReadFile(seeded)
+	if !assert.NoError(t, err, "seeded episode") {
+		return
+	}
+	got, err := os.ReadFile(downloaded)
+	if assert.NoError(t, err, "downloaded episode is not in the pack") {
+		// bytes.Equal, because a diff of two 1 MiB files is unreadable.
+		assert.True(t, bytes.Equal(want, got), "downloaded episode %s does not match the seeder", downloaded)
+	}
 }

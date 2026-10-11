@@ -3,8 +3,7 @@
 
 // Package daemontest holds the helpers that tests against real torrent client
 // daemons share: the settings gate, bounded waits, the season pack and torrent
-// builders, the seeder, and the checks of reused and downloaded pack files. The
-// test harness in test/harness starts the daemons.
+// builders, and the seeder. The test harness in test/harness starts the daemons.
 package daemontest
 
 import (

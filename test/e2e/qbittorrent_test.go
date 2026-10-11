@@ -82,7 +82,7 @@ func (q *qbit) state(ctx context.Context, hash string) (torrentState, error) {
 		downloaded:  tor.Downloaded,
 		downloading: tor.State == qbittorrent.TorrentStateDownloading || tor.State == qbittorrent.TorrentStateStalledDl,
 		seeding:     daemontest.QbitSeeding(tor),
-		raw:         string(tor.State),
+		clientState: string(tor.State),
 	}, nil
 }
 

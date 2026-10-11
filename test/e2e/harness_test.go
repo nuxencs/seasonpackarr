@@ -397,48 +397,68 @@ const autobrrLogFile = "autobrr.log"
 
 // logLine is the part of an autobrr JSON log line that the tests check.
 type logLine struct {
-	Message    string `json:"message"`
-	Filter     string `json:"filter"`
-	Release    string `json:"release"`
-	Rejections string `json:"rejections"`
+	Message        string `json:"message"`
+	TraceID        string `json:"trace_id"`
+	Filter         string `json:"filter"`
+	Release        string `json:"release"`
+	ExternalFilter string `json:"external_filter"`
+	ActualStatus   int    `json:"actual_status"`
 }
 
-// findRejection returns the rejections that autobrr logged when filter
-// rejected the release name. found is false until autobrr logged them.
-func (a *autobrrAPI) findRejection(filter, name string) (rejections string, found bool, err error) {
+// rejection is a rejection of a release by an external webhook of a filter.
+type rejection struct {
+	// webhook is the name of the external webhook in testdata/filter.json.
+	webhook string
+	status  int
+}
+
+// findRejection returns the external webhook rejection that autobrr logged
+// when filter rejected the release name. found is false until autobrr logged
+// the rejection of the filter.
+func (a *autobrrAPI) findRejection(filter, name string) (rej rejection, found bool, err error) {
 	var log []byte
 	if err := a.do(http.MethodGet, "/api/logs/files/"+autobrrLogFile, nil, http.StatusOK, &log); err != nil {
-		return "", false, err
+		return rejection{}, false, err
 	}
+	var lines []logLine
 	for raw := range bytes.Lines(log) {
 		var line logLine
-		if json.Unmarshal(raw, &line) != nil {
-			continue
-		}
-		if line.Message == "filter rejected release" && line.Filter == filter && line.Release == name {
-			return line.Rejections, true, nil
+		if json.Unmarshal(raw, &line) == nil {
+			lines = append(lines, line)
 		}
 	}
-	return "", false, nil
+	index := slices.IndexFunc(lines, func(l logLine) bool {
+		return l.Message == "filter rejected release" && l.Filter == filter && l.Release == name
+	})
+	if index < 0 {
+		return rejection{}, false, nil
+	}
+	// The webhook line has no release name. The trace ID of the announce links it.
+	for _, line := range lines[:index] {
+		if line.Message == "external webhook got unexpected status code" && line.TraceID == lines[index].TraceID {
+			rej = rejection{webhook: line.ExternalFilter, status: line.ActualStatus}
+		}
+	}
+	return rej, true, nil
 }
 
 // waitRejection waits until autobrr logged that filter rejected the release
-// name, and returns the rejections. autobrr stores no release row for a
+// name, and returns the webhook rejection. autobrr stores no release row for a
 // rejected announce, so its log is the only record of the rejection.
-func (a *autobrrAPI) waitRejection(t *testing.T, filter, name string) string {
+func (a *autobrrAPI) waitRejection(t *testing.T, filter, name string) rejection {
 	t.Helper()
 	var (
-		rejections string
-		err        error
+		rej rejection
+		err error
 	)
 	_, logged := daemontest.WaitFor(t.Context(), func() bool {
 		var found bool
-		rejections, found, err = a.findRejection(filter, name)
+		rej, found, err = a.findRejection(filter, name)
 		return found
 	}, func(found bool) bool { return err != nil || found })
 	require.NoError(t, err, "read the autobrr log")
 	require.True(t, logged, "autobrr did not log a rejection of %s by the filter %s", name, filter)
-	return rejections
+	return rej
 }
 
 func (a *autobrrAPI) request(method, path string, body any) (*http.Request, error) {
