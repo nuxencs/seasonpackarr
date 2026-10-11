@@ -26,6 +26,17 @@ clients:
     import:
       savePath: "/data/import"
       tags: [ "seasonpackarr" ]
+  deluge:
+    # The client type of the newest Deluge entry in run.sh. TestDelugeE2E_Scenarios checks it.
+    type: "deluge-v2"
+    host: "deluge"
+    port: 58846
+    username: "seasonpackarr"
+    password: "integration"
+    import:
+      savePath: "/data/import"
+      # Deluge applies it through the Label plugin, which the test enables.
+      tags: [ "seasonpackarr" ]
 
 logLevel: "DEBUG"
 

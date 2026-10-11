@@ -35,7 +35,7 @@ Reliable does not mean perfect acceptance. It means predictable outcomes when de
 
 ## Known Reliability Gaps
 
-- the end-to-end tests cover only qBittorrent and Transmission. Deluge is still open (#279)
+- CI does not run the end-to-end tests yet (#282)
 - expected filter rejections and operational errors do not have separate outcome classes
 - torrent-derived target paths do not enforce containment beneath the import root
 - no automated stale-doc detection for operational procedures

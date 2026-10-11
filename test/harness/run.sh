@@ -25,7 +25,7 @@ default_entries=(
 # Middle versions that only `all` runs. hotio publishes no 4.4.x image.
 extra_entries=(qbit-4.5.5 qbit-4.6.7 qbit-5.0.5 qbit-5.1.4)
 # End-to-end entries that only `e2e` runs.
-e2e_entries=(e2e-qbit e2e-transmission)
+e2e_entries=(e2e-qbit e2e-transmission e2e-deluge)
 # Every entry seeds its download test from this qBittorrent. Bump it with the newest qBittorrent entry.
 export SEEDER_IMAGE=ghcr.io/hotio/qbittorrent:release-5.2.4
 

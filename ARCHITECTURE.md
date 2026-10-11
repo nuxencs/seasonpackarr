@@ -378,6 +378,11 @@ real autobrr.
   the fourth seeding torrent, and the default queue keeps it in `queuedUP`.
 - The Transmission test keeps the Transmission defaults. Its seed queue is off,
   and its download queue allows 5 torrents, so no scenario waits in a queue.
+- The Deluge test keeps the Deluge queue defaults: 5 active seeding torrents
+  and 3 active downloading torrents. At most 4 torrents seed at a time, so no
+  scenario waits in a queue. The test enables the Label plugin, so the import
+  applies the label of the committed config. The client type in that config
+  must be the type of the newest Deluge entry, and the test checks it.
 
 | Setting | Value in the harness |
 | --- | --- |
