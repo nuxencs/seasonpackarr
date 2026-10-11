@@ -415,8 +415,7 @@ prevents cached results from hiding changes in an external service.
 
 `test/harness/run.sh` runs the integration and end-to-end tests against
 pinned daemon versions in Docker Compose. It needs only Docker. Local runs and
-the integration workflow use the same command (ADR-0001). The workflow does not
-run the end-to-end entries yet.
+the integration workflow use the same command (ADR-0001).
 
 ```sh
 test/harness/run.sh                # default integration entries, the CI set
@@ -487,15 +486,24 @@ The no-argument run, `all`, and `list [all]` stay integration-only.
   auth entry (`seasonpackarr:integration:10`) and `core.conf`, then starts
   `deluged` on all interfaces.
 
-`.github/workflows/integration.yml` runs the harness in CI. It runs on pull
-requests and pushes to `develop` that change the torrent client package, the
-harness, the internal packages that its tests import (including
-`internal/daemontest`), `go.mod`, `go.sum`, `Dockerfile`, or the workflow. A
-manual run has a `full` input.
+`.github/workflows/integration.yml` runs the harness in CI. It has two job
+groups, and neither is a required check. A manual run starts both groups and
+has a `full` input for the integration group.
 
-- A setup job reads the matrix from `run.sh list`, or `run.sh list all` when
-  `full` is set. Each entry is one parallel job that runs `run.sh <entry>`, so
-  a new runner entry needs no workflow change.
+- The integration group runs on pull requests and pushes to `develop` that
+  change the torrent client package, the harness, the internal packages that
+  its tests import (including `internal/daemontest`), `go.mod`, `go.sum`,
+  `Dockerfile`, or the workflow.
+- The end-to-end group runs on pull requests and pushes to `develop` that
+  change non-test Go code, the harness, `test/e2e`, `go.mod`, `go.sum`,
+  `Dockerfile`, `ci.Dockerfile`, or the workflow.
+- The workflow paths are the union of both lists. The setup job checks the
+  paths of each group again with `dorny/paths-filter`, so a change to one
+  list needs the same change in the workflow paths.
+- The setup job reads the matrix of each group from `run.sh list` (or
+  `run.sh list all` when `full` is set) and `run.sh list e2e`. Each entry is
+  one parallel job that runs `run.sh <entry>`, so a new runner entry needs no
+  workflow change.
 - Jobs do not retry, and one failed entry does not cancel the others. A failed
   job uploads its daemon logs as the `daemon-logs-<entry>` artifact.
 - The workflow sets `HARNESS_GHA_CACHE=1`, and the Deluge overlay then uses the
