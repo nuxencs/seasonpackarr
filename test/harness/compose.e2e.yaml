@@ -18,7 +18,7 @@ services:
   # IRC network, and filter. Bump the tag and the digest together, by hand.
   # autobrr calls the external webhooks with a fixed 120 second client timeout
   # (internal/filter/service.go in v1.88.0), which no setting changes. A match on
-  # a cold inventory in these tests reads a few torrents and takes about a second.
+  # a cold inventory in these tests reads a few torrents and takes milliseconds.
   autobrr:
     image: ghcr.io/autobrr/autobrr:v1.88.0@sha256:e200008d43fe6cd2d944c9bcf20900cfb8ba8a8e509625bb78ee51910b994005
     environment:

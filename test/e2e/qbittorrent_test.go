@@ -32,11 +32,11 @@ const (
 // announce must end in a seeding pack that reuses them and downloads only the
 // missing episode from the seeder.
 func TestQbitE2E_DownloadsMissingEpisodes(t *testing.T) {
-	h := requireHarness(t)
 	daemontest.RequireSettings(t, envQbitHost)
+	h := requireHarness(t)
 	q := newQbit(t)
 	s := daemontest.NewSeeder(t)
-	h.requireFilter(t, qbitClientName)
+	h.ensureFilter(t, qbitClientName)
 
 	const missing = daemontest.PackEpisodes
 	name := packName()
@@ -171,7 +171,9 @@ func isSeeding(tor qbittorrent.Torrent) bool {
 func assertSameFile(t *testing.T, source, imported string) {
 	t.Helper()
 	sourceInfo, err := os.Stat(source)
-	require.NoError(t, err, "source episode")
+	if !assert.NoError(t, err, "source episode") {
+		return
+	}
 	importedInfo, err := os.Stat(imported)
 	if assert.NoError(t, err, "reused episode is not in the pack") {
 		assert.True(t, os.SameFile(sourceInfo, importedInfo), "reused episode %s must keep the inode of its source", imported)
@@ -182,7 +184,9 @@ func assertSameFile(t *testing.T, source, imported string) {
 func assertSameBytes(t *testing.T, seeded, downloaded string) {
 	t.Helper()
 	want, err := os.ReadFile(seeded)
-	require.NoError(t, err, "seeded episode")
+	if !assert.NoError(t, err, "seeded episode") {
+		return
+	}
 	got, err := os.ReadFile(downloaded)
 	if assert.NoError(t, err, "downloaded episode is not in the pack") {
 		// bytes.Equal, because a diff of two 1 MiB files is unreadable.

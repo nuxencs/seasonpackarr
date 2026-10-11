@@ -319,8 +319,8 @@ real autobrr.
 - The only seam is the outside of the whole system. A test sends one announce
   line through autobrr's announce-process endpoint, and checks only the client
   API, the `/data` filesystem, and the autobrr release status. It does not
-  call the seasonpackarr API or a production package. It uses
-  `internal/daemontest` for setup and waits.
+  call the seasonpackarr API. It uses `internal/daemontest`, which hashes
+  torrents with `internal/torrents`, only for setup and waits.
 - Names are `Test<Client>E2E_<Behavior>` (`TestQbitE2E_DownloadsMissingEpisodes`).
 - `requireHarness` gates every test with `daemontest.RequireSettings`, so
   strict mode fails a test with missing settings. Once for each test process,
@@ -425,7 +425,7 @@ The no-argument run, `all`, and `list [all]` stay integration-only.
 - autobrr is pinned by tag and digest in `compose.e2e.yaml` and bumped by
   hand. It starts with an empty `/config` tmpfs and loads
   `autobrr/definitions/`. It calls the external webhooks with a fixed 120
-  second timeout, far above a match on a cold inventory.
+  second timeout. A match on a cold inventory in the harness takes milliseconds.
 - seasonpackarr runs from an image that the runner builds once for each call
   from `ci.Dockerfile`, the file of the published release image. It runs as
   uid 1000 with `seasonpackarr/config.yaml` mounted read-only into its

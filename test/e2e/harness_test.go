@@ -18,6 +18,7 @@ import (
 	"math/rand/v2"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"slices"
@@ -148,8 +149,8 @@ func filterConfig(t *testing.T, clientName string) map[string]any {
 	return filter
 }
 
-// requireFilter creates the filter of clientName once and links it to the indexer.
-func (h *harness) requireFilter(t *testing.T, clientName string) {
+// ensureFilter creates the filter of clientName once and links it to the indexer.
+func (h *harness) ensureFilter(t *testing.T, clientName string) {
 	t.Helper()
 	filter := filterConfig(t, clientName)
 	if h.autobrr.hasFilter(t, filter["name"].(string)) {
@@ -173,44 +174,30 @@ func packName() string {
 // autobrrAPI calls the autobrr REST API with an API key after setup.
 type autobrrAPI struct {
 	baseURL string
-	http    *http.Client
+	client  *http.Client
 	apiKey  string
 }
 
-// setupAutobrr creates the first user, logs in, and creates an API key.
+// setupAutobrr creates the first user, logs in, and creates an API key. The
+// cookie jar keeps the login session for the key request.
 func setupAutobrr(baseURL string) (*autobrrAPI, error) {
-	const user, password = "e2e", "e2e-harness"
-	api := &autobrrAPI{baseURL: strings.TrimSuffix(baseURL, "/"), http: &http.Client{Timeout: daemontest.Timeout}}
-	credentials := map[string]any{"username": user, "password": password}
-	if err := api.do(http.MethodPost, "/api/auth/onboard", credentials, http.StatusOK, nil); err != nil {
-		return nil, fmt.Errorf("onboard: %w", err)
-	}
-
-	body, err := json.Marshal(credentials)
+	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return nil, err
 	}
-	res, err := api.http.Post(api.baseURL+"/api/auth/login", "application/json", bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("log in: %w", err)
+	api := &autobrrAPI{baseURL: strings.TrimSuffix(baseURL, "/"), client: &http.Client{Timeout: daemontest.Timeout, Jar: jar}}
+	credentials := map[string]any{"username": "e2e", "password": "e2e-harness"}
+	if err := api.do(http.MethodPost, "/api/auth/onboard", credentials, http.StatusOK, nil); err != nil {
+		return nil, fmt.Errorf("onboard: %w", err)
 	}
-	_ = res.Body.Close()
-	cookies := res.Cookies()
-	if res.StatusCode != http.StatusNoContent || len(cookies) == 0 {
-		return nil, fmt.Errorf("log in: status %d, %d cookies", res.StatusCode, len(cookies))
+	if err := api.do(http.MethodPost, "/api/auth/login", credentials, http.StatusNoContent, nil); err != nil {
+		return nil, fmt.Errorf("log in: %w", err)
 	}
 
 	var key struct {
 		Key string `json:"key"`
 	}
-	req, err := api.request(http.MethodPost, "/api/keys", map[string]any{"name": "e2e", "scopes": []string{}})
-	if err != nil {
-		return nil, err
-	}
-	for _, cookie := range cookies {
-		req.AddCookie(cookie)
-	}
-	if err := api.send(req, http.StatusCreated, &key); err != nil {
+	if err := api.do(http.MethodPost, "/api/keys", map[string]any{"name": "e2e", "scopes": []string{}}, http.StatusCreated, &key); err != nil {
 		return nil, fmt.Errorf("create API key: %w", err)
 	}
 	if key.Key == "" {
@@ -356,22 +343,22 @@ type named struct {
 	Identifier string `json:"identifier"`
 }
 
-// findRelease returns the release named name. autobrr stores a release only
-// when a filter approves it.
-func (a *autobrrAPI) findRelease(name string) (release, bool, error) {
+// findRelease returns the release named name, or a zero release when autobrr
+// has none. autobrr stores a release only when a filter approves it.
+func (a *autobrrAPI) findRelease(name string) (release, error) {
 	var page struct {
 		Data []release `json:"data"`
 	}
 	query := url.Values{"q": {name}, "indexer": {indexerIdentifier}, "limit": {"10"}}
 	if err := a.do(http.MethodGet, "/api/release?"+query.Encode(), nil, http.StatusOK, &page); err != nil {
-		return release{}, false, err
+		return release{}, err
 	}
 	for _, r := range page.Data {
 		if r.Name == name {
-			return r, true, nil
+			return r, nil
 		}
 	}
-	return release{}, false, nil
+	return release{}, nil
 }
 
 // waitReleaseDone waits until autobrr stored the release name and finished its
@@ -381,7 +368,7 @@ func (a *autobrrAPI) waitReleaseDone(t *testing.T, name string) release {
 	var err error
 	rls, done := daemontest.WaitFor(t.Context(), func() release {
 		var r release
-		r, _, err = a.findRelease(name)
+		r, err = a.findRelease(name)
 		return r
 	}, func(r release) bool {
 		return err != nil || (len(r.ActionStatus) > 0 &&
@@ -422,7 +409,7 @@ func (a *autobrrAPI) do(method, path string, body any, wantStatus int, out any) 
 }
 
 func (a *autobrrAPI) send(req *http.Request, wantStatus int, out any) error {
-	res, err := a.http.Do(req)
+	res, err := a.client.Do(req)
 	if err != nil {
 		return err
 	}
