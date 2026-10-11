@@ -39,7 +39,7 @@ func TestDelugeE2E_Scenarios(t *testing.T) {
 	// committed config cannot follow it.
 	require.Equal(t, delugeClientType, os.Getenv(envDelugeType),
 		"the type of the deluge client in test/harness/seasonpackarr/config.yaml must match the newest Deluge entry")
-	runScenarios(t, newDeluge(t))
+	runScenarios(t, newDelugeClient(t))
 }
 
 // delugeClient is the client interface for Deluge 2, through go-deluge.
@@ -48,7 +48,7 @@ type delugeClient struct {
 	host string
 }
 
-func newDeluge(t *testing.T) *delugeClient {
+func newDelugeClient(t *testing.T) *delugeClient {
 	t.Helper()
 	host := os.Getenv(envDelugeHost)
 	port, err := strconv.ParseUint(os.Getenv(envDelugePort), 10, 16)
@@ -64,8 +64,9 @@ func newDeluge(t *testing.T) *delugeClient {
 	t.Cleanup(func() {
 		assert.NoError(t, api.Close(), "close the Deluge client")
 	})
-	// The config sets import.tags, and seasonpackarr applies it only through the
-	// Label plugin. Each entry starts a fresh Deluge with the plugin off.
+	// seasonpackarr applies the import.tags label only through the Label plugin,
+	// which a fresh Deluge has off. A label error fails the import, so the
+	// scenarios cover the label path.
 	require.NoError(t, api.EnablePlugin(t.Context(), "Label"), "enable the Deluge Label plugin")
 	return &delugeClient{api: api, host: host}
 }
