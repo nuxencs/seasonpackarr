@@ -88,10 +88,7 @@ func (s *Seeder) Seed(t *testing.T, name string) Pack {
 		tor, _, err := lookup(t.Context())
 		require.NoError(t, err)
 		return tor
-	}, func(tor qbittorrent.Torrent) bool {
-		return tor.Progress >= 1 &&
-			(tor.State == qbittorrent.TorrentStateUploading || tor.State == qbittorrent.TorrentStateStalledUp)
-	})
+	}, QbitSeeding)
 	require.True(t, seeding, "seeder does not seed the pack: state=%s progress=%.2f", tor.State, tor.Progress)
 	return pack
 }

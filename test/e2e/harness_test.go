@@ -5,8 +5,8 @@
 
 // Package e2e holds the end-to-end tests. They send one announce line into a
 // real autobrr and check only what a user can see: the client API, the /data
-// filesystem, and the autobrr release status. test/harness/run.sh e2e starts
-// autobrr, the seasonpackarr image, the client, and the seeder.
+// filesystem, and the autobrr release status or log. test/harness/run.sh e2e
+// starts autobrr, the seasonpackarr image, the client, and the seeder.
 package e2e
 
 import (
@@ -28,6 +28,7 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/daemontest"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -379,6 +380,67 @@ func (a *autobrrAPI) waitReleaseDone(t *testing.T, name string) release {
 	return rls
 }
 
+// requireImportSent waits until autobrr approved the release name and sent the
+// import. The Webhook action ignores the import response, so a passed action
+// proves only that autobrr sent the import.
+func (h *harness) requireImportSent(t *testing.T, name string) {
+	t.Helper()
+	rls := h.autobrr.waitReleaseDone(t, name)
+	assert.Equal(t, "FILTER_APPROVED", rls.FilterStatus, "autobrr filter status")
+	for _, status := range rls.ActionStatus {
+		assert.Equal(t, "PUSH_APPROVED", status.Status, "autobrr action %s: %v", status.Action, status.Rejections)
+	}
+}
+
+// autobrrLogFile is the file name of AUTOBRR__LOG_PATH in compose.e2e.yaml.
+const autobrrLogFile = "autobrr.log"
+
+// logLine is the part of an autobrr JSON log line that the tests check.
+type logLine struct {
+	Message    string `json:"message"`
+	Filter     string `json:"filter"`
+	Release    string `json:"release"`
+	Rejections string `json:"rejections"`
+}
+
+// findRejection returns the rejections that autobrr logged when filter
+// rejected the release name. found is false until autobrr logged them.
+func (a *autobrrAPI) findRejection(filter, name string) (rejections string, found bool, err error) {
+	var log []byte
+	if err := a.do(http.MethodGet, "/api/logs/files/"+autobrrLogFile, nil, http.StatusOK, &log); err != nil {
+		return "", false, err
+	}
+	for raw := range bytes.Lines(log) {
+		var line logLine
+		if json.Unmarshal(raw, &line) != nil {
+			continue
+		}
+		if line.Message == "filter rejected release" && line.Filter == filter && line.Release == name {
+			return line.Rejections, true, nil
+		}
+	}
+	return "", false, nil
+}
+
+// waitRejection waits until autobrr logged that filter rejected the release
+// name, and returns the rejections. autobrr stores no release row for a
+// rejected announce, so its log is the only record of the rejection.
+func (a *autobrrAPI) waitRejection(t *testing.T, filter, name string) string {
+	t.Helper()
+	var (
+		rejections string
+		err        error
+	)
+	_, logged := daemontest.WaitFor(t.Context(), func() bool {
+		var found bool
+		rejections, found, err = a.findRejection(filter, name)
+		return found
+	}, func(found bool) bool { return err != nil || found })
+	require.NoError(t, err, "read the autobrr log")
+	require.True(t, logged, "autobrr did not log a rejection of %s by the filter %s", name, filter)
+	return rejections
+}
+
 func (a *autobrrAPI) request(method, path string, body any) (*http.Request, error) {
 	var reader io.Reader
 	if body != nil {
@@ -399,7 +461,8 @@ func (a *autobrrAPI) request(method, path string, body any) (*http.Request, erro
 	return req, nil
 }
 
-// do sends body as JSON and decodes the response into out when out is not nil.
+// do sends body as JSON and decodes the response into out when out is not
+// nil. A *[]byte out gets the response body as it is.
 func (a *autobrrAPI) do(method, path string, body any, wantStatus int, out any) error {
 	req, err := a.request(method, path, body)
 	if err != nil {
@@ -421,8 +484,13 @@ func (a *autobrrAPI) send(req *http.Request, wantStatus int, out any) error {
 	if res.StatusCode != wantStatus {
 		return fmt.Errorf("%s %s: status %d, want %d: %s", req.Method, req.URL.Path, res.StatusCode, wantStatus, data)
 	}
-	if out == nil {
+	switch out := out.(type) {
+	case nil:
 		return nil
+	case *[]byte:
+		*out = data
+		return nil
+	default:
+		return json.Unmarshal(data, out)
 	}
-	return json.Unmarshal(data, out)
 }

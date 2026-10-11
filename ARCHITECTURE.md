@@ -203,8 +203,9 @@ so the glossary does not define them.
   with `buildCLI` and run it against the HTTP fixtures. They need no external
   service and run in the default suite.
 - `test/e2e/` holds the end-to-end tests. `harness_test.go` sets up autobrr and
-  serves the `.torrent` files, and `<client>_test.go` holds one client's
-  scenarios. `testdata/filter.json` is the autobrr filter.
+  serves the `.torrent` files. `scenarios_test.go` holds the scenarios and the
+  `client` interface. `<client>_test.go` implements that interface for one
+  client and runs the scenarios. `testdata/filter.json` is the autobrr filter.
 
 ### Names
 
@@ -318,10 +319,29 @@ real autobrr.
 
 - The only seam is the outside of the whole system. A test sends one announce
   line through autobrr's announce-process endpoint, and checks only the client
-  API, the `/data` filesystem, and the autobrr release status. It does not
+  API, the `/data` filesystem, and the autobrr release status or log. It does not
   call the seasonpackarr API. It uses `internal/daemontest`, which hashes
   torrents with `internal/torrents`, only for setup and waits.
-- Names are `Test<Client>E2E_<Behavior>` (`TestQbitE2E_DownloadsMissingEpisodes`).
+- Names are `Test<Client>E2E_<Behavior>`. `Test<Client>E2E_Scenarios` runs
+  every scenario against one client as subtests, in a fixed order.
+- The scenarios hold no client-specific code. A client implements the
+  `client` interface: its config name, add a torrent with complete data, remove
+  a torrent, read the state of a torrent (present, progress, downloaded bytes,
+  downloading, seeding), and the address at which the seeder reaches it.
+- The scenarios are:
+  - `PartialPack`: the client has two of three episodes. The pack reuses them
+    as hardlinks, downloads only the missing episode from the seeder, and seeds.
+  - `CompletePack`: the client has every episode, and no seeder has the pack.
+    The pack seeds with 0 downloaded bytes, and every episode is a hardlink.
+  - `CandidateRejection`: the client has one episode in another resolution.
+    autobrr stores no release row for a rejected announce, so the test reads
+    autobrr's log through `GET /api/logs/files/autobrr.log`
+    (`AUTOBRR__LOG_PATH` in `compose.e2e.yaml`). The log must hold the
+    rejection by the candidate webhook (`got 200 want: 250`). The client must
+    not have the pack, and the files below `/data` must not change.
+- `CandidateRejection` runs last. seasonpackarr caches the client inventory for
+  30 seconds and only an import refreshes it, so a scenario after a rejection
+  would get an inventory without its own episodes.
 - `requireHarness` gates every test with `daemontest.RequireSettings`, so
   strict mode fails a test with missing settings. Once for each test process,
   it creates the first autobrr user, logs in, creates an API key, waits until
@@ -351,6 +371,8 @@ real autobrr.
   stores a release only when a filter approves it, and the Webhook action
   ignores the import response, so the client and the disk are the truth.
 - Each test removes its torrents from the client and the seeder at cleanup.
+- The qBittorrent test turns off the qBittorrent queue. The complete pack is
+  the fourth seeding torrent, and the default queue keeps it in `queuedUP`.
 
 | Setting | Value in the harness |
 | --- | --- |

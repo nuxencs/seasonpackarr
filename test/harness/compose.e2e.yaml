@@ -25,6 +25,9 @@ services:
       AUTOBRR__CHECK_FOR_UPDATES: "false"
       AUTOBRR__CUSTOM_DEFINITIONS: /definitions
       AUTOBRR__LOG_LEVEL: DEBUG
+      # autobrr stores no release for a rejected announce. The candidate-rejection
+      # test reads the rejection from this file through GET /api/logs/files/autobrr.log.
+      AUTOBRR__LOG_PATH: /config/log/autobrr.log
     volumes:
       - ./autobrr/definitions:/definitions:ro
     # autobrr writes its config and database into /config. Each entry starts empty.
