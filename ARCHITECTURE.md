@@ -376,6 +376,8 @@ real autobrr.
 - Each test removes its torrents from the client and the seeder at cleanup.
 - The qBittorrent test turns off the qBittorrent queue. The complete pack is
   the fourth seeding torrent, and the default queue keeps it in `queuedUP`.
+- The Transmission test keeps the Transmission defaults. Its seed queue is off,
+  and its download queue allows 5 torrents, so no scenario waits in a queue.
 
 | Setting | Value in the harness |
 | --- | --- |
@@ -415,7 +417,7 @@ run the end-to-end entries yet.
 test/harness/run.sh                # default integration entries, the CI set
 test/harness/run.sh all            # default entries and the middle versions
 test/harness/run.sh e2e            # every end-to-end entry
-test/harness/run.sh qbit-4.3.9     # one or more named entries, also e2e-qbit
+test/harness/run.sh qbit-4.3.9     # one or more named entries, also e2e-<client>
 test/harness/run.sh list [all]     # integration entries as a JSON array
 test/harness/run.sh list e2e       # end-to-end entries as a JSON array
 ```

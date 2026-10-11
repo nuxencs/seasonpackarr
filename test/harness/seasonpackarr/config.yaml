@@ -17,6 +17,15 @@ clients:
       # The shared /data volume, at the same path as in the clients (ADR-0001).
       savePath: "/data/import"
       tags: [ "seasonpackarr" ]
+  transmission:
+    type: "transmission"
+    host: "transmission"
+    port: 9091
+    username: "admin"
+    password: "integration"
+    import:
+      savePath: "/data/import"
+      tags: [ "seasonpackarr" ]
 
 logLevel: "DEBUG"
 
