@@ -69,11 +69,12 @@ newest_entry() {
 	printf '%s' "$newest"
 }
 
-# configure_entry sets client, e2e, test_pattern, log_files, and the image
-# variables that the compose overlays read. log_files lists <service>:<path>
+# configure_entry sets client, e2e, test_pattern, test_tags, test_package,
+# log_files, and the image variables that the compose overlays read. log_files lists <service>:<path>
 # entries for daemon logs that are not on stdout.
 configure_entry() {
 	e2e=''
+	test_tags=integration test_package=./internal/torrentclient
 	log_files=(seeder:/config/data/logs/qbittorrent.log)
 	case $1 in
 	e2e-*)
@@ -85,6 +86,7 @@ configure_entry() {
 		}
 		configure_entry "$newest"
 		e2e=1
+		test_tags=e2e test_package=./test/e2e
 		# TestQbitDaemon_ becomes TestQbitE2E_.
 		test_pattern=${test_pattern%Daemon_}E2E_
 		;;
@@ -141,12 +143,19 @@ compose() {
 
 # run_tests runs the tests of the configured entry in the test container.
 run_tests() {
-	if [[ -n $e2e ]]; then
-		# --use-aliases lets autobrr reach the torrent server of the test at "test".
-		compose run --rm --use-aliases test go test -tags=e2e -count=1 -v -run "$test_pattern" ./test/e2e
-	else
-		compose run --rm test go test -tags=integration -count=1 -v -run "$test_pattern" ./internal/torrentclient
+	local listed run=(compose run --rm)
+	# go test passes when -run matches no test, so check that the pattern lists one.
+	listed=$(compose run --rm -T test go test -tags="$test_tags" -list "$test_pattern" "$test_package") || {
+		printf '%s\n' "$listed" >&2
+		return 1
+	}
+	if ! grep -q '^Test' <<<"$listed"; then
+		printf 'no test in %s matches %s\n' "$test_package" "$test_pattern" >&2
+		return 1
 	fi
+	# --use-aliases lets autobrr reach the torrent server of the test at "test".
+	[[ -z $e2e ]] || run+=(--use-aliases)
+	"${run[@]}" test go test -tags="$test_tags" -count=1 -v -run "$test_pattern" "$test_package"
 }
 
 teardown() {

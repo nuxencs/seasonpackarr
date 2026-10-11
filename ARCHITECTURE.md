@@ -435,6 +435,9 @@ The no-argument run, `all`, and `list [all]` stay integration-only.
 - For each entry, the runner pulls or builds the images, starts the daemon,
   waits for its health check, and runs that client's `Test<Client>Daemon_`
   tests with `-tags=integration -count=1` in strict mode.
+- `go test` passes when `-run` matches no test. Thus for each entry, also an
+  end-to-end entry, the runner first lists the tests with `-list` and fails
+  the entry when no test matches its pattern.
 - The tests run in a Go container that uses the Go image of the release
   `Dockerfile`. It shares one named volume at `/data` with the daemons, and
   the import folder is `/data/import`. The tests and the daemons run as uid

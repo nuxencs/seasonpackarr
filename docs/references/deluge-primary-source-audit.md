@@ -353,7 +353,7 @@ logs `Unhandled error in Deferred` with that traceback. The harness entry
 RPC calls are not affected, and the integration tests pass. Deluge 2.2.0 on
 trixie logs normally.
 
-## Minimum end-to-end assertions
+## Minimum integration assertions
 
 Run these assertions against both matrix entries unless a daemon capability is version-specific:
 
