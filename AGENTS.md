@@ -88,7 +88,7 @@ CI currently enforces:
 - Docker builds
 - CodeQL
 - integration tests in `.github/workflows/integration.yml`: one job for each entry of `run.sh list`, when torrent
-  client code or its dependencies change (the workflow lists the paths). A manual run with `full` uses
+  client code, the harness, or their dependencies change (the workflow lists the paths). A manual run with `full` uses
   `run.sh list all`. It is not a required check.
 
 ## Plans As Artifacts
