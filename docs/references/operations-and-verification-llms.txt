@@ -3,7 +3,8 @@ seasonpackarr operations and verification reference
 - primary local check: go test -v ./...
 - security check: govulncheck ./...
 - formatting for Go changes: gofumpt -w .
-- torrent client adapter changes: internal/torrentclient/testdata/harness/run.sh [all | <entry>...]
+- torrent client adapter changes: test/harness/run.sh [all | <entry>...]
+- request flow, planning, hardlink, client adapter, config loading, or image changes: test/harness/run.sh e2e (end-to-end tests: real autobrr, the release image, a real client, and the seeder)
 - smoke flows:
   - go run . start --config <dir>
   - go run . candidate "<release>" --config <dir> [--client <name>]
@@ -12,7 +13,7 @@ seasonpackarr operations and verification reference
 - CLI contract: docs/product-specs/cli.md. API commands reuse config/environment connection settings; --url supports remote services.
 - CLI exit codes: 0 accepted/search complete; 1 operational/input failure; 2 pack rejected. Search defaults to readable output; --json preserves the API report.
 - The test command group is removed in v1. Use candidate, match, and import directly. Match/import require real torrent files and default to the embedded release name; --release supplies the full tracker name when the torrent folder name lacks release metadata.
-- if E2E cannot run because external services or credentials are missing, say that explicitly
+- if the end-to-end tests or the smoke flows cannot run because Docker, external services, or credentials are missing, say that explicitly
 
 Prowlarr backfill:
 - Search-only preview (no torrent downloads): go run . search --dry-run --api <token> [--client <name>]

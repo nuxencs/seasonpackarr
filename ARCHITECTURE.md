@@ -157,6 +157,8 @@ Preferred dependency direction:
    - `internal/release/` should not know HTTP details
    - `internal/files/` should not know webhook payloads
 4. `internal/domain/` holds cross-package data shapes and status concepts
+5. test helper packages (`internal/logger/loggertest`, `internal/daemontest`)
+   import `testing`, so only `_test.go` files may import them
 
 If a change starts pushing transport concerns into matching logic or file ops, stop and re-check the boundary.
 
@@ -173,6 +175,18 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
 
 ## Testing Surface
 
+### Layers
+
+Three test layers use real processes. They are test terms, not product terms,
+so the glossary does not define them.
+
+- A *CLI test* builds the binary and runs it against the HTTP fixtures with a
+  fake torrent client. It needs no external service.
+- An *integration test* runs one client adapter against a real daemon.
+- An *end-to-end test* runs real autobrr, the seasonpackarr release image, a
+  real client, and a real seeder over real network boundaries, with no fakes.
+  It sends one announce into autobrr and checks only what a user can see.
+
 ### Files
 
 - `<file>_test.go` tests the code in `<file>.go`. A large set can split by
@@ -183,10 +197,15 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
 - `fixtures_test.go` holds the fakes and fixtures that more than one test file
   of the package uses. A fake that one file uses stays in that file.
 - `<file>_integration_test.go` holds tests against real external services.
-  Their shared fixtures live in `fixtures_integration_test.go`.
-- `internal/http/cli_test.go` holds the end-to-end tests. They build the binary
+  Their shared fixtures live in `fixtures_integration_test.go`. Helpers that
+  every test against a real daemon uses live in `internal/daemontest`.
+- `internal/http/cli_test.go` holds the CLI tests. They build the binary
   with `buildCLI` and run it against the HTTP fixtures. They need no external
   service and run in the default suite.
+- `test/e2e/` holds the end-to-end tests. `harness_test.go` sets up autobrr and
+  serves the `.torrent` files. `scenarios_test.go` holds the scenarios and the
+  `client` interface. `<client>_test.go` implements that interface for one
+  client and runs the scenarios. `testdata/filter.json` is the autobrr filter.
 
 ### Names
 
@@ -237,14 +256,18 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
 ### Torrent-client integration tests
 
 Integration tests run against real daemons. They use the `integration` build
-tag, so `go test ./...` does not run them. The harness in
-`internal/torrentclient/testdata/harness/` starts the daemons and runs them,
-locally and in the integration workflow.
+tag, so `go test ./...` does not run them. The harness in `test/harness/`
+starts the daemons and runs them, locally and in the integration workflow.
 
 - `internal/torrentclient/<client>_integration_test.go` holds one client's
-  tests. `fixtures_integration_test.go` holds the shared fixtures, for example
-  the environment names, `requireDaemon`, the pack writers, `waitFor`, the
-  seeder helpers, and the shared assertions.
+  tests. `fixtures_integration_test.go` holds the integration fixtures: the
+  client environment names, `requireDaemon`, `importRequest`, and the shared
+  assertions.
+- `internal/daemontest` holds the helpers that every test against a real
+  daemon uses: the settings gate `RequireSettings`, the bounded waits
+  `WaitFor` and `WaitSeededDownload`, the pack and torrent builders, the
+  seeder, and the peer address lookup `PeerAddress`. It has no build tag, so
+  `go vet ./...` checks it without Docker.
 - Names are `Test<Client>Daemon_<Behavior>` (`TestQbitDaemon_ResumesPartialPack`).
   `Daemon` separates them from the unit tests of the same adapter.
 - Each test calls `requireDaemon` first. It skips the test when the client's
@@ -252,24 +275,24 @@ locally and in the integration workflow.
   `SEASONPACKARR_TEST_REQUIRE_DAEMONS=1` (strict mode), it fails the test
   instead and names the missing settings. Skips for features that a daemon
   version does not support stay skips in strict mode.
-- `packName` names each pack after the test, so tests do not share pack
+- `daemontest.PackName` names each pack after the test, so tests do not share pack
   folders. Deluge tests add the client type, because Deluge 1 and Deluge 2 runs
   can share one import folder.
 - Each client's `import<Client>Pack` helper registers the torrent removal with
-  `t.Cleanup` before the import. The cleanup asserts with `assertRemoved` that
+  `t.Cleanup` before the import. The cleanup asserts with `daemontest.AssertRemoved` that
   the daemon no longer holds the torrent, so a run cannot leave a torrent
   behind for the next one. Pack data stays on disk for inspection.
-- Cleanup calls that take a context use `cleanupContext`, because `t.Context`
-  is canceled before cleanup functions run.
+- Cleanup calls that take a context use `daemontest.CleanupContext`, because
+  `t.Context` is canceled before cleanup functions run.
 - `Test<Client>Daemon_DownloadsMissingEpisodes` checks the core promise with a
-  real download, for a missing first and a missing last episode. `newSeeder`
-  controls the seeder daemon with go-qbittorrent directly, not through an
-  adapter. `seeder.seed` writes the full pack into the seed folder and seeds it.
-  `writeLinkedPack` writes the source episodes below the import folder and
-  hardlinks all except the missing one into the pack folder. After the import,
-  `newPeerAddress` resolves the client's host name and listen port to the
-  `<ip>:<port>` address, and `waitSeededDownload` connects the seeder to it
-  with `addPeers`.
+  real download, for a missing first and a missing last episode.
+  `daemontest.NewSeeder` controls the seeder daemon with go-qbittorrent
+  directly, not through an adapter. `Seeder.Seed` writes the full pack into the
+  seed folder and seeds it. `daemontest.WriteLinkedPack` writes the source
+  episodes below the import folder and hardlinks all except the missing one
+  into the pack folder. After the import, `daemontest.PeerAddress` resolves the
+  client's host name and listen port to the `<ip>:<port>` address, and
+  `daemontest.WaitSeededDownload` connects the seeder to it with `addPeers`.
   `assertDownloadedPack` checks the file content, that reused episodes keep
   the inode of their source files, and that only the missing episode
   downloaded.
@@ -287,6 +310,89 @@ The import folder must have the same path for the test process and the daemon.
 The seed folder must be on the same volume as the import folder. The seeder
 must reach the client under test at the host name in the client's host
 setting, so the download tests need the harness network.
+
+### End-to-end tests
+
+End-to-end tests use the `e2e` build tag, so `go test ./...` does not run
+them. `test/harness/run.sh e2e` runs them. ADR-0002 explains why they drive a
+real autobrr.
+
+- The only seam is the outside of the whole system. A test sends one announce
+  line through autobrr's announce-process endpoint, and checks only the client
+  API, the `/data` filesystem, and the autobrr release status or log. It does not
+  call the seasonpackarr API. It uses `internal/daemontest`, which hashes
+  torrents with `internal/torrents`, only for setup and waits.
+- Names are `Test<Client>E2E_<Behavior>`. `Test<Client>E2E_Scenarios` runs
+  every scenario against one client as subtests, in a fixed order.
+- The scenarios hold no client-specific code. A client implements the
+  `client` interface: its config name, add a torrent with complete data, remove
+  a torrent, read the state of a torrent (present, progress, downloaded bytes,
+  downloading, seeding), and the address at which the seeder reaches it.
+- The scenarios are:
+  - `partial pack`: the client has two of three episodes. The pack reuses them
+    as hardlinks, downloads only the missing episode from the seeder, and seeds.
+  - `complete pack`: the client has every episode, and no seeder has the pack.
+    The pack seeds with 0 downloaded bytes, and every episode is a hardlink.
+  - `candidate rejection`: the client has one episode in another resolution.
+    autobrr stores no release row for a rejected announce, so the test reads
+    autobrr's log through `GET /api/logs/files/autobrr.log`
+    (`AUTOBRR__LOG_PATH` in `compose.e2e.yaml`). The log must show that the
+    filter rejected the release, and that the `candidate` webhook got status
+    `200` for the same trace ID. The client must not have the pack, and the
+    files below `/data` must not change.
+- `candidate rejection` runs last. seasonpackarr caches the client inventory for
+  30 seconds and only an import refreshes it, so a scenario after a rejection
+  would get an inventory without its own episodes. For the same reason, the
+  scenarios cannot run in parallel or twice in one stack (`-count=2`). Each
+  runner call starts a fresh stack.
+- `requireHarness` gates every test with `daemontest.RequireSettings`, so
+  strict mode fails a test with missing settings. Once for each test process,
+  it creates the first autobrr user, logs in, creates an API key, waits until
+  autobrr loaded the custom definition, and creates the indexer and then its
+  enabled IRC network. The network server does not exist. autobrr retries the
+  connection with a backoff and keeps the network enabled and the announce
+  queue intact, so the announce-process endpoint works without IRC.
+- The driver serves the `.torrent` files over HTTP on the port of
+  `SEASONPACKARR_TEST_E2E_TORRENT_URL`. autobrr keeps only the path of the
+  announced URL and joins it to the indexer `base_url`, which the driver sets
+  to that URL.
+- `testdata/filter.json` holds the README filter: the candidate and match
+  external webhooks with `POST`, the `X-API-Token` header, expected status
+  `250`, and the README `Data (JSON)` templates, plus the Webhook action to
+  `/api/import?apikey=` with the README `Payload (JSON)`. The driver fills in
+  `${SEASONPACKARR_URL}`, `${API_TOKEN}`, and `${CLIENT_NAME}`. autobrr runs
+  the external entry with the highest `index` first. `POST /api/filters`
+  stores only the base filter, so the driver then updates the stored filter
+  with its indexer, external webhooks, and action. The README stays hand-written.
+- `packName` makes a unique release name with a letters-only title, so reruns
+  do not share releases and both release parsers see the plain title.
+- The client already holds the present episodes as real single-episode
+  torrents (`daemontest.WriteEpisode`), which it checked and seeds before the
+  announce. The seeder holds the full pack.
+- autobrr only queues the announce. The test waits with bounded polling for
+  the autobrr release to finish its actions, then for the client state. autobrr
+  stores a release only when a filter approves it, and the Webhook action
+  ignores the import response, so the client and the disk are the truth.
+- Each test removes its torrents from the client and the seeder at cleanup.
+- The qBittorrent test turns off the qBittorrent queue. The complete pack is
+  the fourth seeding torrent, and the default queue keeps it in `queuedUP`.
+- The Transmission test keeps the Transmission defaults. Its seed queue is off,
+  and its download queue allows 5 torrents, so no scenario waits in a queue.
+- The Deluge test keeps the Deluge queue defaults: 5 active seeding torrents
+  and 3 active downloading torrents. At most 4 torrents seed at a time, so no
+  scenario waits in a queue. The test enables the Label plugin, so the import
+  applies the label of the committed config. The client type in that config
+  must be the type of the newest Deluge entry, and the test checks it.
+
+| Setting | Value in the harness |
+| --- | --- |
+| `SEASONPACKARR_TEST_E2E_AUTOBRR_URL` | `http://autobrr:7474` |
+| `SEASONPACKARR_TEST_E2E_SEASONPACKARR_URL` | `http://seasonpackarr:42069` |
+| `SEASONPACKARR_TEST_E2E_API_TOKEN` | the `apiToken` of `test/harness/seasonpackarr/config.yaml` |
+| `SEASONPACKARR_TEST_E2E_TORRENT_URL` | `http://test:8000` |
+
+The tests also read `SEASONPACKARR_TEST_IMPORT_DIR`, the seeder settings, and
+the settings of the client under test from the integration table.
 
 ### Commands
 
@@ -307,16 +413,20 @@ prevents cached results from hiding changes in an external service.
 
 ### Harness
 
-`internal/torrentclient/testdata/harness/run.sh` runs the integration tests
-against pinned daemon versions in Docker Compose. It needs only Docker. Local
-runs and the integration workflow use the same command (ADR-0001).
+`test/harness/run.sh` runs the integration and end-to-end tests against
+pinned daemon versions in Docker Compose. It needs only Docker. Local runs and
+the integration workflow use the same command (ADR-0001).
 
 ```sh
-internal/torrentclient/testdata/harness/run.sh                # default entries, the CI set
-internal/torrentclient/testdata/harness/run.sh all            # default entries and the middle versions
-internal/torrentclient/testdata/harness/run.sh qbit-4.3.9     # one or more named entries
-internal/torrentclient/testdata/harness/run.sh list [all]     # entries as a JSON array
+test/harness/run.sh                # default integration entries, the CI set
+test/harness/run.sh all            # default entries and the middle versions
+test/harness/run.sh e2e            # every end-to-end entry
+test/harness/run.sh qbit-4.3.9     # one or more named entries, also e2e-<client>
+test/harness/run.sh list [all]     # integration entries as a JSON array
+test/harness/run.sh list e2e       # end-to-end entries as a JSON array
 ```
+
+The no-argument run, `all`, and `list [all]` stay integration-only.
 
 - An entry is `<client>-<version>`. The default entries are the oldest and
   newest supported version of each client. `all` adds the middle qBittorrent
@@ -325,6 +435,9 @@ internal/torrentclient/testdata/harness/run.sh list [all]     # entries as a JSO
 - For each entry, the runner pulls or builds the images, starts the daemon,
   waits for its health check, and runs that client's `Test<Client>Daemon_`
   tests with `-tags=integration -count=1` in strict mode.
+- `go test` passes when `-run` matches no test. Thus for each entry, also an
+  end-to-end entry, the runner first lists the tests with `-list` and fails
+  the entry when no test matches its pattern.
 - The tests run in a Go container that uses the Go image of the release
   `Dockerfile`. It shares one named volume at `/data` with the daemons, and
   the import folder is `/data/import`. The tests and the daemons run as uid
@@ -332,12 +445,28 @@ internal/torrentclient/testdata/harness/run.sh list [all]     # entries as a JSO
 - Every entry starts with fresh containers and volumes, and the runner removes
   them after the entry, also when it fails. Only the Go cache volume
   `seasonpackarr-harness-go-cache` stays.
-- A failed entry writes the daemon logs to `testdata/harness/artifacts/<entry>/`,
+- A failed entry writes the daemon logs to `test/harness/artifacts/<entry>/`,
   which git ignores.
 - The compose project name comes from the checkout path, so two worktrees can
   run the harness at the same time.
 - `compose.yaml` holds the Go test service and the seeder. Each client adds a
   `compose.<client>.yaml` overlay with its daemon and its test settings.
+- An end-to-end entry is `e2e-<client>`. It uses the daemon image of the
+  newest default integration entry of that client, so one bump updates both
+  layers. It adds `compose.e2e.yaml` with autobrr and seasonpackarr and runs
+  `Test<Client>E2E_` with `-tags=e2e` in strict mode. The test container runs
+  with `--use-aliases`, so autobrr reaches its torrent server at `test`.
+- autobrr is pinned by tag and digest in `compose.e2e.yaml` and bumped by
+  hand. It starts with an empty `/config` tmpfs and loads
+  `autobrr/definitions/`. It calls the external webhooks with a fixed 120
+  second timeout. A match on a cold inventory in the harness takes milliseconds.
+- seasonpackarr runs from an image that the runner builds once for each call
+  from `ci.Dockerfile`, the file of the published release image. It runs as
+  uid 1000 with `seasonpackarr/config.yaml` mounted read-only into its
+  `/config` volume: an API token, one entry for each client, smart mode with
+  a threshold below the partial-pack coverage, the import policy on
+  `/data/import`, and no notifications. A failed end-to-end entry also saves
+  the autobrr and seasonpackarr logs.
 - The seeder is hotio qBittorrent 5.2.4 (`SEEDER_IMAGE` in `run.sh`) with the
   committed `qBittorrent.conf`. It runs in every entry, and the tests start
   only after its health check. Its seed folder is `/data/seed`. The `qbit`
@@ -360,16 +489,29 @@ internal/torrentclient/testdata/harness/run.sh list [all]     # entries as a JSO
   auth entry (`seasonpackarr:integration:10`) and `core.conf`, then starts
   `deluged` on all interfaces.
 
-`.github/workflows/integration.yml` runs the harness in CI. It runs on pull
-requests and pushes to `develop` that change the torrent client package, the
-internal packages that its tests import, `go.mod`, `go.sum`, `Dockerfile`, or
-the workflow. A manual run has a `full` input.
+`.github/workflows/integration.yml` runs the harness in CI. It has two job
+groups, and neither is a required check. A manual run starts both groups and
+has a `full` input for the integration group.
 
-- A setup job reads the matrix from `run.sh list`, or `run.sh list all` when
-  `full` is set. Each entry is one parallel job that runs `run.sh <entry>`, so
-  a new runner entry needs no workflow change.
+- The integration group runs on pull requests and pushes to `develop` that
+  change the torrent client package, the harness, the internal packages that
+  its tests import (including `internal/daemontest`), `go.mod`, `go.sum`,
+  `Dockerfile`, or the workflow.
+- The end-to-end group runs on pull requests and pushes to `develop` that
+  change the production source (`main.go`, `cmd`, and `internal` without the
+  test files, so also the files that Go embeds), the harness, `test/e2e`,
+  `go.mod`, `go.sum`, `Dockerfile`, `ci.Dockerfile`, or the workflow.
+- The workflow paths are the union of both lists. The setup job checks the
+  paths of each group again with `dorny/paths-filter`, so a change to one
+  list needs the same change in the workflow paths.
+- The setup job reads the matrix of each group from `run.sh list` (or
+  `run.sh list all` when `full` is set) and `run.sh list e2e`. Each entry is
+  one parallel job that runs `run.sh <entry>`, so a new runner entry needs no
+  workflow change.
 - Jobs do not retry, and one failed entry does not cancel the others. A failed
-  job uploads its daemon logs as the `daemon-logs-<entry>` artifact.
+  job uploads the logs that the runner saved as the `daemon-logs-<entry>`
+  artifact. For an end-to-end entry, they include the autobrr and
+  seasonpackarr logs.
 - The workflow sets `HARNESS_GHA_CACHE=1`, and the Deluge overlay then uses the
   GitHub Actions layer cache with one scope for each package version. Local
   runs leave it unset, because the default docker build driver cannot export a
@@ -378,8 +520,8 @@ the workflow. A manual run has a `full` input.
 ### Coverage
 
 Packages without tests: `internal/api`, `internal/buildinfo`,
-`internal/domain`, `internal/logger`, `internal/logger/loggertest`,
-`internal/notification`.
+`internal/daemontest`, `internal/domain`, `internal/logger`,
+`internal/logger/loggertest`, `internal/notification`.
 
 High-value regression targets:
 

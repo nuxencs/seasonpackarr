@@ -12,7 +12,8 @@ episodes download, and the reused episodes stay hardlinks.
 ## scope
 
 - runner, compose files, and committed daemon config under
-  `internal/torrentclient/testdata/harness/` (#270)
+  the torrent client package's test data (#270). #280 moved them to
+  `test/harness/`.
 - strict mode: `SEASONPACKARR_TEST_REQUIRE_DAEMONS=1` makes the shared daemon
   gate fail instead of skip (#270)
 - qBittorrent entries 4.3.9 to 5.2.4 from hotio images (#270)
