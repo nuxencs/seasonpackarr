@@ -495,8 +495,9 @@ has a `full` input for the integration group.
   its tests import (including `internal/daemontest`), `go.mod`, `go.sum`,
   `Dockerfile`, or the workflow.
 - The end-to-end group runs on pull requests and pushes to `develop` that
-  change non-test Go code, the harness, `test/e2e`, `go.mod`, `go.sum`,
-  `Dockerfile`, `ci.Dockerfile`, or the workflow.
+  change the production source (`main.go`, `cmd`, and `internal` without the
+  test files, so also the files that Go embeds), the harness, `test/e2e`,
+  `go.mod`, `go.sum`, `Dockerfile`, `ci.Dockerfile`, or the workflow.
 - The workflow paths are the union of both lists. The setup job checks the
   paths of each group again with `dorny/paths-filter`, so a change to one
   list needs the same change in the workflow paths.
@@ -505,7 +506,9 @@ has a `full` input for the integration group.
   one parallel job that runs `run.sh <entry>`, so a new runner entry needs no
   workflow change.
 - Jobs do not retry, and one failed entry does not cancel the others. A failed
-  job uploads its daemon logs as the `daemon-logs-<entry>` artifact.
+  job uploads the logs that the runner saved as the `daemon-logs-<entry>`
+  artifact. For an end-to-end entry, they include the autobrr and
+  seasonpackarr logs.
 - The workflow sets `HARNESS_GHA_CACHE=1`, and the Deluge overlay then uses the
   GitHub Actions layer cache with one scope for each package version. Local
   runs leave it unset, because the default docker build driver cannot export a

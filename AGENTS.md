@@ -96,8 +96,8 @@ CI currently enforces:
 - integration tests in `.github/workflows/integration.yml`: one job for each entry of `run.sh list`, when torrent
   client code, the harness, or their dependencies change (the workflow lists the paths). A manual run with `full` uses
   `run.sh list all`. It is not a required check.
-- end-to-end tests in the same workflow: one job for each entry of `run.sh list e2e`, when non-test Go code, the
-  Dockerfiles, the Go module files, the harness, the end-to-end tests, or the workflow change, and on each manual run.
+- end-to-end tests in the same workflow: one job for each entry of `run.sh list e2e`, when the production source
+  (`main.go`, `cmd`, and `internal` without test files), the Dockerfiles, the Go module files, the harness, the end-to-end tests, or the workflow change, and on each manual run.
   It is not a required check.
 
 ## Plans As Artifacts

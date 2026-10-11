@@ -1,17 +1,18 @@
 name: Integration
 
 # The harness runner owns the entries, so new entries need no change here.
-# on.paths is the union of the integration and end-to-end paths. The setup job
-# filters each job group again with its own paths, so keep the lists in sync.
+# on.paths is the union of the setup job filters. Keep the lists in sync.
 on:
   push:
     branches:
       - 'develop'
     paths: &paths
-      # Non-test Go code, for the end-to-end group.
-      - '**.go'
+      # Production source, for the end-to-end group.
+      - 'main.go'
+      - 'cmd/**'
+      - 'internal/**'
       - '!**_test.go'
-      # The later paths also match test files again.
+      # The paths below match their test files again.
       - 'internal/torrentclient/**'
       - 'internal/daemontest/**'
       - 'internal/domain/**'
@@ -52,7 +53,7 @@ jobs:
       # A manual run starts both job groups.
       integration: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.integration == 'true' }}
       e2e: ${{ github.event_name == 'workflow_dispatch' || steps.changes.outputs.e2e-code == 'true' || steps.changes.outputs.e2e-other == 'true' }}
-      entries: ${{ steps.entries.outputs.entries }}
+      integration-entries: ${{ steps.entries.outputs.integration-entries }}
       e2e-entries: ${{ steps.entries.outputs.e2e-entries }}
     steps:
       - name: Checkout
@@ -65,8 +66,7 @@ jobs:
         with:
           # A push to develop compares with the commit before the push.
           base: ${{ github.ref_name }}
-          # A file matches when it matches a path and no negated path. The
-          # negated path would also exclude test/e2e, so e2e-other lists it.
+          # The negated path would also exclude test/e2e, so e2e-other lists it.
           predicate-quantifier: 'some-with-excludes'
           filters: |
             integration:
@@ -82,8 +82,11 @@ jobs:
               # run.sh reads the Go test image from the release Dockerfile.
               - 'Dockerfile'
               - '.github/workflows/integration.yml'
+            # The production source, including the files that Go embeds.
             e2e-code:
-              - '**/*.go'
+              - 'main.go'
+              - 'cmd/**'
+              - 'internal/**'
               - '!**/*_test.go'
             e2e-other:
               - 'test/harness/**'
@@ -104,17 +107,17 @@ jobs:
         run: |
           echo "changed path filters: ${CHANGES:-none, manual run}"
           if [[ $FULL == true ]]; then
-            entries=$(test/harness/run.sh list all)
+            integration_entries=$(test/harness/run.sh list all)
           else
-            entries=$(test/harness/run.sh list)
+            integration_entries=$(test/harness/run.sh list)
           fi
           e2e_entries=$(test/harness/run.sh list e2e)
-          echo "entries: ${entries}"
+          echo "integration entries: ${integration_entries}"
           echo "e2e entries: ${e2e_entries}"
-          echo "entries=${entries}" >> "$GITHUB_OUTPUT"
+          echo "integration-entries=${integration_entries}" >> "$GITHUB_OUTPUT"
           echo "e2e-entries=${e2e_entries}" >> "$GITHUB_OUTPUT"
 
-  test:
+  integration:
     name: ${{ matrix.entry }}
     runs-on: ubuntu-latest
     needs: setup
@@ -124,7 +127,7 @@ jobs:
       # One failed entry must not cancel the others, so a run shows every broken version.
       fail-fast: false
       matrix:
-        entry: ${{ fromJSON(needs.setup.outputs.entries) }}
+        entry: ${{ fromJSON(needs.setup.outputs.integration-entries) }}
     env: &harness-env
       # Compose builds through bake on the buildx builder, which can export the GHA cache.
       COMPOSE_BAKE: 'true'
@@ -156,8 +159,7 @@ jobs:
           # A failure before the daemons start leaves no logs.
           if-no-files-found: warn
 
-  # The end-to-end entries run the same steps. e2e-deluge builds the Deluge
-  # image, so they also need the layer cache.
+  # Same steps and cache as integration, because e2e-deluge builds the Deluge image.
   e2e:
     name: ${{ matrix.entry }}
     runs-on: ubuntu-latest
