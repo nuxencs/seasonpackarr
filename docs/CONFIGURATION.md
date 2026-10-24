@@ -243,7 +243,7 @@ seasonpackarr can send notifications to a Discord webhook.
 
 ## Environment variables
 
-Each setting has an environment variable with the `SEASONPACKARR__` prefix. Environment variables override
+Most settings have an environment variable with the `SEASONPACKARR__` prefix. Environment variables override
 `config.yaml`. The repository's [`docker-compose.yml`](../docker-compose.yml) lists the common ones.
 
 - Top-level settings: `SEASONPACKARR__HOST`, `SEASONPACKARR__PORT`, `SEASONPACKARR__API_TOKEN`,
@@ -260,7 +260,9 @@ Each setting has an environment variable with the `SEASONPACKARR__` prefix. Envi
   variables, a client name cannot contain an underscore.
 - Prowlarr: see [Prowlarr discovery](PROWLARR.md).
 
-seasonpackarr ignores an environment variable with an empty value.
+seasonpackarr ignores an environment variable with an empty value. The variables that v0.16.0 used for removed settings are
+the exception: they stop startup even when they are empty. See
+[Docker Compose and environment variables](UPGRADE-v1.md#docker-compose-and-environment-variables).
 
 To run without `config.yaml`, set `SEASONPACKARR__DISABLE_CONFIG_FILE=true` and configure everything with environment
 variables. The database then moves, see [Database location](INSTALL.md#database-location).
