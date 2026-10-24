@@ -1,5 +1,5 @@
 # build app
-FROM golang:1.26.6-alpine3.23 AS app-builder
+FROM golang:1.27.3-alpine3.23 AS app-builder
 
 WORKDIR /src
 
