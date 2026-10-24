@@ -58,7 +58,7 @@ type Notifications struct {
 	// Shoutrrr  string `yaml:"shoutrrr"`
 }
 
-// Search configures manual backfill and opt-in RSS monitoring.
+// Search configures Prowlarr search and opt-in RSS monitoring.
 type Search struct {
 	IndexerIDs      []int  `yaml:"indexerIDs"`
 	ProwlarrURL     string `yaml:"prowlarrURL"`
