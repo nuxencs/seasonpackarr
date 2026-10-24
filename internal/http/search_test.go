@@ -16,6 +16,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -440,16 +441,16 @@ func TestSearch_ExistingPackSkipsQueriesInEveryMode(t *testing.T) {
 
 func TestSearch_PackWithCodecAttachedToAudioCreatesNoGroup(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
-	// Older parsers read "FLAC2.0x265" as episode 265 and searched for its season.
+	// rls before v0.10.0 read "FLAC2.0x265" as episode 265 and searched for its season.
 	f.torrentClient.torrents = []torrentclient.Torrent{{Name: "Cells.at.Work.S01.1080p.BluRay.FLAC2.0x265-Main10p-CTR", Hash: "pack"}}
 	report := f.runExact(t, true)
 	require.Empty(t, report.Failures)
-	require.Equal(t, 1, report.ScannedTorrents)
-	require.Zero(t, report.EpisodeTorrents)
-	require.Zero(t, report.Groups)
-	require.Zero(t, report.Requests)
-	require.Empty(t, f.queries)
-	require.Zero(t, f.downloads)
+	assert.Equal(t, 1, report.ScannedTorrents)
+	assert.Zero(t, report.EpisodeTorrents)
+	assert.Zero(t, report.Groups)
+	assert.Zero(t, report.Requests)
+	assert.Empty(t, f.queries)
+	assert.Zero(t, f.downloads)
 }
 
 func TestSearch_ExistingPackRespectsVariantAndFuzzySettings(t *testing.T) {
