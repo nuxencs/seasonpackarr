@@ -1,23 +1,26 @@
-# Prowlarr Discovery
+# Prowlarr discovery
 
-## Purpose
+Discovery finds season packs through Prowlarr in two ways:
 
-Discover season packs through opt-in Prowlarr RSS monitoring.
-Use manual targeted searches for historical backfill or gaps after downtime.
-Both modes start from episode torrents in configured clients and use the existing
-matching, hardlink, and import flow.
+- **RSS monitoring** reads the Prowlarr RSS feeds on a fixed interval. It is off
+  by default.
+- **Search** runs a targeted Prowlarr search when you start it. Use it to find
+  older packs or to fill gaps after downtime.
 
-Prowlarr RSS and autobrr can each provide automatic discovery independently, or
-run together. Enable at least one for automation, or use an external scheduler
-such as cron to run targeted Prowlarr searches. Without an automation source,
-start searches on demand. Prowlarr is not required for the autobrr workflow;
-autobrr is not required for RSS or targeted searches.
+Both start from the episode torrents in your configured clients and use the
+same match and import steps as autobrr. seasonpackarr does not search for shows
+that are not in a client, and it does not download single episodes.
 
-The service accepts one pack per release variant. An equivalent pack already in
-that client blocks another pack from any tracker, even when its torrent hash is
-different. Cross-tracker duplication belongs to other applications.
+Discovery and autobrr work independently. Use either one, or both. For
+automatic searches without autobrr or RSS, run `seasonpackarr search` from an
+external scheduler such as cron. Prowlarr is not required for autobrr, and
+autobrr is not required for discovery.
 
-## Configuration
+seasonpackarr imports one pack per release variant. An equivalent pack already
+in the client blocks another pack from any tracker, even when the torrent hash
+is different. Cross-tracker duplicates belong to other applications.
+
+## Configure Prowlarr
 
 Add this block to `config.yaml`:
 
@@ -34,9 +37,9 @@ search:
 `/api/v1`. `apiKey` is Prowlarr's API key. The service does not need a download
 client configured in Prowlarr.
 
-`indexerIDs` applies to RSS polls and targeted searches. An empty list selects all
+`indexerIDs` applies to RSS polls and searches. An empty list selects all
 enabled Prowlarr torrent indexers that support the requested mode: `supportsRss`
-for RSS, `supportsSearch` for targeted search. RSS-only indexers are supported.
+for RSS, `supportsSearch` for search. RSS-only indexers are supported.
 A nonempty list restricts searches to those Prowlarr IDs. IDs must be unique
 positive integers. Missing, disabled, or unsupported selections produce failures;
 the run never falls back to unselected trackers. Eligible selected indexers still
@@ -45,13 +48,13 @@ run. Read IDs from Prowlarr's `GET /api/v1/indexer` response.
 `rssInterval: "0s"` disables RSS monitoring. Set a positive Go duration,
 for example `"15m"`, to enable RSS imports. Positive intervals must be at least
 `"10m"`. The first poll starts after the interval. Later intervals start when the
-previous poll finishes. There is no startup run. Targeted searches are manual only.
+previous poll finishes. There is no startup run. Searches run only when you start them.
 
 `requestInterval` sets the minimum time between requests to Prowlarr, including
-indexer discovery, RSS polls, targeted searches, and torrent retrieval across
+indexer discovery, RSS polls, searches, and torrent retrieval across
 runs. Default and minimum: `"10s"`.
 A failed feed request skips that indexer for the rest of the run. Temporary failures
-also create a cooldown that applies to manual and scheduled runs:
+also create a cooldown that applies to searches and RSS polls:
 
 | Failure | Fallback cooldown |
 | --- | --- |
@@ -89,7 +92,7 @@ Environment overrides:
 - `SEASONPACKARR__SEARCH_RSS_INTERVAL`
 - `SEASONPACKARR__SEARCH_REQUEST_INTERVAL`
 
-## RSS Monitoring
+## RSS monitoring
 
 Each poll reads recent releases once per eligible indexer, regardless of how many
 series or seasons are in the client. It sends `t=search` without a title, year,
@@ -100,7 +103,7 @@ The first poll reads one page, up to 100 items or the indexer's lower page limit
 Later polls start at the newest page and can page back until a result overlaps
 with the previous poll. Paging stops after ten pages, a short or repeated page,
 or on a non-paginating indexer. A missing overlap reports a possible gap and
-recommends a manual targeted search. After a reported gap, the newest page becomes
+recommends a search. After a reported gap, the newest page becomes
 the next checkpoint. An HTTP failure preserves the previous checkpoint for the
 next attempt. When a client inventory is unavailable, the poll uses isolated
 feed state so it cannot consume entries on behalf of that client. RSS cannot
@@ -125,49 +128,51 @@ Changing the Prowlarr URL or API key resets them on the next discovery run. Disa
 or unselected indexers are removed from feed state after successful RSS indexer
 selection. Retained links are refreshed
 when the same result appears again, without extending the retention deadline.
-Use manual backfill for releases outside the feed and retention window.
+Use a search for releases outside the feed and retention window.
 
-## Manual Runs
+## Search
 
-Start the service, then preview a targeted historical search:
+Start the service, then preview a search:
 
 ```sh
 seasonpackarr search --dry-run
 ```
 
-This dry run queries selected trackers and applies release-name checks. It does
+This dry run queries the selected trackers and runs candidate checks. It does
 not request per-torrent file details or download torrent metadata. Passing results
 have status `candidate`, with unknown exact coverage. Alternatives can appear
 across trackers because no exact selection has been made. Tracker search limits
 still apply.
 
-To check exact reuse, explicitly enable verification:
+To run a match for each result, add `--verify`:
 
 ```sh
 seasonpackarr search --dry-run --verify
 ```
 
-Exact preview checks local source files, retrieves or reuses torrent metadata,
-and applies smart-mode coverage. It reports `would_import` for accepted results.
+This preview checks local source files, downloads or reuses torrent metadata,
+and applies [smart mode](CONFIGURATION.md#smart-mode). It reports `would_import` for accepted results.
 Neither preview mode creates hardlinks, adds torrents, or sends notifications.
-`--verify` requires `--dry-run`. Imports always use exact verification.
+`--verify` requires `--dry-run`. An import always runs a match first.
 
-Import accepted packs:
+To import the accepted packs, run the search without flags:
 
 ```sh
 seasonpackarr search
 ```
 
-RSS runs only on its configured interval and always evaluates imports for all
-clients. The CLI and API run targeted searches across the configured searchable
-indexers. Preview flags apply only to those manual searches.
+RSS monitoring runs only on its configured interval and always evaluates imports
+for all clients. The CLI and API run searches across the configured searchable
+indexers. The preview flags apply only to searches.
 
-All three CLI modes scan all configured clients unless `SEASONPACKARR__CLIENT`
+All three modes scan all configured clients unless `SEASONPACKARR__CLIENT`
 selects one. Add `--client default` to select one client.
 Use `--url http://127.0.0.1:42069` to set the seasonpackarr base
 URL. The CLI reads connection settings from local config and environment. Add
 `--config <directory>` for a custom config directory. The `--api` token belongs
-to seasonpackarr, not Prowlarr. See the [CLI guide](cli.md#connection-settings).
+to seasonpackarr, not Prowlarr. See the [CLI guide](CLI.md#connection-settings).
+
+### Search output
 
 The CLI prints a readable summary. Add `--json` to get the complete API report
 with scan counts, logical search group count, search request
@@ -182,12 +187,14 @@ The CLI exits with a failure code
 if a tracker, client, or result failed. Normal match rejections are not command
 failures. Logs contain the same outcomes for automatic runs.
 
-A manual request stays connected until it finishes. Cancel the command to cancel
+### Cancel a search
+
+A search request stays connected until it finishes. Cancel the command to cancel
 its run. A reverse proxy must allow long requests. The service cancels automatic
 work during shutdown. A cancelled import can have already created hardlinks or
 added a stopped torrent; inspect the client before retrying.
 
-## Selection and Coverage
+## How seasonpackarr selects packs
 
 1. Read fresh torrent summaries from each selected client.
 2. Identify episode torrents with a parsed title, positive season, and positive
@@ -204,7 +211,7 @@ added a stopped torrent; inspect the client before retrying.
    keeping their source files and import policies separate. A
    covered client does not suppress a search needed by an independent client.
    If no groups remain, do not request Prowlarr indexer discovery or searches.
-4. For targeted search, read enabled, searchable torrent indexers and apply
+4. For a search, read enabled, searchable torrent indexers and apply
    `search.indexerIDs`. Try lower numeric indexer priorities first, with indexer
    ID as the tie-breaker.
 5. Use a TV title-and-season query when the indexer advertises those parameters.
@@ -250,7 +257,7 @@ This prevents a client verification or resume failure from triggering another
 tracker copy. A later run checks the client again. If the pack was added but is
 stopped, recover it in the torrent client.
 
-## Metadata Reuse
+## Metadata reuse
 
 SQLite keeps valid torrent metadata for up to seven days, limited to 64 MiB
 and 1024 entries. The least recently used entries are removed when needed.
@@ -262,108 +269,30 @@ and release title. Different tracker results do not share cached bytes.
 Rejected exact matches are cached too. Later runs recheck current inventory,
 local files, matching settings, and coverage against those bytes. New episodes or
 a lower threshold can make a previous rejection pass without another torrent
-download. Search-only dry runs do not read or populate this cache. Invalid torrent
+download. Dry runs without `--verify` do not read or populate this cache. Invalid torrent
 responses are not cached. Cache expiry or eviction can cause another download.
 A tracker that replaces metadata under the same result identity can remain stale
 until expiry or a connection change. The cache assumes stable tracker result identities.
 
-## Persistent Discovery State
+## Discovery state
 
-seasonpackarr creates and upgrades its SQLite database automatically. You do not
-need to install SQLite or configure another service. Configuration stays in YAML.
-The database contains discovery state only, not import jobs, client inventory, or
-saved acceptance decisions. Restarting does not resume an interrupted import.
-
-The database location is:
-
-- With a config file: `seasonpackarr.db` beside the active `config.yaml`.
-- With `disableConfigFile` and `--config <dir>`: `<dir>/seasonpackarr.db`.
-- With `disableConfigFile` and no `--config`: `$XDG_DATA_HOME/seasonpackarr/seasonpackarr.db`,
-  or `~/.local/share/seasonpackarr/seasonpackarr.db` when `XDG_DATA_HOME` is unset.
-- In the supplied Docker setup: `/config/seasonpackarr.db`, inside the existing volume.
-
-The service account must be able to write the directory and database. Use local
-storage, not an NFS or SMB share. Run only one seasonpackarr instance per database.
-On Unix, the database permits access only to its owner. On Windows, restrict the
-directory to the service account. Torrent metadata and retained links can contain
+seasonpackarr keeps discovery state in its SQLite database: RSS checkpoints,
+retained listings, cooldowns, and cached torrent metadata. See
+[Application data](INSTALL.md#application-data) for the database location,
+backups, and startup errors. Cached metadata and retained links can contain
 tracker credentials, so protect database backups as you protect `config.yaml`.
 
-SQLite uses write-ahead logging (WAL). It creates `seasonpackarr.db-wal` and
-`seasonpackarr.db-shm` beside the database while it runs. Committed data can still
-be in the WAL file, so do not delete or separate these files from the database.
-SQLite manages checkpoints automatically; no checkpoint schedule is required.
+A database failure during discovery stops further work in that run. It appears
+in the failure report and in the service logs. Imports that finished before the
+failure stay in place. Fix the storage problem before you run discovery again.
 
-Expired records are removed at startup and during discovery. Payload limits do
-not cap the database file size: SQLite uses space for indexes and can retain free
-pages for reuse. No manual database maintenance is normally required.
+## API
 
-### Startup Logs
+`POST /api/search` runs a search with the same options as the CLI. See
+[Search](API.md#search) in the API reference for the request, status codes, and
+report fields.
 
-At `INFO` level, messages with `module=database` show the database path when it
-opens. `database ready` confirms successful initialization and reports
-the schema version and journal mode. This message also appears on normal restarts.
-
-When migrations are needed, the logs show the old and new schema versions and
-the number of pending migrations. `database migrations applied` appears only
-after they commit. These startup messages do not include configuration contents,
-credentials, SQL parameters, or cached release data.
-
-### Back Up or Restore
-
-1. Stop seasonpackarr cleanly.
-2. Copy `config.yaml` and `seasonpackarr.db` to a protected backup location.
-3. Start seasonpackarr again.
-
-To restore, stop the service, restore both files with permissions for the service
-account, then start it. Do not copy a live database file on its own. A normal
-close of the last connection checkpoints the WAL and removes the WAL and shared
-memory files. If those files remain after shutdown, do not delete them or assume
-the main database file is a complete backup. Start the service normally to allow
-recovery, then stop it cleanly before making this backup. If recovery or shutdown
-fails, keep all database files together and resolve the reported error first.
-
-An unreadable, corrupt, or unsupported newer database stops startup with an
-explicit error. Check directory permissions and free space first. For a corrupt
-database, restore a backup. For a newer schema, use a compatible application
-version or restore the backup from before the upgrade. The service does not erase
-the database or silently fall back to memory.
-
-A database failure during discovery stops further work in that run and appears
-in its failure report and service logs. Imports completed before the failure are
-not rolled back. Fix the storage problem before running discovery again.
-
-## API Contract
-
-`POST /api/search` uses the same API-token middleware as the webhook endpoints.
-Request body:
-
-```json
-{"clientname":"default","dryRun":true}
-```
-
-Omit `clientname` to scan all configured clients. `dryRun` and `verify` default to
-`false`. This endpoint only runs targeted searches.
-Use `{"clientname":"default","dryRun":true,"verify":true}` for exact preview.
-`verify: true` without `dryRun: true` returns `400`.
-The body must contain one JSON object; unknown fields are rejected.
-
-- `200`: completed run report, including any partial failures
-- `400`: invalid request, unknown client, or incomplete search configuration
-- `401`: missing or invalid API token when authentication is configured
-- `409`: another RSS or targeted discovery run is active
-- `500`: the database could not be accessed before the run; check service logs
-
-`outcomes[].status` is `candidate`, `would_import`, `imported`, `rejected`, or
-`failed`. The report echoes `dryRun` and `verify`. `torrentDownloads` counts
-completed metadata retrievals; failed attempts appear as failed outcomes.
-`torrentCacheHits` counts metadata cache reads that avoided a retrieval.
-Outcomes include client name, release title, indexer ID, reason, reusable episode
-count, and total episode count. Counts are `null` until an exact plan establishes the target count.
-A known plan with no reusable files reports zero reusable episodes. `failures` reports discovery, client-inventory, query, pagination,
-rate-limit, database, and cancellation errors. A `200` response alone does not prove that
-all work succeeded.
-
-## Bounds and Limitations
+## Limits
 
 - Requests to Prowlarr time out after two minutes and accept at most 32 MiB.
 - Searches request up to 100 results per page, reduced to the indexer's advertised
@@ -375,48 +304,10 @@ all work succeeded.
   links, magnet links, and redirects are rejected. Disable tracker redirect and
   prefer-magnet settings in Prowlarr when they prevent torrent-byte retrieval.
 - No external series database or TVDB/TMDB lookup is used. Ambiguous names are
-  not expanded through guesses. Backfill does not search for shows absent from
+  not expanded through guesses. Discovery does not search for shows absent from
   the client and does not remove episode torrents or files.
-- Only one RSS or targeted discovery run executes at a time. Imports to the same client endpoint
+- Only one RSS or search run executes at a time. Imports to the same client endpoint
   are serialized with webhook imports. Matching stays free of client mutations.
 
-## Verification
-
-Covered by Prowlarr HTTP contract fixtures, authenticated API tests, real hardlink
-checks in temporary directories, SQLite restart and rollback tests, and a CLI
-preview/import smoke test with a database reopen between preview and import.
-Live Prowlarr and tracker behavior requires operator verification
-with the configured installation. See the [source audit](../references/prowlarr-backfill-api.md).
-
-## Live Installation Check
-
-Use a test client with a few completed episode torrents and a known compatible
-season pack on an enabled tracker. Configure the running service with the real
-Prowlarr URL and key. Keep `search.rssInterval: "0s"` for the first checks.
-
-1. Run `seasonpackarr search --dry-run --client test --api "<token>"`.
-   Confirm series, season, and release variant. Set `search.indexerIDs` and check
-   that only those trackers receive queries. Confirm `candidate` outcomes have
-   null coverage, `torrentDownloads` is zero, and Prowlarr has no grab requests.
-   Check `failures` for tracker or credential errors.
-2. Add `--verify` and check reusable episode counts and smart-mode decisions.
-   Repeat the exact preview: it should use cached metadata for eligible results.
-   Both previews must leave client torrents and local folders unchanged.
-3. Review every `would_import` result. Remove both `--dry-run` and `--verify`
-   when those selections are correct. `--client` selects the whole client.
-   Confirm the pack uses the expected destination, category, and tags; the
-   client recognizes reused data and starts the torrent. Verify source episode
-   files and pack files are hardlinks, and that existing data is not downloaded
-   again. Smart mode can permit missing files or pieces to download.
-4. Run the preview again. The imported variant must be rejected as already in
-   the client, including equivalent results from other trackers.
-5. To test automatic monitoring, configure `rssInterval: "10m"` on a service with
-   only the test client. Confirm a poll appears in logs after the interval, with
-   `rss: true`. Check that Prowlarr receives no title or season query for the poll
-   and that accepted packs use the expected hardlinks and import policy.
-   Set `rssInterval: "0s"` and confirm no further poll starts. Then
-   choose the intended production interval.
-
-These checks validate installation-specific tracker responses, client paths,
-filesystem mounts, and scheduler operation. Automated fixtures already cover the
-matching rules, duplicate selection, API authentication, and failure handling.
+The Prowlarr API facts behind these limits are in the
+[Prowlarr API audit](research/prowlarr-backfill-api.md).

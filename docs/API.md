@@ -1,75 +1,214 @@
-# Webhook Contract
+# API
+
+seasonpackarr has a small HTTP API. autobrr calls the candidate, match, and
+import endpoints (see the [autobrr setup](AUTOBRR.md)). The
+[command-line tools](CLI.md) call the same endpoints. Search runs
+[Prowlarr discovery](PROWLARR.md) on demand.
 
 ## Endpoints
 
-- `POST /api/candidate`
-- `POST /api/match`
-- `POST /api/import`
-
-`/api/match` replaces `/api/pack`, and `/api/import` replaces `/api/parse`.
-The old routes return `404`; there are no aliases or redirects. The CLI uses
-`match` and `import` directly. The `test` command group and all its subcommands
-are removed. See the [CLI guide](cli.md).
-Authentication, payloads, status codes, and processing behavior are unchanged
-for the renamed operations. Update callers when upgrading the service.
+| Method | Path | Authentication | Body | Purpose |
+| --- | --- | --- | --- | --- |
+| `POST` | `/api/candidate` | API token | `name`, `clientname` | Candidate check of a release name. Downloads no torrent and changes nothing. |
+| `POST` | `/api/match` | API token | `name`, `torrent`, `clientname` | Match: builds an import plan from the torrent. Changes nothing. |
+| `POST` | `/api/import` | API token | `name`, `torrent`, `clientname` | Import: creates hardlinks and adds the season pack to the client. |
+| `POST` | `/api/search` | API token | See [Search](#search) | Runs a targeted Prowlarr search. |
+| `GET` | `/api/healthz/liveness` | None | None | Returns `200` with the text `OK` while the process runs. |
+| `GET` | `/api/healthz/readiness` | None | None | Returns `200` with the text `OK`. It does not check the clients or Prowlarr. |
 
 ## Authentication
 
-Requests must include the configured API token. Unauthorized requests are rejected.
+When `apiToken` is set in the config, every endpoint except the health
+endpoints needs the token. Send it in one of these ways:
 
-## Behavioral Intent
+- the `X-API-Token` request header
+- the `apikey` query parameter, for example `/api/import?apikey=<token>`
 
-- `/api/candidate` is an announce-only match gate. It reads torrent summaries but never requests torrent bytes or per-torrent file details.
-- `/api/match` requires torrent bytes. It counts MKV and MP4 files that parse as episodes, excludes samples and extra videos, maps reusable client files to distinct same-container targets, applies smart-mode coverage, and caches an accepted import plan. It has no filesystem or client side effects.
-- `/api/import` owns the import. It reuses the accepted plan when available and safely rebuilds it on a cache miss. If a planned source disappears during hardlinking, it refreshes the client inventory and exact plan once, then retries the idempotent hardlink set. It resolves the client destination, hardlinks matched episodes, and imports through the per-client policy. If achieved smart-mode coverage falls below the threshold, it does not import. Successful hardlinks remain for a safe retry; the service does not perform destructive cleanup.
-- The candidate and match checks share a short-lived client inventory. A normal candidate, match, import sequence performs one inventory scan and one set of candidate file-detail reads.
+The header has priority when both are present. A missing or wrong token gets
+`401` with `{"error":"unauthorized"}`. When `apiToken` is empty, the API does
+not check tokens. Generate a token with `seasonpackarr gen-token`.
 
-## Operator Log Contract
+## Candidate, match, and import requests
 
-- Match and import notifications use the action labels `Match` and `Import`.
-- `/api/candidate` logs each release compatibility rejection as a structured
-  event. The event reports the incompatible field, the original announced
-  `want` value, the original client `got` value, and the client release. Fuzzy
-  matching can normalize values for comparison but not for diagnostics.
-- When `/api/candidate` passes, it logs each matching client release at `DEBUG`.
-- `/api/match` logs the reusable, unmatched, and total torrent episode counts.
-- Each unmatched torrent episode produces one structured log event. The event
-  reports either a missing source episode, a duplicate torrent target, or the
-  closest same-episode client source plus every incompatible safety field. Each
-  incompatible field reports its torrent `want` and client `got` value.
-- `/api/import` logs whether it reused or rebuilt the import plan. It also logs
-  each successful or failed destination-resolution attempt at `INFO`, hardlink
-  duration, each torrent-client import stage, total client-import duration, and
-  total import duration. A missing hardlink source logs a static warning with a
-  structured `source` path, followed by the bounded inventory and plan refresh
-  result.
-- Torrent-client stages use the stable names `config`, `add`, `find`,
-  `recheck`, and `resume`. A client omits stages that it does not perform.
-  Deluge reports a torrent that does not leave its paused state under
-  `resume`.
-  The client-import completion log reports `data_complete`: whether every
-  torrent file was already on disk, which lets the client skip its hash check.
-- A successful `/api/import` means the client accepted the pack. The client
-  checks the present data and starts the torrent after the response.
-- Logs never include configured credentials or request authentication tokens.
-- Expected candidate and match gate rejections use informational events.
-  Configuration, decoding, client, filesystem, and import failures use error
-  events.
+The body is one JSON object:
 
-## Contract Stability Rules
+```json
+{
+  "name": "Show.S01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp",
+  "torrent": "<torrent file bytes>",
+  "clientname": "default"
+}
+```
 
-- do not change auth expectations casually
-- if payload shape or required fields change, update CLI test helpers and docs in the same diff
-- if an endpoint becomes broader or narrower in acceptance, call out the operator impact
+- `name`: the release name from the announce. It is required.
+- `torrent`: the bytes of the `.torrent` file, as a base64 string or as the
+  byte list that autobrr writes for `{{ .TorrentDataRawBytes | js }}`. Match
+  and import require it. The candidate check ignores it.
+- `clientname`: the name of a client under `clients` in the config. When it is
+  empty, seasonpackarr uses the client named `default`.
 
-## Backfill Coordination
+### What each endpoint does
 
-`POST /api/search` uses the same authentication middleware. Its separate request
-and response contract is documented in [Prowlarr backfill](prowlarr-backfill.md).
+- **Candidate check** (`/api/candidate`) compares the release name with the
+  episode torrents in the client. It reads torrent summaries only. It never
+  requests torrent bytes or per-torrent file details, so a rejection here saves
+  the torrent download.
+- **Match** (`/api/match`) reads the torrent file list. It counts MKV and MP4
+  files that parse as episodes and ignores samples and extra videos. It finds a
+  reusable episode for each distinct episode target, applies
+  [smart mode](CONFIGURATION.md#smart-mode), and keeps the accepted import plan
+  in memory for a short time. It does not change files or the client.
+- **Import** (`/api/import`) uses the import plan from the match, or builds it
+  again when the plan is no longer in memory, for example after a restart. It
+  resolves the destination folder, creates the hardlinks, and adds the season
+  pack through the client's import policy. If a planned source file disappears,
+  it refreshes the client inventory and the plan once and tries again. If the
+  coverage of the created hardlinks falls below the smart mode threshold, it
+  does not add the pack. Hardlinks that were created stay in place, so a retry
+  is safe.
 
-Webhook, RSS, and backfill imports to the same configured client endpoint are
-serialized. Import rechecks the candidate gate before it uses a cached exact
-plan. A prior import can therefore cause a previously matched request to return
-`210` (already in client). Every attempted client import invalidates endpoint
-inventories and plans, including failed attempts that may already have added the
-pack. A retry refreshes client state before it creates another import.
+A successful import means the client accepted the pack. The client checks the
+data and starts the torrent after the response. seasonpackarr does not wait for
+that check.
+
+A normal candidate, match, import sequence reads the client inventory once. The
+three requests share a short-lived copy of it.
+
+### Imports to one client
+
+Imports to the same client run one at a time. This includes imports from
+autobrr, RSS monitoring, and search. Before an import uses a stored import
+plan, it runs the candidate check again. So a request that matched before can
+get `210` (release already in client) when another import added the pack first.
+After each import attempt, seasonpackarr discards its stored inventory and
+plans for that client, also when the attempt failed. A retry reads the client
+state again before it imports.
+
+## Responses
+
+A successful request gets status `250` with the text `successful match`. Match
+and import both use `250`.
+
+A rejection or failure gets the status code from the table below, with a JSON
+body:
+
+```json
+{"statusCode": 203, "error": "release group did not match"}
+```
+
+A body that is not valid JSON gets `470`.
+
+## Status codes
+
+The notification level is the `notificationLevel` value that sends a Discord
+notification for the code. Codes without a level send no notification.
+
+| Code | Meaning | Notification level |
+| --- | --- | --- |
+| `200` | No matching releases in the client | `INFO` |
+| `201` | Resolution did not match | `INFO` |
+| `202` | Source did not match | `INFO` |
+| `203` | Release group did not match | `INFO` |
+| `204` | Cut did not match | `INFO` |
+| `205` | Edition did not match | `INFO` |
+| `206` | Repack status did not match | `INFO` |
+| `207` | HDR metadata did not match | `INFO` |
+| `208` | Streaming service did not match | `INFO` |
+| `210` | Release already in the client | `INFO` |
+| `211` | Release is not a season pack | `INFO` |
+| `212` | Size did not match | None |
+| `213` | Season did not match | None |
+| `214` | Episode did not match | None |
+| `215` | Container did not match | `INFO` |
+| `230` | Coverage is below the smart mode threshold | `INFO` |
+| `250` | Successful match or import | `MATCH` |
+| `440` | Could not create hardlinks | `ERROR` |
+| `445` | Could not match episodes to files in the pack | `ERROR` |
+| `459` | Invalid import config, for example a qBittorrent category that does not exist | `ERROR` |
+| `460` | Could not resume the torrent in the client | `ERROR` |
+| `461` | Could not recheck the torrent in the client | `ERROR` |
+| `462` | Could not find the added torrent in the client | `ERROR` |
+| `463` | Could not add the torrent to the client | `ERROR` |
+| `464` | Could not get episodes | `ERROR` |
+| `465` | Could not parse the torrent info | `ERROR` |
+| `466` | Could not decode the torrent bytes | `ERROR` |
+| `467` | Could not get the torrent bytes | `ERROR` |
+| `468` | Could not get torrents from the client | `ERROR` |
+| `469` | Could not get the announce name | `ERROR` |
+| `470` | Could not decode the request | `ERROR` |
+| `471` | Could not get the client | `ERROR` |
+| `472` | Client not found in the config | `ERROR` |
+
+Codes `212` to `215` describe one episode file compared with one torrent file.
+They appear mostly in the per-episode log diagnostics of a match.
+
+## Notifications and logs
+
+- The candidate check sends no notifications. Match sends notifications with
+  the action label `Match`, and import with the label `Import`. An accepted
+  pack therefore sends two `MATCH` notifications: one from match and one from
+  import.
+- Expected rejections, such as a release group mismatch, are logged at `INFO`.
+  Configuration, decoding, client, filesystem, and import failures are logged
+  at `ERROR`.
+- When a match does not use a torrent episode, the log shows why: a missing
+  source episode, a duplicate target, or the closest client file and each field
+  that did not match.
+- Logs never include configured credentials or request tokens.
+
+## Search
+
+`POST /api/search` runs a targeted Prowlarr search. It does not run RSS
+monitoring. The body is one JSON object. Unknown fields are rejected.
+
+```json
+{"clientname": "default", "dryRun": true, "verify": false}
+```
+
+- `clientname`: one client to scan. Omit it to scan all configured clients.
+- `dryRun`: when `true`, report results without importing. Default `false`.
+- `verify`: when `true`, also download torrent metadata and check exact reuse.
+  Requires `dryRun: true`. Default `false`.
+
+| Status | Meaning |
+| --- | --- |
+| `200` | The run finished. The report can still contain failures. |
+| `400` | Invalid request, unknown client, or incomplete search configuration. |
+| `401` | Missing or wrong API token, when authentication is configured. |
+| `409` | Another RSS or search run is active. |
+| `500` | The database could not be read before the run. Check the service logs. |
+
+The `200` report contains these fields:
+
+- `dryRun` and `verify`: the request values.
+- `scannedTorrents`, `episodeTorrents`, `coveredEpisodeTorrents`, and `groups`:
+  inventory counts. See [Search output](PROWLARR.md#search-output).
+- `requests`: targeted feed requests. Indexer discovery and torrent downloads
+  are not counted.
+- `torrentDownloads`: completed metadata downloads. A failed download appears
+  as a failed outcome. `torrentCacheHits`: metadata reads from the cache that
+  saved a download.
+- `outcomes[]`: one entry per result, with `clientname`, `title`, `indexerId`,
+  `status`, `reason`, `reusableEpisodes`, and `totalEpisodes`. `status` is
+  `candidate`, `would_import`, `imported`, `rejected`, or `failed`. The episode
+  counts are `null` until an import plan sets the number of targets. A plan
+  with no reusable files reports `0`.
+- `failures[]`: discovery, client inventory, query, pagination, rate limit,
+  database, and cancellation errors, with `clientname`, `query`, `indexerId`,
+  and `reason` where they apply.
+
+A `200` status alone does not prove that all work succeeded. Check `failures`.
+
+## Changes from v0.16.0
+
+- `/api/pack` and `/api/parse` are removed. They return `404`. There are no
+  aliases or redirects.
+- `/api/candidate` is new. It takes `name` and `clientname`, like the old
+  `/api/pack`.
+- `/api/match` replaces the check part of `/api/pack`. It requires `torrent`
+  and never creates hardlinks. In v0.16.0, `/api/pack` could create hardlinks
+  when `parseTorrentFile` was `false`.
+- `/api/import` replaces `/api/parse`. It now also adds the season pack to the
+  client, so autobrr needs no torrent client action.
+
+The [v1 upgrade guide](UPGRADE-v1.md) shows how to update autobrr and scripts.

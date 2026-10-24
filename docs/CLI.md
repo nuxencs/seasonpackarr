@@ -1,12 +1,13 @@
-# Command-Line Guide
+# Command-line guide
 
-Use the CLI to check a release, verify exact episode reuse, or import a pack.
-The service must be running for `candidate`, `match`, `import`, and `search`.
+Use the CLI to run a candidate check on a release name, match a torrent, or
+import a season pack. The service must be running for `candidate`, `match`,
+`import`, and `search`.
 
-## First Successful Check
+## First successful check
 
-Start with the [new-user setup](new-user-onboarding.md). Configure a torrent
-client and `apiToken`, then start the service:
+Start with the [installation guide](INSTALL.md). Configure a torrent client and
+`apiToken`, then start the service:
 
 ```sh
 seasonpackarr start --config ~/.config/seasonpackarr
@@ -23,10 +24,11 @@ connection settings from your config and selects the sole configured client.
 With several clients, add `--client <name>`. If the service uses a different
 config directory, add `--config <directory>` to each API command.
 
-An accepted candidate means that the release name is compatible with episodes
-in the client. It does not prove that the torrent files can reuse those episodes.
+An accepted candidate check means that the release name is compatible with
+episodes in the client. It does not prove that the torrent files can reuse those
+episodes.
 
-Download the original `.torrent` file from your tracker, then check exact reuse:
+Download the original `.torrent` file from your tracker, then run a match:
 
 ```sh
 seasonpackarr match ./pack.torrent
@@ -51,7 +53,7 @@ To create hardlinks and import the pack into the torrent client, run:
 seasonpackarr import ./pack.torrent
 ```
 
-### Torrents With A Short Folder Name
+### Torrents with a short folder name
 
 Some torrents use a folder name such as `Series.S01` that omits the quality,
 source, or release group. For these torrents, supply the full tracker release
@@ -65,15 +67,15 @@ Use the same `--release` value with `import`. This option changes the name used
 for release checks. It does not change the torrent contents or destination
 folder name. Match and import still require the original `.torrent` file.
 
-## Commands And Required Inputs
+## Commands and required inputs
 
 | Command | Required input | Effect |
 | --- | --- | --- |
-| `candidate` | Quoted release name | Checks release-name compatibility; does not request torrent metadata |
-| `match` | Real `.torrent` file | Checks exact reuse; does not create hardlinks or import |
+| `candidate` | Quoted release name | Runs a candidate check; does not request torrent metadata |
+| `match` | Real `.torrent` file | Runs a match; does not create hardlinks or import |
 | `import` | Real `.torrent` file | Creates hardlinks and imports the pack |
-| `search --dry-run` | None | Searches Prowlarr and checks release names |
-| `search --dry-run --verify` | None | Searches Prowlarr and checks exact reuse |
+| `search --dry-run` | None | Searches Prowlarr and runs candidate checks |
+| `search --dry-run --verify` | None | Searches Prowlarr and runs matches |
 | `search` | None | Searches Prowlarr and imports accepted packs |
 | `start` | Config directory if outside the default locations | Starts the service; an explicit directory gets a default config if missing |
 | `gen-token` | None | Generates a token to store in `apiToken` |
@@ -82,9 +84,9 @@ folder name. Match and import still require the original `.torrent` file.
 
 Search requires a configured Prowlarr connection. It selects all clients unless
 `--client` or `SEASONPACKARR__CLIENT` selects one. See
-[Prowlarr discovery](prowlarr-backfill.md#manual-runs) for modes and limits.
+[Prowlarr search](PROWLARR.md#search) for modes and limits.
 
-## Connection Settings
+## Connection settings
 
 All four API commands accept the same flags. Explicit flags override environment
 settings, which override local config, which overrides built-in defaults.
@@ -136,7 +138,7 @@ seasonpackarr match ./pack.torrent
 Replace the URL, token, and client with your service settings. To search all
 clients despite an environment client setting, use `search --client ""`.
 
-## Results, Errors, And Scripts
+## Results, errors, and scripts
 
 Human-readable results are the default. Add `--json` for structured results:
 
@@ -166,18 +168,10 @@ can leave hardlinks or an added torrent; inspect the client before retrying.
 Candidate, match, and import requests have a 30-second timeout. An import can
 continue on the service after a timeout if an external operation cannot cancel.
 
-## Migration From `test`
+## Upgrade from v0.16.0
 
-V1 removes the entire `test` command group. Replace `test candidate`,
-`test match`, and `test import` with `candidate`, `match`, and `import`.
-No aliases remain. For the v0.16.0 commands `test pack` and `test parse`, see the
-[v1 upgrade guide](v1-upgrade.md#update-cli-commands-and-scripts).
-
-Match and import now require a real torrent file. Release-name inputs previously
-created mock torrents with five artificial episodes. They could not establish
-real reuse. Use `candidate` for a release-name check.
-
-Search now prints readable text by default. Add `--json` to scripts that consume
-the previous JSON output. Commands now return failure exit codes for errors that
-previously printed a message and returned success. `version` no longer queries
-GitHub for the latest release.
+v1.0.0 removes the `test` command group, and `match` and `import` now require a
+real `.torrent` file. Search prints readable text unless you add `--json`, and
+errors now return a failure exit code. See
+[Update scripts that use the CLI](UPGRADE-v1.md#4-update-scripts-that-use-the-cli)
+for the command mapping.
