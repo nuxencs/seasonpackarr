@@ -34,11 +34,11 @@ func TestSearchE2E_PartialPack(t *testing.T) {
 		report := search(t, c.configName())
 
 		assert.Empty(t, report.Failures, "search failures")
-		if assert.Len(t, report.Outcomes, 1, "search outcomes") {
-			outcome := report.Outcomes[0]
-			assert.Equal(t, name, outcome.Title, "search result")
-			assert.Equal(t, "imported", outcome.Status, "search outcome: %s", outcome.Reason)
-		}
+		// Without an import, the client checks of partialPack only wait for the timeout.
+		require.Len(t, report.Outcomes, 1, "search outcomes")
+		outcome := report.Outcomes[0]
+		assert.Equal(t, name, outcome.Title, "search result")
+		require.Equal(t, "imported", outcome.Status, "search outcome: %s", outcome.Reason)
 		// The download proves that seasonpackarr accepted the proxy link of Prowlarr.
 		assert.Equal(t, 1, report.TorrentDownloads, "torrent downloads through Prowlarr")
 		assert.Zero(t, report.TorrentCacheHits, "torrent cache hits")
@@ -74,7 +74,7 @@ func search(t *testing.T, clientName string) searchReport {
 	}
 	var report searchReport
 	// The other clients of the harness config do not run in this entry.
-	body := map[string]any{"clientname": clientName, "dryRun": false}
+	body := map[string]any{"clientname": clientName, "dryRun": false, "verify": false}
 	require.NoError(t, api.do(http.MethodPost, "/api/search", body, http.StatusOK, &report), "search through seasonpackarr")
 	t.Logf("search report: %+v", report)
 	return report

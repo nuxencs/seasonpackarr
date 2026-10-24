@@ -4,11 +4,11 @@
 //go:build e2e
 
 // Package e2e holds the end-to-end tests. They start an import at the user's
-// entry point, one announce line into a real autobrr or one search request
-// that seasonpackarr sends to a real Prowlarr. They check only what a user can
-// see: the client API, the /data filesystem, the autobrr release status or log,
-// and the search report. test/harness/run.sh e2e starts autobrr or Prowlarr,
-// the seasonpackarr image, the client, and the seeder.
+// entry point: one announce line into a real autobrr, or one search request to
+// seasonpackarr, which searches a real Prowlarr. They check only what a user
+// can see: the client API, the /data filesystem, the autobrr release status or
+// log, and the search report. test/harness/run.sh e2e starts autobrr or
+// Prowlarr, the seasonpackarr image, the client, and the seeder.
 package e2e
 
 import (

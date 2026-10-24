@@ -7,6 +7,7 @@ package e2e
 
 import (
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -62,7 +63,7 @@ func (h *harness) createTorznabIndexer() error {
 	}
 	index := slices.IndexFunc(schema, func(s map[string]any) bool { return s["name"] == "Generic Torznab" })
 	if index < 0 {
-		return fmt.Errorf("prowlarr has no Generic Torznab indexer")
+		return errors.New("prowlarr has no Generic Torznab indexer")
 	}
 	indexer := schema[index]
 	fields, _ := indexer["fields"].([]any)
@@ -74,7 +75,7 @@ func (h *harness) createTorznabIndexer() error {
 		}
 	}
 	if !found {
-		return fmt.Errorf("the Generic Torznab schema has no baseUrl field")
+		return errors.New("the Generic Torznab schema has no baseUrl field")
 	}
 	indexer["name"] = "Seasonpackarr E2E"
 	indexer["enable"] = true

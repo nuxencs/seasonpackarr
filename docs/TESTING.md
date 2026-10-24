@@ -334,8 +334,9 @@ The no-argument run, `all`, and `list [all]` stay integration-only.
 - Prowlarr is the hotio image, pinned by tag and digest in
   `compose.prowlarr.yaml` and bumped by hand. It starts with an empty
   `/config` tmpfs. Environment variables set its API key, the URL base
-  `/prowlarr`, auth turned off for local addresses, and debug output on the
-  console, so no first-run setup is necessary. `docker cp` cannot read log
+  `/prowlarr`, the auth method `External`, and debug output on the console,
+  so no first-run setup is necessary. `External` turns off the web UI login,
+  and the API still needs the API key. `docker cp` cannot read log
   files on a tmpfs, so a failed entry saves only the container output.
 - seasonpackarr runs from an image that the runner builds once for each call
   from `ci.Dockerfile`, the file of the published release image. It runs as

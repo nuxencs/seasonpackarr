@@ -11,8 +11,8 @@ services:
       # Prowlarr reads these in place of config.xml, so no first-run setup is
       # necessary. Same API key as search.apiKey in seasonpackarr/config.yaml.
       PROWLARR__AUTH__APIKEY: e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0
+      # External leaves the web UI login to a proxy. The API still needs the key.
       PROWLARR__AUTH__METHOD: External
-      PROWLARR__AUTH__REQUIRED: DisabledForLocalAddresses
       # A URL base is the harder case for the proxy links that seasonpackarr checks.
       PROWLARR__SERVER__URLBASE: /prowlarr
       # A failed entry saves the container output. docker cp cannot read the
