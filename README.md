@@ -1,20 +1,9 @@
 <h1 align="center">seasonpackarr</h1>
 <p align="center">
-  <a href="https://github.com/nuxencs/seasonpackarr/blob/develop/LICENSE">
-    <img src="https://img.shields.io/github/license/nuxencs/seasonpackarr?style=flat-square&color=00ACD7" alt="License">
-  </a>
-  <a href="https://goreportcard.com/report/github.com/nuxencs/seasonpackarr">
-    <img src="https://goreportcard.com/badge/github.com/nuxencs/seasonpackarr?style=flat-square" alt="Go Report">
-  </a>
-  <a href="https://github.com/nuxencs/seasonpackarr/actions">
-    <img src="https://img.shields.io/github/actions/workflow/status/nuxencs/seasonpackarr/release.yml?style=flat-square&logo=github" alt="Build">
-  </a>
-  <a href="https://github.com/nuxencs/seasonpackarr/releases">
-    <img src="https://img.shields.io/github/v/release/nuxencs/seasonpackarr?style=flat-square&color=00ACD7" alt="Latest Release">
-  </a>
-  <a href="https://trash-guides.info/discord">
-    <img src="https://img.shields.io/discord/492590071455940612?style=flat-square&logo=discord&logoColor=00ACD7&label=support&color=00ACD7" alt="Discord">
-  </a>
+  <a href="https://github.com/nuxencs/seasonpackarr/blob/develop/LICENSE"><img src="https://img.shields.io/github/license/nuxencs/seasonpackarr?style=flat-square&color=00ACD7" alt="License"></a>
+  <a href="https://github.com/nuxencs/seasonpackarr/actions"><img src="https://img.shields.io/github/actions/workflow/status/nuxencs/seasonpackarr/release.yml?style=flat-square&logo=github" alt="Build"></a>
+  <a href="https://github.com/nuxencs/seasonpackarr/releases"><img src="https://img.shields.io/github/v/release/nuxencs/seasonpackarr?style=flat-square&color=00ACD7" alt="Latest Release"></a>
+  <a href="https://trash-guides.info/discord"><img src="https://img.shields.io/discord/492590071455940612?style=flat-square&logo=discord&logoColor=00ACD7&label=support&color=00ACD7" alt="Discord"></a>
 </p>
 
 <p align="center">
@@ -74,5 +63,3 @@ security problem, see [SECURITY.md](SECURITY.md).
 Huge credit goes to [upgraderr](https://github.com/KyleSanderson/upgraderr) and specifically [@KyleSanderson](https://github.com/KyleSanderson), whose
 project provided great functions that I could make use of. Additionally, I would also like to mention [@zze0s](https://github.com/zze0s), who was
 really helpful regarding any question I had as well as providing me with a lot of the structure this project has now.
-Last but not least, a big thank you to [JetBrains](http://www.jetbrains.com/)
-for providing me with free licenses to their great tools, in this case [GoLand](https://www.jetbrains.com/go/).
