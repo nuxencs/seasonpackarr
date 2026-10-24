@@ -674,6 +674,10 @@ func applyEnvironment(cfg *domain.Config) {
 					if b, err := strconv.ParseBool(envValue); err == nil {
 						cfg.FuzzyMatching.SimplifyWebCompare = b
 					}
+				case prefix + "FUZZY_MATCHING_SKIP_YEAR_COMPARE":
+					if b, err := strconv.ParseBool(envValue); err == nil {
+						cfg.FuzzyMatching.SkipYearCompare = b
+					}
 
 				// notifications settings
 				case prefix + "NOTIFICATIONS_DISCORD":
