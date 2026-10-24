@@ -8,8 +8,9 @@ Upgrading from v0.16.0? Read the [v0.16.0 to v1.0.0 upgrade guide](UPGRADE-v1.md
 
 - A supported torrent client: qBittorrent, Transmission, or Deluge. See [Torrent clients](CONFIGURATION.md#torrent-clients)
   for the supported versions.
-- At least one way to find season packs: [autobrr](AUTOBRR.md), [Prowlarr](PROWLARR.md), or both. Without them, you can
-  still start searches on demand with the [command line](CLI.md).
+- At least one way to find season packs: [autobrr](AUTOBRR.md), [Prowlarr](PROWLARR.md), or both. RSS monitoring and
+  on-demand searches need Prowlarr. Without either, you can still run `candidate`, `match`, and `import` from the
+  [command line](CLI.md) with release names and torrent files that you supply.
 - seasonpackarr must see the downloaded episodes at the same paths as the torrent client. Hardlinks work only inside one
   filesystem, so the episodes and the season pack destination must be on the same filesystem.
 

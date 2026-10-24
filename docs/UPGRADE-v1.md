@@ -107,11 +107,13 @@ A qBittorrent client needs `savePath`, `category`, or both:
 - Use both when your current setup depends on both values.
 
 > [!IMPORTANT]
-> The category must already exist in qBittorrent. In v0.16.0, autobrr sent the
-> category and qBittorrent created a missing category automatically. v1.0.0 does
-> not create it. If the category is missing, the import fails with status `459`.
-> seasonpackarr starts normally, so you see this error only at the first import.
-> Create the category in qBittorrent before you enable the filter.
+> When `savePath` is empty, the category must already exist in qBittorrent,
+> because seasonpackarr reads the destination from it. In v0.16.0, autobrr sent
+> the category and qBittorrent created a missing category automatically. If the
+> category is missing, the import fails with status `459`. seasonpackarr starts
+> normally, so you see this error only at the first import. Create the category
+> in qBittorrent before you enable the filter. When `savePath` is set,
+> seasonpackarr does not look up the category.
 
 `tags` has no default value. If you omit it, the imported torrent gets no tag.
 For all import settings, see [import policy](CONFIGURATION.md#import-policy).
@@ -411,12 +413,12 @@ Do not send the same season pack again while the torrent client still checks it.
 
 1. Disable the autobrr filter.
 2. Stop v1.0.0.
-3. Install the v0.16.0 binary, or set the image to
-   `ghcr.io/nuxencs/seasonpackarr:v0.16.0`. An image without a tag starts
-   v1.0.0 again.
-4. Restore your backed-up v0.16.0 `config.yaml`, Compose file, and `.env` file.
+3. Restore your backed-up v0.16.0 `config.yaml`, Compose file, and `.env` file.
    They contain the old settings, such as `parseTorrentFile` and
    `preImportPath`, that v0.16.0 needs.
+4. Install the v0.16.0 binary, or set the image in the restored Compose file to
+   `ghcr.io/nuxencs/seasonpackarr:v0.16.0`. An image without a tag starts
+   v1.0.0 again. For Docker, pull the pinned image and recreate the container.
 5. Restore the old autobrr filter: the single `/api/pack` External entry and the
    old torrent-client action. If the old configuration uses
    `parseTorrentFile: true`, also restore the `/api/parse` Webhook action above

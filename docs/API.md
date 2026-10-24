@@ -139,8 +139,12 @@ notification for the code. Codes without a level send no notification.
 | `471` | Could not get the client | `ERROR` |
 | `472` | Client not found in the config | `ERROR` |
 
-Codes `212` to `215` describe one episode file compared with one torrent file.
-They appear mostly in the per-episode log diagnostics of a match.
+The current endpoints do not return codes `212` to `215`, and the logs do not
+contain them. For per-episode diagnostics, read the
+`torrent episode is not reusable` log lines. Their `reason` field
+(`source_episode_not_found`, `compatibility_mismatch`, or
+`duplicate_torrent_target`) and `mismatches[].field` (`size`, `container`,
+`resolution`, or `release_group`) explain why an episode was not reused.
 
 ## Notifications and logs
 
@@ -148,9 +152,11 @@ They appear mostly in the per-episode log diagnostics of a match.
   the action label `Match`, and import with the label `Import`. An accepted
   pack therefore sends two `MATCH` notifications: one from match and one from
   import.
-- Expected rejections, such as a release group mismatch, are logged at `INFO`.
-  Configuration, decoding, client, filesystem, and import failures are logged
-  at `ERROR`.
+- The candidate check and match log expected rejections, such as a release
+  group mismatch, at `INFO`. Configuration, decoding, client, filesystem, and
+  import failures are logged at `ERROR`. The import logs every failure at
+  `ERROR`, also an expected rejection
+  ([#194](https://github.com/nuxencs/seasonpackarr/issues/194)).
 - When a match does not use a torrent episode, the log shows why: a missing
   source episode, a duplicate target, or the closest client file and each field
   that did not match.
