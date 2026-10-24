@@ -1,72 +1,87 @@
 # Upgrade from v0.16.0 to v1.0.0
 
-Use this guide when you upgrade an existing seasonpackarr installation from
-v0.16.0 to v1.0.0. New installations can follow the main README instead.
+Use this guide to upgrade an existing seasonpackarr installation from v0.16.0 to
+v1.0.0. For a new installation, start with the [README](../README.md).
 
-This upgrade needs changes in two places:
-
-1. your seasonpackarr configuration
-2. your seasonpackarr filter in autobrr
-
-Also check the [application data directory](#prepare-the-application-data-directory)
-before starting v1.0.0. This check applies to autobrr-only installations too.
-If you use CLI commands or scripts, also [update those calls](#update-cli-commands-and-scripts).
-
-Plan a short maintenance window. Keep the autobrr filter disabled until both
-parts are complete.
+The upgrade changes 2 things: your seasonpackarr configuration and your
+seasonpackarr filter in autobrr. Plan a short maintenance window, and keep the
+autobrr filter disabled until you complete step 5.
 
 ## What changes in v1.0.0
 
-- Torrent parsing is always enabled.
-- Autobrr runs a quick check before it downloads the torrent file. It runs a
-  second, exact check only when the first check passes.
-- seasonpackarr adds the accepted torrent to your torrent client. Autobrr must
-  not add the same torrent separately.
-- Smart mode measures how much of the announced torrent can be reused. It no
-  longer asks TVDB or TVMaze for the season episode count.
+- **Torrent parsing is always on.** The `parseTorrentFile` setting is removed.
+- **autobrr runs 2 checks.** The candidate check (`/api/candidate`) uses only the
+  announce name, before autobrr downloads the torrent file. The match
+  (`/api/match`) runs only when the candidate check passes. It reads the torrent
+  and builds an import plan, but changes nothing.
+- **seasonpackarr adds the torrent to the client.** The import (`/api/import`)
+  creates the hardlinks and then adds the season pack to the torrent client.
+  autobrr must not add the same torrent with a separate client action.
+- **The old endpoints are removed.** `/api/pack` and `/api/parse` have no
+  aliases.
+- **Smart mode measures the torrent.** Coverage is the share of episode files in
+  the torrent that seasonpackarr can reuse. Smart mode no longer asks TVDB or
+  TVMaze for the episode count of the season. See
+  [smart mode](CONFIGURATION.md#smart-mode).
+- **Discord notifications change.**
+  - The candidate check sends no notifications. In v0.16.0, `/api/pack` sent a
+    notification for every result, so the `INFO` level reported each resolution,
+    source, or group mismatch. These rejections are now silent.
+  - An accepted season pack sends 2 `MATCH` notifications: one from the match
+    and one from the import.
+  - The notification action label is `Match` or `Import`. It was `Pack` before.
+- **seasonpackarr creates a database.** v1.0.0 creates `seasonpackarr.db` at
+  startup, also when you do not use Prowlarr. You do not install or configure a
+  database. See [application data](INSTALL.md#application-data).
 
-v0.16.0 has no application database to migrate. v1.0.0 creates a SQLite database
-automatically to preserve Prowlarr discovery progress across restarts. You do not
-need to install a database service or add database settings to `config.yaml`.
+Existing torrent data does not move if the new import destination points to the
+same location.
 
-Existing torrent data does not need to move if the new import destination points
-to the same location. Import plans remain in memory, and imports remain
-synchronous. The database does not resume interrupted imports.
-
-## Before you start
+## 1. Back up
 
 1. Disable the seasonpackarr filter in autobrr.
-2. Export the filter or take screenshots of its current External and Actions
+2. Export the filter, or take screenshots of its **External** and **Actions**
    tabs.
-3. Back up your seasonpackarr configuration and Docker Compose file, if used.
-4. Open the old torrent-client action in autobrr. Record its save path,
+3. Open the old torrent-client action in autobrr. Write down its save path,
    category, tags, incomplete-download path, and content layout.
-5. Record the old `preImportPath` for each client in seasonpackarr.
+4. Write down the old `preImportPath` of each client in seasonpackarr.
+5. Copy these files to a safe location:
+   - `config.yaml`
+   - your Docker Compose file and any `.env` file that it reads, if you use
+     Docker
+   - the complete config directory, if you want a full restore point
+6. Write down the image tag or binary version that you run now.
 
-If the old `preImportPath` and the Autobrr action save path are different,
-decide which final destination the torrent client must use after the upgrade.
-The new configuration uses one destination for both the hardlinks and the
-imported torrent.
+> [!IMPORTANT]
+> The example Compose file uses the image `ghcr.io/nuxencs/seasonpackarr`
+> without a tag. That name gets v1.0.0 on the next pull. To stay on v0.16.0 until
+> you finish this guide, set the image to
+> `ghcr.io/nuxencs/seasonpackarr:v0.16.0`.
 
-## 1. Update the seasonpackarr configuration
+If the old `preImportPath` and the save path of the autobrr action are
+different, decide which final destination the torrent client must use. v1.0.0
+uses one destination for both the hardlinks and the imported torrent.
+
+## 2. Update the configuration
 
 ### Remove old settings
 
-Remove these settings from `config.yaml`, even if they are empty:
+Remove these settings from `config.yaml`, also when they are empty:
 
-| Remove | Why |
+| Remove | Reason |
 | --- | --- |
-| `parseTorrentFile` | Torrent parsing is now always enabled. |
+| `parseTorrentFile` | Torrent parsing is always on. |
 | the complete `metadata` section | Smart mode no longer uses TVDB or TVMaze. |
 | `clients.<name>.preImportPath` | The new `import` section replaces it. |
 
-seasonpackarr will not start while these old settings are present. If one of
-them is not in your configuration, you do not need to add or change it.
+seasonpackarr does not start while one of these settings is present. If you use
+Docker Compose or environment variables, also do the
+[environment variable changes](#docker-compose-and-environment-variables).
 
 ### Add an import section for qBittorrent
 
-Copy the settings that you recorded from the old Autobrr qBittorrent action.
-For example:
+Copy the values that you wrote down from the old autobrr qBittorrent action. For
+example:
 
 ```yaml
 clients:
@@ -86,17 +101,24 @@ clients:
 
 A qBittorrent client needs `savePath`, `category`, or both:
 
-- Use `savePath` when you want to set the final folder directly.
-- Use `category` when qBittorrent already selects the correct folder from its
-  category and Automatic Torrent Management settings.
-- Use both when your existing setup already depends on both values.
+- Use `savePath` to set the final folder directly.
+- Use `category` when qBittorrent already selects the correct folder from the
+  category and its Automatic Torrent Management settings.
+- Use both when your current setup depends on both values.
 
-Do not copy the example paths without checking them. Use the paths that your
-seasonpackarr and qBittorrent containers or services can both see.
+> [!IMPORTANT]
+> The category must already exist in qBittorrent. In v0.16.0, autobrr sent the
+> category and qBittorrent created a missing category automatically. v1.0.0 does
+> not create it. If the category is missing, the import fails with status `459`.
+> seasonpackarr starts normally, so you see this error only at the first import.
+> Create the category in qBittorrent before you enable the filter.
+
+`tags` has no default value. If you omit it, the imported torrent gets no tag.
+For all import settings, see [import policy](CONFIGURATION.md#import-policy).
 
 ### Add an import section for Transmission
 
-Copy the save path and labels from the old Autobrr Transmission action. For
+Copy the save path and labels from the old autobrr Transmission action. For
 example:
 
 ```yaml
@@ -112,66 +134,48 @@ clients:
       tags: [seasonpackarr]
 ```
 
-If `savePath` is empty, seasonpackarr uses Transmission's default download
-folder. Transmission does not support `category`, `downloadPath`, or
-`contentLayout`.
+If `savePath` is empty, seasonpackarr uses the default download folder of
+Transmission. Transmission does not support `category`, `downloadPath`, or
+`contentLayout`. seasonpackarr does not start when one of them is set on a
+Transmission client.
 
-### Check other settings from the old action
+### Settings from the old action that do not move
 
-- The old **Skip Hash Check** rule does not move to the new configuration.
-  seasonpackarr now controls the data check before it starts the torrent.
-- A setting that left accepted torrents paused has no direct replacement.
-  seasonpackarr adds the torrent so that the client checks only what it must
+- The **Skip Hash Check** rule has no replacement. seasonpackarr controls the
+  data check before it starts the torrent.
+- A setting that left accepted torrents paused has no replacement.
+  seasonpackarr adds the torrent so that the client checks only what it must,
   and then starts it.
-- Move any other client-specific rules to the torrent client's defaults or to
-  separate client-side automation.
+- Move other client-specific rules to the defaults of the torrent client or to
+  separate automation in the client.
 
 ### Check paths and permissions
 
-Before you start v1.0.0, confirm all of the following:
+Before you start v1.0.0, make sure that:
 
-- A configured `savePath` already exists.
-- seasonpackarr can write to that folder.
-- seasonpackarr and the torrent client see the same data under compatible
-  paths.
+- The configured `savePath` exists.
+- The configured `downloadPath` exists, if you set one. seasonpackarr does not
+  start when `savePath` or `downloadPath` is missing. If you copy the
+  incomplete-download path from the old autobrr action, seasonpackarr must also
+  see that path.
+- seasonpackarr can write to the target folder.
+- seasonpackarr and the torrent client see the same data under compatible paths.
+  In containers, the paths do not have to match the host paths. But
+  seasonpackarr and the torrent client must agree on the path that the client
+  receives.
 - The existing episode files and the target folder are on the same filesystem.
   Hardlinks do not work across filesystems.
-- The configured torrent-client account can add, check, and start torrents.
+- The torrent-client account can add, check, and start torrents.
+- The config directory is writable and on local storage, because v1.0.0 creates
+  its database there. A read-only `/config` mount stops startup. See
+  [application data](INSTALL.md#application-data).
 
-Container paths are the paths inside the containers. They do not have to match
-the host path, but seasonpackarr and the torrent client must agree on the path
-that the torrent client receives.
+### Docker Compose and environment variables
 
-### Prepare the application data directory
-
-v1.0.0 creates `seasonpackarr.db` beside the active `config.yaml`, even when
-Prowlarr is not configured. Before starting it:
-
-- Make sure the service account can write to that directory. SQLite uses WAL
-  mode and creates `seasonpackarr.db-wal` and `seasonpackarr.db-shm` beside the
-  database while it runs. Do not delete these files.
-- Keep the directory on local storage, not an NFS or SMB share.
-- For the supplied Docker setup, keep the existing `/config` volume persistent
-  and writable. No additional volume is needed. A read-only `/config` mount
-  prevents startup.
-- Run only one seasonpackarr instance per database.
-
-The database is created and upgraded automatically at startup. If it cannot be
-opened or upgraded, the service stops with an error rather than losing state.
-At `INFO` level, look for `database ready` with the schema version and
-journal mode. The startup logs also show the database path and any migration
-progress. See [startup logs](prowlarr-backfill.md#startup-logs).
-
-After the upgrade, include `seasonpackarr.db` in your backups. Stop the service
-cleanly before copying it. Torrent metadata and retained links can contain
-tracker credentials, so protect these backups as you protect `config.yaml`.
-See [database backup and recovery](prowlarr-backfill.md#back-up-or-restore) for
-the complete procedure.
-
-<details>
-<summary>Environment-only and Docker Compose configuration</summary>
-
-Remove these old variables:
+Do this step if you use Docker Compose or set `SEASONPACKARR__` environment
+variables. seasonpackarr checks whether these variables exist, not their values.
+It does not start while one of them is set, also when the value is empty or
+`false`:
 
 ```text
 SEASONPACKARR__PARSE_TORRENT_FILE
@@ -180,54 +184,81 @@ SEASONPACKARR__METADATA_TVDB_PIN
 SEASONPACKARR__CLIENTS_<NAME>_PREIMPORTPATH
 ```
 
-Use these variables for the new import settings:
+The v0.16.0 example Compose file sets `SEASONPACKARR__PARSE_TORRENT_FILE: false`
+and an empty `SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH`. Delete both lines.
+
+To set the import section with environment variables, use these new variables:
 
 ```text
-SEASONPACKARR__CLIENTS_<NAME>_TYPE
 SEASONPACKARR__CLIENTS_<NAME>_IMPORT_SAVE_PATH
-SEASONPACKARR__CLIENTS_<NAME>_IMPORT_TAGS
 SEASONPACKARR__CLIENTS_<NAME>_IMPORT_CATEGORY
+SEASONPACKARR__CLIENTS_<NAME>_IMPORT_TAGS
 SEASONPACKARR__CLIENTS_<NAME>_IMPORT_DOWNLOAD_PATH
 SEASONPACKARR__CLIENTS_<NAME>_IMPORT_CONTENT_LAYOUT
 ```
 
-Replace `<NAME>` with the upper-case client name used by your other variables,
-for example `DEFAULT`. `IMPORT_TAGS` is a comma-separated list. Category,
-download path, and content layout are qBittorrent-only settings.
+Replace `<NAME>` with the upper-case client name from your other variables, for
+example `DEFAULT`. `IMPORT_TAGS` is a comma-separated list. Category, download
+path, and content layout are qBittorrent-only settings.
+`SEASONPACKARR__CLIENTS_<NAME>_TYPE` is not new. It works as in v0.16.0.
 
-With `disableConfigFile`, the database goes in the directory passed to
-`--config <dir>`. Without that flag, it goes in
-`$XDG_DATA_HOME/seasonpackarr/seasonpackarr.db`, or
-`~/.local/share/seasonpackarr/seasonpackarr.db` when `XDG_DATA_HOME` is unset.
-Make the selected directory writable and preserve it across container replacements.
-The supplied Docker command already uses `--config /config`.
+If you use Compose, run `docker compose config` and check the resolved
+environment variables and volume paths.
 
-Run `docker compose config` before the upgrade if you use Compose. Check the
-resolved environment variables and volume paths, including the writable database
-location.
+## 3. Update the autobrr filter
 
-</details>
+The screenshots use autobrr 1.83.0. Other versions can look slightly different,
+but the field names and values are the same. For the full filter setup, see the
+[autobrr guide](AUTOBRR.md).
 
-## 2. Update the autobrr filter
+In each example:
 
-The screenshots below use Autobrr 1.83.0. A different Autobrr version can look
-slightly different, but the field names and values are the same.
-
-In every example:
-
-- replace `seasonpackarr` with the host or IP address that Autobrr uses to
-  reach seasonpackarr
+- replace `seasonpackarr:42069` with the host and port that autobrr uses to reach
+  seasonpackarr
 - replace `your-api-token` with your seasonpackarr API token
-- replace `default` with your seasonpackarr client name, if you use another
-  name
+- replace `default` with your seasonpackarr client name, if it is different
 
-If API authentication is disabled in seasonpackarr, leave the header empty and
-omit `?apikey=...` from the action endpoint.
+If API authentication is off (empty `apiToken`), leave the header empty and omit
+`?apikey=...` from the action endpoint.
 
-### External entry 1: quick candidate check
+### Change the old `/api/pack` entry into the match
 
-Open the filter's **External** tab, select **Add new**, and choose **Webhook**.
-Enter:
+Your filter has one External entry for `/api/pack`. Open the filter's
+**External** tab and do one of these:
+
+- **Edit the entry.** Change the fields to the values below. The entry then
+  stays above the candidate check that you add next, so you must
+  [reorder the entries](#put-the-candidate-check-first).
+- **Delete the entry and add it again** after the candidate check. Select
+  **Add new** and choose **Webhook**.
+
+| Field | Value |
+| --- | --- |
+| Name | `2. Match` |
+| On Error | `Reject` |
+| Endpoint | `http://seasonpackarr:42069/api/match` |
+| HTTP method | `POST` |
+| HTTP Request Headers | `X-API-Token=your-api-token` |
+| Expected HTTP status code | `250` |
+
+**Data (JSON)** must now include the `torrent` field:
+
+```json
+{
+  "name": "{{ .TorrentName }}",
+  "torrent": "{{ .TorrentDataRawBytes | js }}",
+  "clientname": "default"
+}
+```
+
+Enable the entry. autobrr downloads the torrent file for this check only after
+the candidate check passes.
+
+![autobrr External tab with the match webhook](assets/v1-upgrade-autobrr-match.jpg)
+
+### Add the candidate check
+
+In the **External** tab, select **Add new** and choose **Webhook**. Enter:
 
 | Field | Value |
 | --- | --- |
@@ -247,68 +278,32 @@ Use this in **Data (JSON)**:
 }
 ```
 
-Enable the entry. This check uses only the announce name. A rejection stops
-the filter before Autobrr downloads the torrent file.
+Enable the entry.
 
-![Autobrr External tab with the candidate webhook](images/v1-upgrade-autobrr-candidate.jpg)
+![autobrr External tab with the candidate webhook](assets/v1-upgrade-autobrr-candidate.jpg)
 
-### External entry 2: exact torrent check
+### Put the candidate check first
 
-The exact check now uses `/api/match`. Replace the old `/api/pack` URL.
-The old `/api/pack` and `/api/parse` routes are removed without aliases.
-
-Select **Add new** again and choose **Webhook**. Enter:
-
-| Field | Value |
-| --- | --- |
-| Name | `2. Torrent-aware check` |
-| On Error | `Reject` |
-| Endpoint | `http://seasonpackarr:42069/api/match` |
-| HTTP method | `POST` |
-| HTTP Request Headers | `X-API-Token=your-api-token` |
-| Expected HTTP status code | `250` |
-
-Use this in **Data (JSON)**:
-
-```json
-{
-  "name": "{{ .TorrentName }}",
-  "torrent": "{{ .TorrentDataRawBytes | js }}",
-  "clientname": "default"
-}
-```
-
-Enable the entry. This check downloads and reads the torrent only after the
-quick check passes. It decides whether the pack is useful, but it does not add
-the torrent or create files.
-
-![Autobrr External tab with the exact match webhook](images/v1-upgrade-autobrr-pack.jpg)
-
-### Confirm the External order
-
-The order must be:
+autobrr runs the External entries from top to bottom. The order must be:
 
 1. `1. Candidate check`
-2. `2. Torrent-aware check`
+2. `2. Match`
 
-Autobrr shows the reorder arrows only after the filter has more than one
-External entry. Use those arrows if needed. Save the filter, reload the page,
-and confirm that the candidate check is still first. Autobrr runs the entries
-from top to bottom.
+autobrr shows the reorder arrows only when the filter has more than one External
+entry. Use the arrows if necessary. Save the filter, reload the page, and make
+sure that the candidate check is still first.
 
-### Replace the old torrent-client action
+### Replace the old actions with the import action
 
 Open the filter's **Actions** tab.
 
-1. Remove the old qBittorrent or Transmission action. seasonpackarr now adds
-   the torrent itself. Leaving the old action in place can add the torrent
-   twice.
-2. Change the existing Webhook action endpoint from `/api/parse` to
-   `/api/import`, or add the action if torrent parsing was disabled before
-   the upgrade. Preserve the `apikey` query parameter when it is set.
-3. Make sure it is the only action that adds or sends this torrent.
-
-Enter:
+1. Delete the old qBittorrent or Transmission action. seasonpackarr now adds the
+   torrent itself. If the old action stays, the torrent can be added twice.
+2. If the filter has a Webhook action for `/api/parse`, change its endpoint to
+   `/api/import`. Otherwise, select **Add new** and set **Action type** to
+   `Webhook`.
+3. Make sure that this Webhook is the only action that adds or sends the
+   torrent.
 
 | Field | Value |
 | --- | --- |
@@ -327,166 +322,158 @@ Use this in **Payload (JSON)**:
 }
 ```
 
-The Autobrr Webhook Action form does not have a request-header field. When API
-authentication is enabled, put the token in the endpoint as shown above.
+The autobrr Webhook action has no request-header field. With API
+authentication, put the token in the endpoint as shown above.
 
-![Autobrr Actions tab with the import webhook](images/v1-upgrade-autobrr-action.jpg)
+![autobrr Actions tab with the import webhook](assets/v1-upgrade-autobrr-action.jpg)
 
-Save the filter, but keep it disabled until seasonpackarr v1.0.0 is running.
+Save the filter, but keep it disabled until v1.0.0 runs.
 
-## Update CLI commands and scripts
+## 4. Update scripts that use the CLI
 
-V1 removes the entire `test` command group, including the v0.16.0 commands
-`test pack` and `test parse`. Choose the new command by the task you want to perform:
+Skip this step if you do not run seasonpackarr commands yourself.
 
-| Task | v1.0.0 command |
+v1.0.0 removes the `test` command group, with `test pack` and `test parse`. Use
+the new command for your task:
+
+| v0.16.0 command | v1.0.0 command |
 | --- | --- |
-| Check a release name, previously `test pack` | `seasonpackarr candidate "<release>"` |
-| Check exact reuse without creating hardlinks or adding a torrent | `seasonpackarr match <file.torrent>` |
-| Create hardlinks and import the pack | `seasonpackarr import <file.torrent>` |
+| `test pack "<release>"` | `seasonpackarr candidate "<release>"` |
+| `test pack "<release>"` with `parseTorrentFile: false` | `seasonpackarr import <file.torrent>` |
+| `test parse <file.torrent>` | `seasonpackarr import <file.torrent>` |
+| none (check reuse, change nothing) | `seasonpackarr match <file.torrent>` |
 
-Replace `test parse` with `import` only when you intend to add the torrent to
-the client too. Use `match` for an exact check without those changes.
+With `parseTorrentFile: false`, `test pack` created hardlinks. In v1.0.0, only
+`import` creates hardlinks. `import` needs the `.torrent` file, and it also adds
+the torrent to the client. To check a torrent without these changes, use
+`match`.
 
-Match and import require a real `.torrent` file. A release-name input no longer
+`match` and `import` need a real `.torrent` file. A release name no longer
 creates a mock torrent. The command reads the release name from the torrent
-contents, so the downloaded filename does not need to match the release name.
-If the torrent's internal folder name lacks the full release metadata, add
-`--release "<full-tracker-release-name>"` to both match and import. This preserves
-the torrent contents and destination folder name. See
-[torrents with a short folder name](cli.md#torrents-with-a-short-folder-name).
+contents, so the file name does not have to match. If the folder name inside the
+torrent does not have the full release name, add
+`--release "<full-tracker-release-name>"`. See
+[torrents with a short folder name](CLI.md#torrents-with-a-short-folder-name).
 
-API commands now read connection settings from local config and environment.
-Explicit flags still override those settings. Add `--config <directory>` for
-a custom config directory and `--client <name>` when several clients exist.
-If you used `test candidate`, `test match`, or `test import` from development
-builds, remove `test` from those calls. No aliases remain.
+Changes for scripts:
 
-Update scripts that inspect command output or exit codes:
-
-- Results are readable text by default. Add `--json` for structured results,
-  including the new `search` command. Search imports accepted packs unless
-  `--dry-run` is set.
-- Exit code `0` means accepted, or search completed without operational failures.
-  Exit code `1` means an input, configuration, connection, authentication, or
-  operation failure. Exit code `2` means candidate, match, or import rejected
-  the pack. Search rejections and empty results return `0`.
-- Errors that previously printed a message and returned success now return a
-  nonzero exit code. Result data goes to stdout; diagnostics go to stderr.
-- `version` prints local build information and no longer checks GitHub for the
+- The commands read connection settings from your config and environment. The
+  `--host`, `--port`, and `--api` flags still override them. Add
+  `--config <directory>` for a custom config directory, and `--client <name>`
+  when you have more than one client.
+- Results are text by default. Add `--json` for structured results.
+- Exit code `0` means accepted. Exit code `1` means an input, configuration,
+  connection, authentication, or operation failure. Exit code `2` means that the
+  candidate check, match, or import rejected the season pack.
+- Errors that printed a message and returned `0` in v0.16.0 now return a
+  nonzero exit code. Results go to stdout. Diagnostics go to stderr.
+- `version` prints local build information. It no longer checks GitHub for the
   latest release.
 
-See the [CLI guide](cli.md) for connection precedence, remote use, and result formats.
+For all commands, including the new `search` command, see the
+[CLI guide](CLI.md).
 
-## 3. Start v1.0.0 and check the setup
+## 5. Start v1.0.0 and check the setup
 
-1. Install the v1.0.0 binary or container image.
-2. Start seasonpackarr while the Autobrr filter is disabled.
-3. Check the seasonpackarr log. If it reports an old setting, remove that
-   setting and start the service again. If it reports a database initialization
-   error, check the directory permissions, volume mount, and free space. Confirm
-   that `seasonpackarr.db` exists in the expected location before continuing.
-4. Open `http://host:port/api/healthz/readiness` in a browser. A ready service
+1. Install the v1.0.0 binary, or set the image tag to `v1.0.0` and pull it.
+2. Start seasonpackarr. Keep the autobrr filter disabled.
+3. Read the seasonpackarr log:
+   - If it reports a deprecated setting or environment variable, remove it and
+     start again.
+   - If it reports a missing `savePath` or `downloadPath`, fix the path and
+     start again.
+   - If it reports a database error, check the permissions, the volume mount,
+     and the free space of the config directory.
+   - At the `INFO` level, look for `database ready`.
+4. Open `http://seasonpackarr:42069/api/healthz/readiness`. A ready service
    returns `OK`.
-5. Reload the Autobrr filter and confirm the External order one more time.
-6. Enable the filter.
-7. Observe one controlled season-pack match. Confirm that:
-   - Autobrr runs both External checks in the correct order.
-   - Only one torrent is added to the client.
-   - Existing episodes appear as hardlinks in the season-pack folder.
-   - The torrent finishes its check and starts.
-   - Only missing data downloads.
+5. Optional: check one release name and one torrent file from the command line.
+   Neither command changes files or the client.
 
-Do not repeatedly send the same match while the torrent client is still
-checking it.
+   ```bash
+   seasonpackarr candidate "Series.S01.1080p.WEB-DL.H.264-RlsGrp" --client default
+   seasonpackarr match "/path/to/Series.S01.torrent" --client default
+   ```
 
-<details>
-<summary>Optional command-line checks before enabling the filter</summary>
+   Do not use `import` as a test. It creates hardlinks and adds the torrent.
+6. Reload the autobrr filter and make sure that the candidate check is first.
+7. Enable the filter.
+8. Watch the first accepted season pack. Make sure that:
+   - autobrr runs the candidate check first and the match second
+   - the client gets only one torrent
+   - existing episodes appear as hardlinks in the season pack folder
+   - the torrent finishes its check and starts
+   - only missing data downloads
 
-The commands read connection settings from local config and environment. Add
-`--config <directory>` if the service uses a custom directory. For remote
-connections and migration from `test`, see the [CLI guide](cli.md).
-
-Test the quick check with a representative release name:
-
-```bash
-seasonpackarr candidate "Series.S01.1080p.WEB-DL.H.264-RlsGrp" \
-  --client default
-```
-
-Test the exact, read-only check with a representative torrent file:
-
-```bash
-seasonpackarr match "/path/to/Series.S01.torrent" \
-  --client default
-```
-
-Do not use `seasonpackarr import` as a read-only test. It creates hardlinks
-and adds the torrent to the client.
-
-</details>
-
-## Review smart mode after the upgrade
-
-The `smartModeThreshold` number uses the same range, but it now answers a more
-direct question: how much of this specific torrent can seasonpackarr reuse?
-
-For example, if the torrent contains 12 episode files and seasonpackarr can
-reuse 8 of them, coverage is `8 / 12 = 0.67`. A threshold of `0.75` rejects
-that pack.
-
-Coverage includes MKV and MP4 files that parse as episodes. Samples and extra
-videos do not count.
-
-If file linking later succeeds for too few episodes, seasonpackarr does not
-import the torrent. Links that it already created stay in place. seasonpackarr
-does not delete them automatically because that could remove files that belong
-to another application.
-
-Partial-season packs, specials, and torrents with unusual file layouts can now
-produce a different result than v0.16.0. Review the first few representative
-matches and adjust the threshold only if the new result does not fit your
-preference.
-
-## If the import action times out
-
-Autobrr waits 120 seconds for a Webhook action. `/api/import` does not wait for
-the torrent client's data check, so a normal import finishes in seconds. A
-timeout points to a slow or unreachable torrent client or file system.
-
-An Autobrr timeout does not necessarily mean that the import stopped.
-seasonpackarr finishes a started client import even after Autobrr disconnects.
-Before you retry:
-
-1. check the seasonpackarr log
-2. check whether the torrent already exists in the client
-
-This avoids adding or processing the same torrent again while the first import
-is still running.
+Do not send the same season pack again while the torrent client still checks it.
 
 ## Roll back to v0.16.0
 
-1. Disable the Autobrr filter.
+1. Disable the autobrr filter.
 2. Stop v1.0.0.
-3. Restore the v0.16.0 binary or image and your backed-up v0.16.0
-   configuration.
-4. Restore the old Autobrr filter. It must have the single `/api/pack`
-   External check and the old torrent-client action. If the restored v0.16.0
-   configuration uses `parseTorrentFile`, also restore its `/api/parse`
-   Webhook action above the torrent-client action.
-5. Start v0.16.0, check that it is healthy, and enable the restored filter.
+3. Install the v0.16.0 binary, or set the image to
+   `ghcr.io/nuxencs/seasonpackarr:v0.16.0`. An image without a tag starts
+   v1.0.0 again.
+4. Restore your backed-up v0.16.0 `config.yaml`, Compose file, and `.env` file.
+   They contain the old settings, such as `parseTorrentFile` and
+   `preImportPath`, that v0.16.0 needs.
+5. Restore the old autobrr filter: the single `/api/pack` External entry and the
+   old torrent-client action. If the old configuration uses
+   `parseTorrentFile: true`, also restore the `/api/parse` Webhook action above
+   the torrent-client action.
+6. Start v0.16.0, make sure it is healthy, and enable the filter.
 
-Rollback does not remove hardlinks or torrents already imported by v1.0.0.
-Inspect those items before the restored filter processes another announce.
-v0.16.0 does not use `seasonpackarr.db`. You can keep it for a later v1.0.0
-upgrade; do not delete it as part of the rollback.
+Rollback does not remove hardlinks or torrents that v1.0.0 already imported.
+Check them before the restored filter processes the next announce. v0.16.0 does
+not use `seasonpackarr.db`. Keep the file for a later upgrade.
 
-## New options that do not require migration
+## Troubleshooting
 
-- Prowlarr RSS monitoring and targeted searches are optional. Existing autobrr
-  users do not need to configure Prowlarr. RSS is disabled by default. See
-  [Prowlarr discovery](prowlarr-backfill.md) to enable RSS or run a search.
-- v1.0.0 adds Deluge 1.3 and Deluge 2 support. Existing qBittorrent and
-  Transmission users do not need to change client type.
-- More settings reload after a valid configuration edit. Server host and port,
-  log-file settings, and `disableConfigFile` still require a restart.
+### seasonpackarr does not start after the upgrade
+
+Read the first error in the log:
+
+- **`deprecated config detected`**: remove the named key from `config.yaml`. See
+  [remove old settings](#remove-old-settings).
+- **`deprecated environment variable detected`**: remove the named variable from
+  your Compose file or environment, also when its value is empty or `false`. See
+  [Docker Compose and environment variables](#docker-compose-and-environment-variables).
+- **`import.savePath ... doesn't exist`** or
+  **`import.downloadPath ... doesn't exist`**: create the folder, or correct the
+  path so that seasonpackarr can see it.
+
+### The import fails with status 459
+
+The log shows `qbit category "<name>" was not found in qbittorrent`. Create the
+category in qBittorrent, or correct `import.category`. Then send the season pack
+again.
+
+### The import action times out in autobrr
+
+autobrr waits 120 seconds for a Webhook action. The import does not wait for the
+data check of the torrent client, so a normal import finishes in seconds. A
+timeout points to a slow or unreachable torrent client or filesystem.
+
+A timeout in autobrr does not always mean that the import stopped. seasonpackarr
+finishes a started client import also after autobrr disconnects. Before you send
+the season pack again:
+
+1. Read the seasonpackarr log.
+2. Check whether the torrent is already in the client.
+
+## Other changes in v1.0.0
+
+These changes need no action during the upgrade:
+
+- **Prowlarr discovery**: RSS monitoring and search can find season packs
+  without autobrr. Both are optional, and RSS monitoring is off by default. See
+  the [Prowlarr guide](PROWLARR.md).
+- **Deluge**: v1.0.0 supports Deluge 1.3 and Deluge 2. See
+  [Deluge](CONFIGURATION.md#deluge).
+- **Config reload**: seasonpackarr now validates each configuration change and
+  keeps the last valid configuration when an edit is invalid. Changes to client
+  and Prowlarr connections now apply without a restart. See
+  [config reload](CONFIGURATION.md#config-reload).
+- **Smart mode**: review the first few results after the upgrade. Partial
+  season packs, specials, and unusual file layouts can give a different result
+  than in v0.16.0. See [smart mode](CONFIGURATION.md#smart-mode).
