@@ -163,6 +163,28 @@ func TestLoadFromEnv_ParsesMultiWordClientSettings(t *testing.T) {
 	require.Equal(t, []string{"a", "b"}, client.Import.Tags)
 }
 
+func TestApplyEnvironment_SetsFuzzyMatching(t *testing.T) {
+	tests := []struct {
+		key  string
+		want domain.FuzzyMatching
+	}{
+		{key: "SEASONPACKARR__FUZZY_MATCHING_SKIP_REPACK_COMPARE", want: domain.FuzzyMatching{SkipRepackCompare: true}},
+		{key: "SEASONPACKARR__FUZZY_MATCHING_SIMPLIFY_HDR_COMPARE", want: domain.FuzzyMatching{SimplifyHdrCompare: true}},
+		{key: "SEASONPACKARR__FUZZY_MATCHING_SIMPLIFY_WEB_COMPARE", want: domain.FuzzyMatching{SimplifyWebCompare: true}},
+		{key: "SEASONPACKARR__FUZZY_MATCHING_SKIP_YEAR_COMPARE", want: domain.FuzzyMatching{SkipYearCompare: true}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			t.Setenv(tt.key, "true")
+
+			cfg := domain.Config{Clients: map[string]*domain.Client{}}
+			applyEnvironment(&cfg)
+
+			require.Equal(t, tt.want, cfg.FuzzyMatching)
+		})
+	}
+}
+
 func TestReload_RejectsInvalidConfigAndKeepsLastSnapshot(t *testing.T) {
 	previousLogLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.WarnLevel)
