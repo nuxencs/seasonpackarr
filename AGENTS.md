@@ -100,3 +100,17 @@ If docs are missing:
 - record verification status if the doc describes behavior
 
 This repo prefers short, navigable docs over a giant manual.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `nuxencs/seasonpackarr`, through the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical triage roles map to the repo's `Status: ...` labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `GLOSSARY.md` and `docs/adr/`. See `docs/agents/domain.md`.
