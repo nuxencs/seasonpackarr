@@ -1,0 +1,46 @@
+# Transmission overlay. linuxserver images read /config/settings.json and set
+# the RPC credentials from USER and PASS.
+services:
+  transmission:
+    image: ${TRANSMISSION_IMAGE:?run.sh sets TRANSMISSION_IMAGE from the entry}
+    # The image copies its own defaults (DHT and PEX on, folders the harness does
+    # not mount) only when /config/settings.json is missing. Transmission fills
+    # the keys that the committed file leaves out. The image init gives /config to
+    # PUID, and exec keeps s6 /init as PID 1.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        cp /harness/settings.json /config/settings.json &&
+        exec /init
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+    environment:
+      # Same uid as the test container, so the daemon can write into its packs.
+      PUID: "1000"
+      PGID: "1000"
+      USER: admin
+      PASS: integration
+    volumes:
+      - ./transmission/settings.json:/harness/settings.json:ro
+      - transmission-config:/config
+      - data:/data
+    healthcheck:
+      # The RPC answers 409 with a session id after a successful login.
+      test: [CMD-SHELL, "[ \"$$(curl -s -o /dev/null -w '%{http_code}' -u \"$$USER:$$PASS\" http://127.0.0.1:9091/transmission/rpc)\" = 409 ]"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  test:
+    depends_on:
+      transmission:
+        condition: service_healthy
+    environment:
+      SEASONPACKARR_TEST_TRANSMISSION_HOST: http://transmission:9091
+      SEASONPACKARR_TEST_TRANSMISSION_USER: admin
+      SEASONPACKARR_TEST_TRANSMISSION_PASS: integration
+
+volumes:
+  transmission-config:

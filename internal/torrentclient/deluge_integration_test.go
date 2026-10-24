@@ -28,6 +28,7 @@ type delugeTestAPI interface {
 	DaemonVersion(context.Context) (string, error)
 	EnablePlugin(context.Context, string) error
 	GetEnabledPlugins(context.Context) ([]string, error)
+	GetListenPort(context.Context) (uint16, error)
 	RemoveTorrent(context.Context, string, bool) (bool, error)
 }
 
@@ -64,6 +65,45 @@ func TestDelugeDaemon_ResumesPartialPack(t *testing.T) {
 	requireDelugeLabel(t, c, pack.hashes.Legacy, "seasonpackarr")
 }
 
+// TestDelugeDaemon_DownloadsMissingEpisodes checks the core promise against a
+// real download: the client gets only the missing episode from the seeder, and
+// the reused episodes stay hardlinks of their source files.
+func TestDelugeDaemon_DownloadsMissingEpisodes(t *testing.T) {
+	importDir := requireDaemon(t, envDelugeType)
+	s := newSeeder(t)
+	c := newDelugeDaemonClient(t, importDir)
+
+	tests := []struct {
+		name    string
+		missing int
+	}{
+		{name: "first episode missing", missing: 1},
+		{name: "last episode missing", missing: packEpisodes},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			name := packName(t, os.Getenv(envDelugeType))
+			seeded := s.seed(t, name)
+			pack := writeLinkedPack(t, importDir, name, tt.missing)
+			require.Equal(t, seeded.hashes, pack.hashes, "the seeder and the import must have the same torrent")
+
+			importDelugePack(t, c, pack.importRequest(importDir, false))
+			status := waitDelugeChecked(t, c, pack.hashes.Legacy)
+			assertPartialProgress(t, float64(status.Progress)/100, packEpisodes-1)
+
+			peer := newPeerAddress(t, delugeHost(), delugeListenPort(t, c))
+			status, complete := waitSeededDownload(t, s, pack.hashes.Legacy, peer, readDelugeTorrent(t, c, pack.hashes.Legacy),
+				func(status *deluge.TorrentStatus) bool {
+					// libtorrent adds payload to all_time_download once per second,
+					// so the count can lag behind the progress.
+					return status.Progress >= 100 && status.AllTimeDownload >= packEpisodeSize
+				})
+			require.True(t, complete, "download did not complete: state=%s progress=%.2f", status.State, status.Progress)
+			assertDownloadedPack(t, importDir, pack, tt.missing, status.AllTimeDownload)
+		})
+	}
+}
+
 // newDelugeDaemonClient connects with SEASONPACKARR_TEST_DELUGE_TYPE, checks
 // that the daemon major version matches it, and enables the Label plugin.
 func newDelugeDaemonClient(t *testing.T, importDir string) *delugeClient {
@@ -74,7 +114,7 @@ func newDelugeDaemonClient(t *testing.T, importDir string) *delugeClient {
 
 	c, err := newDelugeClient(t.Context(), &domain.Client{
 		Type:     clientType,
-		Host:     envOrDefault(envDelugeHost, "127.0.0.1"),
+		Host:     delugeHost(),
 		Port:     port,
 		Username: envOrDefault(envDelugeUser, "seasonpackarr"),
 		Password: envOrDefault(envDelugePass, "integration"),
@@ -148,14 +188,7 @@ func importDelugePack(t *testing.T, c *delugeClient, req ImportRequest) ImportRe
 // after the adapter resumes the torrent.
 func waitDelugeChecked(t *testing.T, c *delugeClient, hash string) *deluge.TorrentStatus {
 	t.Helper()
-	status, checked := waitFor(t.Context(), func() *deluge.TorrentStatus {
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		status, err := c.c.TorrentStatus(t.Context(), hash)
-		require.NoError(t, err)
-		require.NotNil(t, status, "torrent %s is missing", hash)
-		return status
-	}, func(status *deluge.TorrentStatus) bool {
+	status, checked := waitFor(t.Context(), readDelugeTorrent(t, c, hash), func(status *deluge.TorrentStatus) bool {
 		state := deluge.TorrentState(status.State)
 		return state != deluge.StatePaused && state != deluge.StateChecking
 	})
@@ -163,6 +196,35 @@ func waitDelugeChecked(t *testing.T, c *delugeClient, hash string) *deluge.Torre
 	require.True(t, checked, "torrent did not leave the paused and checking states")
 	require.NotEqual(t, deluge.StateError, deluge.TorrentState(status.State), "torrent entered the error state")
 	return status
+}
+
+// delugeHost is the daemon host name that the adapter and the seeder connect to.
+func delugeHost() string {
+	return envOrDefault(envDelugeHost, "127.0.0.1")
+}
+
+// delugeListenPort returns the daemon's BitTorrent listen port. Deluge picks a
+// random port by default, so the test cannot use a fixed one.
+func delugeListenPort(t *testing.T, c *delugeClient) int {
+	t.Helper()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	port, err := delugeDaemonAPI(t, c).GetListenPort(t.Context())
+	require.NoError(t, err)
+	return int(port)
+}
+
+// readDelugeTorrent returns a waitFor read function that stops the test when
+// the torrent is missing.
+func readDelugeTorrent(t *testing.T, c *delugeClient, hash string) func() *deluge.TorrentStatus {
+	return func() *deluge.TorrentStatus {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		status, err := c.c.TorrentStatus(t.Context(), hash)
+		require.NoError(t, err)
+		require.NotNil(t, status, "torrent %s is missing", hash)
+		return status
+	}
 }
 
 func requireDelugeLabel(t *testing.T, c *delugeClient, hash, want string) {

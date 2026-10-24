@@ -70,6 +70,9 @@ Primary local checks:
 - `go test -v ./...`
 - `govulncheck ./...`
 - `gofumpt -w .` when Go files change
+- `internal/torrentclient/testdata/harness/run.sh` when torrent client adapter code changes. It runs the
+  integration suites against real daemons in Docker Compose. Pass entry names, for example `qbit-4.3.9`, to run
+  one client version, `all` for the full version range, or `list [all]` to print the entries.
 - focused CLI/API smoke checks when behavior touches request flow:
   - `go run . start --config <dir>`
   - `go run . candidate "<release>" --config <dir> --client "<name>"`
@@ -82,6 +85,9 @@ CI currently enforces:
 - release builds
 - Docker builds
 - CodeQL
+- integration tests in `.github/workflows/integration.yml`: one job for each entry of `run.sh list`, when torrent
+  client code or its dependencies change (the workflow lists the paths). A manual run with `full` uses
+  `run.sh list all`. It is not a required check.
 
 ## Plans As Artifacts
 
