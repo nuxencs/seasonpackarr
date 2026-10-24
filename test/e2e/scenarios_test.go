@@ -60,15 +60,19 @@ func runScenarios(t *testing.T, c client) {
 	h := requireAutobrr(t)
 	h.ensureFilter(t, c.configName())
 
-	t.Run("partial pack", func(t *testing.T) { partialPack(t, h, c) })
+	t.Run("partial pack", func(t *testing.T) { partialPack(t, h, c, h.announceImport) })
 	t.Run("complete pack", func(t *testing.T) { completePack(t, h, c) })
 	t.Run("candidate rejection", func(t *testing.T) { candidateRejection(t, h, c) })
 }
 
+// importPack makes seasonpackarr import the pack name with the .torrent bytes
+// torrent, and returns when seasonpackarr sent the import to the client.
+type importPack func(t *testing.T, name string, torrent []byte)
+
 // partialPack runs the partial pack: the client has two of the three episodes
-// as their own torrents, and one announce must end in a seeding pack that reuses them and downloads
-// only the missing episode from the seeder.
-func partialPack(t *testing.T, h *harness, c client) {
+// as their own torrents, and the import must end in a seeding pack that reuses
+// them and downloads only the missing episode from the seeder.
+func partialPack(t *testing.T, h *harness, c client, start importPack) {
 	s := daemontest.NewSeeder(t)
 	const missing = daemontest.PackEpisodes
 	name := packName()
@@ -81,12 +85,11 @@ func partialPack(t *testing.T, h *harness, c client) {
 	hash := pack.Hashes.Legacy
 	removeAtCleanup(t, c, hash)
 
-	h.announce(t, name, pack.Torrent)
-	h.requireImportSent(t, name)
+	start(t, name, pack.Torrent)
 
-	// autobrr ignores the import response, so the client is the truth. The
-	// seeder connects only after the check: libtorrent backs off from a peer
-	// that it refused while the torrent was stopped or checking.
+	// The client is the truth. The seeder connects only after the check:
+	// libtorrent backs off from a peer that it refused while the torrent was
+	// stopped or checking.
 	read := func() torrentState { return readState(t, c, hash) }
 	st, downloading := daemontest.WaitFor(t.Context(), read, func(st torrentState) bool { return st.downloading })
 	require.True(t, downloading, "client does not download the pack %s after its check: %s", name, st)

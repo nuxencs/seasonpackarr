@@ -1,0 +1,38 @@
+# Prowlarr overlay. run.sh adds it after compose.e2e.yaml for the e2e-search
+# entry. seasonpackarr searches through Prowlarr, and a Generic Torznab indexer
+# reads the fake Torznab feed of the test. ADR-0003 explains the real Prowlarr.
+services:
+  # Bump the tag and the digest together, by hand.
+  prowlarr:
+    image: ghcr.io/hotio/prowlarr:release-2.6.5.5623@sha256:8c5ebfedf7ba82af100914993ba1f2942b1809ab1d18b85e4833362a292c7c5e
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      # Prowlarr reads these in place of config.xml, so no first-run setup is
+      # necessary. Same API key as search.apiKey in seasonpackarr/config.yaml.
+      PROWLARR__AUTH__APIKEY: e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0
+      PROWLARR__AUTH__METHOD: External
+      PROWLARR__AUTH__REQUIRED: DisabledForLocalAddresses
+      # A URL base is the harder case for the proxy links that seasonpackarr checks.
+      PROWLARR__SERVER__URLBASE: /prowlarr
+      # A failed entry saves the container output. docker cp cannot read the
+      # log files on the /config tmpfs.
+      PROWLARR__LOG__CONSOLELEVEL: debug
+      PROWLARR__LOG__ANALYTICSENABLED: "false"
+      PROWLARR__APP__LAUNCHBROWSER: "false"
+    # Prowlarr writes its config and database into /config. Each entry starts empty.
+    tmpfs:
+      - /config
+    healthcheck:
+      test: [CMD, curl, -fsS, http://127.0.0.1:9696/prowlarr/ping]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  test:
+    depends_on:
+      prowlarr:
+        condition: service_healthy
+    environment:
+      SEASONPACKARR_TEST_E2E_PROWLARR_URL: http://prowlarr:9696/prowlarr
+      SEASONPACKARR_TEST_E2E_PROWLARR_API_KEY: e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0

@@ -13,7 +13,8 @@
 # removes its containers and volumes. An integration entry runs one client's
 # integration tests. An end-to-end entry e2e-<client> runs that client's
 # end-to-end tests with autobrr, the seasonpackarr image, and the newest
-# integration version of the client.
+# integration version of the client. The end-to-end entry e2e-search runs the
+# search tests with Prowlarr, the seasonpackarr image, and the newest qBittorrent.
 set -euo pipefail
 
 # Oldest and newest supported version of each client. Bump the newest by hand.
@@ -25,7 +26,7 @@ default_entries=(
 # Middle versions that only `all` runs. hotio publishes no 4.4.x image.
 extra_entries=(qbit-4.5.5 qbit-4.6.7 qbit-5.0.5 qbit-5.1.4)
 # End-to-end entries that only `e2e` runs.
-e2e_entries=(e2e-qbit e2e-transmission e2e-deluge)
+e2e_entries=(e2e-qbit e2e-transmission e2e-deluge e2e-search)
 # Every entry seeds its download test from this qBittorrent. Bump it with the newest qBittorrent entry.
 export SEEDER_IMAGE=ghcr.io/hotio/qbittorrent:release-5.2.4
 
@@ -78,6 +79,12 @@ configure_entry() {
 	test_tags=integration test_package=./internal/torrentclient
 	log_files=(seeder:/config/data/logs/qbittorrent.log)
 	case $1 in
+	e2e-search)
+		configure_entry "$(newest_entry qbit)"
+		e2e=1 e2e_overlays=(compose.prowlarr.yaml)
+		test_tags=e2e test_package=./test/e2e
+		test_pattern=SearchE2E_
+		;;
 	e2e-*)
 		local newest
 		newest=$(newest_entry "${1#e2e-}")
@@ -160,7 +167,7 @@ run_tests() {
 		printf 'no test in %s matches %s\n' "$test_package" "$test_pattern" >&2
 		return 1
 	fi
-	# --use-aliases lets autobrr reach the torrent server of the test at "test".
+	# --use-aliases lets autobrr and Prowlarr reach the torrent server of the test at "test".
 	[[ -z $e2e ]] || run+=(--use-aliases)
 	"${run[@]}" test go test -tags="$test_tags" -count=1 -v -run "$test_pattern" "$test_package"
 }
