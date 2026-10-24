@@ -69,11 +69,12 @@ newest_entry() {
 	printf '%s' "$newest"
 }
 
-# configure_entry sets client, e2e, test_pattern, test_tags, test_package,
-# log_files, and the image variables that the compose overlays read. log_files lists <service>:<path>
-# entries for daemon logs that are not on stdout.
+# configure_entry sets client, e2e, e2e_overlays, test_pattern, test_tags,
+# test_package, log_files, and the image variables that the compose overlays
+# read. e2e_overlays lists the compose files after compose.e2e.yaml. log_files
+# lists <service>:<path> entries for daemon logs that are not on stdout.
 configure_entry() {
-	e2e=''
+	e2e='' e2e_overlays=()
 	test_tags=integration test_package=./internal/torrentclient
 	log_files=(seeder:/config/data/logs/qbittorrent.log)
 	case $1 in
@@ -85,7 +86,7 @@ configure_entry() {
 			exit 2
 		}
 		configure_entry "$newest"
-		e2e=1
+		e2e=1 e2e_overlays=(compose.autobrr.yaml)
 		test_tags=e2e test_package=./test/e2e
 		# TestQbitDaemon_ becomes TestQbitE2E_.
 		test_pattern=${test_pattern%Daemon_}E2E_
@@ -138,7 +139,12 @@ configure_entry() {
 
 compose() {
 	local files=(--file "$harness_dir/compose.yaml" --file "$harness_dir/compose.$client.yaml")
-	[[ -z $e2e ]] || files+=(--file "$harness_dir/compose.e2e.yaml")
+	local overlay
+	if [[ -n $e2e ]]; then
+		for overlay in compose.e2e.yaml "${e2e_overlays[@]}"; do
+			files+=(--file "$harness_dir/$overlay")
+		done
+	fi
 	docker compose --project-directory "$harness_dir" --project-name "$project" "${files[@]}" "$@"
 }
 

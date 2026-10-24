@@ -1,0 +1,34 @@
+# autobrr overlay. run.sh adds it after compose.e2e.yaml for an e2e-<client>
+# entry. autobrr gets the announces. ADR-0002 explains the real autobrr.
+services:
+  # The test driver sets autobrr up over its REST API: user, API key, indexer,
+  # IRC network, and filter. Bump the tag and the digest together, by hand.
+  # autobrr calls the external webhooks with a fixed 120 second client timeout
+  # (internal/filter/service.go in v1.88.0), which no setting changes. A match on
+  # a cold inventory in these tests reads a few torrents and takes milliseconds.
+  autobrr:
+    image: ghcr.io/autobrr/autobrr:v1.88.0@sha256:e200008d43fe6cd2d944c9bcf20900cfb8ba8a8e509625bb78ee51910b994005
+    environment:
+      AUTOBRR__CHECK_FOR_UPDATES: "false"
+      AUTOBRR__CUSTOM_DEFINITIONS: /definitions
+      AUTOBRR__LOG_LEVEL: DEBUG
+      # autobrr stores no release for a rejected announce. The candidate-rejection
+      # test reads the rejection from this file through GET /api/logs/files/autobrr.log.
+      AUTOBRR__LOG_PATH: /config/log/autobrr.log
+    volumes:
+      - ./autobrr/definitions:/definitions:ro
+    # autobrr writes its config and database into /config. Each entry starts empty.
+    tmpfs:
+      - /config
+    healthcheck:
+      test: [CMD, curl, -fsS, http://127.0.0.1:7474/api/healthz/liveness]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  test:
+    depends_on:
+      autobrr:
+        condition: service_healthy
+    environment:
+      SEASONPACKARR_TEST_E2E_AUTOBRR_URL: http://autobrr:7474

@@ -57,7 +57,7 @@ type torrentState struct {
 // The candidate rejection imports nothing, so a scenario after it would get an
 // inventory without its own episodes.
 func runScenarios(t *testing.T, c client) {
-	h := requireHarness(t)
+	h := requireAutobrr(t)
 	h.ensureFilter(t, c.configName())
 
 	t.Run("partial pack", func(t *testing.T) { partialPack(t, h, c) })

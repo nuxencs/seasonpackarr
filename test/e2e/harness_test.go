@@ -52,31 +52,47 @@ const (
 	announceChannel = "announces"
 )
 
-// harness is the autobrr setup and the torrent server that all tests share.
-// autobrr starts empty for each runner entry, so the setup runs once.
+// harness is the setup that all tests share: the torrent server, and autobrr
+// when a test needs it. autobrr starts empty for each runner entry, so each
+// setup runs once.
 type harness struct {
-	autobrr   *autobrrAPI
-	networkID int
 	importDir string
 
 	torrentURL string
 	torrents   sync.Map // file name to .torrent bytes
+
+	autobrr   *autobrrAPI
+	networkID int
 }
 
 var (
 	harnessOnce sync.Once
 	shared      *harness
 	harnessErr  error
+
+	autobrrOnce sync.Once
+	autobrrErr  error
 )
 
 // requireHarness returns the shared harness. Like daemontest.RequireSettings,
 // it skips the test when a setting is missing, and fails it in strict mode.
 func requireHarness(t *testing.T) *harness {
 	t.Helper()
-	daemontest.RequireSettings(t, envAutobrrURL, envSeasonpackarrURL, envAPIToken, envTorrentURL, envImportDir)
+	daemontest.RequireSettings(t, envSeasonpackarrURL, envAPIToken, envTorrentURL, envImportDir)
 	harnessOnce.Do(func() { shared, harnessErr = newHarness() })
 	require.NoError(t, harnessErr, "set up the end-to-end harness")
 	return shared
+}
+
+// requireAutobrr returns the shared harness with autobrr set up. Only the
+// e2e-<client> entries start autobrr.
+func requireAutobrr(t *testing.T) *harness {
+	t.Helper()
+	daemontest.RequireSettings(t, envAutobrrURL)
+	h := requireHarness(t)
+	autobrrOnce.Do(func() { autobrrErr = h.setupAutobrr() })
+	require.NoError(t, autobrrErr, "set up autobrr")
+	return h
 }
 
 func newHarness() (*harness, error) {
@@ -84,15 +100,17 @@ func newHarness() (*harness, error) {
 	if err := h.serveTorrents(); err != nil {
 		return nil, err
 	}
+	return h, nil
+}
+
+func (h *harness) setupAutobrr() error {
 	api, err := setupAutobrr(os.Getenv(envAutobrrURL))
 	if err != nil {
-		return nil, err
+		return err
 	}
 	h.autobrr = api
-	if h.networkID, err = api.createIndexer(h.torrentURL); err != nil {
-		return nil, err
-	}
-	return h, nil
+	h.networkID, err = api.createIndexer(h.torrentURL)
+	return err
 }
 
 // serveTorrents serves the .torrent files that tests add with addTorrent, for
@@ -392,7 +410,7 @@ func (h *harness) requireImportSent(t *testing.T, name string) {
 	}
 }
 
-// autobrrLogFile is the file name of AUTOBRR__LOG_PATH in compose.e2e.yaml.
+// autobrrLogFile is the file name of AUTOBRR__LOG_PATH in compose.autobrr.yaml.
 const autobrrLogFile = "autobrr.log"
 
 // logLine is the part of an autobrr JSON log line that the tests check.
