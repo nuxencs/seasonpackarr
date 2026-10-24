@@ -1,6 +1,7 @@
 # seasonpackarr config for the end-to-end entries. compose.e2e.yaml mounts it
 # read-only at /config/config.yaml. test/e2e/testdata/filter.json sends the
-# same API token and client names to autobrr.
+# same API token and client names to autobrr. TestSearchE2E_PartialPack sends
+# the same API token and the qbit client name to /api/search.
 host: "0.0.0.0"
 port: 42069
 
@@ -37,6 +38,16 @@ clients:
       savePath: "/data/import"
       # Deluge applies it through the Label plugin, which the test enables.
       tags: [ "seasonpackarr" ]
+
+# Only the e2e-search entry starts Prowlarr (compose.prowlarr.yaml). RSS
+# monitoring is off, so the other entries never contact it.
+search:
+  indexerIDs: []
+  prowlarrURL: "http://prowlarr:9696/prowlarr"
+  apiKey: "e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0"
+  rssInterval: "0s"
+  # The minimum. One search sends three requests, 10 seconds apart.
+  requestInterval: "10s"
 
 logLevel: "DEBUG"
 

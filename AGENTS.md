@@ -22,7 +22,7 @@ seasonpackarr is a Go service and CLI for TV automation with autobrr and Prowlar
 
 ## Verification
 
-Run the checks from the table in `docs/DEVELOPMENT.md#checks` for the code you changed. Before you claim that a change to the request flow, planning, hardlinks, client adapters, config loading, or the image works, run `test/harness/run.sh e2e`.
+Run the checks from the table in `docs/DEVELOPMENT.md#checks` for the code you changed. Before you claim that a change to the request flow, planning, hardlinks, client adapters, Prowlarr discovery, config loading, or the image works, run `test/harness/run.sh e2e`.
 
 ## Keep in sync
 
