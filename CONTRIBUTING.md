@@ -10,6 +10,8 @@ Whether you're fixing a bug, adding a feature, or improving documentation, your 
 
 ## Code Contributions
 
+Read [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the local setup, the checks, and the rules that keep code and docs in sync. [docs/TESTING.md](docs/TESTING.md) describes the test layers and the test naming rules.
+
 - **Fork and Clone:** Fork the `seasonpackarr` repository and clone it to start working on your changes.
 - **Branching:** Create a new branch for your changes. Use a descriptive name for easy understanding.
 - **Coding:** Ensure your code is well-commented for clarity.

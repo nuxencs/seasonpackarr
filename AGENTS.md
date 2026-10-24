@@ -1,122 +1,35 @@
 # AGENTS.md
 
-## Purpose
+seasonpackarr is a Go service and CLI for TV automation with autobrr and Prowlarr. It hardlinks reusable episodes into a season pack and imports the pack, so only missing data downloads. Use the terms in `GLOSSARY.md`.
 
-This repo should be easy for humans and coding agents to change safely.
+## Where to look
 
-Start small. Read the stable entrypoints first:
+- Packages, runtime flow, layering: `ARCHITECTURE.md`
+- Checks, code and docs sync rules, security rules: `docs/DEVELOPMENT.md`
+- Test layers, test names, harness: `docs/TESTING.md`. Read it before you add or rename a test.
+- Matching, hardlinks, or client import changes: read the note in `docs/design/` first.
+- User-visible behavior: the guides that `README.md` links. The API contract is `docs/API.md`.
+- Decisions: `docs/adr/`
 
-1. `README.md`
-2. `ARCHITECTURE.md`
-3. `docs/PLANS.md`
-4. `docs/QUALITY_SCORE.md`
-5. the most relevant index under `docs/`
+## Invariants
 
-Use progressive disclosure. Do not read the whole repo up front unless the task forces it.
-
-## Product In One Paragraph
-
-`seasonpackarr` is a Go service and CLI helper for autobrr-driven TV automation. It uses a cheap announce-only candidate check, then builds an exact plan from the torrent and already-downloaded episodes. It hardlinks reusable episode files into the season-pack folder and imports the pack so only missing data downloads.
-
-## Source Of Truth
-
-- Product overview and user setup: `README.md`
-- Top-level domain/package map: `ARCHITECTURE.md`
-- Design beliefs and lifecycle docs: `docs/design-docs/index.md`
-- Product intent and user flows: `docs/product-specs/index.md`
-- Planning rules and execution plan storage: `docs/PLANS.md`
-- Quality/risk posture: `docs/QUALITY_SCORE.md`, `docs/RELIABILITY.md`, `docs/SECURITY.md`
-- Generated durable surface notes: `docs/generated/db-schema.md`
-- Compact agent-oriented references: `docs/references/`
-
-## Repo Map
-
-- `cmd/`: CLI entrypoints for `start`, `candidate`, `match`, `import`, `search`, version/token helpers
-- `internal/http/`: API server, auth, health, webhook handlers, processing orchestration
-- `internal/release/`: release matching logic and season-pack comparisons
-- `internal/torrents/`: torrent fetch/decode helpers
-- `internal/files/`: hardlink creation
-- `internal/config/`: config defaults, loading, reload, schema-adjacent behavior
-- `internal/domain/`: shared domain structs and status codes
-- `internal/notification/`: Discord notifications
-- `schemas/`: JSON schema for config surface
-- `test/harness/`: Docker Compose harness that runs the tests against real torrent client daemons
-- `test/e2e/`: end-to-end tests from an autobrr announce to a seeding pack
-- `internal/daemontest/`: helpers shared by the tests against real daemons (seeder, pack builders, waits)
-- `distrib/`, `Dockerfile`, `ci.Dockerfile`: runtime packaging
-
-## Agent Operating Loop
-
-1. Read the smallest relevant doc entrypoint first.
-2. Inspect the concrete package/files that implement the behavior.
-3. State assumptions before larger edits.
-4. Prefer root-cause fixes over heuristics.
-5. Keep docs and code in sync in the same change.
-6. Add or update regression tests when matcher, parsing, pathing, or config behavior changes.
-7. Verify with the strongest checks available before handoff.
-
-## Core Invariants
-
-- `/api/candidate`, `/api/match`, and `/api/import` stay authenticated behind `APIToken`.
-- Matching changes must preserve the core promise: prevent unnecessary redownloads without silently broadening false positives.
-- `/api/candidate` must not request torrent bytes or per-torrent file details.
-- `/api/match` stays side-effect free. `/api/import` owns filesystem and client mutations.
-- Smart-mode coverage counts distinct valid torrent episode targets and cannot exceed 100 percent.
-- Config changes must update `config.yaml`, `schemas/config-schema.json`, and relevant docs together.
-- Hardlink path behavior is safety-critical. Treat path construction and pre-import directory assumptions as high risk.
-- If a change alters webhook payload expectations or CLI testing flow, update product specs and references in the same diff.
+- `/api/candidate`, `/api/match`, `/api/import`, and `/api/search` stay authenticated behind `apiToken`.
+- Matching changes keep the core promise: prevent unnecessary downloads without broadening false positives.
+- The candidate check requests no torrent bytes and no per-torrent file details.
+- The match has no side effects. The import owns all filesystem and client changes.
+- Smart-mode coverage counts distinct valid torrent episode targets and never exceeds 100 percent.
+- Hardlink path construction is safety-critical. Treat target paths and pre-import directory assumptions as high risk, and add regression tests.
 
 ## Verification
 
-Primary local checks:
+Run the checks from the table in `docs/DEVELOPMENT.md#checks` for the code you changed. Before you claim that a change to the request flow, planning, hardlinks, client adapters, config loading, or the image works, run `test/harness/run.sh e2e`.
 
-- `go test -v ./...`
-- `govulncheck ./...`
-- `gofumpt -w .` when Go files change
-- `test/harness/run.sh` when torrent client adapter code changes. It runs the
-  integration suites against real daemons in Docker Compose. Pass entry names, for example `qbit-4.3.9`, to run
-  one client version, `all` for the full version range, or `list [all]` to print the entries.
-- `test/harness/run.sh e2e` before you claim that a change to the request flow, planning, hardlinks, client
-  adapters, config loading, or the image works. It runs the end-to-end tests: real autobrr gets one announce, and the
-  seasonpackarr release image, a real client, and the seeder take it to a seeding pack. Pass `e2e-qbit` to run one
-  client, or `list e2e` to print the entries. The terms end-to-end, integration, and CLI test are defined in
-  `ARCHITECTURE.md` under Testing Surface.
-- focused CLI/API smoke checks when behavior touches request flow:
-  - `go run . start --config <dir>`
-  - `go run . candidate "<release>" --config <dir> --client "<name>"`
-  - `go run . match "<file.torrent>" --config <dir> --client "<name>"`
-  - `go run . import "<file.torrent>" --config <dir> --client "<name>"`
+## Keep in sync
 
-CI currently enforces:
-
-- `go test -v ./...`
-- release builds
-- Docker builds
-- CodeQL
-- integration tests in `.github/workflows/integration.yml`: one job for each entry of `run.sh list`, when torrent
-  client code, the harness, or their dependencies change (the workflow lists the paths). A manual run with `full` uses
-  `run.sh list all`. It is not a required check.
-- end-to-end tests in the same workflow: one job for each entry of `run.sh list e2e`, when the production source
-  (`main.go`, `cmd`, and `internal` without test files), the Dockerfiles, the Go module files, the harness, the
-  end-to-end tests, or the workflow change, and on each manual run. It is not a required check.
-
-## Plans As Artifacts
-
-Small work: keep a lightweight plan in the task thread.
-
-Complex or multi-step work: create or update a checked-in plan under `docs/exec-plans/active/`. Move it to `docs/exec-plans/completed/` when done. Track persistent gaps in `docs/exec-plans/tech-debt-tracker.md`.
-
-## Knowledge Base Maintenance
-
-When code changes invalidate docs, fix docs now. Do not leave stale architecture or behavior notes behind.
-
-If docs are missing:
-
-- add the smallest document that makes the next change safer
-- link it from the nearest index
-- record verification status if the doc describes behavior
-
-This repo prefers short, navigable docs over a giant manual.
+- Config: `config.yaml`, `schemas/config-schema.json`, and `docs/CONFIGURATION.md` change together.
+- API: payload, status code, or endpoint changes update `docs/API.md`.
+- autobrr filter: `docs/AUTOBRR.md` and `test/e2e/testdata/filter.json` change together.
+- User setup or upgrade steps: update the guide in `docs/` in the same change.
 
 ## Agent skills
 

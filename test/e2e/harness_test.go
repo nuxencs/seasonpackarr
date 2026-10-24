@@ -134,8 +134,8 @@ func (h *harness) announce(t *testing.T, name string, torrent []byte) {
 }
 
 // filterConfig reads testdata/filter.json and fills in its placeholders for
-// clientName. It uses the README endpoints, payloads, header, query parameter,
-// and expected status.
+// clientName. It uses the endpoints, payloads, header, query parameter, and
+// expected status of docs/AUTOBRR.md.
 func filterConfig(t *testing.T, clientName string) map[string]any {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/filter.json")
