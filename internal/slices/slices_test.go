@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDedupe(t *testing.T) {
@@ -64,7 +65,7 @@ func TestDedupe(t *testing.T) {
 			case []int:
 				assert.ElementsMatchf(t, tt.want, Dedupe(v), "Dedupe(%v)", v)
 			default:
-				t.Errorf("Unsupported slice type in test case: %v", tt.name)
+				require.FailNow(t, "unsupported slice type", "case %s", tt.name)
 			}
 		})
 	}
@@ -148,7 +149,7 @@ func TestEqualElements(t *testing.T) {
 				v2 := tt.y.([]int)
 				assert.Equalf(t, tt.want, EqualElements(v1, v2), "EqualElements(%v, %v)", v1, v2)
 			default:
-				t.Errorf("Unsupported slice type in test case: %v", tt.name)
+				require.FailNow(t, "unsupported slice type", "case %s", tt.name)
 			}
 		})
 	}

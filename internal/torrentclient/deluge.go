@@ -14,9 +14,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/autobrr/go-deluge"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/errtrace"
+
+	"github.com/autobrr/go-deluge"
 )
 
 const (

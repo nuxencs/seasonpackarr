@@ -16,42 +16,11 @@ import (
 
 	"github.com/autobrr/go-torrent/bencode"
 	"github.com/autobrr/go-torrent/metainfo"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func isolateCLI(t *testing.T) {
-	t.Helper()
-	for _, entry := range os.Environ() {
-		key, _, _ := strings.Cut(entry, "=")
-		if strings.HasPrefix(key, "SEASONPACKARR__") {
-			t.Setenv(key, "")
-		}
-	}
-	t.Setenv("SEASONPACKARR__DISABLE_CONFIG_FILE", "true")
-	t.Chdir(t.TempDir())
-}
-
-func runCLI(t *testing.T, args ...string) (int, string, string) {
-	t.Helper()
-	var stdout, stderr bytes.Buffer
-	code := execute(t.Context(), args, &stdout, &stderr)
-	return code, stdout.String(), stderr.String()
-}
-
-func TestCommands_ReportsFailures(t *testing.T) {
-	isolateCLI(t)
-	for _, args := range [][]string{
-		{"match"},
-		{"candidate", "Series.S01.1080p.WEB-DL-GRP", "--port", "1"},
-	} {
-		code, stdout, stderr := runCLI(t, args...)
-		require.Equal(t, 1, code)
-		require.Empty(t, stdout)
-		require.Contains(t, stderr, "Error:")
-	}
-}
-
-func TestCommands_ValidateInputsBeforeRequests(t *testing.T) {
+func TestOperationCommand_ValidatesInputsBeforeRequests(t *testing.T) {
 	isolateCLI(t)
 	for _, args := range [][]string{
 		{"candidate"},
@@ -79,9 +48,9 @@ func TestCommands_ValidateInputsBeforeRequests(t *testing.T) {
 	}
 }
 
-func TestCommands_OperationResults(t *testing.T) {
+func TestOperationCommand_ReportsResults(t *testing.T) {
 	isolateCLI(t)
-	for _, test := range []struct {
+	for _, tt := range []struct {
 		status, exit    int
 		result, message string
 	}{
@@ -94,17 +63,17 @@ func TestCommands_OperationResults(t *testing.T) {
 		{472, 1, "failed", "--client"},
 		{500, 1, "failed", "HTTP 500"},
 	} {
-		t.Run(fmt.Sprint(test.status), func(t *testing.T) {
+		t.Run(fmt.Sprint(tt.status), func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				require.Equal(t, "/proxy/api/candidate", r.URL.Path)
-				require.Equal(t, "POST", r.Method)
-				require.Equal(t, "secret", r.Header.Get("X-API-Token"))
+				assert.Equal(t, "/proxy/api/candidate", r.URL.Path)
+				assert.Equal(t, "POST", r.Method)
+				assert.Equal(t, "secret", r.Header.Get("X-API-Token"))
 				var body map[string]any
-				require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
-				require.NotContains(t, body, "torrent")
-				require.Equal(t, "default", body["clientname"])
-				w.WriteHeader(test.status)
-				if test.status == 200 {
+				assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+				assert.NotContains(t, body, "torrent")
+				assert.Equal(t, "default", body["clientname"])
+				w.WriteHeader(tt.status)
+				if tt.status == 200 {
 					fmt.Fprint(w, `{"statusCode":200,"error":"no matching releases in client"}`)
 				}
 			}))
@@ -115,52 +84,36 @@ func TestCommands_OperationResults(t *testing.T) {
 					args = append(args, "--json")
 				}
 				code, stdout, stderr := runCLI(t, args...)
-				require.Equal(t, test.exit, code)
+				require.Equal(t, tt.exit, code)
 				require.Empty(t, stderr)
-				require.Contains(t, stdout, test.message)
+				require.Contains(t, stdout, tt.message)
 				require.NotContains(t, stdout, "secret")
 				if jsonOutput {
 					var result operationResult
 					require.NoError(t, json.Unmarshal([]byte(stdout), &result))
-					require.Equal(t, test.result, result.Status)
-					require.Equal(t, test.status, result.StatusCode)
+					require.Equal(t, tt.result, result.Status)
+					require.Equal(t, tt.status, result.StatusCode)
 				}
 			}
 		})
 	}
 }
 
-func writeTorrent(t *testing.T) (string, []byte) {
-	t.Helper()
-	info, err := bencode.Marshal(metainfo.Info{
-		Name: "Series.S01.1080p.WEB-DL-GRP", PieceLength: 16384,
-		Pieces: make([]byte, 20),
-		Files:  []metainfo.FileInfo{{Path: []string{"Series.S01E01.1080p.WEB-DL-GRP.mkv"}, Length: 1}},
-	})
-	require.NoError(t, err)
-	meta := metainfo.MetaInfo{InfoBytes: info}
-	var data bytes.Buffer
-	require.NoError(t, meta.Write(&data))
-	path := filepath.Join(t.TempDir(), "download.TORRENT")
-	require.NoError(t, os.WriteFile(path, data.Bytes(), 0o600))
-	return path, data.Bytes()
-}
-
-func TestCommands_UseRealTorrentIdentity(t *testing.T) {
+func TestOperationCommand_UsesRealTorrentIdentity(t *testing.T) {
 	isolateCLI(t)
 	path, data := writeTorrent(t)
 	for _, operation := range []string{"match", "import"} {
 		t.Run(operation, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				require.Equal(t, "/api/"+operation, r.URL.Path)
+				assert.Equal(t, "/api/"+operation, r.URL.Path)
 				var body struct {
 					Name, ClientName string
 					Torrent          []byte
 				}
-				require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
-				require.Equal(t, "Series.S01.1080p.WEB-DL-GRP", body.Name)
-				require.Equal(t, "tv", body.ClientName)
-				require.Equal(t, data, body.Torrent)
+				assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+				assert.Equal(t, "Series.S01.1080p.WEB-DL-GRP", body.Name)
+				assert.Equal(t, "tv", body.ClientName)
+				assert.Equal(t, data, body.Torrent)
 				w.WriteHeader(250)
 			}))
 			defer server.Close()
@@ -178,23 +131,7 @@ func TestCommands_UseRealTorrentIdentity(t *testing.T) {
 	require.Contains(t, stderr, "invalid torrent file")
 }
 
-func TestCommands_LocalToolsAndHelp(t *testing.T) {
-	isolateCLI(t)
-	t.Setenv("SEASONPACKARR__PORT", "invalid")
-	for _, args := range [][]string{{"version"}, {"gen-token"}, {"--help"}, {"match", "--help"}} {
-		code, stdout, stderr := runCLI(t, args...)
-		require.Equal(t, 0, code, stderr)
-		require.NotEmpty(t, stdout)
-		require.Empty(t, stderr)
-	}
-	_, help, _ := runCLI(t, "match", "--help")
-	require.Contains(t, help, "<file.torrent>")
-	require.Contains(t, help, "--config")
-	require.Contains(t, help, "--url")
-	require.Contains(t, help, "--release")
-}
-
-func TestCommands_RejectUnexpectedHTTP200(t *testing.T) {
+func TestOperationCommand_RejectsUnexpectedHTTP200(t *testing.T) {
 	isolateCLI(t)
 	path, _ := writeTorrent(t)
 	for _, response := range []string{
@@ -227,7 +164,7 @@ func TestCommands_RejectUnexpectedHTTP200(t *testing.T) {
 	}
 }
 
-func TestCommands_ReleaseOverridePreservesTorrent(t *testing.T) {
+func TestOperationCommand_ReleaseOverridePreservesTorrent(t *testing.T) {
 	isolateCLI(t)
 	path, data := writeTorrent(t)
 	const releaseName = "Series.S01.1080p.WEB-DL.H.264-GRP"
@@ -236,9 +173,9 @@ func TestCommands_ReleaseOverridePreservesTorrent(t *testing.T) {
 			Name    string
 			Torrent []byte
 		}
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
-		require.Equal(t, releaseName, body.Name)
-		require.Equal(t, data, body.Torrent)
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		assert.Equal(t, releaseName, body.Name)
+		assert.Equal(t, data, body.Torrent)
 		w.WriteHeader(250)
 	}))
 	defer server.Close()
@@ -253,4 +190,20 @@ func TestCommands_ReleaseOverridePreservesTorrent(t *testing.T) {
 	code, _, stderr := runCLI(t, "match", "missing.torrent", "--release", releaseName)
 	require.Equal(t, 1, code)
 	require.Contains(t, stderr, "read torrent file")
+}
+
+func writeTorrent(t *testing.T) (string, []byte) {
+	t.Helper()
+	info, err := bencode.Marshal(metainfo.Info{
+		Name: "Series.S01.1080p.WEB-DL-GRP", PieceLength: 16384,
+		Pieces: make([]byte, 20),
+		Files:  []metainfo.FileInfo{{Path: []string{"Series.S01E01.1080p.WEB-DL-GRP.mkv"}, Length: 1}},
+	})
+	require.NoError(t, err)
+	meta := metainfo.MetaInfo{InfoBytes: info}
+	var data bytes.Buffer
+	require.NoError(t, meta.Write(&data))
+	path := filepath.Join(t.TempDir(), "download.TORRENT")
+	require.NoError(t, os.WriteFile(path, data.Bytes(), 0o600))
+	return path, data.Bytes()
 }

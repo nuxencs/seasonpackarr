@@ -12,13 +12,14 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-contrib/requestid"
-	"github.com/gin-gonic/gin"
 	"github.com/nuxencs/seasonpackarr/internal/config"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/errtrace"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/state"
+
+	"github.com/gin-contrib/requestid"
+	"github.com/gin-gonic/gin"
 )
 
 var ErrServerClosed = http.ErrServerClosed

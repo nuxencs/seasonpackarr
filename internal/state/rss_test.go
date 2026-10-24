@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/prowlarr"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,7 +39,7 @@ func TestFeeds_BoundsExpiryAndSelection(t *testing.T) {
 }
 
 func TestFeeds_RefreshKeepsExpiryAndWorkingSetIsIsolated(t *testing.T) {
-	s, _ := testStore(t)
+	s, _ := newTestStore(t)
 	ctx := t.Context()
 	feeds, err := s.Feeds(ctx)
 	require.NoError(t, err)
@@ -61,7 +62,7 @@ func TestFeeds_RefreshKeepsExpiryAndWorkingSetIsIsolated(t *testing.T) {
 }
 
 func TestFeeds_FailedSaveRollsBackCheckpointAndCandidates(t *testing.T) {
-	s, _ := testStore(t)
+	s, _ := newTestStore(t)
 	ctx := t.Context()
 	feeds, err := s.Feeds(ctx)
 	require.NoError(t, err)

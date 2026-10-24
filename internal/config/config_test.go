@@ -8,56 +8,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
+
+	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/logger"
+	"github.com/nuxencs/seasonpackarr/internal/logger/loggertest"
 
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
-	"github.com/nuxencs/seasonpackarr/internal/domain"
-	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
-
-type synchronizedBuffer struct {
-	mu sync.Mutex
-	bytes.Buffer
-}
-
-func (b *synchronizedBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	return b.Buffer.Write(p)
-}
-
-func (b *synchronizedBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	return b.Buffer.String()
-}
-
-type captureLogger struct {
-	log zerolog.Logger
-}
-
-func newCaptureLogger(output *synchronizedBuffer) *captureLogger {
-	return &captureLogger{log: zerolog.New(output)}
-}
-
-func (l *captureLogger) Log() *zerolog.Event          { return l.log.Log() }
-func (l *captureLogger) Fatal() *zerolog.Event        { return l.log.Panic() }
-func (l *captureLogger) Err(err error) *zerolog.Event { return l.log.Err(err) }
-func (l *captureLogger) Error() *zerolog.Event        { return l.log.Error() }
-func (l *captureLogger) Warn() *zerolog.Event         { return l.log.Warn() }
-func (l *captureLogger) Info() *zerolog.Event         { return l.log.Info() }
-func (l *captureLogger) Trace() *zerolog.Event        { return l.log.Trace() }
-func (l *captureLogger) Debug() *zerolog.Event        { return l.log.Debug() }
-func (l *captureLogger) With() zerolog.Context        { return l.log.With() }
-func (l *captureLogger) SetLogLevel(string)           {}
 
 func TestLoadSnapshot_MissingOptionalConfigKeysUseDefaults(t *testing.T) {
 	configFile := writeTestConfig(t, `
@@ -83,15 +46,6 @@ logLevel: "INFO"
 	require.Equal(t, "", snapshot.APIToken)
 	require.Equal(t, []string{"MATCH", "ERROR"}, snapshot.Notifications.NotificationLevel)
 	require.Equal(t, "", snapshot.Notifications.Discord)
-}
-
-func writeTestConfig(t *testing.T, content string) string {
-	t.Helper()
-
-	configFile := filepath.Join(t.TempDir(), "config.yaml")
-	require.NoError(t, os.WriteFile(configFile, []byte(content), 0o644))
-
-	return configFile
 }
 
 func loadTestKoanf(t *testing.T, content string) *koanf.Koanf {
@@ -364,13 +318,13 @@ logLevel: INFO
 	select {
 	case <-reloads:
 	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for config reload")
+		require.FailNow(t, "timed out waiting for config reload")
 	}
 	select {
 	case err := <-readerResult:
 		require.NoError(t, err)
 	case <-time.After(3 * time.Second):
-		t.Fatal("concurrent snapshot reader did not observe reload")
+		require.FailNow(t, "concurrent snapshot reader did not observe reload")
 	}
 	require.Equal(t, "after", cfg.Snapshot().Clients["default"].Import.Category)
 }
@@ -404,7 +358,7 @@ clients:
 
 	select {
 	case <-reloads:
-		t.Fatal("published a reload while the config file was empty")
+		require.FailNow(t, "published a reload while the config file was empty")
 	case <-time.After(100 * time.Millisecond):
 	}
 
@@ -426,7 +380,7 @@ clients:
 	select {
 	case <-reloads:
 	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for completed config reload")
+		require.FailNow(t, "timed out waiting for completed config reload")
 	}
 	require.Equal(t, "after", cfg.Snapshot().Clients["default"].Import.Category)
 }
@@ -446,8 +400,8 @@ clients:
       category: before
 logLevel: DEBUG
 `)
-	output := &synchronizedBuffer{}
-	reloads, err := cfg.DynamicReload(newCaptureLogger(output))
+	log := loggertest.New()
+	reloads, err := cfg.DynamicReload(log)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NotNil(t, cfg.watcher)
@@ -482,11 +436,11 @@ logLevel: DEBUG
 	select {
 	case <-reloads:
 	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for config reload")
+		require.FailNow(t, "timed out waiting for config reload")
 	}
 	time.Sleep(2 * configReloadDebounceDelay)
 
-	logs := output.String()
+	logs := log.String()
 	require.NotContains(t, logs, "config reload rejected", logs)
 	require.Equal(t, 1, bytes.Count([]byte(logs), []byte("config file reloaded")), logs)
 	require.Equal(t, "after", cfg.Snapshot().Clients["default"].Import.Category)
@@ -505,8 +459,8 @@ clients:
     import:
       category: before
 `)
-	output := &synchronizedBuffer{}
-	reloads, err := cfg.DynamicReload(newCaptureLogger(output))
+	log := loggertest.New()
+	reloads, err := cfg.DynamicReload(log)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NotNil(t, cfg.watcher)
@@ -516,7 +470,7 @@ clients:
 	backupFile := configFile + ".backup"
 	require.NoError(t, os.Rename(configFile, backupFile))
 	time.Sleep(2 * configReloadDebounceDelay)
-	require.Contains(t, output.String(), "config reload rejected; keeping previous config")
+	require.Contains(t, log.String(), "config reload rejected; keeping previous config")
 
 	writeConfigFile(t, configFile, `
 clients:
@@ -529,7 +483,7 @@ clients:
 	select {
 	case <-reloads:
 	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for reload after rename-and-recreate save")
+		require.FailNow(t, "timed out waiting for reload after rename-and-recreate save")
 	}
 	require.Equal(t, "after-first-save", cfg.Snapshot().Clients["default"].Import.Category)
 
@@ -544,10 +498,10 @@ clients:
 	select {
 	case <-reloads:
 	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for reload after the next save")
+		require.FailNow(t, "timed out waiting for reload after the next save")
 	}
 	require.Equal(t, "after-second-save", cfg.Snapshot().Clients["default"].Import.Category)
-	require.NotContains(t, output.String(), "error watching config file")
+	require.NotContains(t, log.String(), "error watching config file")
 }
 
 func TestDynamicReload_FollowsReplacedConfigSymlink(t *testing.T) {
@@ -604,24 +558,9 @@ clients:
 	select {
 	case <-reloads:
 	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for reload after config symlink replacement")
+		require.FailNow(t, "timed out waiting for reload after config symlink replacement")
 	}
 	require.Equal(t, "after", cfg.Snapshot().Clients["default"].Import.Category)
-}
-
-func newTestAppConfig(t *testing.T, contents string) (*AppConfig, string) {
-	t.Helper()
-	configFile := writeTestConfig(t, contents)
-	cfg := &AppConfig{configFile: configFile, version: "test"}
-	snapshot, err := cfg.loadSnapshot()
-	require.NoError(t, err)
-	cfg.current.Store(snapshot)
-	return cfg, configFile
-}
-
-func writeConfigFile(t *testing.T, configFile, contents string) {
-	t.Helper()
-	require.NoError(t, os.WriteFile(configFile, []byte(contents), 0o644))
 }
 
 func TestValidateClientConfig(t *testing.T) {
