@@ -121,7 +121,8 @@ folder. Transmission does not support `category`, `downloadPath`, or
 - The old **Skip Hash Check** rule does not move to the new configuration.
   seasonpackarr now controls the data check before it starts the torrent.
 - A setting that left accepted torrents paused has no direct replacement.
-  v1.0.0 adds the torrent stopped, checks its data, and then starts it.
+  seasonpackarr adds the torrent so that the client checks only what it must
+  and then starts it.
 - Move any other client-specific rules to the torrent client's defaults or to
   separate client-side automation.
 
@@ -449,16 +450,16 @@ preference.
 
 ## If the import action times out
 
-Autobrr waits 120 seconds for a Webhook action. `/api/import` waits while the
-torrent client checks the available data, and a large or slow check can take
-longer with qBittorrent, Transmission, or Deluge.
+Autobrr waits 120 seconds for a Webhook action. `/api/import` does not wait for
+the torrent client's data check, so a normal import finishes in seconds. A
+timeout points to a slow or unreachable torrent client or file system.
 
-An Autobrr timeout does not necessarily mean that the import stopped. Before
-you retry:
+An Autobrr timeout does not necessarily mean that the import stopped.
+seasonpackarr finishes a started client import even after Autobrr disconnects.
+Before you retry:
 
 1. check the seasonpackarr log
 2. check whether the torrent already exists in the client
-3. wait for any active data check to finish
 
 This avoids adding or processing the same torrent again while the first import
 is still running.

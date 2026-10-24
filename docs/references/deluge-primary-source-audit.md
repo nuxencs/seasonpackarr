@@ -17,35 +17,37 @@ CI.
 
 ## Inspected revisions
 
+`<oss>` is the directory that holds local clones of the upstream projects.
+
 - Autobrr: `9d3205c3d8abf259a20db224b646c1db7170986d`
-  - Local clone: `/Users/nuxen/dev/oss/autobrr`
+  - Local clone: `<oss>/autobrr`
   - Upstream: <https://github.com/autobrr/autobrr/tree/9d3205c3d8abf259a20db224b646c1db7170986d>
 - `autobrr/go-deluge` dependency used by seasonpackarr: v1.4.0 at `245951c9058483f9637d5e1a0f5ac11941c89828`
   - `go.mod` selects this release.
-  - Local clone: `/Users/nuxen/dev/oss/go-deluge`
+  - Local clone: `<oss>/go-deluge`
   - Upstream: <https://github.com/autobrr/go-deluge/tree/245951c9058483f9637d5e1a0f5ac11941c89828>
 - `autobrr/go-deluge` local clone head: `1825ad22f4df1fb4c36ae359cf55cd16417216e9`
-  - Local clone: `/Users/nuxen/dev/oss/go-deluge`
+  - Local clone: `<oss>/go-deluge`
   - Upstream: <https://github.com/autobrr/go-deluge/tree/1825ad22f4df1fb4c36ae359cf55cd16417216e9>
   - Only Dependabot and CI workflow files differ from v1.4.0. The cited Go and shell sources are identical.
 - Deluge development source: `e58075416dedd53636e89b1cd240f86f2e7c2ee0`
-  - Local clone: `/Users/nuxen/dev/oss/deluge`
+  - Local clone: `<oss>/deluge`
   - Upstream: <https://github.com/deluge-torrent/deluge/tree/e58075416dedd53636e89b1cd240f86f2e7c2ee0>
 - Deluge 1.3.15 source: tag commit `a6e8ac8725c2be28679e26b7c6674aad339338b1`
-  - Local source through `git show deluge-1.3.15:<path>` in `/Users/nuxen/dev/oss/deluge`
+  - Local source through `git show deluge-1.3.15:<path>` in `<oss>/deluge`
   - Upstream: <https://github.com/deluge-torrent/deluge/tree/a6e8ac8725c2be28679e26b7c6674aad339338b1>
 - Deluge 2.2.0 source: tag commit `e9777eaabc8698473a05d8c02624f462bdc5af61`
-  - Local source through `git show deluge-2.2.0:<path>` in `/Users/nuxen/dev/oss/deluge`
+  - Local source through `git show deluge-2.2.0:<path>` in `<oss>/deluge`
   - Upstream: <https://github.com/deluge-torrent/deluge/tree/e9777eaabc8698473a05d8c02624f462bdc5af61>
 - qBittorrent 5.1.4: tag commit `33e5e772200b5e2f9d23af8870ce7436ec216faa`
-  - Local clone: `/Users/nuxen/dev/oss/qBittorrent-history`
+  - Local clone: `<oss>/qBittorrent-history`
   - Upstream: <https://github.com/qbittorrent/qBittorrent/tree/33e5e772200b5e2f9d23af8870ce7436ec216faa>
 - qBittorrent 5.2.0: tag commit `b2270f7f6fec1b10117564f642b961621ae0058a`
-  - Local clone: `/Users/nuxen/dev/oss/qBittorrent-history`
+  - Local clone: `<oss>/qBittorrent-history`
   - Upstream: <https://github.com/qbittorrent/qBittorrent/tree/b2270f7f6fec1b10117564f642b961621ae0058a>
 - `autobrr/go-qbittorrent` dependency used by seasonpackarr: v1.16.0 at `eb1f3ca0b17d3219f4b2bcc43199b664528f64ef`
   - `go.mod` selects this release.
-  - Local clone: `/Users/nuxen/dev/oss/go-qbittorrent`
+  - Local clone: `<oss>/go-qbittorrent`
   - Upstream: <https://github.com/autobrr/go-qbittorrent/tree/eb1f3ca0b17d3219f4b2bcc43199b664528f64ef>
 
 ## V1 and V2 daemon selection
@@ -54,14 +56,14 @@ Autobrr does not detect the daemon protocol version. Its model has separate `DEL
 
 Sources:
 
-- Autobrr client constants: [`internal/domain/client.go` lines 177-185](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/domain/client.go#L177-L185). Local path: `/Users/nuxen/dev/oss/autobrr/internal/domain/client.go:177`.
-- Autobrr action dispatch: [`internal/action/deluge.go` lines 18-43](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L18-L43). Local path: `/Users/nuxen/dev/oss/autobrr/internal/action/deluge.go:18`.
-- Autobrr constructors: [`internal/action/deluge.go` lines 91-108](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L91-L108) and [`internal/action/deluge.go` lines 221-238](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L221-L238). Local path: `/Users/nuxen/dev/oss/autobrr/internal/action/deluge.go:91`.
-- `go-deluge` constructors: [`delugeclient.go` lines 264-285](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/delugeclient.go#L264-L285). Local path: `/Users/nuxen/dev/oss/go-deluge/delugeclient.go:264`.
+- Autobrr client constants: [`internal/domain/client.go` lines 177-185](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/domain/client.go#L177-L185). Local path: `<oss>/autobrr/internal/domain/client.go:177`.
+- Autobrr action dispatch: [`internal/action/deluge.go` lines 18-43](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L18-L43). Local path: `<oss>/autobrr/internal/action/deluge.go:18`.
+- Autobrr constructors: [`internal/action/deluge.go` lines 91-108](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L91-L108) and [`internal/action/deluge.go` lines 221-238](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L221-L238). Local path: `<oss>/autobrr/internal/action/deluge.go:91`.
+- `go-deluge` constructors: [`delugeclient.go` lines 264-285](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/delugeclient.go#L264-L285). Local path: `<oss>/go-deluge/delugeclient.go:264`.
 
 This selection is necessary because the V2 wire format adds a five-byte protocol header. The library says that the remote endpoint has no version handshake. It decides whether to read and write the header from the constructor-selected `v2daemon` flag.
 
-Source: [`delugeclient.go` lines 296-297 and 331-381](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/delugeclient.go#L296-L381). Local path: `/Users/nuxen/dev/oss/go-deluge/delugeclient.go:296`.
+Source: [`delugeclient.go` lines 296-297 and 331-381](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/delugeclient.go#L296-L381). Local path: `<oss>/go-deluge/delugeclient.go:296`.
 
 Correction for seasonpackarr: a fixed `deluge.NewV2` constructor does not support Deluge 1.3. The configuration needs an explicit daemon version, or the connection code must try each protocol on a new connection. Autobrr uses explicit configuration.
 
@@ -71,25 +73,25 @@ Deluge has one Label plugin label per torrent. Autobrr does not map its `Tags` f
 
 Sources:
 
-- Autobrr keeps `Tags` and `Label` as separate action fields: [`internal/domain/action.go` lines 12-29](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/domain/action.go#L12-L29). Local path: `/Users/nuxen/dev/oss/autobrr/internal/domain/action.go:12`.
-- V1 label application after a magnet or file add: [`internal/action/deluge.go` lines 128-144](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L128-L144) and [`internal/action/deluge.go` lines 174-190](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L174-L190). Local path: `/Users/nuxen/dev/oss/autobrr/internal/action/deluge.go:128`.
-- V2 label application after a magnet or file add: [`internal/action/deluge.go` lines 258-274](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L258-L274) and [`internal/action/deluge.go` lines 303-319](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L303-L319). Local path: `/Users/nuxen/dev/oss/autobrr/internal/action/deluge.go:258`.
+- Autobrr keeps `Tags` and `Label` as separate action fields: [`internal/domain/action.go` lines 12-29](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/domain/action.go#L12-L29). Local path: `<oss>/autobrr/internal/domain/action.go:12`.
+- V1 label application after a magnet or file add: [`internal/action/deluge.go` lines 128-144](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L128-L144) and [`internal/action/deluge.go` lines 174-190](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L174-L190). Local path: `<oss>/autobrr/internal/action/deluge.go:128`.
+- V2 label application after a magnet or file add: [`internal/action/deluge.go` lines 258-274](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L258-L274) and [`internal/action/deluge.go` lines 303-319](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L303-L319). Local path: `<oss>/autobrr/internal/action/deluge.go:258`.
 
 `go-deluge` returns a Label plugin client only when the plugin is already enabled. Autobrr does not call `EnablePlugin("Label")` in its Deluge action. If the plugin is disabled, `LabelPlugin` returns `nil` and Autobrr skips assignment. Autobrr therefore supports labels, but it does not enable label support on the daemon.
 
 Sources:
 
-- Enabled-plugin check: [`plugins.go` lines 22-43](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/plugins.go#L22-L43). Local path: `/Users/nuxen/dev/oss/go-deluge/plugins.go:22`.
-- Autobrr only acts when the returned plugin is not `nil`: [`internal/action/deluge.go` lines 133-143](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L133-L143). Local path: `/Users/nuxen/dev/oss/autobrr/internal/action/deluge.go:133`.
+- Enabled-plugin check: [`plugins.go` lines 22-43](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/plugins.go#L22-L43). Local path: `<oss>/go-deluge/plugins.go:22`.
+- Autobrr only acts when the returned plugin is not `nil`: [`internal/action/deluge.go` lines 133-143](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L133-L143). Local path: `<oss>/autobrr/internal/action/deluge.go:133`.
 
 Autobrr first calls `label.set_torrent`. If Deluge returns `Unknown Label`, Autobrr calls `label.add` and retries `label.set_torrent`. It therefore creates a missing label definition when the Label plugin is enabled.
 
 Sources:
 
-- Autobrr create-and-retry logic: [`internal/action/deluge.go` lines 198-219](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L198-L219). Local path: `/Users/nuxen/dev/oss/autobrr/internal/action/deluge.go:198`.
-- `go-deluge` RPC method mapping: [`plugins.go` lines 45-80](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/plugins.go#L45-L80). Local path: `/Users/nuxen/dev/oss/go-deluge/plugins.go:45`.
-- Deluge 2 Label plugin validation and storage: [`deluge/plugins/Label/deluge_label/core.py` lines 171-196](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/plugins/Label/deluge_label/core.py#L171-L196) and [`lines 304-329`](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/plugins/Label/deluge_label/core.py#L304-L329). Local path: `/Users/nuxen/dev/oss/deluge/deluge/plugins/Label/deluge_label/core.py:171`.
-- Deluge 1.3.15 exposes the same one-label operations: [`deluge/plugins/label/label/core.py` lines 180-204](https://github.com/deluge-torrent/deluge/blob/a6e8ac8725c2be28679e26b7c6674aad339338b1/deluge/plugins/label/label/core.py#L180-L204) and [`lines 307-327`](https://github.com/deluge-torrent/deluge/blob/a6e8ac8725c2be28679e26b7c6674aad339338b1/deluge/plugins/label/label/core.py#L307-L327). Local source: `git show deluge-1.3.15:deluge/plugins/label/label/core.py` in `/Users/nuxen/dev/oss/deluge`.
+- Autobrr create-and-retry logic: [`internal/action/deluge.go` lines 198-219](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L198-L219). Local path: `<oss>/autobrr/internal/action/deluge.go:198`.
+- `go-deluge` RPC method mapping: [`plugins.go` lines 45-80](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/plugins.go#L45-L80). Local path: `<oss>/go-deluge/plugins.go:45`.
+- Deluge 2 Label plugin validation and storage: [`deluge/plugins/Label/deluge_label/core.py` lines 171-196](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/plugins/Label/deluge_label/core.py#L171-L196) and [`lines 304-329`](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/plugins/Label/deluge_label/core.py#L304-L329). Local path: `<oss>/deluge/deluge/plugins/Label/deluge_label/core.py:171`.
+- Deluge 1.3.15 exposes the same one-label operations: [`deluge/plugins/label/label/core.py` lines 180-204](https://github.com/deluge-torrent/deluge/blob/a6e8ac8725c2be28679e26b7c6674aad339338b1/deluge/plugins/label/label/core.py#L180-L204) and [`lines 307-327`](https://github.com/deluge-torrent/deluge/blob/a6e8ac8725c2be28679e26b7c6674aad339338b1/deluge/plugins/label/label/core.py#L307-L327). Local source: `git show deluge-1.3.15:deluge/plugins/label/label/core.py` in `<oss>/deluge`.
 
 The Label plugin converts new label IDs to lower case and only accepts `[a-z0-9_-]`. A seasonpackarr `import.tags` list cannot map losslessly to Deluge labels. The implementation should expose one Deluge label or define a clear one-value conversion rule.
 
@@ -97,33 +99,33 @@ The Label plugin converts new label IDs to lower case and only accepts `[a-z0-9_
 
 Autobrr sets `add_paused` on every Deluge add. It maps `SavePath` to `download_location`. It does not request a force recheck or wait for a check.
 
-Source: [`internal/action/deluge.go` lines 327-349](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L327-L349). Local path: `/Users/nuxen/dev/oss/autobrr/internal/action/deluge.go:327`.
+Source: [`internal/action/deluge.go` lines 327-349](https://github.com/autobrr/autobrr/blob/9d3205c3d8abf259a20db224b646c1db7170986d/internal/action/deluge.go#L327-L349). Local path: `<oss>/autobrr/internal/action/deluge.go:327`.
 
 In Deluge, `add_paused` only controls whether Deluge calls `torrent.resume()` after the add. Deluge sends the torrent metadata and `download_location` to libtorrent as `save_path`. Deluge does not call `force_recheck` in this add path.
 
 Sources:
 
-- Build and pass add parameters: [`deluge/core/torrentmanager.py` lines 422-492](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrentmanager.py#L422-L492). Local path: `/Users/nuxen/dev/oss/deluge/deluge/core/torrentmanager.py:422`.
-- Resume only when `add_paused` is false: [`deluge/core/torrentmanager.py` lines 624-659](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrentmanager.py#L624-L659). Local path: `/Users/nuxen/dev/oss/deluge/deluge/core/torrentmanager.py:624`.
-- Deluge 1.3.15 has the same add-paused control: [`deluge/core/torrentmanager.py` lines 460-505](https://github.com/deluge-torrent/deluge/blob/a6e8ac8725c2be28679e26b7c6674aad339338b1/deluge/core/torrentmanager.py#L460-L505). Local source: `git show deluge-1.3.15:deluge/core/torrentmanager.py` in `/Users/nuxen/dev/oss/deluge`.
+- Build and pass add parameters: [`deluge/core/torrentmanager.py` lines 422-492](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrentmanager.py#L422-L492). Local path: `<oss>/deluge/deluge/core/torrentmanager.py:422`.
+- Resume only when `add_paused` is false: [`deluge/core/torrentmanager.py` lines 624-659](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrentmanager.py#L624-L659). Local path: `<oss>/deluge/deluge/core/torrentmanager.py:624`.
+- Deluge 1.3.15 has the same add-paused control: [`deluge/core/torrentmanager.py` lines 460-505](https://github.com/deluge-torrent/deluge/blob/a6e8ac8725c2be28679e26b7c6674aad339338b1/deluge/core/torrentmanager.py#L460-L505). Local source: `git show deluge-1.3.15:deluge/core/torrentmanager.py` in `<oss>/deluge`.
 
 Both Deluge 1.3 and Deluge 2 export `core.force_recheck`. The Deluge 2 implementation records whether the torrent was paused, calls libtorrent `force_recheck`, resumes the handle for the check, and restores the paused state on the checked alert. Deluge 1.3 follows the same pattern.
 
 Sources:
 
-- Deluge 2 exported RPC method: [`deluge/core/core.py` lines 937-941](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/core.py#L937-L941). Local path: `/Users/nuxen/dev/oss/deluge/deluge/core/core.py:937`.
-- Deluge 2 force-recheck implementation: [`deluge/core/torrent.py` lines 1463-1478](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrent.py#L1463-L1478). Local path: `/Users/nuxen/dev/oss/deluge/deluge/core/torrent.py:1463`.
-- Deluge 2 restores a prior paused state after the checked alert: [`deluge/core/torrentmanager.py` lines 1335-1348](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrentmanager.py#L1335-L1348). Local path: `/Users/nuxen/dev/oss/deluge/deluge/core/torrentmanager.py:1335`.
+- Deluge 2 exported RPC method: [`deluge/core/core.py` lines 937-941](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/core.py#L937-L941). Local path: `<oss>/deluge/deluge/core/core.py:937`.
+- Deluge 2 force-recheck implementation: [`deluge/core/torrent.py` lines 1463-1478](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrent.py#L1463-L1478). Local path: `<oss>/deluge/deluge/core/torrent.py:1463`.
+- Deluge 2 restores a prior paused state after the checked alert: [`deluge/core/torrentmanager.py` lines 1335-1348](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrentmanager.py#L1335-L1348). Local path: `<oss>/deluge/deluge/core/torrentmanager.py:1335`.
 - Deluge 1.3.15 exported RPC method: [`deluge/core/core.py` lines 551-555](https://github.com/deluge-torrent/deluge/blob/a6e8ac8725c2be28679e26b7c6674aad339338b1/deluge/core/core.py#L551-L555). Local source: `git show deluge-1.3.15:deluge/core/core.py`.
 - Deluge 1.3.15 force-recheck implementation: [`deluge/core/torrent.py` lines 1009-1031](https://github.com/deluge-torrent/deluge/blob/a6e8ac8725c2be28679e26b7c6674aad339338b1/deluge/core/torrent.py#L1009-L1031). Local source: `git show deluge-1.3.15:deluge/core/torrent.py`.
 
 `go-deluge` does not expose `ForceRecheck` in its `DelugeClient` interface or methods at the inspected revision. Its support table also marks `core.force_recheck` as unsupported. It exposes resume only. An implementation that promises an explicit recheck needs a `go-deluge` extension or another native RPC implementation.
 
-Sources: [`delugeclient.go` lines 63-94](https://github.com/autobrr/go-deluge/blob/245951c9058483f9637d5e1a0f5ac11941c89828/delugeclient.go#L63-L94) and [`README.md` lines 44-56](https://github.com/autobrr/go-deluge/blob/245951c9058483f9637d5e1a0f5ac11941c89828/README.md#L44-L56). Local paths: `/Users/nuxen/dev/oss/go-deluge/delugeclient.go:63` and `/Users/nuxen/dev/oss/go-deluge/README.md:44`.
+Sources: [`delugeclient.go` lines 63-94](https://github.com/autobrr/go-deluge/blob/245951c9058483f9637d5e1a0f5ac11941c89828/delugeclient.go#L63-L94) and [`README.md` lines 44-56](https://github.com/autobrr/go-deluge/blob/245951c9058483f9637d5e1a0f5ac11941c89828/README.md#L44-L56). Local paths: `<oss>/go-deluge/delugeclient.go:63` and `<oss>/go-deluge/README.md:44`.
 
-Correction for seasonpackarr: `add_paused`, wait until the status is not `Checking`, then resume is invalid because Deluge reports `Paused` before the libtorrent state. With the unmodified upstream Go module, seasonpackarr instead adds paused, resumes, then waits until the torrent is no longer paused or checking. The real-daemon tests verify that complete and partial fixtures account for their present data through this initial-check path. Seasonpackarr does not claim that it performs an explicit force recheck.
+Correction for seasonpackarr: `add_paused`, wait until the status is not `Checking`, then resume is invalid because Deluge reports `Paused` before the libtorrent state. With the unmodified upstream Go module, seasonpackarr instead adds paused, resumes, then waits only until the torrent is no longer paused. It does not wait for the check, because a large pack can take longer than autobrr's request timeout. The real-daemon tests verify that complete and partial fixtures account for their present data through this initial-check path. Seasonpackarr does not claim that it performs an explicit force recheck.
 
-Source for paused-state precedence: [`deluge/core/torrent.py` lines 650-670](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrent.py#L650-L670). Local path: `/Users/nuxen/dev/oss/deluge/deluge/core/torrent.py:650`.
+Source for paused-state precedence: [`deluge/core/torrent.py` lines 650-670](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrent.py#L650-L670). Local path: `<oss>/deluge/deluge/core/torrent.py:650`.
 
 ## Paths and file names
 
@@ -131,11 +133,11 @@ Source for paused-state precedence: [`deluge/core/torrent.py` lines 650-670](htt
 
 Sources:
 
-- Option meaning: [`deluge/core/torrent.py` lines 118-149](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrent.py#L118-L149). Local path: `/Users/nuxen/dev/oss/deluge/deluge/core/torrent.py:118`.
-- `download_location` to libtorrent `save_path`: [`deluge/core/torrentmanager.py` lines 474-481](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrentmanager.py#L474-L481). Local path: `/Users/nuxen/dev/oss/deluge/deluge/core/torrentmanager.py:474`.
-- Status alias: [`deluge/core/torrent.py` lines 1133-1138](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrent.py#L1133-L1138). Local path: `/Users/nuxen/dev/oss/deluge/deluge/core/torrent.py:1133`.
-- File list conversion: [`deluge/core/torrent.py` lines 81-115](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrent.py#L81-L115). Local path: `/Users/nuxen/dev/oss/deluge/deluge/core/torrent.py:81`.
-- `go-deluge` copies V1 `SavePath` into `DownloadLocation` for a common API: [`torrent_status.go` lines 132-159](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/torrent_status.go#L132-L159) and [`lines 162-212`](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/torrent_status.go#L162-L212). Local path: `/Users/nuxen/dev/oss/go-deluge/torrent_status.go:132`.
+- Option meaning: [`deluge/core/torrent.py` lines 118-149](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrent.py#L118-L149). Local path: `<oss>/deluge/deluge/core/torrent.py:118`.
+- `download_location` to libtorrent `save_path`: [`deluge/core/torrentmanager.py` lines 474-481](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrentmanager.py#L474-L481). Local path: `<oss>/deluge/deluge/core/torrentmanager.py:474`.
+- Status alias: [`deluge/core/torrent.py` lines 1133-1138](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrent.py#L1133-L1138). Local path: `<oss>/deluge/deluge/core/torrent.py:1133`.
+- File list conversion: [`deluge/core/torrent.py` lines 81-115](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrent.py#L81-L115). Local path: `<oss>/deluge/deluge/core/torrent.py:81`.
+- `go-deluge` copies V1 `SavePath` into `DownloadLocation` for a common API: [`torrent_status.go` lines 132-159](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/torrent_status.go#L132-L159) and [`lines 162-212`](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/torrent_status.go#L162-L212). Local path: `<oss>/go-deluge/torrent_status.go:132`.
 
 `move_completed_path` is a different option. It is only a destination used when `move_completed` is enabled. It must not replace `download_location` for an import that needs Deluge to find pre-existing data at add time.
 
@@ -154,8 +156,8 @@ Duplicate behavior differs between Deluge daemon generations.
 Sources:
 
 - Deluge 1.3.15 duplicate branch: [`deluge/core/torrentmanager.py` lines 390-424](https://github.com/deluge-torrent/deluge/blob/a6e8ac8725c2be28679e26b7c6674aad339338b1/deluge/core/torrentmanager.py#L390-L424). Local source: `git show deluge-1.3.15:deluge/core/torrentmanager.py`.
-- Deluge 2 duplicate branch: [`deluge/core/torrentmanager.py` lines 448-456](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrentmanager.py#L448-L456). Local path: `/Users/nuxen/dev/oss/deluge/deluge/core/torrentmanager.py:448`.
-- `go-deluge` add-file return decoding: [`methods.go` lines 115-138](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/methods.go#L115-L138). Local path: `/Users/nuxen/dev/oss/go-deluge/methods.go:115`.
+- Deluge 2 duplicate branch: [`deluge/core/torrentmanager.py` lines 448-456](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/torrentmanager.py#L448-L456). Local path: `<oss>/deluge/deluge/core/torrentmanager.py:448`.
+- `go-deluge` add-file return decoding: [`methods.go` lines 115-138](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/methods.go#L115-L138). Local path: `<oss>/go-deluge/methods.go:115`.
 
 Neither Deluge duplicate branch performs a data recheck. Each branch returns
 or raises before the normal add parameters are built and before libtorrent
@@ -169,8 +171,8 @@ qBittorrent detects the same info hash before its normal add setup. It can set m
 
 Sources:
 
-- qBittorrent 5.1.4 duplicate branch and early return: [`src/base/bittorrent/sessionimpl.cpp` lines 2743-2812](https://github.com/qbittorrent/qBittorrent/blob/33e5e772200b5e2f9d23af8870ce7436ec216faa/src/base/bittorrent/sessionimpl.cpp#L2743-L2812). Local source: `git show release-5.1.4:src/base/bittorrent/sessionimpl.cpp` in `/Users/nuxen/dev/oss/qBittorrent-history`.
-- qBittorrent 5.2.0 duplicate branch and early return: [`src/base/bittorrent/sessionimpl.cpp` lines 2719-2781](https://github.com/qbittorrent/qBittorrent/blob/b2270f7f6fec1b10117564f642b961621ae0058a/src/base/bittorrent/sessionimpl.cpp#L2719-L2781). Local source: `git show release-5.2.0:src/base/bittorrent/sessionimpl.cpp` in `/Users/nuxen/dev/oss/qBittorrent-history`.
+- qBittorrent 5.1.4 duplicate branch and early return: [`src/base/bittorrent/sessionimpl.cpp` lines 2743-2812](https://github.com/qbittorrent/qBittorrent/blob/33e5e772200b5e2f9d23af8870ce7436ec216faa/src/base/bittorrent/sessionimpl.cpp#L2743-L2812). Local source: `git show release-5.1.4:src/base/bittorrent/sessionimpl.cpp` in `<oss>/qBittorrent-history`.
+- qBittorrent 5.2.0 duplicate branch and early return: [`src/base/bittorrent/sessionimpl.cpp` lines 2719-2781](https://github.com/qbittorrent/qBittorrent/blob/b2270f7f6fec1b10117564f642b961621ae0058a/src/base/bittorrent/sessionimpl.cpp#L2719-L2781). Local source: `git show release-5.2.0:src/base/bittorrent/sessionimpl.cpp` in `<oss>/qBittorrent-history`.
 - Explicit recheck is a separate operation that calls libtorrent `force_recheck`: [`src/base/bittorrent/torrentimpl.cpp` lines 1665-1702](https://github.com/qbittorrent/qBittorrent/blob/b2270f7f6fec1b10117564f642b961621ae0058a/src/base/bittorrent/torrentimpl.cpp#L1665-L1702). Local source: `git show release-5.2.0:src/base/bittorrent/torrentimpl.cpp`.
 
 The qBittorrent Web API result is version-dependent:
@@ -186,7 +188,7 @@ Sources:
 
 The seasonpackarr dependency `go-qbittorrent` v1.16.0 does not inspect the legacy `Fails.` response body. It accepts HTTP 200 text as a successful add and returns `SuccessCount: 1`. It converts HTTP 409 to `ErrTorrentAddFailed`.
 
-Source: [`methods.go` lines 639-676](https://github.com/autobrr/go-qbittorrent/blob/eb1f3ca0b17d3219f4b2bcc43199b664528f64ef/methods.go#L639-L676). Local source: `git show v1.16.0:methods.go` in `/Users/nuxen/dev/oss/go-qbittorrent`.
+Source: [`methods.go` lines 639-676](https://github.com/autobrr/go-qbittorrent/blob/eb1f3ca0b17d3219f4b2bcc43199b664528f64ef/methods.go#L639-L676). Local source: `git show v1.16.0:methods.go` in `<oss>/go-qbittorrent`.
 
 ### Current seasonpackarr call order
 
@@ -202,11 +204,11 @@ The working tree inspected on 2026-08-08 has these paths:
   the normal seasonpackarr flow. Local sources:
   `internal/http/processor_candidate.go`, `internal/http/processor_plan.go`, and
   `internal/release/release.go`.
-- qBittorrent: build add options, call `AddTorrentFromMemory`, and return immediately on any library error. It only looks up the torrent after a successful library result. It rechecks only when the existing torrent state is `missingFiles`. It returns without a recheck when the existing torrent is active. Local source: `/Users/nuxen/dev/seasonpackarr/internal/torrentclient/qbittorrent.go:214-269`.
+- qBittorrent: build add options, call `AddTorrentFromMemory`, and return immediately on any library error. It only looks up the torrent after a successful library result. It rechecks, stops, and starts only when the torrent state is `missingFiles`. It returns without a recheck when the torrent is active or checking. Local source: `internal/torrentclient/qbittorrent.go` (`qbitClient.Import`).
 - Deluge: add paused. A V1 empty result or V2 `already in session` error returns
   without mutation. A newly added torrent receives the optional label, resumes,
-  and waits for a started state. It does not force a recheck. Local source:
-  `/Users/nuxen/dev/seasonpackarr/internal/torrentclient/deluge.go:203-253`.
+  and waits until the torrent is no longer paused. It does not force a recheck.
+  Local source: `internal/torrentclient/deluge.go` (`delugeClient.Import`).
 
 Consequences:
 
@@ -241,17 +243,17 @@ Both Deluge 1.3.15 and Deluge 2 use the same RPC method name and list argument. 
 
 Sources:
 
-- Current interface and missing method: [`delugeclient.go` lines 63-94](https://github.com/autobrr/go-deluge/blob/245951c9058483f9637d5e1a0f5ac11941c89828/delugeclient.go#L63-L94). Local path: `/Users/nuxen/dev/oss/go-deluge/delugeclient.go:63`.
-- Existing method pattern: [`methods.go` lines 436-450](https://github.com/autobrr/go-deluge/blob/245951c9058483f9637d5e1a0f5ac11941c89828/methods.go#L436-L450). Local path: `/Users/nuxen/dev/oss/go-deluge/methods.go:436`.
+- Current interface and missing method: [`delugeclient.go` lines 63-94](https://github.com/autobrr/go-deluge/blob/245951c9058483f9637d5e1a0f5ac11941c89828/delugeclient.go#L63-L94). Local path: `<oss>/go-deluge/delugeclient.go:63`.
+- Existing method pattern: [`methods.go` lines 436-450](https://github.com/autobrr/go-deluge/blob/245951c9058483f9637d5e1a0f5ac11941c89828/methods.go#L436-L450). Local path: `<oss>/go-deluge/methods.go:436`.
 - V1 RPC contract: [`deluge/core/core.py` lines 551-555](https://github.com/deluge-torrent/deluge/blob/a6e8ac8725c2be28679e26b7c6674aad339338b1/deluge/core/core.py#L551-L555).
 - V2 RPC contract: [`deluge/core/core.py` lines 937-941](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/core.py#L937-L941).
-- README support table: [`README.md` lines 44-56](https://github.com/autobrr/go-deluge/blob/245951c9058483f9637d5e1a0f5ac11941c89828/README.md#L44-L56). Local path: `/Users/nuxen/dev/oss/go-deluge/README.md:44`.
+- README support table: [`README.md` lines 44-56](https://github.com/autobrr/go-deluge/blob/245951c9058483f9637d5e1a0f5ac11941c89828/README.md#L44-L56). Local path: `<oss>/go-deluge/README.md:44`.
 
 ## Call serialization
 
 The inspected `go-deluge` client increments a mutable request serial, writes one request, and then reads its response. It has no internal mutex. Seasonpackarr should serialize calls that share one client connection. This is a limitation of this Go client implementation, not a demonstrated limit of the Deluge server protocol.
 
-Sources: [`delugeclient.go` lines 106-116](https://github.com/autobrr/go-deluge/blob/245951c9058483f9637d5e1a0f5ac11941c89828/delugeclient.go#L106-L116) and [`lines 299-356`](https://github.com/autobrr/go-deluge/blob/245951c9058483f9637d5e1a0f5ac11941c89828/delugeclient.go#L299-L356). Local path: `/Users/nuxen/dev/oss/go-deluge/delugeclient.go:106`.
+Sources: [`delugeclient.go` lines 106-116](https://github.com/autobrr/go-deluge/blob/245951c9058483f9637d5e1a0f5ac11941c89828/delugeclient.go#L106-L116) and [`lines 299-356`](https://github.com/autobrr/go-deluge/blob/245951c9058483f9637d5e1a0f5ac11941c89828/delugeclient.go#L299-L356). Local path: `<oss>/go-deluge/delugeclient.go:106`.
 
 ## Torrent hashes
 
@@ -263,7 +265,7 @@ Sources:
 
 - Deluge 1.3.15 SHA-1 test: [`deluge/tests/test_core.py` lines 157-170](https://github.com/deluge-torrent/deluge/blob/a6e8ac8725c2be28679e26b7c6674aad339338b1/deluge/tests/test_core.py#L157-L170). Local source: `git show deluge-1.3.15:deluge/tests/test_core.py`.
 - Deluge 2.2.0 release note: [`CHANGELOG.md` lines 30-41](https://github.com/deluge-torrent/deluge/blob/e9777eaabc8698473a05d8c02624f462bdc5af61/CHANGELOG.md#L30-L41). Local source: `git show deluge-2.2.0:CHANGELOG.md`.
-- `go-deluge` takes string IDs without length validation: [`delugeclient.go` lines 63-94](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/delugeclient.go#L63-L94). Local path: `/Users/nuxen/dev/oss/go-deluge/delugeclient.go:63`.
+- `go-deluge` takes string IDs without length validation: [`delugeclient.go` lines 63-94](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/delugeclient.go#L63-L94). Local path: `<oss>/go-deluge/delugeclient.go:63`.
 
 Correction for seasonpackarr: the broad claim that Deluge does not support pure BitTorrent v2 torrents is not supported by these sources. Deluge 1.3 cannot be the pure-v2 target. Deluge 2 support depends on the selected Deluge and libtorrent releases and must be verified with a pure-v2 fixture if seasonpackarr intends to accept it. A seasonpackarr policy may still reject pure v2, but the documentation must state that it is a seasonpackarr limitation.
 
@@ -289,15 +291,15 @@ The daemon setup needs these parts:
 
 Sources:
 
-- `go-deluge` upstream setup writes `localclient:deluge:10`, starts `deluged --do-not-daemonize`, waits on port `58846`, and selects separate V1/V2 test binaries: [`scripts/deluge-integration.sh` lines 16-52](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/scripts/deluge-integration.sh#L16-L52). Local path: `/Users/nuxen/dev/oss/go-deluge/scripts/deluge-integration.sh:16`.
-- `go-deluge` pins Deluge 1.3.15 and its old libtorrent stack in its installer: [`scripts/deluge-install.sh` lines 47-63](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/scripts/deluge-install.sh#L47-L63). Local path: `/Users/nuxen/dev/oss/go-deluge/scripts/deluge-install.sh:47`.
-- Deluge default RPC port and default loopback-only setting: [`deluge/core/preferencesmanager.py` lines 37-44](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/preferencesmanager.py#L37-L44). Local path: `/Users/nuxen/dev/oss/deluge/deluge/core/preferencesmanager.py:37`.
-- Deluge RPC bind behavior: [`deluge/core/rpcserver.py` lines 379-418](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/rpcserver.py#L379-L418). Local path: `/Users/nuxen/dev/oss/deluge/deluge/core/rpcserver.py:379`.
-- Deluge auth levels and auth-file creation: [`deluge/common.py` lines 1222-1269](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/common.py#L1222-L1269). Local path: `/Users/nuxen/dev/oss/deluge/deluge/common.py:1222`.
+- `go-deluge` upstream setup writes `localclient:deluge:10`, starts `deluged --do-not-daemonize`, waits on port `58846`, and selects separate V1/V2 test binaries: [`scripts/deluge-integration.sh` lines 16-52](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/scripts/deluge-integration.sh#L16-L52). Local path: `<oss>/go-deluge/scripts/deluge-integration.sh:16`.
+- `go-deluge` pins Deluge 1.3.15 and its old libtorrent stack in its installer: [`scripts/deluge-install.sh` lines 47-63](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/scripts/deluge-install.sh#L47-L63). Local path: `<oss>/go-deluge/scripts/deluge-install.sh:47`.
+- Deluge default RPC port and default loopback-only setting: [`deluge/core/preferencesmanager.py` lines 37-44](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/preferencesmanager.py#L37-L44). Local path: `<oss>/deluge/deluge/core/preferencesmanager.py:37`.
+- Deluge RPC bind behavior: [`deluge/core/rpcserver.py` lines 379-418](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/core/rpcserver.py#L379-L418). Local path: `<oss>/deluge/deluge/core/rpcserver.py:379`.
+- Deluge auth levels and auth-file creation: [`deluge/common.py` lines 1222-1269](https://github.com/deluge-torrent/deluge/blob/e58075416dedd53636e89b1cd240f86f2e7c2ee0/deluge/common.py#L1222-L1269). Local path: `<oss>/deluge/deluge/common.py:1222`.
 
 The inspected `go-deluge` GitHub workflow does not run its real-daemon integration jobs. Both jobs are commented out. Its scripts are useful source examples, but they are not current CI evidence and include old package URLs. A seasonpackarr test must own and verify its pinned daemon environment.
 
-Source: [`.github/workflows/go.yml` lines 32-70](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/.github/workflows/go.yml#L32-L70). Local path: `/Users/nuxen/dev/oss/go-deluge/.github/workflows/go.yml:32`.
+Source: [`.github/workflows/go.yml` lines 32-70](https://github.com/autobrr/go-deluge/blob/1825ad22f4df1fb4c36ae359cf55cd16417216e9/.github/workflows/go.yml#L32-L70). Local path: `<oss>/go-deluge/.github/workflows/go.yml:32`.
 
 Run each integration-test matrix entry from the repository root after starting the
 matching daemon and setting its connection environment:
