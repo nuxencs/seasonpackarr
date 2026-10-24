@@ -315,7 +315,7 @@ test/harness/run.sh deluge-1.3.15 deluge-2.0.3 deluge-2.2.0
 ```
 
 The runner sets the `SEASONPACKARR_TEST_DELUGE_*` variables and the import
-folder for each entry. `ARCHITECTURE.md` "Testing Surface" describes the
+folder for each entry. `docs/TESTING.md` describes the
 variables for a run against another daemon.
 
 ## Fresh-daemon log classification

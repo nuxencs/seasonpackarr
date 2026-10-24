@@ -82,7 +82,7 @@ data check. Every supported client can check the data and start the torrent by
 itself after the add, so the request finishes in seconds and a persisted job
 queue is not necessary. The torrent-client import also runs with a context that
 a caller disconnect cannot cancel. See
-[qbittorrent-import-flow.md](../design-docs/qbittorrent-import-flow.md).
+[qbittorrent-import-flow.md](../design/qbittorrent-import-flow.md).
 
 When autobrr records approval, seasonpackarr has hardlinked the episodes and
 the client has accepted the pack. It does not mean that the client check has

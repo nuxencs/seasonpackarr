@@ -26,7 +26,7 @@ another identity use the title hash. Candidate JSON contains only the fields in
 in one transaction before imports start.
 
 The store does not contain config, client inventory, exact plans, or import jobs.
-See [operator guidance](../product-specs/prowlarr-backfill.md#persistent-discovery-state)
+See [operator guidance](../INSTALL.md#application-data)
 for locations, sensitive data, backups, and recovery.
 
 ## Generated Schema

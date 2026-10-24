@@ -15,7 +15,7 @@ The Transmission and Deluge adapters reach the same outcome differently. See
 
 `Import` returns as soon as the client has the torrent. It never waits for a
 hash check. autobrr gives a Webhook action a fixed 120-second limit
-([audit](../references/autobrr-timeout-audit.md)), and a check of a large
+([audit](../research/autobrr-timeout-audit.md)), and a check of a large
 partial pack can take longer. On 2026-10-07 a 9-of-10 episode 1080p pack
 needed about 2 minutes 50 seconds. autobrr cancelled the request in the middle
 of the old recheck wait, and qBittorrent left the torrent stopped after its

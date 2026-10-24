@@ -1,43 +1,28 @@
-# SECURITY.md
+# Security policy
 
-## Security Posture
+## Supported versions
 
-This is a self-hosted integration service with network-facing HTTP endpoints and local filesystem effects. Main risks are unauthorized API use, unsafe path behavior, credential leakage, and supply-chain drift.
+Security fixes go into the latest release. Upgrade to the latest release before you report a problem.
 
-## Current Controls
+## Report a vulnerability
 
-- API token auth for `/api/candidate`, `/api/match`, `/api/import`, and `/api/search`
-- explicit config-driven client credentials, including qBittorrent passwords or API keys
-- database created with owner-only Unix permissions; use service-account ACLs on Windows
-- Prowlarr connection identity stored as a fingerprint, not as a plaintext API key
-- narrow HTTP surface
-- CodeQL in CI
-- Go vulnerability scanning expected in local verification
+Do not open a public issue for a security problem. Report it privately through [GitHub private vulnerability reporting](https://github.com/nuxencs/seasonpackarr/security/advisories/new).
 
-## Known Dependency Risk
+Include:
 
-Verified on 2026-08-09 with `govulncheck -show verbose ./...`: no reachable symbol or imported-package vulnerabilities.
-The scan reports `GO-2026-5932` in the required `golang.org/x/crypto` module, but seasonpackarr does not import the
-affected `openpgp` package. That advisory has no fixed module version.
+- the seasonpackarr version and how you run it (binary, Docker, or systemd)
+- the steps to reproduce the problem
+- the effect, for example unauthenticated API access or a hardlink outside the import folder
 
-## High-Risk Areas
+You get an answer in the advisory. After a fix is released, the advisory becomes public.
 
-- path construction before hardlink creation
-- logging of sensitive config or tokens
-- database and backups: torrent bytes and retained download links can contain tracker credentials
-- webhook contract drift causing unexpected processing
-- torrent-client dependencies and release-parser assumptions
+## Scope
 
-## Rules For Changes
+seasonpackarr is a self-hosted service. It has authenticated HTTP endpoints and it changes local files. These areas are in scope:
 
-- never log API tokens, API keys, passwords, or raw secrets
-- treat filesystem target-path derivation as security-sensitive
-- document any new outbound network dependency in `docs/references/`
-- add verification notes when auth, pathing, or external request logic changes
+- access to `/api/candidate`, `/api/match`, `/api/import`, or `/api/search` without a valid API token
+- hardlinks or files created outside the configured import folder
+- API tokens, API keys, or passwords in logs, notifications, or HTTP responses
+- tracker credentials in the database or in torrent download links that other local users can read
 
-## Current Gap
-
-- no dedicated secret-redaction test suite
-- no containment or symlink-escape enforcement for torrent-derived hardlink targets
-- no adversarial traversal, absolute-path, or symlink tests
-- no doc linter ensuring security docs stay synced with behavior
+Problems in autobrr, Prowlarr, or a torrent client belong to those projects.

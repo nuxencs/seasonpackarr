@@ -39,9 +39,9 @@ Describe the normal path from webhook hit to hardlink creation and client import
 
 Verified against code on 2026-08-28. The lifecycle is implementation-backed, not aspirational.
 
-## Backfill and Concurrent Imports
+## Discovery and Concurrent Imports
 
-Prowlarr backfill supplies candidate titles and torrent bytes to the same exact
+Prowlarr discovery supplies candidate titles and torrent bytes to the same exact
 planning and import path. One process serializes imports per configured client
 endpoint. Import checks the candidate gate again before it uses a cached plan.
 Client mutation attempts invalidate cached inventories and plans for all aliases
@@ -49,5 +49,39 @@ of that endpoint, even when the adapter returns an error. A retry must establish
 whether the earlier attempt already added the pack. An in-flight inventory scan
 cannot restore a cache entry invalidated by an import.
 
-See [Prowlarr backfill](../product-specs/prowlarr-backfill.md) for search and
+See [Prowlarr discovery](../PROWLARR.md) for search and
 schedule behavior.
+
+## Operator Log Contract
+
+Operators debug with these logs and notifications. Keep them stable, and update
+[API.md](../API.md#notifications-and-logs) when they change.
+
+- Match and import notifications use the action labels `Match` and `Import`.
+- `/api/candidate` logs each release compatibility rejection as a structured
+  event. The event reports the incompatible field, the original announced `want`
+  value, the original client `got` value, and the client release. Fuzzy matching
+  can normalize values for comparison but not for diagnostics.
+- When `/api/candidate` passes, it logs each matching client release at `DEBUG`.
+- `/api/match` logs the reusable, unmatched, and total torrent episode counts.
+- Each unmatched torrent episode produces one structured log event. The event
+  reports either a missing source episode, a duplicate torrent target, or the
+  closest same-episode client source plus every incompatible safety field. Each
+  incompatible field reports its torrent `want` and client `got` value.
+- `/api/import` logs whether it reused or rebuilt the import plan. It also logs
+  each successful or failed destination-resolution attempt at `INFO`, hardlink
+  duration, each torrent-client import stage, total client-import duration, and
+  total import duration. A missing hardlink source logs a static warning with a
+  structured `source` path, followed by the bounded inventory and plan refresh
+  result.
+- Torrent-client stages use the stable names `config`, `add`, `find`, `recheck`,
+  and `resume`. A client omits stages that it does not perform. Deluge reports a
+  torrent that does not leave its paused state under `resume`. The client-import
+  completion log reports `data_complete`: whether every torrent file was already
+  on disk, which lets the client skip its hash check.
+- A successful `/api/import` means the client accepted the pack. The client
+  checks the present data and starts the torrent after the response.
+- Logs never include configured credentials or request authentication tokens.
+- Expected candidate and match gate rejections use informational events.
+  Configuration, decoding, client, filesystem, and import failures use error
+  events.
