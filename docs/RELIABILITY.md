@@ -35,7 +35,6 @@ Reliable does not mean perfect acceptance. It means predictable outcomes when de
 
 ## Known Reliability Gaps
 
-- no external autobrr-to-real-client end-to-end harness
 - expected filter rejections and operational errors do not have separate outcome classes
 - torrent-derived target paths do not enforce containment beneath the import root
 - no automated stale-doc detection for operational procedures
