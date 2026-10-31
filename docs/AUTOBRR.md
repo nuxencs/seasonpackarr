@@ -52,7 +52,8 @@ The end-to-end tests use the same filter values. Their configuration is in
 
 ## Add the External checks
 
-Open the filter's **External** tab. Add the two entries below. Each entry starts disabled, so enable each one.
+Open the filter's **External** tab. Add the two entries below. Make sure that each entry is enabled. autobrr v1.84.0
+and earlier create new entries disabled.
 
 ### Entry 1: candidate check
 
