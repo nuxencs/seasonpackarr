@@ -706,19 +706,19 @@ func applyEnvironment(cfg *domain.Config) {
 			set(cfg, value)
 		}
 
-		// The client is created here when absent, so clients defined only
-		// through environment variables work too.
 		clientName, setting, ok := cutClientEnvVariable(name)
-		if !ok {
+		set, known := clientEnvSettings[setting]
+		// An unknown variable only logs a warning, so it must not add an empty client that fails validation.
+		if !ok || clientName == "" || !known {
 			continue
 		}
+		// The client is created here when absent, so clients defined only
+		// through environment variables work too.
 		clientName = strings.ToLower(clientName)
 		if cfg.Clients[clientName] == nil {
 			cfg.Clients[clientName] = &domain.Client{}
 		}
-		if set, ok := clientEnvSettings[setting]; ok {
-			set(cfg.Clients[clientName], value)
-		}
+		set(cfg.Clients[clientName], value)
 	}
 }
 

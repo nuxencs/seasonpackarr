@@ -8,10 +8,12 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -74,6 +76,28 @@ clients:
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown config keys: clients.default.hots, clients.default.import.tag, fuzzyMatching.skipRepackCompar, logLevl")
 	assert.Contains(t, err.Error(), configFile)
+}
+
+// TestLoadSnapshot_IgnoresUnknownClientEnvironmentVariables keeps the promise
+// of the startup warning: an unknown client variable must not add a client,
+// because an empty client fails validation and stops startup.
+func TestLoadSnapshot_IgnoresUnknownClientEnvironmentVariables(t *testing.T) {
+	configFile := writeTestConfig(t, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: tv-hd
+`)
+	t.Setenv("SEASONPACKARR__CLIENTS_GHOST_IMPORT_SAVEPATH", "/data")
+	t.Setenv("SEASONPACKARR__CLIENTS__HOST", "qbit")
+	require.Equal(t, []string{"SEASONPACKARR__CLIENTS_GHOST_IMPORT_SAVEPATH", "SEASONPACKARR__CLIENTS__HOST"},
+		UnknownEnvironmentVariables(os.Environ()))
+
+	cfg := &AppConfig{configFile: configFile, version: "test"}
+	snapshot, err := cfg.loadSnapshot()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"default"}, slices.Sorted(maps.Keys(snapshot.Clients)))
 }
 
 func TestLoadSnapshot_RejectsInternalFieldsAsKeys(t *testing.T) {
