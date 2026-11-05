@@ -15,6 +15,8 @@ service always pass `--config`. Without `--config`, seasonpackarr uses the first
 2. `~/.config/seasonpackarr/config.yaml`
 3. `~/.seasonpackarr/config.yaml`
 
+In Docker, the working directory is `/config`, so a command that you run with `docker exec` finds `/config/config.yaml`.
+
 ## Unknown keys
 
 seasonpackarr checks each key in `config.yaml`. A key that seasonpackarr does not know stops startup, for example a

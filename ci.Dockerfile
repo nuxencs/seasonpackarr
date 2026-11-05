@@ -36,7 +36,8 @@ ENV HOME="/config" \
     XDG_CONFIG_HOME="/config" \
     XDG_DATA_HOME="/config"
 
-WORKDIR /app
+# CLI commands through docker exec find ./config.yaml without --config.
+WORKDIR /config
 VOLUME /config
 EXPOSE 42069
 

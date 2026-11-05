@@ -872,6 +872,21 @@ func TestUnknownEnvironmentVariables_AllowsComposeExample(t *testing.T) {
 	require.Empty(t, UnknownEnvironmentVariables(environ))
 }
 
+// TestFindConfigFile_ImageWorkingDirectoryIsConfigVolume keeps docker exec
+// working without --config: discovery checks ./config.yaml first.
+func TestFindConfigFile_ImageWorkingDirectoryIsConfigVolume(t *testing.T) {
+	for _, dockerfile := range []string{"Dockerfile", "ci.Dockerfile"} {
+		t.Run(dockerfile, func(t *testing.T) {
+			contents, err := os.ReadFile(filepath.Join("../..", dockerfile))
+			require.NoError(t, err)
+			workdirs := regexp.MustCompile(`(?m)^WORKDIR\s+(\S+)`).FindAllStringSubmatch(string(contents), -1)
+			require.NotEmpty(t, workdirs)
+			assert.Equal(t, "/config", workdirs[len(workdirs)-1][1], "WORKDIR of the runner stage")
+			assert.Regexp(t, `(?m)^VOLUME /config$`, string(contents))
+		})
+	}
+}
+
 func TestUnknownConfigKeys_AcceptsConfigExamples(t *testing.T) {
 	templateDir := t.TempDir()
 	require.NoError(t, (&AppConfig{}).writeConfig(templateDir, "config.yaml"))

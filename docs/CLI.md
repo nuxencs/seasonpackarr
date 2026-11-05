@@ -22,7 +22,10 @@ seasonpackarr candidate "Series.S01.1080p.WEB-DL-GRP"
 Replace the example name with an actual season pack. The command reads the
 connection settings from your config and selects the sole configured client.
 With several clients, add `--client <name>`. If the service uses a different
-config directory, add `--config <directory>` to each API command.
+config directory, add `--config <directory>` to each API command. In Docker,
+run the command in the container, for example
+`docker exec seasonpackarr seasonpackarr candidate "<release>"`. It finds
+`/config/config.yaml` without `--config`.
 
 An accepted candidate check means that the release name is compatible with
 episodes in the client. It does not prove that the torrent files can reuse those
