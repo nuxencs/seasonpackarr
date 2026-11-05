@@ -202,14 +202,14 @@ func (h *harness) ensureFilter(t *testing.T, clientName string) {
 	if _, ok := h.filters.Load(clientName); ok {
 		return
 	}
-	// The verification of the command is a candidate check, so it fills the inventory cache of seasonpackarr.
-	verified := time.Now()
 	created := h.setupFilter(t, clientName)
 	require.Equal(t, "created", created.Result, "setup filter result")
 	require.NotZero(t, created.ID, "setup filter ID")
 	requireVerified(t, created)
 	require.NoError(t, h.autobrr.linkAndEnableFilter(created.ID), "link the indexer and enable the filter %s", created.Name)
 
+	// Each verification is a candidate check that can fill the inventory cache, and the last one starts here.
+	verified := time.Now()
 	updated := h.setupFilter(t, clientName, "--filter-id", strconv.Itoa(created.ID))
 	require.Equal(t, "updated", updated.Result, "setup filter --filter-id result")
 	require.Equal(t, created.ID, updated.ID, "setup filter --filter-id ID")
