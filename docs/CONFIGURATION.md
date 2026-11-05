@@ -15,6 +15,28 @@ service always pass `--config`. Without `--config`, seasonpackarr uses the first
 2. `~/.config/seasonpackarr/config.yaml`
 3. `~/.seasonpackarr/config.yaml`
 
+## Unknown keys
+
+seasonpackarr checks each key in `config.yaml`. A key that seasonpackarr does not know stops startup, for example a
+typo such as `logLevl` or a key from a different version. The error names each unknown key with its full path:
+
+```text
+validating config file /config/config.yaml: unknown config keys: clients.default.hots, logLevl; remove or rename them (see the configuration guide)
+```
+
+Remove or rename each key that the error names, and start again. The [JSON schema](../schemas/config-schema.json) lists
+all keys, and an editor with schema support shows unknown keys before you start.
+
+seasonpackarr reads key names without case, so `logLevel` and `LogLevel` are the same key. The schema is case-sensitive
+and marks `LogLevel` as unknown, so use the spelling from the schema. If the file has one key twice with a different
+case, seasonpackarr uses one of them and reports the other as unknown.
+
+The settings that v0.16.0 removed (`parseTorrentFile`, `metadata`, and `clients.<name>.preImportPath`) give a more
+specific error with the migration step. See [Remove old settings](UPGRADE-v1.md#remove-old-settings).
+
+The command-line commands read only the connection settings from `config.yaml`. They ignore unknown keys, so they also
+work with a config from a different version.
+
 ## Server settings
 
 | Setting | Default | Meaning |
@@ -260,6 +282,11 @@ Most settings have an environment variable with the `SEASONPACKARR__` prefix. En
   variables, a client name cannot contain an underscore.
 - Prowlarr: see [Prowlarr discovery](PROWLARR.md).
 
+At startup, seasonpackarr logs a warning for each `SEASONPACKARR__` variable that it does not know, for example
+`SEASONPACKARR__LOG_LEVL` or `SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_SAVEPATH`. An unknown variable does not stop startup,
+and seasonpackarr ignores its value. The variables of the command-line commands (`SEASONPACKARR__URL`,
+`SEASONPACKARR__CLIENT`, `SEASONPACKARR__AUTOBRR_URL`, and `SEASONPACKARR__AUTOBRR_API_KEY`) give no warning.
+
 seasonpackarr ignores an environment variable with an empty value. The variables that v0.16.0 used for removed settings are
 the exception: they stop startup even when they are empty. See
 [Docker Compose and environment variables](UPGRADE-v1.md#docker-compose-and-environment-variables).
@@ -271,7 +298,8 @@ variables. The database then moves, see [Database location](INSTALL.md#database-
 
 seasonpackarr watches the active `config.yaml` while it runs. For each change, it loads the complete file, applies the
 environment variables again, and validates the result. Only a valid result becomes active. When the file is not valid,
-for example during a partial write, seasonpackarr logs the error and keeps the last valid config.
+for example during a partial write or with an [unknown key](#unknown-keys), seasonpackarr logs the error and keeps the
+last valid config.
 
 These settings apply without a restart:
 

@@ -26,7 +26,7 @@ Run the checks from the table in `docs/DEVELOPMENT.md#checks` for the code you c
 
 ## Keep in sync
 
-- Config: `config.yaml`, `schemas/config-schema.json`, and `docs/CONFIGURATION.md` change together.
+- Config: `config.yaml`, `schemas/config-schema.json`, and `docs/CONFIGURATION.md` change together. The service rejects unknown keys, so `TestUnknownConfigKeys_AcceptsConfigExamples` and `TestUnknownConfigKeys_AcceptsSchemaKeys` fail when the example, the template, or the schema has a key that the config does not know.
 - API: payload, status code, or endpoint changes update `docs/API.md`.
 - autobrr filter: the filter definition in `internal/autobrr/filter.go` and `docs/AUTOBRR.md` change together. `TestSetupFilterCommand_MatchesAutobrrGuide` fails when the definition and the guide differ.
 - User setup or upgrade steps: update the guide in `docs/` in the same change.

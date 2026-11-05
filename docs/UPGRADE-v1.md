@@ -30,6 +30,10 @@ autobrr filter disabled until you complete step 5.
   - An accepted season pack sends 2 `MATCH` notifications: one from the match
     and one from the import.
   - The notification action label is `Match` or `Import`. It was `Pack` before.
+- **Unknown config keys stop startup.** v0.16.0 ignored a key that it did not
+  know. v1.0.0 names each unknown key in `config.yaml` and does not start. An
+  unknown `SEASONPACKARR__` environment variable logs a warning. See
+  [remove unknown keys](#remove-unknown-keys).
 - **seasonpackarr creates a database.** v1.0.0 creates `seasonpackarr.db` at
   startup, also when you do not use Prowlarr. You do not install or configure a
   database. See [application data](INSTALL.md#application-data).
@@ -77,6 +81,21 @@ Remove these settings from `config.yaml`, also when they are empty:
 seasonpackarr does not start while one of these settings is present. If you use
 Docker Compose or environment variables, also do the
 [environment variable changes](#docker-compose-and-environment-variables).
+
+### Remove unknown keys
+
+v1.0.0 checks each key in `config.yaml`. A key that v1.0.0 does not know stops
+startup. v0.16.0 ignored such keys, so your file can contain old typos or keys
+that never had an effect.
+
+1. Open your `config.yaml` in an editor with
+   [JSON schema](../schemas/config-schema.json) support, or compare it with the
+   keys in the schema. The [example config](../config.yaml) shows some valid
+   keys only as comments, for example `logPath` and `smartMode`.
+2. Remove or rename each key that is not in the schema.
+
+If you miss a key, the startup error names it. See
+[unknown keys](CONFIGURATION.md#unknown-keys).
 
 ### Add an import section for qBittorrent
 
@@ -382,6 +401,10 @@ For all commands, including the new `search` command, see the
 3. Read the seasonpackarr log:
    - If it reports a deprecated setting or environment variable, remove it and
      start again.
+   - If it reports unknown config keys, remove or rename each key that it names
+     and start again.
+   - If it warns about an unknown environment variable, remove or rename the
+     variable. seasonpackarr ignores it.
    - If it reports a missing `savePath` or `downloadPath`, fix the path and
      start again.
    - If it reports a database error, check the permissions, the volume mount,
