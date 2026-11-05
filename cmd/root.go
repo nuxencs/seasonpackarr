@@ -24,6 +24,7 @@ func newRootCommand() *cobra.Command {
 Start the service, then use candidate or match to check a pack.
 Import creates hardlinks and adds the pack to your torrent client.
 Search discovers packs through Prowlarr and imports them unless --dry-run is set.
+Setup filter creates the seasonpackarr filter in autobrr.
 
 API commands read connection settings from config.yaml and environment variables.
 Use --config for another config directory or --url for a remote service.`,
@@ -39,7 +40,7 @@ Use --config for another config directory or --url for a remote service.`,
 		&cobra.Group{ID: "packs", Title: "Season packs (requires a running service):"},
 		&cobra.Group{ID: "tools", Title: "Tools:"},
 	)
-	root.AddCommand(newStartCommand(), newSearchCommand(), newGenTokenCommand(), newVersionCommand())
+	root.AddCommand(newStartCommand(), newSearchCommand(), newSetupCommand(), newGenTokenCommand(), newVersionCommand())
 	for _, name := range []string{"candidate", "match", "import"} {
 		root.AddCommand(newOperationCommand(name))
 	}

@@ -2,7 +2,7 @@
 
 Use the CLI to run a candidate check on a release name, match a torrent, or
 import a season pack. The service must be running for `candidate`, `match`,
-`import`, and `search`.
+`import`, and `search`. Use `setup filter` to create the autobrr filter.
 
 ## First successful check
 
@@ -77,6 +77,7 @@ folder name. Match and import still require the original `.torrent` file.
 | `search --dry-run` | None | Searches Prowlarr and runs candidate checks |
 | `search --dry-run --verify` | None | Searches Prowlarr and runs matches |
 | `search` | None | Searches Prowlarr and imports accepted packs |
+| `setup filter` | `--webhook-url`, autobrr URL, and autobrr API key | Creates one disabled autobrr filter for each client; see [Set up the autobrr filter](#set-up-the-autobrr-filter) |
 | `start` | Config directory if outside the default locations | Starts the service; an explicit directory gets a default config if missing |
 | `gen-token` | None | Generates a token to store in `apiToken` |
 | `version` | None | Prints local build information without network access |
@@ -85,6 +86,65 @@ folder name. Match and import still require the original `.torrent` file.
 Search requires a configured Prowlarr connection. It selects all clients unless
 `--client` or `SEASONPACKARR__CLIENT` selects one. See
 [Prowlarr search](PROWLARR.md#search) for modes and limits.
+
+## Set up the autobrr filter
+
+`setup filter` writes the seasonpackarr filter into autobrr through the autobrr
+REST API. The filter comes from the binary, so it always matches the version
+that answers its requests. The service does not need to run.
+
+```sh
+export SEASONPACKARR__AUTOBRR_URL="http://autobrr:7474"
+export SEASONPACKARR__AUTOBRR_API_KEY="your-autobrr-api-key"
+seasonpackarr setup filter --webhook-url http://seasonpackarr:42069
+```
+
+Replace the URLs and the key with your values. Create the API key in autobrr
+under **Settings**, **API keys**. The environment variables keep the key out of
+your shell history.
+
+The command creates one filter for each configured client, or only the filter
+for the client from `--client` or `SEASONPACKARR__CLIENT`. Each filter is named
+`seasonpackarr-<client>` and has the External entries and the import action of
+the [autobrr guide](AUTOBRR.md). A new filter is disabled and has no indexers.
+After the command, do these steps in autobrr for each new filter:
+
+1. Select the indexers in the **General** tab.
+2. Set the priority higher than your other TV filters.
+3. Enable the filter.
+
+| Input | Flag | Environment variable | Config or default |
+| --- | --- | --- | --- |
+| seasonpackarr URL that autobrr uses | `--webhook-url` | None | Required, no default |
+| autobrr base URL | `--autobrr-url` | `SEASONPACKARR__AUTOBRR_URL` | Required, except with `--dry-run` |
+| autobrr API key | `--autobrr-api-key` | `SEASONPACKARR__AUTOBRR_API_KEY` | Required, except with `--dry-run` |
+| Config directory | `--config`, `-c` | None | Discovery locations below |
+| seasonpackarr API token | `--api`, `-a` | `SEASONPACKARR__API_TOKEN` | `apiToken`, otherwise empty |
+| Client name | `--client`, `-n` | `SEASONPACKARR__CLIENT` | Each configured client |
+
+`--webhook-url` is the address of seasonpackarr as autobrr sees it, for
+example `http://seasonpackarr:42069` when both run in Docker. It follows the
+rules of `--url`: HTTP or HTTPS, a host, an optional proxy path, and no
+credentials, query parameters, or fragment.
+
+The command works without a config file. Then give the client and the token
+with `--client` and `--api`. With an empty token, the command prints a warning
+and writes a filter without the `X-API-Token` header and without the `apikey`
+query parameter.
+
+Add `--dry-run` to print each filter with the tokens redacted. A dry run makes
+no autobrr calls, so it needs no autobrr URL or key. Add `--json` for
+structured output. Each result has `clientname`, `id`, `name`, and `result`
+(`created`, or `dry-run` with the `filter` payload). Results go to stdout, and
+warnings go to stderr.
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | Each filter is created, or the dry run printed each filter |
+| `1` | Invalid input, or an autobrr API error |
+
+After an autobrr error, the command stops and prints the filters that it
+created before the error.
 
 ## Connection settings
 
@@ -101,8 +161,8 @@ settings, which override local config, which overrides built-in defaults.
 | Client name | `--client`, `-n` | `SEASONPACKARR__CLIENT` | Sole configured client; without local clients, `default`; search selects all |
 
 The token belongs to seasonpackarr, not Prowlarr or the torrent client.
-`SEASONPACKARR__URL` and `SEASONPACKARR__CLIENT` are CLI-only environment settings,
-not YAML keys. Client names also include clients defined through the existing
+`SEASONPACKARR__URL`, `SEASONPACKARR__CLIENT`, `SEASONPACKARR__AUTOBRR_URL`, and
+`SEASONPACKARR__AUTOBRR_API_KEY` are CLI-only environment settings, not YAML keys. Client names also include clients defined through the existing
 `SEASONPACKARR__CLIENTS_...` environment settings.
 
 Config discovery checks these locations in order:

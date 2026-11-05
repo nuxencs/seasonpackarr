@@ -199,8 +199,11 @@ why the search test drives a real Prowlarr.
   `${SEASONPACKARR_URL}`, `${API_TOKEN}`, and `${CLIENT_NAME}`. autobrr runs
   the external entry with the highest `index` first. `POST /api/filters`
   stores only the base filter, so the driver then updates the stored filter
-  with its indexer, external webhooks, and action. AUTOBRR.md stays hand-written,
-  so a change to one of the two files needs the same change in the other.
+  with its indexer, external webhooks, and action. The JSON file is separate
+  from the filter definition in `internal/autobrr/filter.go`, so a change to
+  the requests of one needs the same change in the other.
+  `TestSetupFilterCommand_MatchesAutobrrGuide` compares the definition with
+  AUTOBRR.md.
 - `packName` makes a unique release name with a letters-only title, so reruns
   do not share releases and both release parsers see the plain title.
 - The client already holds the present episodes as real single-episode

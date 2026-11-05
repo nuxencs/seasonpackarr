@@ -11,6 +11,7 @@
    handling. Pack operations use direct `candidate`, `match`, and `import`
    commands. CLI configuration reads are side-effect free and
    share file discovery and environment overrides with the service.
+   `setup filter` writes the autobrr filter through `internal/autobrr/`.
 2. `cmd/start.go` loads config, logger, notifications, and the SQLite store, then starts the HTTP server. Signal cancellation starts a bounded graceful shutdown. The command closes the store after server shutdown.
 3. `internal/http/server.go` builds `/api/healthz`, `/api/candidate`, `/api/match`, `/api/import`, and `/api/search`.
 4. `internal/http/processor_*.go` keeps each processing stage together. The handler file owns payload decode and responses. The candidate file owns announce-only matching and inventory caching. The plan file parses torrent bytes and builds an exact side-effect-free plan. The import file reuses or rebuilds that plan, resolves the client import destination, hardlinks matched files, and imports the pack. See [docs/design/qbittorrent-import-flow.md](docs/design/qbittorrent-import-flow.md).
@@ -39,6 +40,18 @@
   - `POST /api/search`
   - `GET /api/healthz/liveness`
   - `GET /api/healthz/readiness`
+
+### autobrr Filter Setup
+
+- Implemented in `internal/autobrr/` and `cmd/setup.go`
+- `internal/autobrr/filter.go` holds the filter definition: the base settings
+  of a new filter, the candidate check and match External entries, and the
+  import action. [docs/AUTOBRR.md](docs/AUTOBRR.md) describes the same filter
+  for a manual setup, and a test in `cmd/setup_test.go` compares the two.
+- `internal/autobrr/client.go` calls the autobrr REST API. A create stores only
+  the base settings, so the client reads the stored filter, sets the External
+  entries and actions, and sends it back. See
+  [the API notes](docs/research/autobrr-filter-api.md) and ADR-0004.
 
 ### Release Matching
 
@@ -164,7 +177,7 @@ If a change starts pushing transport concerns into matching logic or file ops, s
 
 ## External Dependencies
 
-- optional autobrr webhook integration
+- optional autobrr webhook integration, and the autobrr REST API for `setup filter`
 - optional Prowlarr API and Torznab tracker access
 - qBittorrent, Transmission, and Deluge 1.3/2 native RPC access
 - filesystem hardlink support
