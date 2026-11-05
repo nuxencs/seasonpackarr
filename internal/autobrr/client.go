@@ -14,6 +14,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -46,6 +47,9 @@ type StoredFilter struct {
 	ID      int
 	Name    string
 	Actions []StoredAction
+	// Endpoints are the seasonpackarr endpoints that the External entries and
+	// actions call, in the order of seasonpackarrEndpoints.
+	Endpoints []string
 	// fields is the complete stored filter, because an update overwrites every field.
 	fields map[string]any
 }
@@ -63,6 +67,17 @@ type FilterSummary struct {
 	Name string `json:"name"`
 }
 
+// StaleFilter is a filter that calls seasonpackarr, for example a v0.16
+// filter that calls /api/pack.
+type StaleFilter struct {
+	ID        int      `json:"id"`
+	Name      string   `json:"name"`
+	Endpoints []string `json:"endpoints"`
+}
+
+// seasonpackarrEndpoints are the endpoints that a filter for v0.16 or later calls.
+var seasonpackarrEndpoints = []string{"/api/pack", "/api/parse", "/api/candidate", "/api/match", "/api/import"}
+
 // Filters lists the filters in autobrr.
 func (c *Client) Filters(ctx context.Context) ([]FilterSummary, error) {
 	var filters []FilterSummary
@@ -70,6 +85,24 @@ func (c *Client) Filters(ctx context.Context) ([]FilterSummary, error) {
 		return nil, err
 	}
 	return filters, nil
+}
+
+// StaleFilters reads each filter of filters and returns those that call
+// seasonpackarr. It only reads, so it never changes those filters. secret is
+// a seasonpackarr token to redact from error messages.
+func (c *Client) StaleFilters(ctx context.Context, filters []FilterSummary, secret string) ([]StaleFilter, error) {
+	var stale []StaleFilter
+	for _, summary := range filters {
+		// The autobrr filter list has no External entries and actions, so read each filter.
+		stored, err := c.filter(ctx, summary.ID, secret)
+		if err != nil {
+			return nil, fmt.Errorf("read filter %d: %w", summary.ID, err)
+		}
+		if len(stored.Endpoints) > 0 {
+			stale = append(stale, StaleFilter{ID: stored.ID, Name: stored.Name, Endpoints: stored.Endpoints})
+		}
+	}
+	return stale, nil
 }
 
 // CreateFilter creates filter in autobrr and returns its ID. A create stores
@@ -114,13 +147,27 @@ func (c *Client) filter(ctx context.Context, id int, secret string) (StoredFilte
 		Name    string         `json:"name"`
 		Actions []StoredAction `json:"actions"`
 	}
-	if err := errors.Join(json.Unmarshal(data, &known), json.Unmarshal(data, &stored.fields)); err != nil {
+	type webhook struct {
+		Host string `json:"webhook_host"`
+	}
+	// A separate decode, so the hosts and their tokens never reach the printed actions.
+	var webhooks struct {
+		External []webhook `json:"external"`
+		Actions  []webhook `json:"actions"`
+	}
+	if err := errors.Join(json.Unmarshal(data, &known), json.Unmarshal(data, &webhooks), json.Unmarshal(data, &stored.fields)); err != nil {
 		return StoredFilter{}, fmt.Errorf("invalid autobrr response for GET %s; check --autobrr-url: %w", path, err)
 	}
 	if known.ID != id {
 		return StoredFilter{}, fmt.Errorf("autobrr returned filter %d for GET %s; check --autobrr-url", known.ID, path)
 	}
 	stored.ID, stored.Name, stored.Actions = known.ID, known.Name, known.Actions
+	hooks := slices.Concat(webhooks.External, webhooks.Actions)
+	for _, endpoint := range seasonpackarrEndpoints {
+		if slices.ContainsFunc(hooks, func(w webhook) bool { return strings.Contains(w.Host, endpoint) }) {
+			stored.Endpoints = append(stored.Endpoints, endpoint)
+		}
+	}
 	return stored, nil
 }
 

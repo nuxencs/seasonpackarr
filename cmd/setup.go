@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
+	"strings"
 
 	"github.com/nuxencs/seasonpackarr/internal/autobrr"
 	"github.com/nuxencs/seasonpackarr/internal/config"
@@ -42,6 +44,8 @@ type setupFilterResult struct {
 	Result string `json:"result"`
 	// RemovedActions is nil for a new filter and empty for an update without old actions.
 	RemovedActions []autobrr.StoredAction `json:"removed_actions,omitzero"`
+	// StaleFilters are the other filters that call seasonpackarr. The command does not change them.
+	StaleFilters []autobrr.StaleFilter `json:"stale_filters,omitempty"`
 	// Filter is the payload of a dry run.
 	Filter any `json:"filter,omitempty"`
 }
@@ -67,6 +71,10 @@ filter with that name exists, the command writes nothing and prints its ID.
 --filter-id updates an existing filter for one client. The update replaces the
 External entries and all actions, prints each removed action, and keeps all
 other settings, such as the indexers, the priority, and the enabled state.
+
+The command warns about each other filter that calls seasonpackarr, for example
+an old filter that calls /api/pack, and prints its ID. It never changes those
+filters.
 
 --webhook-url is the seasonpackarr URL that autobrr uses, for example
 http://seasonpackarr:42069 in Docker. Give the autobrr URL and API key with
@@ -169,15 +177,24 @@ func (o *setupFilterOptions) run(cmd *cobra.Command) error {
 	}
 
 	if o.filterID != 0 {
-		result, err := o.update(cmd.Context(), api, clients[0], filters[0], token)
+		result, err := o.update(cmd.Context(), cmd.ErrOrStderr(), api, clients[0], filters[0], token)
 		if err != nil {
 			return err
 		}
 		return o.print(cmd.OutOrStdout(), []setupFilterResult{result})
 	}
 
+	var stale []autobrr.StaleFilter
 	if !o.dryRun {
-		if err := checkFilterNames(cmd.Context(), api, clients, filters); err != nil {
+		existing, err := api.Filters(cmd.Context())
+		if err != nil {
+			return fmt.Errorf("list the autobrr filters: %w", err)
+		}
+		if err := checkFilterNames(existing, clients, filters); err != nil {
+			return err
+		}
+		// No existing filter has the name of a new filter, so each existing filter is another filter.
+		if stale, err = warnStaleFilters(cmd.Context(), cmd.ErrOrStderr(), api, existing, token); err != nil {
 			return err
 		}
 	}
@@ -185,7 +202,7 @@ func (o *setupFilterOptions) run(cmd *cobra.Command) error {
 	results := make([]setupFilterResult, 0, len(filters))
 	var createErr error
 	for i, filter := range filters {
-		result := setupFilterResult{Client: clients[i], Name: filter.Name}
+		result := setupFilterResult{Client: clients[i], Name: filter.Name, StaleFilters: stale}
 		if o.dryRun {
 			result.Result, result.Filter = "dry-run", filter
 		} else {
@@ -210,11 +227,7 @@ func (o *setupFilterOptions) run(cmd *cobra.Command) error {
 
 // checkFilterNames fails when a filter with the name of a new filter already
 // exists, before any write, so a rerun never gives a client two filters.
-func checkFilterNames(ctx context.Context, api *autobrr.Client, clients []string, filters []autobrr.Filter) error {
-	existing, err := api.Filters(ctx)
-	if err != nil {
-		return fmt.Errorf("list the autobrr filters: %w", err)
-	}
+func checkFilterNames(existing []autobrr.FilterSummary, clients []string, filters []autobrr.Filter) error {
 	var errs []error
 	for i, filter := range filters {
 		for _, other := range existing {
@@ -227,14 +240,37 @@ func checkFilterNames(ctx context.Context, api *autobrr.Client, clients []string
 	return errors.Join(errs...)
 }
 
+// warnStaleFilters warns on stderr about each filter of filters that calls
+// seasonpackarr, so the user can update it with --filter-id.
+func warnStaleFilters(ctx context.Context, stderr io.Writer, api *autobrr.Client, filters []autobrr.FilterSummary, token string) ([]autobrr.StaleFilter, error) {
+	stale, err := api.StaleFilters(ctx, filters, token)
+	if err != nil {
+		return nil, fmt.Errorf("search the autobrr filters that call seasonpackarr: %w", err)
+	}
+	for _, filter := range stale {
+		fmt.Fprintf(stderr, "Warning: filter %d (%s) calls seasonpackarr at %s; update it with --filter-id %d\n",
+			filter.ID, terminalText(filter.Name), strings.Join(filter.Endpoints, ", "), filter.ID)
+	}
+	return stale, nil
+}
+
 // update replaces the External entries and the actions of the filter from
 // --filter-id, or with --dry-run reads the filter and shows the changes.
-func (o *setupFilterOptions) update(ctx context.Context, api *autobrr.Client, client string, filter autobrr.Filter, token string) (setupFilterResult, error) {
+func (o *setupFilterOptions) update(ctx context.Context, stderr io.Writer, api *autobrr.Client, client string, filter autobrr.Filter, token string) (setupFilterResult, error) {
 	stored, err := api.Filter(ctx, o.filterID, token)
 	if err != nil {
 		return setupFilterResult{}, fmt.Errorf("read filter %d: %w", o.filterID, err)
 	}
-	result := setupFilterResult{Client: client, ID: stored.ID, Name: stored.Name, RemovedActions: stored.Actions}
+	existing, err := api.Filters(ctx)
+	if err != nil {
+		return setupFilterResult{}, fmt.Errorf("list the autobrr filters: %w", err)
+	}
+	others := slices.DeleteFunc(existing, func(other autobrr.FilterSummary) bool { return other.ID == stored.ID })
+	stale, err := warnStaleFilters(ctx, stderr, api, others, token)
+	if err != nil {
+		return setupFilterResult{}, err
+	}
+	result := setupFilterResult{Client: client, ID: stored.ID, Name: stored.Name, RemovedActions: stored.Actions, StaleFilters: stale}
 	if result.RemovedActions == nil {
 		result.RemovedActions = []autobrr.StoredAction{}
 	}

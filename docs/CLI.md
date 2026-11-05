@@ -166,12 +166,13 @@ entries and the actions that the update sends, and the actions that the update
 removes. Add `--json` for structured output. Each result has `clientname`,
 `id`, `name`, and `result`: `created`, `updated`, or `dry-run` with the
 `filter` payload. An update and its dry run also have `removed_actions`, with
-the `id`, `name`, and `type` of each action. Results go to stdout, and warnings
-go to stderr.
+the `id`, `name`, and `type` of each action. If the search finds old filters,
+each result also has `stale_filters`, with the `id`, `name`, and `endpoints` of
+each filter. Results go to stdout, and warnings go to stderr.
 
 | Exit code | Meaning |
 | --- | --- |
-| `0` | Each filter is created or updated, or the dry run printed each filter |
+| `0` | Each filter is created or updated, or the dry run printed each filter. Warnings do not change the exit code |
 | `1` | Invalid input, an existing filter with the same name, or an autobrr API error |
 
 After an autobrr error, the command stops and prints the filters that it
@@ -180,6 +181,25 @@ the filter. If the write fails after that, the filter has no action and
 downloads nothing until you rerun the command. After the update, the command
 reads the filter again. If autobrr still has an old action, the command fails
 and names each action, so that you can delete the old actions in autobrr.
+
+### Find old filters
+
+Each run that calls autobrr also searches the other filters for filters that
+still call seasonpackarr, for example a v0.16.0 filter that calls `/api/pack`.
+The search reads each filter and finds each External entry or action with a
+webhook URL that contains `/api/pack`, `/api/parse`, `/api/candidate`,
+`/api/match`, or `/api/import`. For each filter that it finds, the command
+prints a warning with the ID, the name, and the endpoints:
+
+```text
+Warning: filter 7 (TV packs) calls seasonpackarr at /api/pack; update it with --filter-id 7
+```
+
+The command never changes these filters. To update one, rerun the command with
+its ID in `--filter-id`. The search also finds the current filter of a client
+that you did not select, because that filter calls seasonpackarr too. The
+search skips the filter from `--filter-id`. A dry run without `--filter-id`
+makes no autobrr calls, so it does not search. The warnings keep exit code `0`.
 
 ## Connection settings
 

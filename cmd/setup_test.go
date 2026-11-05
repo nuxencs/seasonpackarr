@@ -866,3 +866,144 @@ func TestSetupFilterCommand_UpdateWithoutActionsReportsEmptyRemovedActions(t *te
 	require.Equal(t, 0, code, stderr)
 	assert.JSONEq(t, `[{"clientname": "tv", "id": 1, "name": "TV packs", "result": "updated", "removed_actions": []}]`, stdout)
 }
+
+// unrelatedWebhookFilter calls a webhook of another service.
+const unrelatedWebhookFilter = `{
+	"name": "Notify", "enabled": true,
+	"external": [{"name": "check", "index": 0, "type": "WEBHOOK", "enabled": true,
+		"webhook_host": "http://notifiarr:5454/api/v1/notification/autobrr"}],
+	"actions": [{"name": "Notify", "type": "WEBHOOK", "enabled": true, "webhook_host": "http://notifiarr:5454/api/v1/notification/autobrr"}]
+}`
+
+func TestSetupFilterCommand_WarnsAboutStaleFiltersWithoutWrites(t *testing.T) {
+	isolateCLI(t)
+	fake, server := newFakeAutobrrAPI(t)
+	staleID := fake.seed(t, v016Filter)
+	fake.seed(t, unrelatedWebhookFilter)
+	fake.seed(t, `{"name": "Movies", "actions": [{"name": "qBittorrent", "type": "QBITTORRENT", "enabled": true}]}`)
+	staleExternal, staleActions := fake.storedJSON(t, staleID, "external"), fake.storedJSON(t, staleID, "actions")
+
+	code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--client", "tv", "--api", "secret")...)
+
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, stdout, "Created filter 4 (seasonpackarr-tv) for client tv")
+	assert.Contains(t, stderr, "Warning: filter 1 (TV packs) calls seasonpackarr at /api/pack; update it with --filter-id 1")
+	assert.Equal(t, 1, strings.Count(stderr, "Warning:"), stderr)
+	assert.NotContains(t, stdout+stderr, "old-secret")
+	// The list has no External entries or actions, so the command reads each filter.
+	for _, path := range []string{"/api/filters/1", "/api/filters/2", "/api/filters/3"} {
+		assert.True(t, slices.ContainsFunc(fake.requests, func(r capturedRequest) bool { return r.method == http.MethodGet && r.path == path }), path)
+	}
+	assert.Equal(t, []string{"POST /api/filters", "PUT /api/filters/4"}, fake.writes())
+	assert.JSONEq(t, staleExternal, fake.storedJSON(t, staleID, "external"))
+	assert.JSONEq(t, staleActions, fake.storedJSON(t, staleID, "actions"))
+}
+
+func TestSetupFilterCommand_UpdateWarnsAboutOtherStaleFiltersOnly(t *testing.T) {
+	isolateCLI(t)
+	other := `{
+		"name": "Anime packs", "enabled": true,
+		"external": [{"name": "check", "index": 0, "type": "WEBHOOK", "enabled": true, "webhook_host": "http://seasonpackarr:42069/api/candidate"}],
+		"actions": [{"name": "Import", "type": "WEBHOOK", "enabled": true, "webhook_host": "http://seasonpackarr:42069/api/import?apikey=other-secret"}]
+	}`
+	for _, tt := range []struct {
+		name, result string
+		dryRun       bool
+	}{
+		{"update", "updated", false},
+		{"dry run", "dry-run", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			fake, server := newFakeAutobrrAPI(t)
+			id := fake.seed(t, v016Filter)
+			otherID := fake.seed(t, other)
+			otherActions := fake.storedJSON(t, otherID, "actions")
+			args := setupFilterArgs(server.URL, "--client", "tv", "--api", "secret", "--filter-id", strconv.Itoa(id), "--json")
+			if tt.dryRun {
+				args = append(args, "--dry-run")
+			}
+
+			code, stdout, stderr := runCLI(t, args...)
+
+			require.Equal(t, 0, code, stderr)
+			assert.Equal(t, "Warning: filter 2 (Anime packs) calls seasonpackarr at /api/candidate, /api/import; update it with --filter-id 2\n", stderr)
+			var results []struct {
+				ID           int    `json:"id"`
+				Result       string `json:"result"`
+				StaleFilters []struct {
+					ID        int      `json:"id"`
+					Name      string   `json:"name"`
+					Endpoints []string `json:"endpoints"`
+				} `json:"stale_filters"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(stdout), &results), stdout)
+			require.Len(t, results, 1)
+			assert.Equal(t, id, results[0].ID)
+			assert.Equal(t, tt.result, results[0].Result)
+			require.Len(t, results[0].StaleFilters, 1)
+			assert.Equal(t, otherID, results[0].StaleFilters[0].ID)
+			assert.Equal(t, "Anime packs", results[0].StaleFilters[0].Name)
+			assert.Equal(t, []string{"/api/candidate", "/api/import"}, results[0].StaleFilters[0].Endpoints)
+			assert.NotContains(t, stdout+stderr, "other-secret")
+			for _, write := range fake.writes() {
+				assert.NotContains(t, write, "/api/filters/"+strconv.Itoa(otherID))
+				assert.NotContains(t, write, "/api/actions/3")
+			}
+			if tt.dryRun {
+				assert.Empty(t, fake.writes())
+			}
+			assert.JSONEq(t, otherActions, fake.storedJSON(t, otherID, "actions"))
+		})
+	}
+}
+
+func TestSetupFilterCommand_WarnsAboutEachSeasonpackarrEndpoint(t *testing.T) {
+	isolateCLI(t)
+	fake, server := newFakeAutobrrAPI(t)
+	for _, filter := range []string{
+		`{"name": "pack action", "actions": [{"name": "a", "type": "WEBHOOK", "webhook_host": "http://seasonpackarr:42069/api/pack"}]}`,
+		`{"name": "parse entry", "external": [{"name": "e", "type": "WEBHOOK", "webhook_host": "https://proxy.example/seasonpackarr/api/parse"}]}`,
+		`{"name": "candidate entry", "external": [{"name": "e", "type": "WEBHOOK", "webhook_host": "http://seasonpackarr:42069/api/candidate"}]}`,
+		`{"name": "match entry", "external": [{"name": "e", "type": "WEBHOOK", "webhook_host": "http://seasonpackarr:42069/api/match"}]}`,
+		`{"name": "import action", "actions": [{"name": "a", "type": "WEBHOOK", "webhook_host": "http://seasonpackarr:42069/api/import?apikey=x"}]}`,
+	} {
+		fake.seed(t, filter)
+	}
+
+	code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--client", "tv", "--api", "secret", "--json")...)
+
+	require.Equal(t, 0, code, stderr)
+	for _, want := range []string{
+		"filter 1 (pack action) calls seasonpackarr at /api/pack;",
+		"filter 2 (parse entry) calls seasonpackarr at /api/parse;",
+		"filter 3 (candidate entry) calls seasonpackarr at /api/candidate;",
+		"filter 4 (match entry) calls seasonpackarr at /api/match;",
+		"filter 5 (import action) calls seasonpackarr at /api/import;",
+	} {
+		assert.Contains(t, stderr, want)
+	}
+	var results []struct {
+		StaleFilters []struct {
+			ID int `json:"id"`
+		} `json:"stale_filters"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &results), stdout)
+	require.Len(t, results, 1)
+	assert.Len(t, results[0].StaleFilters, 5)
+	assert.Equal(t, []string{"POST /api/filters", "PUT /api/filters/6"}, fake.writes())
+}
+
+func TestSetupFilterCommand_FailedStaleFilterReadStopsBeforeAnyWrite(t *testing.T) {
+	isolateCLI(t)
+	fake, server := newFakeAutobrrAPI(t)
+	fake.seed(t, v016Filter)
+	fake.seed(t, unrelatedWebhookFilter)
+	fake.failPath = "GET /api/filters/2"
+
+	code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--client", "tv", "--api", "secret")...)
+
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "search the autobrr filters that call seasonpackarr: read filter 2: autobrr returned HTTP 500 for GET /api/filters/2: internal error")
+	assert.Empty(t, fake.writes())
+}
