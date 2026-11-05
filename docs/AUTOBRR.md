@@ -28,7 +28,7 @@ The command writes the filter through the autobrr REST API. It needs these input
 | The seasonpackarr URL that autobrr uses | `--webhook-url`, for example `http://seasonpackarr:42069` when both run in Docker |
 | The autobrr URL | `SEASONPACKARR__AUTOBRR_URL` or `--autobrr-url` |
 | An autobrr API key | `SEASONPACKARR__AUTOBRR_API_KEY` or `--autobrr-api-key`. Create the key in autobrr under **Settings**, **API keys** |
-| The seasonpackarr API token and the client names | Read from your config. Override them with `--api` and `--client` |
+| The seasonpackarr API token and the client names | The command reads them from your config. Override them with `--api` and `--client` |
 
 1. Run the command where it can read your seasonpackarr config, for example on the seasonpackarr host:
 
@@ -45,10 +45,12 @@ The command writes the filter through the autobrr REST API. It needs these input
      seasonpackarr setup filter --webhook-url http://seasonpackarr:42069
    ```
 
-   The command creates one disabled filter named `seasonpackarr-<client>` for each client. It then asks autobrr to send
-   a candidate check to seasonpackarr, so that you know that autobrr can reach seasonpackarr with the correct token and
-   client name. If the check fails, the command names the cause, for example a wrong `--webhook-url` or token, and
-   exits with `1`. The filter is written, so fix the cause and rerun the command with the `--filter-id` that it prints.
+   The command creates one disabled filter named `seasonpackarr-<client>` for each client. Then autobrr sends a
+   candidate check to seasonpackarr for each filter. This check shows that autobrr reaches seasonpackarr with the
+   correct token and client name. If the check fails, the command names the cause, for example a wrong `--webhook-url`
+   or token, and exits with `1`. The command writes the filter also when the check fails. Fix the cause and rerun the
+   command with the `--filter-id` that it prints. autobrr versions earlier than v1.88.0 cannot run the check, so the
+   command prints a warning and skips it.
 
 2. In autobrr, do these steps for each new filter:
    1. Select the indexers in **General** > **Indexers**.

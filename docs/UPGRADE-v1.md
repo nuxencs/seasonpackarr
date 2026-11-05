@@ -303,9 +303,9 @@ For all commands, including the new `search` command, see the
 Update your existing filter with `seasonpackarr setup filter` and
 `--filter-id`. The command replaces the External entries and all actions of the
 filter with the v1.0.0 values. It keeps all other settings, such as the
-indexers, the resolutions, the priority, and the enabled state, so the filter
-stays disabled. Run this step after v1.0.0 runs, because the command then asks
-autobrr to send a candidate check to seasonpackarr.
+indexers, the resolutions, the priority, and the enabled state. The filter
+stays disabled, because you disabled it in step 1. Do this step after v1.0.0 starts, because autobrr then sends a
+candidate check to seasonpackarr.
 
 1. Find the ID of your filter in the URL of the filter in autobrr, for example
    `/filters/12`.
@@ -334,7 +334,8 @@ autobrr to send a candidate check to seasonpackarr.
      adds the torrent itself, so the filter has only the import action.
    - The candidate check through autobrr must pass. If it fails, the command
      names the cause and exits with `1`. Fix the cause and run the command
-     again.
+     again. autobrr versions earlier than v1.88.0 cannot run the check, so the
+     command prints a warning and skips it.
    - The command prints a warning for each other filter that still calls
      seasonpackarr, for example a second v0.16.0 filter:
 

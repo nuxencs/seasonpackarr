@@ -113,7 +113,7 @@ for the client from `--client` or `SEASONPACKARR__CLIENT`. Each filter is named
 the [autobrr guide](AUTOBRR.md). A new filter is disabled and has no indexers.
 After the command, do these steps in autobrr for each new filter:
 
-1. Select the indexers in the **General** tab.
+1. Select the indexers in **General** > **Indexers**.
 2. Set the priority higher than your other TV filters.
 3. Enable the filter.
 
