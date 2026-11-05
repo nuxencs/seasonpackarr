@@ -31,7 +31,7 @@ client. The client downloads only the missing episodes.
 
 - [Installation](docs/INSTALL.md): run the binary, systemd, or Docker, and complete the first configuration.
 - [Configuration](docs/CONFIGURATION.md): torrent clients, import policy, smart mode, fuzzy matching, and config reload.
-- [autobrr setup](docs/AUTOBRR.md): the filter, the External checks, and the import action.
+- [autobrr setup](docs/AUTOBRR.md): create the filter with `seasonpackarr setup filter`, or set it up by hand.
 - [Prowlarr discovery](docs/PROWLARR.md): RSS monitoring and search for season packs.
 - [Command-line guide](docs/CLI.md): check a release or a torrent from the terminal.
 - [API reference](docs/API.md): endpoints, authentication, and status codes.

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -85,4 +86,15 @@ func TestReadConnectionSettings_ParseErrorsDoNotExposeValues(t *testing.T) {
 		require.Error(t, err)
 		require.NotContains(t, err.Error(), "secret")
 	}
+}
+
+// TestReadConnectionSettings_AllowsUnknownKeys keeps the CLI usable against a
+// config from a different version, which the service load rejects.
+func TestReadConnectionSettings_AllowsUnknownKeys(t *testing.T) {
+	clearConnectionEnvironment(t)
+	path := writeTestConfig(t, "apiToken: token\nfutureKey: true\nclients:\n  tv:\n    futureClientKey: 1\n")
+	settings, err := ReadConnectionSettings(filepath.Dir(path))
+	require.NoError(t, err)
+	assert.Equal(t, "token", settings.APIToken)
+	assert.Equal(t, []string{"tv"}, settings.Clients)
 }

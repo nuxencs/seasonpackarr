@@ -11,6 +11,7 @@
    handling. Pack operations use direct `candidate`, `match`, and `import`
    commands. CLI configuration reads are side-effect free and
    share file discovery and environment overrides with the service.
+   `setup filter` writes the autobrr filter through `internal/autobrr/`.
 2. `cmd/start.go` loads config, logger, notifications, and the SQLite store, then starts the HTTP server. Signal cancellation starts a bounded graceful shutdown. The command closes the store after server shutdown.
 3. `internal/http/server.go` builds `/api/healthz`, `/api/candidate`, `/api/match`, `/api/import`, and `/api/search`.
 4. `internal/http/processor_*.go` keeps each processing stage together. The handler file owns payload decode and responses. The candidate file owns announce-only matching and inventory caching. The plan file parses torrent bytes and builds an exact side-effect-free plan. The import file reuses or rebuilds that plan, resolves the client import destination, hardlinks matched files, and imports the pack. See [docs/design/qbittorrent-import-flow.md](docs/design/qbittorrent-import-flow.md).
@@ -23,7 +24,7 @@
 ### Configuration
 
 - Implemented in `internal/config/` and `internal/domain/config.go`
-- Concerns: defaults, config file discovery, validated immutable snapshots, dynamic reload, config rendering
+- Concerns: defaults, config file discovery, strict key validation, validated immutable snapshots, dynamic reload, config rendering
 - Runtime readers acquire one snapshot per request or operation. Reload publishes a candidate only after file parsing,
   environment overrides, and validation succeed.
 - Durable contract surfaces: `config.yaml`, `schemas/config-schema.json`, [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
@@ -39,6 +40,28 @@
   - `POST /api/search`
   - `GET /api/healthz/liveness`
   - `GET /api/healthz/readiness`
+
+### autobrr Filter Setup
+
+- Implemented in `internal/autobrr/` and `cmd/setup.go`
+- `internal/autobrr/filter.go` holds the filter definition: the base settings
+  of a new filter, the candidate check and match External entries, and the
+  import action. [docs/AUTOBRR.md](docs/AUTOBRR.md) describes the same filter
+  for a manual setup, and a test in `cmd/setup_test.go` compares the two.
+- `internal/autobrr/client.go` calls the autobrr REST API. A create stores only
+  the base settings, so the client reads the stored filter, sets the External
+  entries and actions, and sends it back. An update with `--filter-id` does the
+  same for an existing filter. It deletes the old actions first, because the
+  autobrr update keeps actions that it does not send. Without `--filter-id`, an
+  existing filter with the same name stops the command before any write. Before
+  any write, the command reads each other filter and warns about each one that
+  calls a seasonpackarr endpoint, because the autobrr filter list has no
+  External entries or actions. It never writes to those filters. After each
+  write, `internal/autobrr/verify.go` asks autobrr to run the candidate check
+  entry through the autobrr External test endpoint. Thus the check uses the
+  network position of autobrr. The result is a pass, a failure with its cause,
+  or a skip on an autobrr without the endpoint. See
+  [the API notes](docs/research/autobrr-filter-api.md) and ADR-0004.
 
 ### Release Matching
 
@@ -164,7 +187,7 @@ If a change starts pushing transport concerns into matching logic or file ops, s
 
 ## External Dependencies
 
-- optional autobrr webhook integration
+- optional autobrr webhook integration, and the autobrr REST API for `setup filter`
 - optional Prowlarr API and Torznab tracker access
 - qBittorrent, Transmission, and Deluge 1.3/2 native RPC access
 - filesystem hardlink support

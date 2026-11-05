@@ -24,6 +24,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/structs"
@@ -428,6 +429,11 @@ func New(configPath string, version string) *AppConfig {
 
 	snapshot, err := c.loadSnapshot()
 	if err != nil {
+		// cmd/start.go logs these warnings after a successful load. Print them
+		// here too, because an unknown variable can explain the load error.
+		for _, name := range UnknownEnvironmentVariables(os.Environ()) {
+			log.Printf("warning: unknown environment variable %s; seasonpackarr ignores it", name)
+		}
 		log.Fatal(err)
 	}
 	c.current.Store(snapshot)
@@ -596,152 +602,154 @@ func defaultConfig(version, configFile string, disableConfigFile bool) domain.Co
 	}
 }
 
-func applyEnvironment(cfg *domain.Config) {
-	const prefix = "SEASONPACKARR__"
+const envPrefix = "SEASONPACKARR__"
 
-	envs := os.Environ()
-	for _, env := range envs {
-		if strings.HasPrefix(env, prefix) {
-			envPair := strings.SplitN(env, "=", 2)
-			envKey, envValue := envPair[0], envPair[1]
+func setBool(dst *bool, value string) {
+	if b, err := strconv.ParseBool(value); err == nil {
+		*dst = b
+	}
+}
 
-			if envValue != "" {
-				switch envKey {
-				// disable config file
-				case prefix + "DISABLE_CONFIG_FILE":
-					if b, err := strconv.ParseBool(envValue); err == nil {
-						cfg.DisableConfigFile = b
-					}
+func setPositiveInt(dst *int, value string) {
+	if i, _ := strconv.ParseInt(value, 10, 32); i > 0 {
+		*dst = int(i)
+	}
+}
 
-				// server settings
-				case prefix + "HOST":
-					cfg.Host = envValue
-				case prefix + "PORT":
-					if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
-						cfg.Port = int(i)
-					}
+// envSettings maps each service variable, without envPrefix, to the field that
+// it sets. UnknownEnvironmentVariables reads the same table.
+var envSettings = map[string]func(cfg *domain.Config, value string){
+	"DISABLE_CONFIG_FILE": func(cfg *domain.Config, v string) { setBool(&cfg.DisableConfigFile, v) },
 
-				// log settings
-				case prefix + "LOG_LEVEL":
-					cfg.LogLevel = envValue
-				case prefix + "LOG_PATH":
-					cfg.LogPath = envValue
-				case prefix + "LOG_MAX_SIZE":
-					if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
-						cfg.LogMaxSize = int(i)
-					}
-				case prefix + "LOG_MAX_BACKUPS":
-					if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
-						cfg.LogMaxBackups = int(i)
-					}
+	"HOST": func(cfg *domain.Config, v string) { cfg.Host = v },
+	"PORT": func(cfg *domain.Config, v string) { setPositiveInt(&cfg.Port, v) },
 
-				// smart mode settings
-				case prefix + "SMART_MODE":
-					if b, err := strconv.ParseBool(envValue); err == nil {
-						cfg.SmartMode = b
-					}
-				case prefix + "SMART_MODE_THRESHOLD":
-					if f, _ := strconv.ParseFloat(envValue, 32); f > 0 {
-						cfg.SmartModeThreshold = float32(f)
-					}
+	"LOG_LEVEL":       func(cfg *domain.Config, v string) { cfg.LogLevel = v },
+	"LOG_PATH":        func(cfg *domain.Config, v string) { cfg.LogPath = v },
+	"LOG_MAX_SIZE":    func(cfg *domain.Config, v string) { setPositiveInt(&cfg.LogMaxSize, v) },
+	"LOG_MAX_BACKUPS": func(cfg *domain.Config, v string) { setPositiveInt(&cfg.LogMaxBackups, v) },
 
-				// search settings
-				case prefix + "SEARCH_PROWLARR_URL":
-					cfg.Search.ProwlarrURL = envValue
-				case prefix + "SEARCH_API_KEY":
-					cfg.Search.APIKey = envValue
-				case prefix + "SEARCH_INDEXER_IDS":
-					cfg.Search.IndexerIDs = parseSearchIndexerIDs(envValue)
-				case prefix + "SEARCH_RSS_INTERVAL":
-					cfg.Search.RSSInterval = envValue
-				case prefix + "SEARCH_REQUEST_INTERVAL":
-					cfg.Search.RequestInterval = envValue
+	"SMART_MODE": func(cfg *domain.Config, v string) { setBool(&cfg.SmartMode, v) },
+	"SMART_MODE_THRESHOLD": func(cfg *domain.Config, v string) {
+		if f, _ := strconv.ParseFloat(v, 32); f > 0 {
+			cfg.SmartModeThreshold = float32(f)
+		}
+	},
 
-				// api token
-				case prefix + "API_TOKEN":
-					cfg.APIToken = envValue
+	"SEARCH_PROWLARR_URL":     func(cfg *domain.Config, v string) { cfg.Search.ProwlarrURL = v },
+	"SEARCH_API_KEY":          func(cfg *domain.Config, v string) { cfg.Search.APIKey = v },
+	"SEARCH_INDEXER_IDS":      func(cfg *domain.Config, v string) { cfg.Search.IndexerIDs = parseSearchIndexerIDs(v) },
+	"SEARCH_RSS_INTERVAL":     func(cfg *domain.Config, v string) { cfg.Search.RSSInterval = v },
+	"SEARCH_REQUEST_INTERVAL": func(cfg *domain.Config, v string) { cfg.Search.RequestInterval = v },
 
-				// fuzzy matching settings
-				case prefix + "FUZZY_MATCHING_SKIP_REPACK_COMPARE":
-					if b, err := strconv.ParseBool(envValue); err == nil {
-						cfg.FuzzyMatching.SkipRepackCompare = b
-					}
-				case prefix + "FUZZY_MATCHING_SIMPLIFY_HDR_COMPARE":
-					if b, err := strconv.ParseBool(envValue); err == nil {
-						cfg.FuzzyMatching.SimplifyHdrCompare = b
-					}
-				case prefix + "FUZZY_MATCHING_SIMPLIFY_WEB_COMPARE":
-					if b, err := strconv.ParseBool(envValue); err == nil {
-						cfg.FuzzyMatching.SimplifyWebCompare = b
-					}
-				case prefix + "FUZZY_MATCHING_SKIP_YEAR_COMPARE":
-					if b, err := strconv.ParseBool(envValue); err == nil {
-						cfg.FuzzyMatching.SkipYearCompare = b
-					}
+	"API_TOKEN": func(cfg *domain.Config, v string) { cfg.APIToken = v },
 
-				// notifications settings
-				case prefix + "NOTIFICATIONS_DISCORD":
-					cfg.Notifications.Discord = envValue
-				case prefix + "NOTIFICATIONS_NOTIFICATION_LEVEL":
-					levels := strings.Split(envValue, ",")
-					for i, level := range levels {
-						levels[i] = strings.TrimSpace(level)
-					}
-					cfg.Notifications.NotificationLevel = levels
-				}
+	"FUZZY_MATCHING_SKIP_REPACK_COMPARE":  func(cfg *domain.Config, v string) { setBool(&cfg.FuzzyMatching.SkipRepackCompare, v) },
+	"FUZZY_MATCHING_SIMPLIFY_HDR_COMPARE": func(cfg *domain.Config, v string) { setBool(&cfg.FuzzyMatching.SimplifyHdrCompare, v) },
+	"FUZZY_MATCHING_SIMPLIFY_WEB_COMPARE": func(cfg *domain.Config, v string) { setBool(&cfg.FuzzyMatching.SimplifyWebCompare, v) },
+	"FUZZY_MATCHING_SKIP_YEAR_COMPARE":    func(cfg *domain.Config, v string) { setBool(&cfg.FuzzyMatching.SkipYearCompare, v) },
 
-				// client settings
-				// Cut on the first underscore so multi-word settings such as
-				// IMPORT_SAVE_PATH survive; the old len==2 Split silently dropped
-				// them. Applies to clients defined purely via env vars too, since
-				// the client is lazily created here when absent.
-				if after, ok := strings.CutPrefix(envKey, prefix+"CLIENTS_"); ok {
-					clientName, setting, ok := strings.Cut(after, "_")
-					if !ok {
-						continue
-					}
-					clientName = strings.ToLower(clientName)
+	"NOTIFICATIONS_DISCORD": func(cfg *domain.Config, v string) { cfg.Notifications.Discord = v },
+	"NOTIFICATIONS_NOTIFICATION_LEVEL": func(cfg *domain.Config, v string) {
+		levels := strings.Split(v, ",")
+		for i, level := range levels {
+			levels[i] = strings.TrimSpace(level)
+		}
+		cfg.Notifications.NotificationLevel = levels
+	},
+}
 
-					// initialize client if it doesn't exist
-					if cfg.Clients[clientName] == nil {
-						cfg.Clients[clientName] = &domain.Client{}
-					}
-
-					switch setting {
-					case "TYPE":
-						cfg.Clients[clientName].Type = envValue
-					case "HOST":
-						cfg.Clients[clientName].Host = envValue
-					case "PORT":
-						if i, _ := strconv.ParseInt(envValue, 10, 32); i > 0 {
-							cfg.Clients[clientName].Port = int(i)
-						}
-					case "USERNAME":
-						cfg.Clients[clientName].Username = envValue
-					case "PASSWORD":
-						cfg.Clients[clientName].Password = envValue
-					case "APIKEY":
-						cfg.Clients[clientName].APIKey = envValue
-					case "IMPORT_SAVE_PATH":
-						cfg.Clients[clientName].Import.SavePath = envValue
-					case "IMPORT_CATEGORY":
-						cfg.Clients[clientName].Import.Category = envValue
-					case "IMPORT_DOWNLOAD_PATH":
-						cfg.Clients[clientName].Import.DownloadPath = envValue
-					case "IMPORT_CONTENT_LAYOUT":
-						cfg.Clients[clientName].Import.ContentLayout = strings.ToLower(envValue)
-					case "IMPORT_TAGS":
-						cfg.Clients[clientName].Import.Tags = cfg.Clients[clientName].Import.Tags[:0]
-						for tag := range strings.SplitSeq(envValue, ",") {
-							if tag = strings.TrimSpace(tag); tag != "" {
-								cfg.Clients[clientName].Import.Tags = append(cfg.Clients[clientName].Import.Tags, tag)
-							}
-						}
-					}
-				}
+// clientEnvSettings maps each setting of a SEASONPACKARR__CLIENTS_<NAME>_<SETTING>
+// variable to the client field that it sets.
+var clientEnvSettings = map[string]func(client *domain.Client, value string){
+	"TYPE":                  func(c *domain.Client, v string) { c.Type = v },
+	"HOST":                  func(c *domain.Client, v string) { c.Host = v },
+	"PORT":                  func(c *domain.Client, v string) { setPositiveInt(&c.Port, v) },
+	"USERNAME":              func(c *domain.Client, v string) { c.Username = v },
+	"PASSWORD":              func(c *domain.Client, v string) { c.Password = v },
+	"APIKEY":                func(c *domain.Client, v string) { c.APIKey = v },
+	"IMPORT_SAVE_PATH":      func(c *domain.Client, v string) { c.Import.SavePath = v },
+	"IMPORT_CATEGORY":       func(c *domain.Client, v string) { c.Import.Category = v },
+	"IMPORT_DOWNLOAD_PATH":  func(c *domain.Client, v string) { c.Import.DownloadPath = v },
+	"IMPORT_CONTENT_LAYOUT": func(c *domain.Client, v string) { c.Import.ContentLayout = strings.ToLower(v) },
+	"IMPORT_TAGS": func(c *domain.Client, v string) {
+		c.Import.Tags = c.Import.Tags[:0]
+		for tag := range strings.SplitSeq(v, ",") {
+			if tag = strings.TrimSpace(tag); tag != "" {
+				c.Import.Tags = append(c.Import.Tags, tag)
 			}
 		}
+	},
+}
+
+// cliEnvVariables are read by CLI commands in cmd, not by the service config.
+var cliEnvVariables = []string{"URL", "CLIENT", "AUTOBRR_URL", "AUTOBRR_API_KEY"}
+
+// cutClientEnvVariable splits CLIENTS_<NAME>_<SETTING> on the first underscore
+// after the prefix, so multi-word settings such as IMPORT_SAVE_PATH stay whole.
+func cutClientEnvVariable(name string) (clientName, setting string, ok bool) {
+	after, ok := strings.CutPrefix(name, "CLIENTS_")
+	if !ok {
+		return "", "", false
 	}
+	return strings.Cut(after, "_")
+}
+
+func applyEnvironment(cfg *domain.Config) {
+	for _, env := range os.Environ() {
+		key, value, _ := strings.Cut(env, "=")
+		name, ok := strings.CutPrefix(key, envPrefix)
+		if !ok || value == "" {
+			continue
+		}
+		if set, ok := envSettings[name]; ok {
+			set(cfg, value)
+		}
+
+		clientName, setting, ok := cutClientEnvVariable(name)
+		set, known := clientEnvSettings[setting]
+		// An unknown variable only logs a warning, so it must not add an empty client that fails validation.
+		if !ok || clientName == "" || !known {
+			continue
+		}
+		// The client is created here when absent, so clients defined only
+		// through environment variables work too.
+		clientName = strings.ToLower(clientName)
+		if cfg.Clients[clientName] == nil {
+			cfg.Clients[clientName] = &domain.Client{}
+		}
+		set(cfg.Clients[clientName], value)
+	}
+}
+
+// UnknownEnvironmentVariables returns the sorted SEASONPACKARR__ variables in
+// environ ("KEY=value" entries) that neither the service config nor a CLI command
+// reads. It ignores the values, so an empty unknown variable is reported too.
+func UnknownEnvironmentVariables(environ []string) []string {
+	var unknown []string
+	for _, env := range environ {
+		key, _, _ := strings.Cut(env, "=")
+		name, ok := strings.CutPrefix(key, envPrefix)
+		if ok && !knownEnvironmentVariable(name) {
+			unknown = append(unknown, key)
+		}
+	}
+	slices.Sort(unknown)
+	return unknown
+}
+
+// knownEnvironmentVariable includes the removed variables, because
+// validateDeprecatedConfigInputs stops startup with a migration error for them.
+func knownEnvironmentVariable(name string) bool {
+	if _, ok := envSettings[name]; ok || slices.Contains(cliEnvVariables, name) {
+		return true
+	}
+	if slices.Contains([]string{deprecatedParseTorrentFileEnv, deprecatedMetadataTVDBAPIKeyEnv, deprecatedMetadataTVDBPINEnv}, envPrefix+name) {
+		return true
+	}
+	clientName, setting, ok := cutClientEnvVariable(name)
+	_, known := clientEnvSettings[setting]
+	return ok && clientName != "" && (known || setting == deprecatedPreImportPathEnv)
 }
 
 func (c *AppConfig) resolveConfigFile(configPath string) (string, error) {
@@ -782,9 +790,14 @@ func (c *AppConfig) loadSnapshot() (*domain.Config, error) {
 		return nil, fmt.Errorf("loading config defaults: %w", err)
 	}
 
+	// The file keys stay separate from the defaults, so the unknown-key check sees only what the user wrote.
+	fileK := koanf.New(".")
 	if !c.disableConfigFile {
-		if err := k.Load(file.Provider(c.configFile), yaml.Parser()); err != nil {
+		if err := fileK.Load(file.Provider(c.configFile), yaml.Parser()); err != nil {
 			return nil, fmt.Errorf("reading config file %s: %w", c.configFile, err)
+		}
+		if err := k.Merge(fileK); err != nil {
+			return nil, fmt.Errorf("merging config file %s: %w", c.configFile, err)
 		}
 	}
 	if err := validateDeprecatedConfigInputs(k, os.LookupEnv); err != nil {
@@ -792,6 +805,14 @@ func (c *AppConfig) loadSnapshot() (*domain.Config, error) {
 	}
 	if err := k.Unmarshal("", &cfg); err != nil {
 		return nil, fmt.Errorf("decoding config file %s: %w", c.configFile, err)
+	}
+	unknown, err := unknownConfigKeys(fileK)
+	if err != nil {
+		return nil, fmt.Errorf("checking config keys in %s: %w", c.configFile, err)
+	}
+	if len(unknown) > 0 {
+		return nil, fmt.Errorf("validating config file %s: unknown config keys: %s; remove or rename them (see the configuration guide)",
+			c.configFile, strings.Join(unknown, ", "))
 	}
 
 	applyEnvironment(&cfg)
@@ -801,6 +822,31 @@ func (c *AppConfig) loadSnapshot() (*domain.Config, error) {
 
 	snapshot := cloneConfig(cfg)
 	return &snapshot, nil
+}
+
+var unusedKeyPath = strings.NewReplacer("[", ".", "]", "")
+
+// unknownConfigKeys returns the sorted dotted paths of the file keys that no
+// config field uses. It gets only the file keys, because a default key and its
+// case variant in the file would both match one field.
+func unknownConfigKeys(fileK *koanf.Koanf) ([]string, error) {
+	var (
+		md      mapstructure.Metadata
+		discard domain.Config
+	)
+	// The yaml tag gives the paths their YAML names. The real decode matches field
+	// names instead, which is the same without case (TestUnknownConfigKeys_YAMLTagsMatchFieldNames).
+	// WeaklyTypedInput is the koanf default, so values that the real decode accepts decode here too.
+	dc := &mapstructure.DecoderConfig{Metadata: &md, WeaklyTypedInput: true}
+	if err := fileK.UnmarshalWithConf("", &discard, koanf.UnmarshalConf{Tag: "yaml", DecoderConfig: dc}); err != nil {
+		return nil, err
+	}
+	keys := make([]string, 0, len(md.Unused))
+	for _, key := range md.Unused {
+		keys = append(keys, unusedKeyPath.Replace(key))
+	}
+	slices.Sort(keys)
+	return keys, nil
 }
 
 func validateConfig(cfg domain.Config) error {

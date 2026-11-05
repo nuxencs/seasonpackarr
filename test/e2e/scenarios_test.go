@@ -150,7 +150,7 @@ func candidateRejection(t *testing.T, h *harness, c client) {
 	name := packName()
 	// autobrr never downloads the pack, because the match webhook does not run.
 	pack := daemontest.WriteCompletePack(t, t.TempDir(), name)
-	// The pack is 1080p, as the filter requires. The episode is 720p.
+	// The pack is 1080p and the episode is 720p, so seasonpackarr finds no compatible episode.
 	addEpisode(t, c, daemontest.SourceDir(h.importDir), strings.Replace(name, ".1080p.", ".720p.", 1), 1)
 
 	// /data is the shared volume of every container (ADR-0001).
@@ -161,9 +161,9 @@ func candidateRejection(t *testing.T, h *harness, c client) {
 
 	// autobrr stores no release for a rejected announce, so its log is the
 	// proof that it processed the announce and the candidate webhook rejected it.
-	rej := h.autobrr.waitRejection(t, filterConfig(t, c.configName())["name"].(string), name)
+	rej := h.autobrr.waitRejection(t, h.filterName(t, c.configName()), name)
 	// seasonpackarr answers 200 (no matches) when no client episode is compatible.
-	assert.Equal(t, rejection{webhook: "candidate", status: 200}, rej,
+	assert.Equal(t, rejection{webhook: "1. Candidate check", status: 200}, rej,
 		"autobrr must reject the announce at the candidate webhook")
 
 	rls, err := h.autobrr.findRelease(name)

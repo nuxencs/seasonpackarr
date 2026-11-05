@@ -23,10 +23,14 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/daemontest"
 
@@ -68,6 +72,10 @@ type harness struct {
 
 	autobrr   *autobrrAPI
 	networkID int
+	// cliBinary is the seasonpackarr binary that creates the filters.
+	cliBinary string
+	// filters maps a client name to the name of its autobrr filter.
+	filters sync.Map
 }
 
 var (
@@ -109,6 +117,11 @@ func newHarness() (*harness, error) {
 }
 
 func (h *harness) setupAutobrr() error {
+	cliBinary, err := buildCLI()
+	if err != nil {
+		return err
+	}
+	h.cliBinary = cliBinary
 	api, err := setupAutobrr(os.Getenv(envAutobrrURL))
 	if err != nil {
 		return err
@@ -116,6 +129,21 @@ func (h *harness) setupAutobrr() error {
 	h.autobrr = api
 	h.networkID, err = api.createIndexer(h.torrentURL)
 	return err
+}
+
+// buildCLI builds the seasonpackarr binary for the rest of the test process.
+func buildCLI() (string, error) {
+	dir, err := os.MkdirTemp("", "seasonpackarr-cli-")
+	if err != nil {
+		return "", err
+	}
+	binary := filepath.Join(dir, "seasonpackarr")
+	// The test container user does not own the mounted checkout, so git refuses the VCS stamp.
+	output, err := exec.Command("go", "build", "-buildvcs=false", "-o", binary, "../..").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("build the seasonpackarr binary: %w: %s", err, output)
+	}
+	return binary, nil
 }
 
 // serveTorrents serves the .torrent files that tests announce or add with
@@ -166,31 +194,106 @@ func (h *harness) announceImport(t *testing.T, name string, torrent []byte) {
 	h.requireImportSent(t, name)
 }
 
-// filterConfig reads testdata/filter.json and fills in its placeholders for
-// clientName. It uses the endpoints, payloads, header, query parameter, and
-// expected status of docs/AUTOBRR.md.
-func filterConfig(t *testing.T, clientName string) map[string]any {
-	t.Helper()
-	raw, err := os.ReadFile("testdata/filter.json")
-	require.NoError(t, err)
-	filled := strings.NewReplacer(
-		"${SEASONPACKARR_URL}", os.Getenv(envSeasonpackarrURL),
-		"${API_TOKEN}", os.Getenv(envAPIToken),
-		"${CLIENT_NAME}", clientName,
-	).Replace(string(raw))
-	var filter map[string]any
-	require.NoError(t, json.Unmarshal([]byte(filled), &filter), "decode the filled-in filter config")
-	return filter
-}
-
-// ensureFilter creates the filter of clientName once and links it to the indexer.
+// ensureFilter creates the filter of clientName once with seasonpackarr setup
+// filter, links the indexer, enables it, and updates it with --filter-id, so the
+// announce scenarios also prove the updated filter.
 func (h *harness) ensureFilter(t *testing.T, clientName string) {
 	t.Helper()
-	filter := filterConfig(t, clientName)
-	if h.autobrr.hasFilter(t, filter["name"].(string)) {
+	if _, ok := h.filters.Load(clientName); ok {
 		return
 	}
-	require.NoError(t, h.autobrr.createFilter(filter), "create the autobrr filter")
+	created := h.setupFilter(t, clientName)
+	require.Equal(t, "created", created.Result, "setup filter result")
+	require.NotZero(t, created.ID, "setup filter ID")
+	requireVerified(t, created)
+	require.NoError(t, h.autobrr.linkAndEnableFilter(created.ID), "link the indexer and enable the filter %s", created.Name)
+
+	// Each verification is a candidate check that can fill the inventory cache, and the last one starts here.
+	verified := time.Now()
+	updated := h.setupFilter(t, clientName, "--filter-id", strconv.Itoa(created.ID))
+	require.Equal(t, "updated", updated.Result, "setup filter --filter-id result")
+	require.Equal(t, created.ID, updated.ID, "setup filter --filter-id ID")
+	require.Len(t, updated.RemovedActions, 1, "setup filter --filter-id must remove the import action of the create")
+	require.Equal(t, "Import with seasonpackarr", updated.RemovedActions[0].Name, "setup filter --filter-id removed action")
+	requireVerified(t, updated)
+	require.NoError(t, h.autobrr.checkUpdatedFilter(created.ID), "read the updated filter %s", created.Name)
+	h.filters.Store(clientName, created.Name)
+	// A scenario adds its episodes after this call, so it needs a fresh inventory.
+	time.Sleep(time.Until(verified.Add(inventoryCacheTTL + time.Second)))
+}
+
+// inventoryCacheTTL is inventoryCacheTTL in internal/http/processor_candidate.go.
+const inventoryCacheTTL = 30 * time.Second
+
+// setupFilterResult is one result of seasonpackarr setup filter --json.
+type setupFilterResult struct {
+	Client         string  `json:"clientname"`
+	ID             int     `json:"id"`
+	Name           string  `json:"name"`
+	Result         string  `json:"result"`
+	RemovedActions []named `json:"removed_actions"`
+	Verification   struct {
+		Result  string `json:"result"`
+		Status  int    `json:"status"`
+		Message string `json:"message"`
+	} `json:"verification"`
+}
+
+// requireVerified fails unless the candidate check that autobrr ran from its
+// network position reached seasonpackarr.
+func requireVerified(t *testing.T, result setupFilterResult) {
+	t.Helper()
+	require.Equal(t, "passed", result.Verification.Result, "setup filter verification of filter %d: %s", result.ID, result.Verification.Message)
+	require.NotZero(t, result.Verification.Status, "setup filter verification status")
+}
+
+// setupFilter runs seasonpackarr setup filter for clientName without a config
+// file and returns its one result.
+func (h *harness) setupFilter(t *testing.T, clientName string, extra ...string) setupFilterResult {
+	t.Helper()
+	// An empty working directory and home, so the command finds no config file.
+	noConfig := t.TempDir()
+	cmd := exec.CommandContext(t.Context(), h.cliBinary, append([]string{
+		"setup", "filter",
+		"--webhook-url", os.Getenv(envSeasonpackarrURL),
+		"--client", clientName,
+		"--api", os.Getenv(envAPIToken),
+		"--autobrr-url", h.autobrr.baseURL,
+		"--autobrr-api-key", h.autobrr.apiKey,
+		"--json",
+	}, extra...)...)
+	cmd.Dir = noConfig
+	cmd.Env = append(cliEnvironment(), "HOME="+noConfig)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	stdout, err := cmd.Output()
+	require.NoError(t, err, "seasonpackarr setup filter %v: %s", extra, stderr.String())
+
+	var results []setupFilterResult
+	require.NoError(t, json.Unmarshal(stdout, &results), "decode the setup filter output: %s", stdout)
+	require.Len(t, results, 1, "setup filter must write one filter: %s", stdout)
+	require.Equal(t, clientName, results[0].Client, "setup filter client")
+	return results[0]
+}
+
+// filterName returns the name of the filter that ensureFilter created for clientName.
+func (h *harness) filterName(t *testing.T, clientName string) string {
+	t.Helper()
+	name, ok := h.filters.Load(clientName)
+	require.True(t, ok, "no filter for client %s", clientName)
+	return name.(string)
+}
+
+// cliEnvironment is the test environment without SEASONPACKARR__ variables,
+// so only the flags configure the command.
+func cliEnvironment() []string {
+	var environment []string
+	for _, entry := range os.Environ() {
+		if !strings.HasPrefix(entry, "SEASONPACKARR__") {
+			environment = append(environment, entry)
+		}
+	}
+	return environment
 }
 
 // packName is a unique pack release name, so reruns and other tests do not
@@ -310,28 +413,10 @@ func (a *autobrrAPI) createIndexer(baseURL string) (int, error) {
 	return 0, fmt.Errorf("IRC network %s not found", ircServer)
 }
 
-func (a *autobrrAPI) hasFilter(t *testing.T, name string) bool {
-	t.Helper()
-	var filters []named
-	require.NoError(t, a.do(http.MethodGet, "/api/filters", nil, http.StatusOK, &filters), "list autobrr filters")
-	return slices.ContainsFunc(filters, func(f named) bool { return f.Name == name })
-}
-
-// createFilter creates the base filter like autobrr's filter import, then
-// updates the stored filter with its indexer, external webhooks, and actions.
-// autobrr stores those only on the update.
-func (a *autobrrAPI) createFilter(filter map[string]any) error {
-	base := map[string]any{}
-	for key, value := range filter {
-		if key != "external" && key != "actions" {
-			base[key] = value
-		}
-	}
-	var created named
-	if err := a.do(http.MethodPost, "/api/filters", withRequiredArrays(base), http.StatusCreated, &created); err != nil {
-		return fmt.Errorf("create: %w", err)
-	}
-
+// linkAndEnableFilter links the test indexer to the filter id and enables it.
+// It reads the filter back, because a dropped field shows only as an announce
+// that no filter takes.
+func (a *autobrrAPI) linkAndEnableFilter(id int) error {
 	var indexers []named
 	if err := a.do(http.MethodGet, "/api/indexer", nil, http.StatusOK, &indexers); err != nil {
 		return fmt.Errorf("list indexers: %w", err)
@@ -340,25 +425,56 @@ func (a *autobrrAPI) createFilter(filter map[string]any) error {
 	if index < 0 {
 		return fmt.Errorf("indexer %s not found", indexerIdentifier)
 	}
+	indexerID := indexers[index].ID
 
-	// The update overwrites every field, so it sends the stored filter back.
-	path := fmt.Sprintf("/api/filters/%d", created.ID)
+	path := fmt.Sprintf("/api/filters/%d", id)
 	var stored map[string]any
 	if err := a.do(http.MethodGet, path, nil, http.StatusOK, &stored); err != nil {
 		return fmt.Errorf("read: %w", err)
 	}
-	stored["indexers"] = []map[string]int{{"id": indexers[index].ID}}
-	stored["external"] = filter["external"]
-	stored["actions"] = filter["actions"]
+	stored["indexers"] = []map[string]int{{"id": indexerID}}
+	stored["enabled"] = true
+	// The update overwrites every field, so it sends the stored filter back.
 	if err := a.do(http.MethodPut, path, withRequiredArrays(stored), http.StatusOK, nil); err != nil {
 		return fmt.Errorf("update: %w", err)
+	}
+
+	var updated struct {
+		Enabled  bool    `json:"enabled"`
+		Indexers []named `json:"indexers"`
+	}
+	if err := a.do(http.MethodGet, path, nil, http.StatusOK, &updated); err != nil {
+		return fmt.Errorf("read the update: %w", err)
+	}
+	if !updated.Enabled || !slices.ContainsFunc(updated.Indexers, func(i named) bool { return i.ID == indexerID }) {
+		return fmt.Errorf("autobrr did not store the update: enabled %t, indexers %+v", updated.Enabled, updated.Indexers)
+	}
+	return nil
+}
+
+// checkUpdatedFilter checks that an update kept the indexer and the enabled
+// state, and that the filter has one action and two External entries.
+func (a *autobrrAPI) checkUpdatedFilter(id int) error {
+	var stored struct {
+		Enabled  bool    `json:"enabled"`
+		Indexers []named `json:"indexers"`
+		Actions  []named `json:"actions"`
+		External []named `json:"external"`
+	}
+	if err := a.do(http.MethodGet, fmt.Sprintf("/api/filters/%d", id), nil, http.StatusOK, &stored); err != nil {
+		return err
+	}
+	keptIndexer := slices.ContainsFunc(stored.Indexers, func(i named) bool { return i.Identifier == indexerIdentifier })
+	if !stored.Enabled || !keptIndexer || len(stored.Actions) != 1 || len(stored.External) != 2 {
+		return fmt.Errorf("autobrr did not keep the settings or replace the actions: enabled %t, indexers %+v, actions %+v, external %+v",
+			stored.Enabled, stored.Indexers, stored.Actions, stored.External)
 	}
 	return nil
 }
 
 // withRequiredArrays sets the filter arrays that autobrr stores as NOT NULL to
-// empty when filter omits them. autobrr's filter import does the same, and its
-// filter reads omit empty arrays.
+// empty when filter omits them. autobrr's filter reads omit empty arrays, but
+// its update requires them.
 func withRequiredArrays(filter map[string]any) map[string]any {
 	for _, key := range []string{"resolutions", "sources", "codecs", "containers"} {
 		if filter[key] == nil {
@@ -451,7 +567,7 @@ type logLine struct {
 
 // rejection is a rejection of a release by an external webhook of a filter.
 type rejection struct {
-	// webhook is the name of the external webhook in testdata/filter.json.
+	// webhook is the name of the External entry in internal/autobrr/filter.go.
 	webhook string
 	status  int
 }
