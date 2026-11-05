@@ -26,6 +26,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -193,43 +194,64 @@ func (h *harness) announceImport(t *testing.T, name string, torrent []byte) {
 }
 
 // ensureFilter creates the filter of clientName once with seasonpackarr setup
-// filter, without a config file, then links the indexer and enables it.
+// filter, without a config file, then links the indexer and enables it. It then
+// updates the filter with --filter-id, so the announce scenarios also prove that
+// an update keeps the user's settings and a working filter.
 func (h *harness) ensureFilter(t *testing.T, clientName string) {
 	t.Helper()
 	if _, ok := h.filters.Load(clientName); ok {
 		return
 	}
+	created := h.setupFilter(t, clientName)
+	require.Equal(t, "created", created.Result, "setup filter result")
+	require.NotZero(t, created.ID, "setup filter ID")
+	require.NoError(t, h.autobrr.linkAndEnableFilter(created.ID), "link the indexer and enable the filter %s", created.Name)
+
+	updated := h.setupFilter(t, clientName, "--filter-id", strconv.Itoa(created.ID))
+	require.Equal(t, "updated", updated.Result, "setup filter --filter-id result")
+	require.Equal(t, created.ID, updated.ID, "setup filter --filter-id ID")
+	require.Len(t, updated.RemovedActions, 1, "setup filter --filter-id must remove the import action of the create")
+	require.Equal(t, "Import with seasonpackarr", updated.RemovedActions[0].Name, "setup filter --filter-id removed action")
+	require.NoError(t, h.autobrr.requireUpdatedFilter(created.ID), "read the updated filter %s", created.Name)
+	h.filters.Store(clientName, created.Name)
+}
+
+// setupFilterResult is one result of seasonpackarr setup filter --json.
+type setupFilterResult struct {
+	Client         string  `json:"clientname"`
+	ID             int     `json:"id"`
+	Name           string  `json:"name"`
+	Result         string  `json:"result"`
+	RemovedActions []named `json:"removed_actions"`
+}
+
+// setupFilter runs seasonpackarr setup filter for clientName without a config
+// file and returns its one result.
+func (h *harness) setupFilter(t *testing.T, clientName string, extra ...string) setupFilterResult {
+	t.Helper()
 	// An empty working directory and home, so the command finds no config file.
 	noConfig := t.TempDir()
-	cmd := exec.CommandContext(t.Context(), h.cliBinary, "setup", "filter",
+	cmd := exec.CommandContext(t.Context(), h.cliBinary, append([]string{
+		"setup", "filter",
 		"--webhook-url", os.Getenv(envSeasonpackarrURL),
 		"--client", clientName,
 		"--api", os.Getenv(envAPIToken),
 		"--autobrr-url", h.autobrr.baseURL,
 		"--autobrr-api-key", h.autobrr.apiKey,
-		"--json")
+		"--json",
+	}, extra...)...)
 	cmd.Dir = noConfig
 	cmd.Env = append(cliEnvironment(), "HOME="+noConfig)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	stdout, err := cmd.Output()
-	require.NoError(t, err, "seasonpackarr setup filter: %s", stderr.String())
+	require.NoError(t, err, "seasonpackarr setup filter %v: %s", extra, stderr.String())
 
-	var results []struct {
-		Client string `json:"clientname"`
-		ID     int    `json:"id"`
-		Name   string `json:"name"`
-		Result string `json:"result"`
-	}
+	var results []setupFilterResult
 	require.NoError(t, json.Unmarshal(stdout, &results), "decode the setup filter output: %s", stdout)
-	require.Len(t, results, 1, "setup filter must create one filter: %s", stdout)
-	created := results[0]
-	require.Equal(t, clientName, created.Client, "setup filter client")
-	require.Equal(t, "created", created.Result, "setup filter result")
-	require.NotZero(t, created.ID, "setup filter ID")
-
-	require.NoError(t, h.autobrr.linkAndEnableFilter(created.ID), "link the indexer and enable the filter %s", created.Name)
-	h.filters.Store(clientName, created.Name)
+	require.Len(t, results, 1, "setup filter must write one filter: %s", stdout)
+	require.Equal(t, clientName, results[0].Client, "setup filter client")
+	return results[0]
 }
 
 // filterName returns the name of the filter that ensureFilter created for clientName.
@@ -404,6 +426,27 @@ func (a *autobrrAPI) linkAndEnableFilter(id int) error {
 	}
 	if !updated.Enabled || !slices.ContainsFunc(updated.Indexers, func(i named) bool { return i.ID == indexerID }) {
 		return fmt.Errorf("autobrr did not store the update: enabled %t, indexers %+v", updated.Enabled, updated.Indexers)
+	}
+	return nil
+}
+
+// requireUpdatedFilter checks that an update with --filter-id kept the indexer
+// and the enabled state, and that the filter has one action and two External
+// entries.
+func (a *autobrrAPI) requireUpdatedFilter(id int) error {
+	var stored struct {
+		Enabled  bool    `json:"enabled"`
+		Indexers []named `json:"indexers"`
+		Actions  []named `json:"actions"`
+		External []named `json:"external"`
+	}
+	if err := a.do(http.MethodGet, fmt.Sprintf("/api/filters/%d", id), nil, http.StatusOK, &stored); err != nil {
+		return err
+	}
+	keptIndexer := slices.ContainsFunc(stored.Indexers, func(i named) bool { return i.Identifier == indexerIdentifier })
+	if !stored.Enabled || !keptIndexer || len(stored.Actions) != 1 || len(stored.External) != 2 {
+		return fmt.Errorf("autobrr did not keep the settings or replace the actions: enabled %t, indexers %+v, actions %+v, external %+v",
+			stored.Enabled, stored.Indexers, stored.Actions, stored.External)
 	}
 	return nil
 }

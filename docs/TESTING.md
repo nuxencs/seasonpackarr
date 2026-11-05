@@ -199,6 +199,10 @@ why the search test drives a real Prowlarr.
   key, and `--json`, and reads the filter ID from the output. The new filter is
   disabled and has no indexers, so the driver then links the test indexer and
   enables the filter, as a user does, and reads the filter back to check both.
+  The driver then runs the command again with `--filter-id`. It checks that the
+  update removed the import action of the create, and that autobrr kept the
+  indexer and the enabled state and stores one action and two External
+  entries. The announce scenarios run against the updated filter.
   `TestSetupFilterCommand_MatchesAutobrrGuide` compares the filter definition
   in `internal/autobrr/filter.go` with AUTOBRR.md.
 - `packName` makes a unique release name with a letters-only title, so reruns
