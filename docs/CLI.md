@@ -94,7 +94,8 @@ Search requires a configured Prowlarr connection. It selects all clients unless
 
 `setup filter` writes the seasonpackarr filter into autobrr through the autobrr
 REST API. The filter comes from the binary, so it always matches the version
-that answers its requests. The service does not need to run.
+that answers its requests. The command does not call the service itself, but
+its [verification](#verify-the-filter) needs a running service.
 
 ```sh
 export SEASONPACKARR__AUTOBRR_URL="http://autobrr:7474"
@@ -328,5 +329,5 @@ continue on the service after a timeout if an external operation cannot cancel.
 v1.0.0 removes the `test` command group, and `match` and `import` now require a
 real `.torrent` file. Search prints readable text unless you add `--json`, and
 errors now return a failure exit code. See
-[Update scripts that use the CLI](UPGRADE-v1.md#4-update-scripts-that-use-the-cli)
+[Update scripts that use the CLI](UPGRADE-v1.md#3-update-scripts-that-use-the-cli)
 for the command mapping.

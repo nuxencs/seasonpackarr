@@ -524,7 +524,7 @@ func TestSetupFilterCommand_MatchesAutobrrGuide(t *testing.T) {
 	require.Len(t, filter.External, 2)
 	require.Len(t, filter.Actions, 1)
 
-	for i, heading := range []string{"### Entry 1: candidate check", "### Entry 2: match"} {
+	for i, heading := range []string{"#### Entry 1: candidate check", "#### Entry 2: match"} {
 		fields, data := guideSection(t, guide, heading)
 		entry := filter.External[i]
 		assert.Equal(t, fields["Name"], entry.Name, heading)
@@ -538,10 +538,10 @@ func TestSetupFilterCommand_MatchesAutobrrGuide(t *testing.T) {
 		assert.True(t, entry.Enabled, heading)
 	}
 	// The guide puts the candidate check first, and autobrr runs the highest index first.
-	assert.Less(t, strings.Index(guide, "### Entry 1: candidate check"), strings.Index(guide, "### Entry 2: match"))
+	assert.Less(t, strings.Index(guide, "#### Entry 1: candidate check"), strings.Index(guide, "#### Entry 2: match"))
 	assert.Greater(t, filter.External[0].Index, filter.External[1].Index)
 
-	fields, data := guideSection(t, guide, "## Add the import action")
+	fields, data := guideSection(t, guide, "### Add the import action")
 	action := filter.Actions[0]
 	assert.Equal(t, fields["Name"], action.Name)
 	assert.Equal(t, fields["Endpoint"], action.WebhookHost)
