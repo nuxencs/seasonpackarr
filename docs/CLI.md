@@ -77,7 +77,7 @@ folder name. Match and import still require the original `.torrent` file.
 | `search --dry-run` | None | Searches Prowlarr and runs candidate checks |
 | `search --dry-run --verify` | None | Searches Prowlarr and runs matches |
 | `search` | None | Searches Prowlarr and imports accepted packs |
-| `setup filter` | `--webhook-url`, autobrr URL, and autobrr API key | Creates one disabled autobrr filter for each client; see [Set up the autobrr filter](#set-up-the-autobrr-filter) |
+| `setup filter` | `--webhook-url`, autobrr URL, and autobrr API key | Creates one disabled autobrr filter for each client, or updates the filter from `--filter-id`; see [Set up the autobrr filter](#set-up-the-autobrr-filter) |
 | `start` | Config directory if outside the default locations | Starts the service; an explicit directory gets a default config if missing |
 | `gen-token` | None | Generates a token to store in `apiToken` |
 | `version` | None | Prints local build information without network access |
@@ -113,14 +113,40 @@ After the command, do these steps in autobrr for each new filter:
 2. Set the priority higher than your other TV filters.
 3. Enable the filter.
 
+If a filter named `seasonpackarr-<client>` already exists for a selected
+client, the command writes no filter. It prints the ID of each existing filter
+and `rerun with --filter-id <id> --client <client>`, so a rerun never gives a
+client a second filter.
+
+### Update an existing filter
+
+Use `--filter-id` to update a filter that you already have, for example a
+filter from v0.16.0. Find the ID in the URL of the filter in autobrr, for
+example `/filters/12`.
+
+```sh
+seasonpackarr setup filter --webhook-url http://seasonpackarr:42069 --client tv --filter-id 12
+```
+
+The update replaces the External entries and all actions of the filter. It
+keeps all other settings: the name, the indexers, the resolutions, the
+priority, the enabled state, and the notifications. The command prints each
+action that it removes, for example the old torrent client action, because the
+import action adds the pack to the client.
+
+`--filter-id` needs exactly one client: the client from `--client` or
+`SEASONPACKARR__CLIENT`, or the only configured client. Otherwise the command
+fails before it calls autobrr, because one filter has one `clientname`.
+
 | Input | Flag | Environment variable | Config or default |
 | --- | --- | --- | --- |
 | seasonpackarr URL that autobrr uses | `--webhook-url` | None | Required, no default |
-| autobrr base URL | `--autobrr-url` | `SEASONPACKARR__AUTOBRR_URL` | Required, except with `--dry-run` |
-| autobrr API key | `--autobrr-api-key` | `SEASONPACKARR__AUTOBRR_API_KEY` | Required, except with `--dry-run` |
+| autobrr base URL | `--autobrr-url` | `SEASONPACKARR__AUTOBRR_URL` | Required, except with `--dry-run` without `--filter-id` |
+| autobrr API key | `--autobrr-api-key` | `SEASONPACKARR__AUTOBRR_API_KEY` | Required, except with `--dry-run` without `--filter-id` |
 | Config directory | `--config`, `-c` | None | Discovery locations below |
 | seasonpackarr API token | `--api`, `-a` | `SEASONPACKARR__API_TOKEN` | `apiToken`, otherwise empty |
 | Client name | `--client`, `-n` | `SEASONPACKARR__CLIENT` | Each configured client |
+| Filter to update | `--filter-id` | None | None, the command creates filters |
 
 `--webhook-url` is the address of seasonpackarr as autobrr sees it, for
 example `http://seasonpackarr:42069` when both run in Docker. It follows the
@@ -134,18 +160,24 @@ query parameter. The token must not contain `;` or `=`, because autobrr cannot
 send such a token in a header. Tokens from `gen-token` are always valid.
 
 Add `--dry-run` to print each filter with the tokens redacted. A dry run makes
-no autobrr calls, so it needs no autobrr URL or key. Add `--json` for
-structured output. Each result has `clientname`, `id`, `name`, and `result`
-(`created`, or `dry-run` with the `filter` payload). Results go to stdout, and
-warnings go to stderr.
+no autobrr calls, so it needs no autobrr URL or key. With `--filter-id`, a dry
+run reads the filter from autobrr and writes nothing. It prints the External
+entries and the actions that the update sends, and the actions that the update
+removes. Add `--json` for structured output. Each result has `clientname`,
+`id`, `name`, and `result`: `created`, `updated`, or `dry-run` with the
+`filter` payload. An update and its dry run also have `removed_actions`, with
+the `id`, `name`, and `type` of each action. Results go to stdout, and warnings
+go to stderr.
 
 | Exit code | Meaning |
 | --- | --- |
-| `0` | Each filter is created, or the dry run printed each filter |
-| `1` | Invalid input, or an autobrr API error |
+| `0` | Each filter is created or updated, or the dry run printed each filter |
+| `1` | Invalid input, an existing filter with the same name, or an autobrr API error |
 
 After an autobrr error, the command stops and prints the filters that it
-created before the error.
+created before the error. The update removes the old actions before it writes
+the filter. If the write fails after that, the filter has no action and
+downloads nothing until you rerun the command.
 
 ## Connection settings
 

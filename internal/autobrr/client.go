@@ -6,10 +6,12 @@ package autobrr
 import (
 	"bytes"
 	"context"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -39,6 +41,37 @@ func NewClient(baseURL, apiKey string) *Client {
 	}
 }
 
+// StoredFilter is a filter as autobrr stores it.
+type StoredFilter struct {
+	ID      int
+	Name    string
+	Actions []StoredAction
+	// fields is the complete stored filter, because an update overwrites every field.
+	fields map[string]any
+}
+
+// StoredAction is an action of a stored filter.
+type StoredAction struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+// FilterSummary is one filter of the autobrr filter list.
+type FilterSummary struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+// Filters lists the filters in autobrr.
+func (c *Client) Filters(ctx context.Context) ([]FilterSummary, error) {
+	var filters []FilterSummary
+	if err := c.do(ctx, http.MethodGet, "/api/filters", nil, http.StatusOK, &filters, ""); err != nil {
+		return nil, err
+	}
+	return filters, nil
+}
+
 // CreateFilter creates filter in autobrr and returns its ID. A create stores
 // only the base settings, so CreateFilter reads the stored filter, sets the
 // External entries and actions, and sends it back.
@@ -52,24 +85,74 @@ func (c *Client) CreateFilter(ctx context.Context, filter Filter) (int, error) {
 	if created.ID == 0 {
 		return 0, fmt.Errorf("autobrr returned no filter ID for POST /api/filters; check --autobrr-url")
 	}
-	path := "/api/filters/" + strconv.Itoa(created.ID)
-	// The update overwrites every field, so it sends back the complete stored filter.
-	var stored map[string]any
-	if err := c.do(ctx, http.MethodGet, path, nil, http.StatusOK, &stored, filter.token); err != nil {
+	stored, err := c.Filter(ctx, created.ID, filter.token)
+	if err != nil {
 		return created.ID, err
 	}
-	// autobrr reads omit empty arrays, but its update requires the NOT NULL arrays.
-	for _, key := range []string{"resolutions", "sources", "codecs", "containers"} {
-		if stored[key] == nil {
-			stored[key] = []string{}
+	return created.ID, c.UpdateFilter(ctx, stored, filter)
+}
+
+// Filter reads the filter with id. secret is a seasonpackarr token to redact
+// from error messages.
+func (c *Client) Filter(ctx context.Context, id int, secret string) (StoredFilter, error) {
+	path := "/api/filters/" + strconv.Itoa(id)
+	var data jsontext.Value
+	if err := c.do(ctx, http.MethodGet, path, nil, http.StatusOK, &data, secret); err != nil {
+		if status, ok := errors.AsType[*statusError](err); ok && status.status == http.StatusNotFound {
+			status.hint = "check --filter-id"
+		}
+		return StoredFilter{}, err
+	}
+	var stored StoredFilter
+	var known struct {
+		ID      int            `json:"id"`
+		Name    string         `json:"name"`
+		Actions []StoredAction `json:"actions"`
+	}
+	if err := json.Unmarshal(data, &known); err != nil {
+		return StoredFilter{}, fmt.Errorf("invalid autobrr response for GET %s; check --autobrr-url: %w", path, err)
+	}
+	if err := json.Unmarshal(data, &stored.fields); err != nil {
+		return StoredFilter{}, fmt.Errorf("invalid autobrr response for GET %s; check --autobrr-url: %w", path, err)
+	}
+	if known.ID != id {
+		return StoredFilter{}, fmt.Errorf("autobrr returned filter %d for GET %s; check --autobrr-url", known.ID, path)
+	}
+	stored.ID, stored.Name, stored.Actions = known.ID, known.Name, known.Actions
+	return stored, nil
+}
+
+// UpdateFilter replaces the External entries and all actions of stored with
+// those of filter, and keeps every other field.
+func (c *Client) UpdateFilter(ctx context.Context, stored StoredFilter, filter Filter) error {
+	// An update keeps the stored actions that it does not send, so delete them
+	// first. A later failure leaves a filter without actions, which downloads
+	// nothing, and never a filter with two download actions.
+	for i, action := range stored.Actions {
+		if err := c.do(ctx, http.MethodDelete, "/api/actions/"+strconv.Itoa(action.ID), nil, http.StatusNoContent, nil, filter.token); err != nil {
+			if i > 0 {
+				return fmt.Errorf("%w; autobrr removed some old actions, so rerun the command", err)
+			}
+			return err
 		}
 	}
-	stored["external"] = filter.External
-	stored["actions"] = filter.Actions
-	if err := c.do(ctx, http.MethodPut, path, stored, http.StatusOK, nil, filter.token); err != nil {
-		return created.ID, err
+	fields := maps.Clone(stored.fields)
+	// autobrr reads omit empty arrays, but its update requires the NOT NULL arrays.
+	for _, key := range []string{"resolutions", "sources", "codecs", "containers"} {
+		if fields[key] == nil {
+			fields[key] = []string{}
+		}
 	}
-	return created.ID, nil
+	fields["id"] = stored.ID
+	fields["external"] = filter.External
+	fields["actions"] = filter.Actions
+	if err := c.do(ctx, http.MethodPut, "/api/filters/"+strconv.Itoa(stored.ID), fields, http.StatusOK, nil, filter.token); err != nil {
+		if len(stored.Actions) > 0 {
+			return fmt.Errorf("%w; autobrr removed the old actions, so the filter has no action until you rerun the command", err)
+		}
+		return err
+	}
+	return nil
 }
 
 // do sends one request and decodes the response into out. secret is a
@@ -112,21 +195,17 @@ func (c *Client) do(ctx context.Context, method, path string, in any, want int, 
 		return fmt.Errorf("the autobrr response for %s %s exceeds 8 MiB", method, path)
 	}
 	if resp.StatusCode != want {
-		message := fmt.Sprintf("autobrr returned HTTP %d for %s %s", resp.StatusCode, method, path)
+		err := &statusError{status: resp.StatusCode, request: method + " " + path}
 		switch {
 		case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-			message += "; check --autobrr-api-key"
+			err.hint = "check --autobrr-api-key"
 		case resp.StatusCode == http.StatusNotFound || (resp.StatusCode >= 300 && resp.StatusCode < 400):
-			message += "; check --autobrr-url"
+			err.hint = "check --autobrr-url"
 		}
-		if detail := c.safe(string(data), secret); detail != "" {
-			const maxDetail = 200
-			if len(detail) > maxDetail {
-				detail = strings.ToValidUTF8(detail[:maxDetail], "") + "..."
-			}
-			message += ": " + detail
+		if err.detail = c.safe(string(data), secret); len(err.detail) > maxDetail {
+			err.detail = strings.ToValidUTF8(err.detail[:maxDetail], "") + "..."
 		}
-		return errors.New(message)
+		return err
 	}
 	if out != nil {
 		if err := json.Unmarshal(data, out); err != nil {
@@ -134,6 +213,26 @@ func (c *Client) do(ctx context.Context, method, path string, in any, want int, 
 		}
 	}
 	return nil
+}
+
+const maxDetail = 200
+
+// statusError is an autobrr response with an unexpected HTTP status.
+type statusError struct {
+	status       int
+	request      string
+	hint, detail string
+}
+
+func (e *statusError) Error() string {
+	message := fmt.Sprintf("autobrr returned HTTP %d for %s", e.status, e.request)
+	if e.hint != "" {
+		message += "; " + e.hint
+	}
+	if e.detail != "" {
+		message += ": " + e.detail
+	}
+	return message
 }
 
 // safe removes secrets and control characters from text that the command prints.

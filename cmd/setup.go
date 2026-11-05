@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -28,28 +29,43 @@ func newSetupCommand() *cobra.Command {
 type setupFilterOptions struct {
 	configDir, client, token           string
 	autobrrURL, autobrrKey, webhookURL string
+	filterID                           int
 	dryRun, json                       bool
 }
 
-// setupFilterResult is one filter that the command created or would create.
+// setupFilterResult is one filter that the command wrote or would write.
 type setupFilterResult struct {
-	Client string          `json:"clientname"`
-	ID     int             `json:"id,omitzero"`
-	Name   string          `json:"name"`
-	Result string          `json:"result"`
-	Filter *autobrr.Filter `json:"filter,omitempty"`
+	Client string `json:"clientname"`
+	ID     int    `json:"id,omitzero"`
+	Name   string `json:"name"`
+	Result string `json:"result"`
+	// RemovedActions is nil for a new filter and empty for an update without old actions.
+	RemovedActions []autobrr.StoredAction `json:"removed_actions,omitzero"`
+	// Filter is the payload of a dry run.
+	Filter any `json:"filter,omitempty"`
+}
+
+// filterChanges is the part of a filter that an update replaces.
+type filterChanges struct {
+	External []autobrr.External `json:"external"`
+	Actions  []autobrr.Action   `json:"actions"`
 }
 
 func newSetupFilterCommand() *cobra.Command {
 	o := &setupFilterOptions{}
 	cmd := &cobra.Command{
 		Use:   "filter",
-		Short: "Create the seasonpackarr filter in autobrr",
-		Long: `Create the seasonpackarr filter in autobrr through the autobrr REST API.
+		Short: "Create or update the seasonpackarr filter in autobrr",
+		Long: `Create or update the seasonpackarr filter in autobrr through the autobrr REST API.
 
 Creates one filter for each configured client, or for the client from --client.
 A new filter is named seasonpackarr-<client>, is disabled, and has no indexers.
-In autobrr, select the indexers, set the priority, and enable the filter.
+In autobrr, select the indexers, set the priority, and enable the filter. If a
+filter with that name exists, the command writes nothing and prints its ID.
+
+--filter-id updates an existing filter for one client. The update replaces the
+External entries and all actions, prints each removed action, and keeps all
+other settings, such as the indexers, the priority, and the enabled state.
 
 --webhook-url is the seasonpackarr URL that autobrr uses, for example
 http://seasonpackarr:42069 in Docker. Give the autobrr URL and API key with
@@ -57,20 +73,23 @@ http://seasonpackarr:42069 in Docker. Give the autobrr URL and API key with
 SEASONPACKARR__AUTOBRR_API_KEY. Reads the API token and the client names from
 config; without a config, use --client and --api.
 
-Use --dry-run to print each filter without a call to autobrr.`,
+Use --dry-run to print each filter without a write to autobrr. A dry run with
+--filter-id reads the filter to show the actions that the update removes.`,
 		Args: cobra.NoArgs,
 		Example: `  seasonpackarr setup filter --webhook-url http://seasonpackarr:42069 --autobrr-url http://autobrr:7474 --autobrr-api-key <key>
+  seasonpackarr setup filter --webhook-url http://seasonpackarr:42069 --client tv --filter-id 12
   seasonpackarr setup filter --webhook-url http://127.0.0.1:42069 --client tv --dry-run`,
 		RunE: func(cmd *cobra.Command, args []string) error { return o.run(cmd) },
 	}
 	f := cmd.Flags()
 	f.StringVarP(&o.configDir, "config", "c", "", "read config.yaml from this directory")
-	f.StringVarP(&o.client, "client", "n", "", "create the filter for this client only (default: each configured client)")
+	f.StringVarP(&o.client, "client", "n", "", "write the filter for this client only (default: each configured client)")
 	f.StringVarP(&o.token, "api", "a", "", "seasonpackarr API token (default: environment or config)")
 	f.StringVar(&o.webhookURL, "webhook-url", "", "seasonpackarr base URL that autobrr uses, including any proxy path")
 	f.StringVar(&o.autobrrURL, "autobrr-url", "", "autobrr base URL (default: SEASONPACKARR__AUTOBRR_URL)")
 	f.StringVar(&o.autobrrKey, "autobrr-api-key", "", "autobrr API key (default: SEASONPACKARR__AUTOBRR_API_KEY)")
-	f.BoolVar(&o.dryRun, "dry-run", false, "print each filter with the tokens redacted and make no autobrr calls")
+	f.IntVar(&o.filterID, "filter-id", 0, "update this existing filter in place; needs exactly one client")
+	f.BoolVar(&o.dryRun, "dry-run", false, "print each filter with the tokens redacted and write nothing to autobrr")
 	f.BoolVar(&o.json, "json", false, "print results as JSON")
 	_ = cmd.MarkFlagRequired("webhook-url")
 	return cmd
@@ -100,6 +119,15 @@ func (o *setupFilterOptions) run(cmd *cobra.Command) error {
 	if len(clients) == 0 {
 		return fmt.Errorf("no clients configured; select a client with --client")
 	}
+	if cmd.Flags().Changed("filter-id") {
+		if o.filterID <= 0 {
+			return fmt.Errorf("--filter-id must be a positive filter ID")
+		}
+		// One filter has one clientname, so an update must not guess the client.
+		if len(clients) != 1 {
+			return fmt.Errorf("--filter-id updates one filter, but %d clients are configured; select one with --client", len(clients))
+		}
+	}
 	newFilter := autobrr.NewFilter
 	if o.dryRun {
 		newFilter = autobrr.NewRedactedFilter
@@ -114,7 +142,8 @@ func (o *setupFilterOptions) run(cmd *cobra.Command) error {
 	}
 
 	var api *autobrr.Client
-	if !o.dryRun {
+	// A dry run of an update reads the filter to show the actions that the update removes.
+	if !o.dryRun || o.filterID != 0 {
 		autobrrURL := os.Getenv("SEASONPACKARR__AUTOBRR_URL")
 		if cmd.Flags().Changed("autobrr-url") {
 			autobrrURL = o.autobrrURL
@@ -138,12 +167,26 @@ func (o *setupFilterOptions) run(cmd *cobra.Command) error {
 		fmt.Fprintln(cmd.ErrOrStderr(), "Warning: the seasonpackarr API token is empty, so the filters send no token. Set apiToken in config, SEASONPACKARR__API_TOKEN, or --api.")
 	}
 
+	if o.filterID != 0 {
+		result, err := o.update(cmd, api, clients[0], filters[0], token)
+		if err != nil {
+			return err
+		}
+		return o.print(cmd.OutOrStdout(), []setupFilterResult{result})
+	}
+
+	if !o.dryRun {
+		if err := checkFilterNames(cmd, api, clients, filters); err != nil {
+			return err
+		}
+	}
+
 	results := make([]setupFilterResult, 0, len(filters))
 	var createErr error
 	for i, filter := range filters {
 		result := setupFilterResult{Client: clients[i], Name: filter.Name}
 		if o.dryRun {
-			result.Result, result.Filter = "dry-run", &filter
+			result.Result, result.Filter = "dry-run", filter
 		} else {
 			id, err := api.CreateFilter(cmd.Context(), filter)
 			if err != nil {
@@ -164,21 +207,73 @@ func (o *setupFilterOptions) run(cmd *cobra.Command) error {
 	return createErr
 }
 
+// checkFilterNames fails when a filter with the name of a new filter already
+// exists, before any write, so a rerun never gives a client two filters.
+func checkFilterNames(cmd *cobra.Command, api *autobrr.Client, clients []string, filters []autobrr.Filter) error {
+	existing, err := api.Filters(cmd.Context())
+	if err != nil {
+		return fmt.Errorf("list the autobrr filters: %w", err)
+	}
+	var errs []error
+	for i, filter := range filters {
+		for _, other := range existing {
+			if other.Name == filter.Name {
+				errs = append(errs, fmt.Errorf("filter %d (%s) already exists for client %s; rerun with --filter-id %d --client %s",
+					other.ID, terminalText(other.Name), terminalText(clients[i]), other.ID, terminalText(clients[i])))
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// update replaces the External entries and the actions of the filter from
+// --filter-id, or with --dry-run reads the filter and shows the changes.
+func (o *setupFilterOptions) update(cmd *cobra.Command, api *autobrr.Client, client string, filter autobrr.Filter, token string) (setupFilterResult, error) {
+	stored, err := api.Filter(cmd.Context(), o.filterID, token)
+	if err != nil {
+		return setupFilterResult{}, fmt.Errorf("read filter %d: %w", o.filterID, err)
+	}
+	result := setupFilterResult{Client: client, ID: stored.ID, Name: stored.Name, RemovedActions: stored.Actions}
+	if result.RemovedActions == nil {
+		result.RemovedActions = []autobrr.StoredAction{}
+	}
+	if o.dryRun {
+		result.Result, result.Filter = "dry-run", filterChanges{filter.External, filter.Actions}
+		return result, nil
+	}
+	if err := api.UpdateFilter(cmd.Context(), stored, filter); err != nil {
+		return setupFilterResult{}, fmt.Errorf("update filter %d for client %s: %w", stored.ID, terminalText(client), err)
+	}
+	result.Result = "updated"
+	return result, nil
+}
+
 func (o *setupFilterOptions) print(w io.Writer, results []setupFilterResult) error {
 	if o.json {
 		return writeJSON(w, results)
 	}
+	created := false
 	for _, result := range results {
-		if result.Filter != nil {
+		switch {
+		case result.Filter != nil && result.RemovedActions != nil:
+			fmt.Fprintf(w, "Dry run: update filter %d (%s) for client %s, not sent to autobrr\n", result.ID, terminalText(result.Name), terminalText(result.Client))
+			printActions(w, "Would remove", result.RemovedActions)
+		case result.Filter != nil:
 			fmt.Fprintf(w, "Dry run: filter %s for client %s, not sent to autobrr\n", terminalText(result.Name), terminalText(result.Client))
-			if err := writeJSON(w, result.Filter); err != nil {
-				return err
-			}
+		case result.Result == "updated":
+			fmt.Fprintf(w, "Updated filter %d (%s) for client %s\n", result.ID, terminalText(result.Name), terminalText(result.Client))
+			printActions(w, "Removed", result.RemovedActions)
+			continue
+		default:
+			fmt.Fprintf(w, "Created filter %d (%s) for client %s\n", result.ID, terminalText(result.Name), terminalText(result.Client))
+			created = true
 			continue
 		}
-		fmt.Fprintf(w, "Created filter %d (%s) for client %s\n", result.ID, terminalText(result.Name), terminalText(result.Client))
+		if err := writeJSON(w, result.Filter); err != nil {
+			return err
+		}
 	}
-	if len(results) > 0 && !o.dryRun {
+	if created {
 		_, err := fmt.Fprint(w, `
 New filters are disabled and have no indexers. In autobrr, for each new filter:
   1. Select the indexers in the General tab.
@@ -188,4 +283,11 @@ New filters are disabled and have no indexers. In autobrr, for each new filter:
 		return err
 	}
 	return nil
+}
+
+// printActions prints each action of an update with verb, such as Removed.
+func printActions(w io.Writer, verb string, actions []autobrr.StoredAction) {
+	for _, action := range actions {
+		fmt.Fprintf(w, "  %s action %d (%s, %s)\n", verb, action.ID, terminalText(action.Name), terminalText(action.Type))
+	}
 }

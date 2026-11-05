@@ -28,20 +28,22 @@ type capturedRequest struct {
 	body         map[string]any
 }
 
-// fakeAutobrrAPI stores filters like the autobrr REST API: a create stores
-// only the base settings, and a read omits the empty arrays.
+// fakeAutobrrAPI stores filters like the autobrr REST API v1.88.0: a create
+// stores only the base settings, a read omits the empty arrays, and an update
+// keeps the stored actions that the body leaves out.
 type fakeAutobrrAPI struct {
-	mu       sync.Mutex
-	filters  map[int]map[string]any
-	nextID   int
-	requests []capturedRequest
+	mu           sync.Mutex
+	filters      map[int]map[string]any
+	nextID       int
+	nextActionID int
+	requests     []capturedRequest
 	// failPath answers requests to this method and path with HTTP 500.
 	failPath string
 }
 
 func newFakeAutobrrAPI(t *testing.T) (*fakeAutobrrAPI, *httptest.Server) {
 	t.Helper()
-	f := &fakeAutobrrAPI{filters: map[int]map[string]any{}, nextID: 1}
+	f := &fakeAutobrrAPI{filters: map[int]map[string]any{}, nextID: 1, nextActionID: 1}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/filters", func(w http.ResponseWriter, r *http.Request) {
 		body := maps.Clone(f.record(t, r))
@@ -71,14 +73,63 @@ func newFakeAutobrrAPI(t *testing.T) (*fakeAutobrrAPI, *httptest.Server) {
 		}
 		assert.NoError(t, json.MarshalWrite(w, read))
 	})
+	mux.HandleFunc("GET /api/filters", func(w http.ResponseWriter, r *http.Request) {
+		f.record(t, r)
+		f.mu.Lock()
+		list := []map[string]any{}
+		for _, id := range slices.Sorted(maps.Keys(f.filters)) {
+			list = append(list, map[string]any{"id": id, "name": f.filters[id]["name"], "enabled": f.filters[id]["enabled"]})
+		}
+		f.mu.Unlock()
+		assert.NoError(t, json.MarshalWrite(w, list))
+	})
 	mux.HandleFunc("PUT /api/filters/{id}", func(w http.ResponseWriter, r *http.Request) {
 		body := f.record(t, r)
 		id, err := strconv.Atoi(r.PathValue("id"))
 		assert.NoError(t, err)
 		f.mu.Lock()
+		defer f.mu.Unlock()
+		stored, ok := f.filters[id]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		// autobrr updates the actions with an ID, adds the others, and keeps the stored actions.
+		actions, _ := stored["actions"].([]any)
+		sent, _ := body["actions"].([]any)
+		for _, value := range sent {
+			action := value.(map[string]any)
+			if actionID, _ := action["id"].(float64); actionID > 0 {
+				index := slices.IndexFunc(actions, func(a any) bool { return a.(map[string]any)["id"] == action["id"] })
+				if assert.GreaterOrEqual(t, index, 0, "unknown action %v", action["id"]) {
+					actions[index] = action
+				}
+				continue
+			}
+			action["id"] = float64(f.nextActionID)
+			f.nextActionID++
+			actions = append(actions, action)
+		}
+		body["actions"] = actions
 		f.filters[id] = body
-		f.mu.Unlock()
 		assert.NoError(t, json.MarshalWrite(w, body))
+	})
+	mux.HandleFunc("DELETE /api/actions/{id}", func(w http.ResponseWriter, r *http.Request) {
+		f.record(t, r)
+		actionID, err := strconv.Atoi(r.PathValue("id"))
+		assert.NoError(t, err)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		for _, stored := range f.filters {
+			actions, _ := stored["actions"].([]any)
+			index := slices.IndexFunc(actions, func(a any) bool { return a.(map[string]any)["id"] == float64(actionID) })
+			if index >= 0 {
+				stored["actions"] = slices.Delete(actions, index, index+1)
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+		http.NotFound(w, r)
 	})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-API-Token") != fakeAutobrrKey {
@@ -100,7 +151,7 @@ func newFakeAutobrrAPI(t *testing.T) (*fakeAutobrrAPI, *httptest.Server) {
 
 func (f *fakeAutobrrAPI) record(t *testing.T, r *http.Request) map[string]any {
 	var body map[string]any
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet && r.Method != http.MethodDelete {
 		assert.NoError(t, json.UnmarshalRead(r.Body, &body))
 	}
 	f.mu.Lock()
@@ -118,6 +169,38 @@ func (f *fakeAutobrrAPI) filter(id string) (map[string]any, bool) {
 	}
 	stored, ok := f.filters[n]
 	return stored, ok
+}
+
+// seed stores filter as a user made it in autobrr, with an ID for each action.
+func (f *fakeAutobrrAPI) seed(t *testing.T, filter string) int {
+	t.Helper()
+	var stored map[string]any
+	require.NoError(t, json.Unmarshal([]byte(filter), &stored))
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	actions, _ := stored["actions"].([]any)
+	for _, action := range actions {
+		action.(map[string]any)["id"] = float64(f.nextActionID)
+		f.nextActionID++
+	}
+	id := f.nextID
+	f.nextID++
+	stored["id"] = float64(id)
+	f.filters[id] = stored
+	return id
+}
+
+// writes returns the requests that change autobrr state.
+func (f *fakeAutobrrAPI) writes() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var writes []string
+	for _, request := range f.requests {
+		if request.method != http.MethodGet {
+			writes = append(writes, request.method+" "+request.path)
+		}
+	}
+	return writes
 }
 
 // storedJSON returns one field of a stored filter as JSON.
@@ -146,7 +229,8 @@ func TestSetupFilterCommand_CreatesFilterForClient(t *testing.T) {
 
 	require.Equal(t, 0, code, stderr)
 	require.Len(t, fake.filters, 1)
-	create := fake.requests[0]
+	assert.Equal(t, "GET /api/filters", fake.requests[0].method+" "+fake.requests[0].path)
+	create := fake.requests[1]
 	assert.Equal(t, "POST /api/filters", create.method+" "+create.path)
 	assert.Equal(t, map[string]any{
 		"name": "seasonpackarr-tv", "enabled": false, "seasons": "1-99", "episodes": "0",
@@ -168,7 +252,7 @@ func TestSetupFilterCommand_CreatesFilterForClient(t *testing.T) {
 	]`, fake.storedJSON(t, 1, "external"))
 	assert.JSONEq(t, `[
 		{
-			"name": "Import with seasonpackarr", "type": "WEBHOOK", "enabled": true,
+			"id": 1, "name": "Import with seasonpackarr", "type": "WEBHOOK", "enabled": true,
 			"webhook_type": "JSON", "webhook_method": "POST",
 			"webhook_host": "http://seasonpackarr:42069/api/import?apikey=secret",
 			"webhook_data": "{\n  \"name\": \"{{ .TorrentName }}\",\n  \"torrent\": \"{{ .TorrentDataRawBytes | js }}\",\n  \"clientname\": \"tv\"\n}"
@@ -312,7 +396,7 @@ func TestSetupFilterCommand_AutobrrErrorsExitWithStatus(t *testing.T) {
 
 		assert.Equal(t, 1, code)
 		assert.Empty(t, stdout)
-		assert.Contains(t, stderr, "autobrr returned HTTP 401 for POST /api/filters; check --autobrr-api-key")
+		assert.Contains(t, stderr, "autobrr returned HTTP 401 for GET /api/filters; check --autobrr-api-key")
 		assert.NotContains(t, stderr, "wrong-key")
 		assert.Empty(t, fake.filters)
 	})
@@ -338,7 +422,7 @@ func TestSetupFilterCommand_AutobrrErrorsExitWithStatus(t *testing.T) {
 		code, _, stderr := runCLI(t, setupFilterArgs(server.URL, "--client", "tv")...)
 
 		assert.Equal(t, 1, code)
-		assert.Contains(t, stderr, "could not reach autobrr for POST /api/filters")
+		assert.Contains(t, stderr, "could not reach autobrr for GET /api/filters")
 	})
 }
 
@@ -352,7 +436,7 @@ func TestSetupCommand_PrintsHelp(t *testing.T) {
 	code, stdout, stderr := runCLI(t, "setup")
 
 	require.Equal(t, 0, code, stderr)
-	assert.Contains(t, stdout, "filter      Create the seasonpackarr filter in autobrr")
+	assert.Contains(t, stdout, "filter      Create or update the seasonpackarr filter in autobrr")
 	code, stdout, stderr = runCLI(t, "--help")
 	require.Equal(t, 0, code, stderr)
 	_, tools, found := strings.Cut(stdout, "Tools:")
@@ -483,4 +567,256 @@ func TestSetupFilterCommand_AcceptsHTTPSWebhookURLWithProxyPath(t *testing.T) {
 	assert.Contains(t, external, `"webhook_host":"https://proxy.example/seasonpackarr/api/candidate"`)
 	assert.Contains(t, external, `"webhook_host":"https://proxy.example/seasonpackarr/api/match"`)
 	assert.Contains(t, fake.storedJSON(t, 1, "actions"), `"webhook_host":"https://proxy.example/seasonpackarr/api/import?apikey=secret"`)
+}
+
+// v016Filter is a filter that a user set up by hand for v0.16.0.
+const v016Filter = `{
+	"name": "TV packs", "enabled": true, "priority": 20, "seasons": "1-30", "episodes": "0",
+	"resolutions": ["1080p", "2160p"], "sources": ["WEB-DL"], "codecs": [], "containers": [],
+	"indexers": [{"id": 4, "name": "TorrentLeech", "identifier": "torrentleech"}],
+	"notifications": [{"notification_id": 2, "events": ["PUSH_APPROVED"]}],
+	"external": [{"id": 9, "name": "pack", "index": 0, "type": "WEBHOOK", "enabled": true,
+		"webhook_host": "http://seasonpackarr:42069/api/pack", "webhook_expect_status": 200}],
+	"actions": [
+		{"name": "qBittorrent", "type": "QBITTORRENT", "enabled": true, "client_id": 1},
+		{"name": "Old pack webhook", "type": "WEBHOOK", "enabled": true,
+			"webhook_host": "http://seasonpackarr:42069/api/pack?apikey=old-secret"}
+	]
+}`
+
+func TestSetupFilterCommand_UpdatesFilterAndKeepsOtherSettings(t *testing.T) {
+	isolateCLI(t)
+	fake, server := newFakeAutobrrAPI(t)
+	id := fake.seed(t, v016Filter)
+
+	code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--client", "tv", "--api", "secret", "--filter-id", strconv.Itoa(id))...)
+
+	require.Equal(t, 0, code, stderr)
+	assert.Empty(t, stderr)
+	assert.Equal(t, []string{"DELETE /api/actions/1", "DELETE /api/actions/2", "PUT /api/filters/1"}, fake.writes())
+	stored, ok := fake.filter(strconv.Itoa(id))
+	require.True(t, ok)
+	for key, want := range map[string]any{
+		"name": "TV packs", "enabled": true, "priority": float64(20), "seasons": "1-30", "episodes": "0",
+		"resolutions": []any{"1080p", "2160p"}, "sources": []any{"WEB-DL"}, "codecs": []any{}, "containers": []any{},
+		"indexers":      []any{map[string]any{"id": float64(4), "name": "TorrentLeech", "identifier": "torrentleech"}},
+		"notifications": []any{map[string]any{"notification_id": float64(2), "events": []any{"PUSH_APPROVED"}}},
+	} {
+		assert.Equal(t, want, stored[key], key)
+	}
+	external := fake.storedJSON(t, id, "external")
+	assert.NotContains(t, external, "/api/pack")
+	assert.Contains(t, external, `"webhook_host":"http://seasonpackarr:42069/api/candidate"`)
+	assert.Contains(t, external, `"webhook_host":"http://seasonpackarr:42069/api/match"`)
+	actions := fake.storedJSON(t, id, "actions")
+	assert.NotContains(t, actions, "qBittorrent")
+	assert.NotContains(t, actions, "/api/pack")
+	assert.Contains(t, actions, `"webhook_host":"http://seasonpackarr:42069/api/import?apikey=secret"`)
+
+	assert.Contains(t, stdout, "Updated filter 1 (TV packs) for client tv")
+	assert.Contains(t, stdout, "Removed action 1 (qBittorrent, QBITTORRENT)")
+	assert.Contains(t, stdout, "Removed action 2 (Old pack webhook, WEBHOOK)")
+	assert.NotContains(t, stdout, "old-secret")
+	assert.NotContains(t, stdout, "Enable the filter")
+}
+
+func TestSetupFilterCommand_UpdateReportsRemovedActionsAsJSON(t *testing.T) {
+	isolateCLI(t)
+	fake, server := newFakeAutobrrAPI(t)
+	id := fake.seed(t, v016Filter)
+
+	code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--client", "tv", "--api", "secret", "--filter-id", strconv.Itoa(id), "--json")...)
+
+	require.Equal(t, 0, code, stderr)
+	assert.JSONEq(t, `[{
+		"clientname": "tv", "id": 1, "name": "TV packs", "result": "updated",
+		"removed_actions": [
+			{"id": 1, "name": "qBittorrent", "type": "QBITTORRENT"},
+			{"id": 2, "name": "Old pack webhook", "type": "WEBHOOK"}
+		]
+	}]`, stdout)
+
+	// A second update removes only the import action of the first.
+	code, stdout, stderr = runCLI(t, setupFilterArgs(server.URL, "--client", "tv", "--api", "secret", "--filter-id", strconv.Itoa(id), "--json")...)
+
+	require.Equal(t, 0, code, stderr)
+	assert.JSONEq(t, `[{
+		"clientname": "tv", "id": 1, "name": "TV packs", "result": "updated",
+		"removed_actions": [{"id": 3, "name": "Import with seasonpackarr", "type": "WEBHOOK"}]
+	}]`, stdout)
+	actions := fake.storedJSON(t, id, "actions")
+	assert.Equal(t, 1, strings.Count(actions, `"name":"Import with seasonpackarr"`), actions)
+}
+
+func TestSetupFilterCommand_FilterIDNeedsExactlyOneClient(t *testing.T) {
+	isolateCLI(t)
+	t.Setenv("SEASONPACKARR__DISABLE_CONFIG_FILE", "")
+	twoClients := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(twoClients, "config.yaml"), []byte("apiToken: config-token\nclients:\n  tv: {}\n  anime: {}\n"), 0o600))
+	oneClient := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(oneClient, "config.yaml"), []byte("apiToken: config-token\nclients:\n  tv: {}\n"), 0o600))
+	noClients := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(noClients, "config.yaml"), []byte("apiToken: config-token\n"), 0o600))
+
+	for _, tt := range []struct {
+		name, want string
+		args       []string
+	}{
+		{"several configured clients", "2 clients are configured; select one with --client", []string{"--config", twoClients, "--filter-id", "1"}},
+		{"several configured clients in a dry run", "2 clients are configured; select one with --client", []string{"--config", twoClients, "--filter-id", "1", "--dry-run"}},
+		{"no clients", "select a client with --client", []string{"--config", noClients, "--filter-id", "1"}},
+		{"zero filter ID", "--filter-id must be a positive filter ID", []string{"--config", oneClient, "--filter-id", "0"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			fake, server := newFakeAutobrrAPI(t)
+			fake.seed(t, v016Filter)
+
+			code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, tt.args...)...)
+
+			assert.Equal(t, 1, code)
+			assert.Empty(t, stdout)
+			assert.Contains(t, stderr, tt.want)
+			assert.Empty(t, fake.requests)
+		})
+	}
+	t.Run("the only configured client", func(t *testing.T) {
+		fake, server := newFakeAutobrrAPI(t)
+		id := fake.seed(t, v016Filter)
+
+		code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--config", oneClient, "--filter-id", strconv.Itoa(id))...)
+
+		require.Equal(t, 0, code, stderr)
+		assert.Contains(t, stdout, "Updated filter 1 (TV packs) for client tv")
+		assert.Contains(t, fake.storedJSON(t, id, "external"), `\"clientname\": \"tv\"`)
+	})
+	t.Run("one client from --client of several", func(t *testing.T) {
+		fake, server := newFakeAutobrrAPI(t)
+		id := fake.seed(t, v016Filter)
+
+		code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--config", twoClients, "--client", "anime", "--filter-id", strconv.Itoa(id))...)
+
+		require.Equal(t, 0, code, stderr)
+		assert.Contains(t, stdout, "Updated filter 1 (TV packs) for client anime")
+		assert.Contains(t, fake.storedJSON(t, id, "external"), `\"clientname\": \"anime\"`)
+	})
+}
+
+func TestSetupFilterCommand_ExistingFilterNameStopsBeforeAnyWrite(t *testing.T) {
+	isolateCLI(t)
+	t.Setenv("SEASONPACKARR__DISABLE_CONFIG_FILE", "")
+	configDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte("apiToken: config-token\nclients:\n  anime: {}\n  tv: {}\n  movies: {}\n"), 0o600))
+	fake, server := newFakeAutobrrAPI(t)
+	fake.seed(t, `{"name": "TV packs", "actions": []}`)
+	tvID := fake.seed(t, `{"name": "seasonpackarr-tv", "actions": []}`)
+	moviesID := fake.seed(t, `{"name": "seasonpackarr-movies", "actions": []}`)
+
+	code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--config", configDir)...)
+
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stdout)
+	assert.Empty(t, fake.writes())
+	assert.Contains(t, stderr, "filter "+strconv.Itoa(tvID)+" (seasonpackarr-tv) already exists for client tv; rerun with --filter-id "+strconv.Itoa(tvID)+" --client tv")
+	assert.Contains(t, stderr, "filter "+strconv.Itoa(moviesID)+" (seasonpackarr-movies) already exists for client movies; rerun with --filter-id "+strconv.Itoa(moviesID)+" --client movies")
+	assert.NotContains(t, stderr, "anime")
+}
+
+func TestSetupFilterCommand_DryRunUpdateShowsChangesWithoutWrites(t *testing.T) {
+	isolateCLI(t)
+	fake, server := newFakeAutobrrAPI(t)
+	id := fake.seed(t, v016Filter)
+	args := setupFilterArgs(server.URL, "--client", "tv", "--api", "s3cret", "--filter-id", strconv.Itoa(id), "--dry-run")
+
+	code, stdout, stderr := runCLI(t, args...)
+
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, stdout, "Dry run: update filter 1 (TV packs) for client tv, not sent to autobrr")
+	assert.Contains(t, stdout, "Would remove action 1 (qBittorrent, QBITTORRENT)")
+	assert.Contains(t, stdout, "Would remove action 2 (Old pack webhook, WEBHOOK)")
+	assert.Contains(t, stdout, `"webhook_host": "http://seasonpackarr:42069/api/candidate"`)
+
+	code, stdout, stderr = runCLI(t, append(args, "--json")...)
+
+	require.Equal(t, 0, code, stderr)
+	assert.NotContains(t, stdout, "s3cret")
+	assert.NotContains(t, stdout, "old-secret")
+	var results []struct {
+		ID             int    `json:"id"`
+		Name           string `json:"name"`
+		Result         string `json:"result"`
+		RemovedActions []struct {
+			ID   int    `json:"id"`
+			Name string `json:"name"`
+		} `json:"removed_actions"`
+		Filter map[string]any `json:"filter"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &results), stdout)
+	require.Len(t, results, 1)
+	assert.Equal(t, "dry-run", results[0].Result)
+	assert.Equal(t, "TV packs", results[0].Name)
+	require.Len(t, results[0].RemovedActions, 2)
+	assert.Equal(t, "qBittorrent", results[0].RemovedActions[0].Name)
+	// The dry run shows only the parts that the update replaces.
+	assert.ElementsMatch(t, []string{"external", "actions"}, slices.Collect(maps.Keys(results[0].Filter)))
+	payload, err := json.Marshal(results[0].Filter)
+	require.NoError(t, err)
+	assert.Contains(t, string(payload), `"webhook_headers":"X-API-Token=[redacted]"`)
+	assert.Contains(t, string(payload), `"webhook_host":"http://seasonpackarr:42069/api/import?apikey=[redacted]"`)
+
+	assert.Empty(t, fake.writes())
+	assert.Contains(t, fake.storedJSON(t, id, "actions"), "qBittorrent")
+}
+
+func TestSetupFilterCommand_DryRunUpdateNeedsAutobrrSettings(t *testing.T) {
+	isolateCLI(t)
+	t.Setenv("SEASONPACKARR__AUTOBRR_URL", "")
+	t.Setenv("SEASONPACKARR__AUTOBRR_API_KEY", "")
+
+	code, stdout, stderr := runCLI(t, "setup", "filter", "--webhook-url", "http://seasonpackarr:42069", "--client", "tv", "--filter-id", "1", "--dry-run")
+
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "--autobrr-url or SEASONPACKARR__AUTOBRR_URL")
+}
+
+func TestSetupFilterCommand_UpdateErrorsExitWithStatus(t *testing.T) {
+	isolateCLI(t)
+	t.Run("unknown filter ID", func(t *testing.T) {
+		fake, server := newFakeAutobrrAPI(t)
+
+		code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--client", "tv", "--filter-id", "7")...)
+
+		assert.Equal(t, 1, code)
+		assert.Empty(t, stdout)
+		assert.Contains(t, stderr, "read filter 7: autobrr returned HTTP 404 for GET /api/filters/7; check --filter-id")
+		assert.Empty(t, fake.writes())
+	})
+	t.Run("failed action delete", func(t *testing.T) {
+		fake, server := newFakeAutobrrAPI(t)
+		id := fake.seed(t, v016Filter)
+		fake.failPath = "DELETE /api/actions/1"
+
+		code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--client", "tv", "--api", "secret", "--filter-id", strconv.Itoa(id))...)
+
+		assert.Equal(t, 1, code)
+		assert.Empty(t, stdout)
+		assert.Contains(t, stderr, "update filter 1 for client tv: autobrr returned HTTP 500 for DELETE /api/actions/1: internal error")
+		assert.NotContains(t, stderr, "rerun")
+		assert.Contains(t, fake.storedJSON(t, id, "external"), "/api/pack")
+		assert.Contains(t, fake.storedJSON(t, id, "actions"), "qBittorrent")
+	})
+	t.Run("failed update after the action deletes", func(t *testing.T) {
+		fake, server := newFakeAutobrrAPI(t)
+		id := fake.seed(t, v016Filter)
+		fake.failPath = "PUT /api/filters/1"
+
+		code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--client", "tv", "--api", "secret", "--filter-id", strconv.Itoa(id))...)
+
+		assert.Equal(t, 1, code)
+		assert.Empty(t, stdout)
+		assert.Contains(t, stderr, "update filter 1 for client tv: autobrr returned HTTP 500 for PUT /api/filters/1: internal error")
+		assert.Contains(t, stderr, "the filter has no action until you rerun the command")
+		// No old download action stays next to the import action.
+		assert.Equal(t, "[]", fake.storedJSON(t, id, "actions"))
+	})
 }
