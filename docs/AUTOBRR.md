@@ -19,8 +19,8 @@ In every value below:
 - Replace `your-api-token` with the `apiToken` from your config.
 - Replace `default` with your client name from the `clients` section of your config.
 
-The end-to-end tests use the same filter values. Their configuration is in
-[`test/e2e/testdata/filter.json`](../test/e2e/testdata/filter.json).
+The end-to-end tests create their filters with `seasonpackarr setup filter`,
+so they use the same filter values.
 
 ## Create the filter
 

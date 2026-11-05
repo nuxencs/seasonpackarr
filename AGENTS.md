@@ -28,7 +28,7 @@ Run the checks from the table in `docs/DEVELOPMENT.md#checks` for the code you c
 
 - Config: `config.yaml`, `schemas/config-schema.json`, and `docs/CONFIGURATION.md` change together.
 - API: payload, status code, or endpoint changes update `docs/API.md`.
-- autobrr filter: the filter definition in `internal/autobrr/filter.go`, `docs/AUTOBRR.md`, and `test/e2e/testdata/filter.json` change together. `TestSetupFilterCommand_MatchesAutobrrGuide` fails when the definition and the guide differ.
+- autobrr filter: the filter definition in `internal/autobrr/filter.go` and `docs/AUTOBRR.md` change together. `TestSetupFilterCommand_MatchesAutobrrGuide` fails when the definition and the guide differ.
 - User setup or upgrade steps: update the guide in `docs/` in the same change.
 
 ## Agent skills
