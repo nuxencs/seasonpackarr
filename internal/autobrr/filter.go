@@ -80,6 +80,10 @@ func NewRedactedFilter(client, webhookURL, token string) (Filter, error) {
 }
 
 func newFilter(client, webhookURL, token string, redact bool) (Filter, error) {
+	// autobrr splits the header field at ";" and "=" and skips a malformed header without an error.
+	if strings.ContainsAny(token, ";=") {
+		return Filter{}, fmt.Errorf("the seasonpackarr API token must not contain \";\" or \"=\", because autobrr cannot send it as a header; generate a token with seasonpackarr gen-token")
+	}
 	webhookURL = strings.TrimRight(webhookURL, "/")
 	candidateData, err := templateJSON(struct {
 		Name       string `json:"name"`
@@ -133,7 +137,7 @@ func newFilter(client, webhookURL, token string, redact bool) (Filter, error) {
 func templateJSON(value any) (string, error) {
 	data, err := json.Marshal(value, jsontext.WithIndent("  "))
 	if err != nil {
-		return "", fmt.Errorf("client name must be valid UTF-8: %w", err)
+		return "", fmt.Errorf("encode the data template; the client name must be valid UTF-8: %w", err)
 	}
 	return string(data), nil
 }

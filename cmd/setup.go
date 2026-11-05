@@ -178,7 +178,7 @@ func (o *setupFilterOptions) print(w io.Writer, results []setupFilterResult) err
 		}
 		fmt.Fprintf(w, "Created filter %d (%s) for client %s\n", result.ID, terminalText(result.Name), terminalText(result.Client))
 	}
-	if len(results) > 0 && results[0].Filter == nil {
+	if len(results) > 0 && !o.dryRun {
 		_, err := fmt.Fprint(w, `
 New filters are disabled and have no indexers. In autobrr, for each new filter:
   1. Select the indexers in the General tab.

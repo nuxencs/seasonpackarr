@@ -4,7 +4,7 @@ This note records the autobrr REST API behavior that `seasonpackarr setup filter
 
 ## Inspected revision
 
-autobrr [v1.88.0](https://github.com/autobrr/autobrr/releases/tag/v1.88.0), the version that the end-to-end tests pin in `test/harness/compose.autobrr.yaml`. On 2026-11-05, `seasonpackarr setup filter` was run against the v1.88.0 image, and a read of each created filter returned the External entries, their order, and the import action as the command wrote them.
+autobrr [v1.88.0](https://github.com/autobrr/autobrr/releases/tag/v1.88.0), the version that the end-to-end tests pin in `test/harness/compose.autobrr.yaml`. On 2026-11-05, a manual run of `seasonpackarr setup filter` against the v1.88.0 image created the filters, and a read of each filter returned the External entries, their order, and the import action as the command wrote them.
 
 ## Authentication
 
@@ -34,3 +34,7 @@ autobrr reads the External entries ordered by `idx DESC` and runs them in that o
 ## Action headers
 
 The API model of an action has a `webhook_headers` field. Source: [`internal/domain/action.go` line 43](https://github.com/autobrr/autobrr/blob/v1.88.0/internal/domain/action.go#L43). The autobrr Webhook action form has no header field, so the manual path in `docs/AUTOBRR.md` cannot set it. The command sends the token in the `apikey` query parameter, so that both paths give the same filter.
+
+## External entry headers
+
+autobrr splits `webhook_headers` at `;` into headers and each header at `=` into a name and a value. It skips a header that does not split into exactly two parts and gives no error. Source: [`internal/filter/service.go` lines 1193-1204](https://github.com/autobrr/autobrr/blob/v1.88.0/internal/filter/service.go#L1193-L1204). A token that contains `;` or `=` would therefore give a filter that sends no token, so the command rejects such a token.

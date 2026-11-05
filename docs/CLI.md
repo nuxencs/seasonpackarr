@@ -130,7 +130,8 @@ credentials, query parameters, or fragment.
 The command works without a config file. Then give the client and the token
 with `--client` and `--api`. With an empty token, the command prints a warning
 and writes a filter without the `X-API-Token` header and without the `apikey`
-query parameter.
+query parameter. The token must not contain `;` or `=`, because autobrr cannot
+send such a token in a header. Tokens from `gen-token` are always valid.
 
 Add `--dry-run` to print each filter with the tokens redacted. A dry run makes
 no autobrr calls, so it needs no autobrr URL or key. Add `--json` for
@@ -161,8 +162,9 @@ settings, which override local config, which overrides built-in defaults.
 | Client name | `--client`, `-n` | `SEASONPACKARR__CLIENT` | Sole configured client; without local clients, `default`; search selects all |
 
 The token belongs to seasonpackarr, not Prowlarr or the torrent client.
-`SEASONPACKARR__URL`, `SEASONPACKARR__CLIENT`, `SEASONPACKARR__AUTOBRR_URL`, and
-`SEASONPACKARR__AUTOBRR_API_KEY` are CLI-only environment settings, not YAML keys. Client names also include clients defined through the existing
+`SEASONPACKARR__URL`, `SEASONPACKARR__CLIENT`, `SEASONPACKARR__AUTOBRR_URL`,
+and `SEASONPACKARR__AUTOBRR_API_KEY` are CLI-only environment settings, not YAML
+keys. Client names also include clients defined through the existing
 `SEASONPACKARR__CLIENTS_...` environment settings.
 
 Config discovery checks these locations in order:

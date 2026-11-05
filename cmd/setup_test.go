@@ -231,14 +231,15 @@ func TestSetupFilterCommand_DryRunRedactsTokensWithoutAutobrrCalls(t *testing.T)
 	t.Setenv("SEASONPACKARR__AUTOBRR_API_KEY", fakeAutobrrKey)
 
 	for _, tt := range []struct {
-		name string
-		args []string
+		name     string
+		clearEnv bool
+		args     []string
 	}{
-		{"without autobrr settings", []string{"setup", "filter", "--webhook-url", "http://seasonpackarr:42069", "--client", "tv", "--api", "s3cret&key", "--dry-run", "--json"}},
-		{"with autobrr settings", setupFilterArgs(server.URL, "--client", "tv", "--api", "s3cret&key", "--dry-run", "--json")},
+		{"without autobrr settings", true, []string{"setup", "filter", "--webhook-url", "http://seasonpackarr:42069", "--client", "tv", "--api", "s3cret&key", "--dry-run", "--json"}},
+		{"with autobrr settings", false, setupFilterArgs(server.URL, "--client", "tv", "--api", "s3cret&key", "--dry-run", "--json")},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.name == "without autobrr settings" {
+			if tt.clearEnv {
 				t.Setenv("SEASONPACKARR__AUTOBRR_URL", "")
 				t.Setenv("SEASONPACKARR__AUTOBRR_API_KEY", "")
 			}
@@ -287,6 +288,8 @@ func TestSetupFilterCommand_InvalidInputFailsBeforeAutobrrCalls(t *testing.T) {
 		{"missing autobrr API key", "--autobrr-api-key or SEASONPACKARR__AUTOBRR_API_KEY", append(base, "--webhook-url", "http://seasonpackarr:42069", "--autobrr-url", server.URL)},
 		{"invalid autobrr URL", "autobrr URL must be an HTTP or HTTPS base URL", append(base, "--webhook-url", "http://seasonpackarr:42069", "--autobrr-url", "autobrr:7474", "--autobrr-api-key", fakeAutobrrKey)},
 		{"no clients", "select a client with --client", setupFilterArgs(server.URL)},
+		{"token with header separator", `must not contain ";" or "="`, setupFilterArgsWith(server.URL, "http://seasonpackarr:42069", "setup", "filter", "--client", "tv", "--api", "a;b")},
+		{"token with header assignment", `must not contain ";" or "="`, setupFilterArgsWith(server.URL, "http://seasonpackarr:42069", "setup", "filter", "--client", "tv", "--api", "a=b")},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			code, stdout, stderr := runCLI(t, tt.args...)
@@ -467,4 +470,17 @@ func TestSetupFilterCommand_EscapesTokenInImportQuery(t *testing.T) {
 	require.Equal(t, 0, code, stderr)
 	assert.Contains(t, fake.storedJSON(t, 1, "external"), `"webhook_headers":"X-API-Token=a&b c"`)
 	assert.Contains(t, fake.storedJSON(t, 1, "actions"), `"webhook_host":"http://seasonpackarr:42069/api/import?apikey=a%26b+c"`)
+}
+
+func TestSetupFilterCommand_AcceptsHTTPSWebhookURLWithProxyPath(t *testing.T) {
+	isolateCLI(t)
+	fake, server := newFakeAutobrrAPI(t)
+
+	code, _, stderr := runCLI(t, setupFilterArgsWith(server.URL, "https://proxy.example/seasonpackarr/", "setup", "filter", "--client", "tv", "--api", "secret")...)
+
+	require.Equal(t, 0, code, stderr)
+	external := fake.storedJSON(t, 1, "external")
+	assert.Contains(t, external, `"webhook_host":"https://proxy.example/seasonpackarr/api/candidate"`)
+	assert.Contains(t, external, `"webhook_host":"https://proxy.example/seasonpackarr/api/match"`)
+	assert.Contains(t, fake.storedJSON(t, 1, "actions"), `"webhook_host":"https://proxy.example/seasonpackarr/api/import?apikey=secret"`)
 }

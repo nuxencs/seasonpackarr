@@ -85,7 +85,7 @@ func (c *Client) do(ctx context.Context, method, path string, in any, want int, 
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
 	if err != nil {
-		return fmt.Errorf("create the request for %s %s; check --autobrr-url", method, path)
+		return fmt.Errorf("create the request for %s %s; check --autobrr-url: %w", method, path, err)
 	}
 	req.Header.Set("X-API-Token", c.apiKey)
 	if in != nil {
@@ -99,13 +99,17 @@ func (c *Client) do(ctx context.Context, method, path string, in any, want int, 
 		if requestError, ok := errors.AsType[*url.Error](err); ok {
 			err = requestError.Err
 		}
+		// The text only, so the redaction cannot be bypassed through the wrapped error.
 		return fmt.Errorf("could not reach autobrr for %s %s: %s; check --autobrr-url", method, path, c.safe(err.Error(), secret))
 	}
 	defer resp.Body.Close()
 	const maxResponseBytes = 8 << 20
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
-	if err != nil || len(data) > maxResponseBytes {
-		return fmt.Errorf("could not read the autobrr response for %s %s", method, path)
+	if err != nil {
+		return fmt.Errorf("could not read the autobrr response for %s %s: %w", method, path, err)
+	}
+	if len(data) > maxResponseBytes {
+		return fmt.Errorf("the autobrr response for %s %s exceeds 8 MiB", method, path)
 	}
 	if resp.StatusCode != want {
 		message := fmt.Sprintf("autobrr returned HTTP %d for %s %s", resp.StatusCode, method, path)
@@ -126,7 +130,7 @@ func (c *Client) do(ctx context.Context, method, path string, in any, want int, 
 	}
 	if out != nil {
 		if err := json.Unmarshal(data, out); err != nil {
-			return fmt.Errorf("invalid autobrr response for %s %s; check --autobrr-url", method, path)
+			return fmt.Errorf("invalid autobrr response for %s %s; check --autobrr-url: %w", method, path, err)
 		}
 	}
 	return nil
