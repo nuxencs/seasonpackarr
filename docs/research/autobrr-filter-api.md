@@ -14,14 +14,25 @@ autobrr accepts an API key in the `X-API-Token` header. Source: [`internal/http/
 
 The filter handler serves `GET /api/filters`, `POST /api/filters`, `GET /api/filters/{id}`, and `PUT /api/filters/{id}`. Source: [`internal/http/filter.go` lines 46-60](https://github.com/autobrr/autobrr/blob/v1.88.0/internal/http/filter.go#L46-L60).
 
+- `GET /api/filters` answers with the list of filters, each with its `id` and `name`. The command uses it to find a filter with the name of a new filter.
 - `POST` answers `201 Created` with the stored filter, which includes its `id`.
 - `PUT` answers `200 OK`.
+
+The action handler serves `DELETE /api/actions/{id}`, which answers `204 No Content`. Source: [`internal/http/action.go` lines 41-42](https://github.com/autobrr/autobrr/blob/v1.88.0/internal/http/action.go#L41-L42). The autobrr web UI removes an action of a filter with this route.
 
 ## A create stores only the base settings
 
 `Service.Store` validates the filter and writes the filter row. It does not store External entries or actions. `Service.Update` stores the filter row, the indexers, the External entries, the actions, and the notifications. Source: [`internal/filter/service.go` lines 221-297](https://github.com/autobrr/autobrr/blob/v1.88.0/internal/filter/service.go#L221-L297).
 
-The command therefore creates the base filter with `POST`, reads the stored filter, sets `external` and `actions`, and sends the complete filter back with `PUT`. `PUT` overwrites every field, so all other fields come from the read. ADR-0002 records the same limit for autobrr's filter import.
+The command therefore creates the base filter with `POST`, reads the stored filter, sets `external` and `actions`, and sends the complete filter back with `PUT`. `PUT` overwrites the base fields, the indexers, and the notifications, so these come from the read. ADR-0002 records the same limit for autobrr's filter import.
+
+## An update keeps the actions that it does not send
+
+`PUT` replaces the External entries: `StoreFilterExternal` deletes the stored entries and inserts the sent entries. Source: [`internal/database/filter.go` line 1761](https://github.com/autobrr/autobrr/blob/v1.88.0/internal/database/filter.go#L1761). `PUT` does not replace the actions: `StoreFilterActions` updates each sent action with an `id`, inserts each sent action without an `id`, and deletes no action. Source: [`internal/database/action.go` line 870](https://github.com/autobrr/autobrr/blob/v1.88.0/internal/database/action.go#L870).
+
+An update with `--filter-id` therefore deletes each stored action with `DELETE /api/actions/{id}` before the `PUT`. If the `PUT` fails after the deletes, the filter has no action and downloads nothing. The other order could leave the old torrent client action next to the import action, so autobrr would add the pack twice.
+
+A read of a filter logs a failed action lookup and returns the filter without actions. Source: [`internal/filter/service.go` lines 172-176](https://github.com/autobrr/autobrr/blob/v1.88.0/internal/filter/service.go#L172-L176). The command then deletes no action, so it reads the filter again after the `PUT` and fails when the filter has more actions than the update sent.
 
 ## Required arrays
 

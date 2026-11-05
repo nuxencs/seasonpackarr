@@ -194,9 +194,8 @@ func (h *harness) announceImport(t *testing.T, name string, torrent []byte) {
 }
 
 // ensureFilter creates the filter of clientName once with seasonpackarr setup
-// filter, without a config file, then links the indexer and enables it. It then
-// updates the filter with --filter-id, so the announce scenarios also prove that
-// an update keeps the user's settings and a working filter.
+// filter, links the indexer, enables it, and updates it with --filter-id, so the
+// announce scenarios also prove the updated filter.
 func (h *harness) ensureFilter(t *testing.T, clientName string) {
 	t.Helper()
 	if _, ok := h.filters.Load(clientName); ok {
@@ -212,7 +211,7 @@ func (h *harness) ensureFilter(t *testing.T, clientName string) {
 	require.Equal(t, created.ID, updated.ID, "setup filter --filter-id ID")
 	require.Len(t, updated.RemovedActions, 1, "setup filter --filter-id must remove the import action of the create")
 	require.Equal(t, "Import with seasonpackarr", updated.RemovedActions[0].Name, "setup filter --filter-id removed action")
-	require.NoError(t, h.autobrr.requireUpdatedFilter(created.ID), "read the updated filter %s", created.Name)
+	require.NoError(t, h.autobrr.checkUpdatedFilter(created.ID), "read the updated filter %s", created.Name)
 	h.filters.Store(clientName, created.Name)
 }
 
@@ -430,10 +429,9 @@ func (a *autobrrAPI) linkAndEnableFilter(id int) error {
 	return nil
 }
 
-// requireUpdatedFilter checks that an update with --filter-id kept the indexer
-// and the enabled state, and that the filter has one action and two External
-// entries.
-func (a *autobrrAPI) requireUpdatedFilter(id int) error {
+// checkUpdatedFilter checks that an update kept the indexer and the enabled
+// state, and that the filter has one action and two External entries.
+func (a *autobrrAPI) checkUpdatedFilter(id int) error {
 	var stored struct {
 		Enabled  bool    `json:"enabled"`
 		Indexers []named `json:"indexers"`

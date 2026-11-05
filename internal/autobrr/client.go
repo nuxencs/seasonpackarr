@@ -109,10 +109,7 @@ func (c *Client) Filter(ctx context.Context, id int, secret string) (StoredFilte
 		Name    string         `json:"name"`
 		Actions []StoredAction `json:"actions"`
 	}
-	if err := json.Unmarshal(data, &known); err != nil {
-		return StoredFilter{}, fmt.Errorf("invalid autobrr response for GET %s; check --autobrr-url: %w", path, err)
-	}
-	if err := json.Unmarshal(data, &stored.fields); err != nil {
+	if err := errors.Join(json.Unmarshal(data, &known), json.Unmarshal(data, &stored.fields)); err != nil {
 		return StoredFilter{}, fmt.Errorf("invalid autobrr response for GET %s; check --autobrr-url: %w", path, err)
 	}
 	if known.ID != id {
@@ -151,6 +148,19 @@ func (c *Client) UpdateFilter(ctx context.Context, stored StoredFilter, filter F
 			return fmt.Errorf("%w; autobrr removed the old actions, so the filter has no action until you rerun the command", err)
 		}
 		return err
+	}
+	// autobrr reads a filter without actions when its action lookup fails, so an old download action can stay.
+	updated, err := c.Filter(ctx, stored.ID, filter.token)
+	if err != nil {
+		return fmt.Errorf("read the updated filter: %w", err)
+	}
+	if len(updated.Actions) != len(filter.Actions) {
+		actions := make([]string, 0, len(updated.Actions))
+		for _, action := range updated.Actions {
+			actions = append(actions, fmt.Sprintf("action %d (%s, %s)", action.ID, c.safe(action.Name, filter.token), c.safe(action.Type, filter.token)))
+		}
+		return fmt.Errorf("filter %d has %d actions after the update, but the update sends %d: %s; delete the old actions in autobrr",
+			stored.ID, len(updated.Actions), len(filter.Actions), strings.Join(actions, ", "))
 	}
 	return nil
 }

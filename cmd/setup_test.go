@@ -39,6 +39,9 @@ type fakeAutobrrAPI struct {
 	requests     []capturedRequest
 	// failPath answers requests to this method and path with HTTP 500.
 	failPath string
+	// hideActionsOnce omits the actions from the next filter read, like autobrr
+	// after a failed action lookup.
+	hideActionsOnce bool
 }
 
 func newFakeAutobrrAPI(t *testing.T) (*fakeAutobrrAPI, *httptest.Server) {
@@ -65,7 +68,14 @@ func newFakeAutobrrAPI(t *testing.T) (*fakeAutobrrAPI, *httptest.Server) {
 			return
 		}
 		read := map[string]any{}
+		f.mu.Lock()
+		hide := f.hideActionsOnce
+		f.hideActionsOnce = false
+		f.mu.Unlock()
 		for key, value := range stored {
+			if hide && key == "actions" {
+				continue
+			}
 			if values, isArray := value.([]any); isArray && len(values) == 0 {
 				continue
 			}
@@ -259,7 +269,9 @@ func TestSetupFilterCommand_CreatesFilterForClient(t *testing.T) {
 		}
 	]`, fake.storedJSON(t, 1, "actions"))
 	// The update sends the stored filter back, so the arrays that the read omits must return.
-	update := fake.requests[len(fake.requests)-1]
+	index := slices.IndexFunc(fake.requests, func(r capturedRequest) bool { return r.method == http.MethodPut })
+	require.GreaterOrEqual(t, index, 0)
+	update := fake.requests[index]
 	assert.Equal(t, "PUT /api/filters/1", update.method+" "+update.path)
 	for _, key := range []string{"resolutions", "sources", "codecs", "containers"} {
 		assert.Equal(t, []any{}, update.body[key], key)
@@ -635,9 +647,16 @@ func TestSetupFilterCommand_UpdateReportsRemovedActionsAsJSON(t *testing.T) {
 			{"id": 2, "name": "Old pack webhook", "type": "WEBHOOK"}
 		]
 	}]`, stdout)
+}
 
-	// A second update removes only the import action of the first.
-	code, stdout, stderr = runCLI(t, setupFilterArgs(server.URL, "--client", "tv", "--api", "secret", "--filter-id", strconv.Itoa(id), "--json")...)
+func TestSetupFilterCommand_RerunUpdateRemovesOnlyImportAction(t *testing.T) {
+	isolateCLI(t)
+	fake, server := newFakeAutobrrAPI(t)
+	id := fake.seed(t, v016Filter)
+	code, _, stderr := runCLI(t, setupFilterArgs(server.URL, "--client", "tv", "--api", "secret", "--filter-id", strconv.Itoa(id))...)
+	require.Equal(t, 0, code, stderr)
+
+	code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--client", "tv", "--api", "secret", "--filter-id", strconv.Itoa(id), "--json")...)
 
 	require.Equal(t, 0, code, stderr)
 	assert.JSONEq(t, `[{
@@ -819,4 +838,20 @@ func TestSetupFilterCommand_UpdateErrorsExitWithStatus(t *testing.T) {
 		// No old download action stays next to the import action.
 		assert.Equal(t, "[]", fake.storedJSON(t, id, "actions"))
 	})
+}
+
+func TestSetupFilterCommand_UpdateFailsWhenAutobrrKeepsOldActions(t *testing.T) {
+	isolateCLI(t)
+	fake, server := newFakeAutobrrAPI(t)
+	id := fake.seed(t, v016Filter)
+	// autobrr returns a filter without actions when its action lookup fails, so the command deletes nothing.
+	fake.hideActionsOnce = true
+
+	code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--client", "tv", "--api", "secret", "--filter-id", strconv.Itoa(id))...)
+
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "update filter 1 for client tv: filter 1 has 3 actions after the update, but the update sends 1")
+	assert.Contains(t, stderr, "action 1 (qBittorrent, QBITTORRENT)")
+	assert.Contains(t, stderr, "delete the old actions in autobrr")
 }

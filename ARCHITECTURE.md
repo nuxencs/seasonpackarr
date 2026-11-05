@@ -50,7 +50,10 @@
   for a manual setup, and a test in `cmd/setup_test.go` compares the two.
 - `internal/autobrr/client.go` calls the autobrr REST API. A create stores only
   the base settings, so the client reads the stored filter, sets the External
-  entries and actions, and sends it back. See
+  entries and actions, and sends it back. An update with `--filter-id` does the
+  same for an existing filter. It deletes the old actions first, because the
+  autobrr update keeps actions that it does not send. Without `--filter-id`, an
+  existing filter with the same name stops the command before any write. See
   [the API notes](docs/research/autobrr-filter-api.md) and ADR-0004.
 
 ### Release Matching

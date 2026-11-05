@@ -177,7 +177,9 @@ go to stderr.
 After an autobrr error, the command stops and prints the filters that it
 created before the error. The update removes the old actions before it writes
 the filter. If the write fails after that, the filter has no action and
-downloads nothing until you rerun the command.
+downloads nothing until you rerun the command. After the update, the command
+reads the filter again. If autobrr still has an old action, the command fails
+and names each action, so that you can delete the old actions in autobrr.
 
 ## Connection settings
 

@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -168,7 +169,7 @@ func (o *setupFilterOptions) run(cmd *cobra.Command) error {
 	}
 
 	if o.filterID != 0 {
-		result, err := o.update(cmd, api, clients[0], filters[0], token)
+		result, err := o.update(cmd.Context(), api, clients[0], filters[0], token)
 		if err != nil {
 			return err
 		}
@@ -176,7 +177,7 @@ func (o *setupFilterOptions) run(cmd *cobra.Command) error {
 	}
 
 	if !o.dryRun {
-		if err := checkFilterNames(cmd, api, clients, filters); err != nil {
+		if err := checkFilterNames(cmd.Context(), api, clients, filters); err != nil {
 			return err
 		}
 	}
@@ -209,8 +210,8 @@ func (o *setupFilterOptions) run(cmd *cobra.Command) error {
 
 // checkFilterNames fails when a filter with the name of a new filter already
 // exists, before any write, so a rerun never gives a client two filters.
-func checkFilterNames(cmd *cobra.Command, api *autobrr.Client, clients []string, filters []autobrr.Filter) error {
-	existing, err := api.Filters(cmd.Context())
+func checkFilterNames(ctx context.Context, api *autobrr.Client, clients []string, filters []autobrr.Filter) error {
+	existing, err := api.Filters(ctx)
 	if err != nil {
 		return fmt.Errorf("list the autobrr filters: %w", err)
 	}
@@ -228,8 +229,8 @@ func checkFilterNames(cmd *cobra.Command, api *autobrr.Client, clients []string,
 
 // update replaces the External entries and the actions of the filter from
 // --filter-id, or with --dry-run reads the filter and shows the changes.
-func (o *setupFilterOptions) update(cmd *cobra.Command, api *autobrr.Client, client string, filter autobrr.Filter, token string) (setupFilterResult, error) {
-	stored, err := api.Filter(cmd.Context(), o.filterID, token)
+func (o *setupFilterOptions) update(ctx context.Context, api *autobrr.Client, client string, filter autobrr.Filter, token string) (setupFilterResult, error) {
+	stored, err := api.Filter(ctx, o.filterID, token)
 	if err != nil {
 		return setupFilterResult{}, fmt.Errorf("read filter %d: %w", o.filterID, err)
 	}
@@ -241,7 +242,7 @@ func (o *setupFilterOptions) update(cmd *cobra.Command, api *autobrr.Client, cli
 		result.Result, result.Filter = "dry-run", filterChanges{filter.External, filter.Actions}
 		return result, nil
 	}
-	if err := api.UpdateFilter(cmd.Context(), stored, filter); err != nil {
+	if err := api.UpdateFilter(ctx, stored, filter); err != nil {
 		return setupFilterResult{}, fmt.Errorf("update filter %d for client %s: %w", stored.ID, terminalText(client), err)
 	}
 	result.Result = "updated"
