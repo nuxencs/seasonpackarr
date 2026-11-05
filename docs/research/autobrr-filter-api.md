@@ -14,7 +14,7 @@ autobrr accepts an API key in the `X-API-Token` header. Source: [`internal/http/
 
 The filter handler serves `GET /api/filters`, `POST /api/filters`, `GET /api/filters/{id}`, and `PUT /api/filters/{id}`. Source: [`internal/http/filter.go` lines 46-60](https://github.com/autobrr/autobrr/blob/v1.88.0/internal/http/filter.go#L46-L60).
 
-- `GET /api/filters` answers with the list of filters, each with its `id` and `name`. The command uses it to find a filter with the name of a new filter.
+- `GET /api/filters` answers with the list of filters, each with its `id` and `name`. The command uses it to find a filter with the name of a new filter. The list has only the base columns and no `external` or `actions`, so the stale filter search reads each filter with `GET /api/filters/{id}`. Source: [`internal/database/filter.go` lines 100-136](https://github.com/autobrr/autobrr/blob/v1.88.0/internal/database/filter.go#L100-L136).
 - `POST` answers `201 Created` with the stored filter, which includes its `id`.
 - `PUT` answers `200 OK`.
 
