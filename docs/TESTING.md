@@ -1,6 +1,6 @@
 # Testing
 
-This guide is for contributors. It defines the test layers, the test conventions, and how to run the tests against real torrent clients and autobrr. For the checks to run before a pull request, see [DEVELOPMENT.md](DEVELOPMENT.md#checks).
+This guide is for contributors. It defines the test layers, the test conventions, and how to run the tests against real torrent clients, autobrr, and Prowlarr. For the checks to run before a pull request, see [DEVELOPMENT.md](DEVELOPMENT.md#checks).
 
 ## Layers
 
@@ -10,9 +10,10 @@ so the glossary does not define them.
 - A *CLI test* builds the binary and runs it against the HTTP fixtures with a
   fake torrent client. It needs no external service.
 - An *integration test* runs one client adapter against a real daemon.
-- An *end-to-end test* runs real autobrr, the seasonpackarr release image, a
-  real client, and a real seeder over real network boundaries, with no fakes.
-  It sends one announce into autobrr and checks only what a user can see.
+- An *end-to-end test* runs real autobrr or Prowlarr, the seasonpackarr
+  release image, a real client, and a real seeder over real network
+  boundaries. It starts one import at the user's entry point, an announce into
+  autobrr or a search request, and checks only what a user can see.
 
 ## Files
 
@@ -29,10 +30,12 @@ so the glossary does not define them.
 - `internal/http/cli_test.go` holds the CLI tests. They build the binary
   with `buildCLI` and run it against the HTTP fixtures. They need no external
   service and run in the default suite.
-- `test/e2e/` holds the end-to-end tests. `harness_test.go` sets up autobrr and
-  serves the `.torrent` files. `scenarios_test.go` holds the scenarios and the
+- `test/e2e/` holds the end-to-end tests. `harness_test.go` serves the
+  `.torrent` files and sets up autobrr. `prowlarr_test.go` sets up Prowlarr and
+  serves the fake Torznab feed. `scenarios_test.go` holds the scenarios and the
   `client` interface. `<client>_test.go` implements that interface for one
-  client and runs the scenarios. `testdata/filter.json` is the autobrr filter.
+  client and runs the scenarios. `search_test.go` holds the search tests.
+  `testdata/filter.json` is the autobrr filter.
 
 ## Names
 
@@ -142,14 +145,17 @@ setting, so the download tests need the harness network.
 
 End-to-end tests use the `e2e` build tag, so `go test ./...` does not run
 them. `test/harness/run.sh e2e` runs them. [ADR-0002](adr/0002-e2e-tests-drive-real-autobrr.md) explains why they
-drive a real autobrr.
+drive a real autobrr, and [ADR-0003](adr/0003-e2e-search-drives-real-prowlarr.md)
+why the search test drives a real Prowlarr.
 
-- The only seam is the outside of the whole system. A test sends one announce
-  line through autobrr's announce-process endpoint, and checks only the client
-  API, the `/data` filesystem, and the autobrr release status or log. It does not
-  call the seasonpackarr API. It uses `internal/daemontest`, which hashes
-  torrents with `internal/torrents`, only for setup and waits.
-- Names are `Test<Client>E2E_<Behavior>`. `Test<Client>E2E_Scenarios` runs
+- The only seam is the user's entry point. A test sends one announce line
+  through autobrr's announce-process endpoint, or one `POST /api/search`, the
+  request that `seasonpackarr search` sends. It checks only the client API, the
+  `/data` filesystem, the autobrr release status or log, and the search report.
+  It calls no other seasonpackarr endpoint. It uses `internal/daemontest`, which
+  hashes torrents with `internal/torrents`, only for setup and waits.
+- Names are `Test<Client>E2E_<Behavior>` for the announce flow and
+  `TestSearchE2E_<Behavior>` for search. `Test<Client>E2E_Scenarios` runs
   every scenario against one client as subtests, in a fixed order.
 - The scenarios hold no client-specific code. A client implements the
   `client` interface: its config name, add a torrent with complete data, remove
@@ -163,7 +169,7 @@ drive a real autobrr.
   - `candidate rejection`: the client has one episode in another resolution.
     autobrr stores no release row for a rejected announce, so the test reads
     autobrr's log through `GET /api/logs/files/autobrr.log`
-    (`AUTOBRR__LOG_PATH` in `compose.e2e.yaml`). The log must show that the
+    (`AUTOBRR__LOG_PATH` in `compose.autobrr.yaml`). The log must show that the
     filter rejected the release, and that the `candidate` webhook got status
     `200` for the same trace ID. The client must not have the pack, and the
     files below `/data` must not change.
@@ -174,15 +180,18 @@ drive a real autobrr.
   runner call starts a fresh stack.
 - `requireHarness` gates every test with `daemontest.RequireSettings`, so
   strict mode fails a test with missing settings. Once for each test process,
-  it creates the first autobrr user, logs in, creates an API key, waits until
-  autobrr loaded the custom definition, and creates the indexer and then its
-  enabled IRC network. The network server does not exist. autobrr retries the
-  connection with a backoff and keeps the network enabled and the announce
-  queue intact, so the announce-process endpoint works without IRC.
-- The driver serves the `.torrent` files over HTTP on the port of
-  `SEASONPACKARR_TEST_E2E_TORRENT_URL`. autobrr keeps only the path of the
-  announced URL and joins it to the indexer `base_url`, which the driver sets
-  to that URL.
+  it starts the torrent server. `requireAutobrr` and `requireProwlarr` add the
+  settings and the setup of their service.
+- Once for each test process, `requireAutobrr` creates the first autobrr user,
+  logs in, creates an API key, waits until autobrr loaded the custom
+  definition, and creates the indexer and then its enabled IRC network. The
+  network server does not exist. autobrr retries the connection with a backoff
+  and keeps the network enabled and the announce queue intact, so the
+  announce-process endpoint works without IRC.
+- The driver serves the `.torrent` files and the fake Torznab feed over HTTP
+  on the port of `SEASONPACKARR_TEST_E2E_TORRENT_URL`. autobrr keeps only the
+  path of the announced URL and joins it to the indexer `base_url`, which the
+  driver sets to that URL.
 - `testdata/filter.json` holds the filter of [AUTOBRR.md](AUTOBRR.md): the
   candidate and match external webhooks with `POST`, the `X-API-Token` header,
   expected status `250`, and the `Data (JSON)` templates, plus the Webhook
@@ -212,9 +221,37 @@ drive a real autobrr.
   applies the label of the committed config. The client type in that config
   must be the type of the newest Deluge entry, and the test checks it.
 
+The search test:
+
+- `TestSearchE2E_PartialPack` runs the `partial pack` against qBittorrent. In
+  place of the announce, `addRelease` adds the pack to the fake Torznab feed,
+  and the test sends `POST /api/search` with `clientname: qbit` and
+  `dryRun: false`. The other clients of the harness config do not run in this
+  entry. The report must have one `imported` outcome for the pack, one torrent
+  download, and no failures. The download proves that seasonpackarr accepted
+  the proxy link of Prowlarr. The client and disk checks are those of the
+  announce flow.
+- Once for each test process, `requireProwlarr` reads the indexer schema and
+  creates a Generic Torznab indexer with the base URL
+  `SEASONPACKARR_TEST_E2E_TORRENT_URL` and the default app profile. Before
+  Prowlarr saves the indexer, it reads `t=caps` and sends an RSS query, a
+  search without a title. The save fails when that query returns no release,
+  so the fake feed returns one release that no test adds for it.
+- A search with a title gets every release that a test added. Prowlarr filters
+  them by the title and by the category `5000` that seasonpackarr sends. Each
+  item has the fields that Prowlarr requires: a `pubDate`, an `enclosure` with
+  the size as `length` and the torrent MIME type, and the category `5040`.
+- seasonpackarr spaces its Prowlarr requests by 10 seconds, the minimum of
+  `search.requestInterval`. One search sends three requests: indexer
+  discovery, the search, and the torrent download.
+- RSS monitoring has no end-to-end test. Its minimum interval is 10 minutes,
+  and it has no startup poll (ADR-0003).
+
 | Setting | Value in the harness |
 | --- | --- |
-| `SEASONPACKARR_TEST_E2E_AUTOBRR_URL` | `http://autobrr:7474` |
+| `SEASONPACKARR_TEST_E2E_AUTOBRR_URL` | `http://autobrr:7474`, only in `e2e-<client>` |
+| `SEASONPACKARR_TEST_E2E_PROWLARR_URL` | `http://prowlarr:9696/prowlarr`, only in `e2e-search` |
+| `SEASONPACKARR_TEST_E2E_PROWLARR_API_KEY` | the `search.apiKey` of `test/harness/seasonpackarr/config.yaml` |
 | `SEASONPACKARR_TEST_E2E_SEASONPACKARR_URL` | `http://seasonpackarr:42069` |
 | `SEASONPACKARR_TEST_E2E_API_TOKEN` | the `apiToken` of `test/harness/seasonpackarr/config.yaml` |
 | `SEASONPACKARR_TEST_E2E_TORRENT_URL` | `http://test:8000` |
@@ -249,7 +286,7 @@ the integration workflow use the same command ([ADR-0001](adr/0001-integration-t
 test/harness/run.sh                # default integration entries, the CI set
 test/harness/run.sh all            # default entries and the middle versions
 test/harness/run.sh e2e            # every end-to-end entry
-test/harness/run.sh qbit-4.3.9     # one or more named entries, also e2e-<client>
+test/harness/run.sh qbit-4.3.9     # one or more named entries, also e2e-<client> and e2e-search
 test/harness/run.sh list [all]     # integration entries as a JSON array
 test/harness/run.sh list e2e       # end-to-end entries as a JSON array
 ```
@@ -281,22 +318,35 @@ The no-argument run, `all`, and `list [all]` stay integration-only.
   run the harness at the same time.
 - `compose.yaml` holds the Go test service and the seeder. Each client adds a
   `compose.<client>.yaml` overlay with its daemon and its test settings.
-- An end-to-end entry is `e2e-<client>`. It uses the daemon image of the
-  newest default integration entry of that client, so one bump updates both
-  layers. It adds `compose.e2e.yaml` with autobrr and seasonpackarr and runs
-  `Test<Client>E2E_` with `-tags=e2e` in strict mode. The test container runs
-  with `--use-aliases`, so autobrr reaches its torrent server at `test`.
-- autobrr is pinned by tag and digest in `compose.e2e.yaml` and bumped by
+- An end-to-end entry is `e2e-<client>` or `e2e-search`. It uses the daemon
+  image of the newest default integration entry of its client, so one bump
+  updates both layers. `e2e-search` uses qBittorrent. Each end-to-end entry
+  adds `compose.e2e.yaml` with seasonpackarr. `e2e-<client>` then adds
+  `compose.autobrr.yaml` and runs `Test<Client>E2E_`. `e2e-search` adds
+  `compose.prowlarr.yaml` and runs `TestSearchE2E_`. An entry starts only the
+  services that its tests use. The tests run with `-tags=e2e` in strict mode.
+  The test container runs with `--use-aliases`, so autobrr and Prowlarr reach
+  its torrent server at `test`.
+- autobrr is pinned by tag and digest in `compose.autobrr.yaml` and bumped by
   hand. It starts with an empty `/config` tmpfs and loads
   `autobrr/definitions/`. It calls the external webhooks with a fixed 120
   second timeout. A match on a cold inventory in the harness takes milliseconds.
+- Prowlarr is the hotio image, pinned by tag and digest in
+  `compose.prowlarr.yaml` and bumped by hand. It starts with an empty
+  `/config` tmpfs. Environment variables set its API key, the URL base
+  `/prowlarr`, the auth method `External`, and debug output on the console,
+  so no first-run setup is necessary. `External` turns off the web UI login,
+  and the API still needs the API key. `docker cp` cannot read log
+  files on a tmpfs, so a failed entry saves only the container output.
 - seasonpackarr runs from an image that the runner builds once for each call
   from `ci.Dockerfile`, the file of the published release image. It runs as
   uid 1000 with `seasonpackarr/config.yaml` mounted read-only into its
   `/config` volume: an API token, one entry for each client, smart mode with
   a threshold below the partial-pack coverage, the import policy on
-  `/data/import`, and no notifications. A failed end-to-end entry also saves
-  the autobrr and seasonpackarr logs.
+  `/data/import`, the Prowlarr connection with RSS monitoring off, and no
+  notifications. Only a search contacts Prowlarr, so the `e2e-<client>`
+  entries never contact it. A failed end-to-end entry also saves the logs of
+  autobrr or Prowlarr and of seasonpackarr.
 - The seeder is hotio qBittorrent 5.2.4 (`SEEDER_IMAGE` in `run.sh`) with the
   committed `qBittorrent.conf`. It runs in every entry, and the tests start
   only after its health check. Its seed folder is `/data/seed`. The `qbit`
@@ -340,15 +390,15 @@ has a `full` input for the integration group.
   workflow change.
 - Jobs do not retry, and one failed entry does not cancel the others. A failed
   job uploads the logs that the runner saved as the `daemon-logs-<entry>`
-  artifact. For an end-to-end entry, they include the autobrr and
-  seasonpackarr logs.
+  artifact. For an end-to-end entry, they include the logs of autobrr or
+  Prowlarr and of seasonpackarr.
 - The workflow sets `HARNESS_GHA_CACHE=1`, and the Deluge overlay then uses the
   GitHub Actions layer cache with one scope for each package version. Local
   runs leave it unset, because the default docker build driver cannot export a
   cache.
 - Each harness job logs in to `ghcr.io` with `GITHUB_TOKEN` before it pulls.
   Anonymous GHCR pulls share a rate limit with every job on the same runner
-  address. The daemon, seeder, and autobrr images are on `ghcr.io`. Use
+  address. The daemon, seeder, autobrr, and Prowlarr images are on `ghcr.io`. Use
   `ghcr.io` and not `lscr.io` for linuxserver images, because a Docker login
   applies only to its own registry host. The Go test image and the Debian and
   Alpine base images come from Docker Hub, which this login does not cover.

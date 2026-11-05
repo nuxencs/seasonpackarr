@@ -34,6 +34,14 @@ Audit date: 2026-09-05. This is a pinned source audit, not a live service test.
 
 Inspected again locally on 2026-09-08 at the same pinned revision.
 
+## Live Test
+
+`TestSearchE2E_PartialPack` runs these contracts against Prowlarr 2.6.5.5623
+(revision `12c327808314a7cae1b7301935ee10cabc19609f`), pinned in
+`test/harness/compose.prowlarr.yaml`. It covers indexer discovery, a TV search
+with a URL base, and a torrent download through the proxy link. RSS has no live
+test ([ADR-0003](../adr/0003-e2e-search-drives-real-prowlarr.md)).
+
 ## Decision
 
 Use the indexer discovery API plus per-indexer Torznab search. Do not call the

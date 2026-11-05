@@ -177,8 +177,9 @@ targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or to
 
 Unit and component tests live beside the code and run with `go test ./...`.
 Integration tests run each client adapter against real daemons, and end-to-end
-tests run real autobrr, the release image, a real client, and a seeder. The
-test layers, conventions, and harness are in [docs/TESTING.md](docs/TESTING.md).
+tests run real autobrr or Prowlarr, the release image, a real client, and a
+seeder. The test layers, conventions, and harness are in
+[docs/TESTING.md](docs/TESTING.md).
 
 ## Documentation Map
 
