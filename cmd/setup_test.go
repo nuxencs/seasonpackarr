@@ -855,3 +855,14 @@ func TestSetupFilterCommand_UpdateFailsWhenAutobrrKeepsOldActions(t *testing.T) 
 	assert.Contains(t, stderr, "action 1 (qBittorrent, QBITTORRENT)")
 	assert.Contains(t, stderr, "delete the old actions in autobrr")
 }
+
+func TestSetupFilterCommand_UpdateWithoutActionsReportsEmptyRemovedActions(t *testing.T) {
+	isolateCLI(t)
+	fake, server := newFakeAutobrrAPI(t)
+	id := fake.seed(t, `{"name": "TV packs", "enabled": true, "actions": []}`)
+
+	code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--client", "tv", "--api", "secret", "--filter-id", strconv.Itoa(id), "--json")...)
+
+	require.Equal(t, 0, code, stderr)
+	assert.JSONEq(t, `[{"clientname": "tv", "id": 1, "name": "TV packs", "result": "updated", "removed_actions": []}]`, stdout)
+}

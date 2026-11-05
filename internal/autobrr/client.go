@@ -85,22 +85,27 @@ func (c *Client) CreateFilter(ctx context.Context, filter Filter) (int, error) {
 	if created.ID == 0 {
 		return 0, fmt.Errorf("autobrr returned no filter ID for POST /api/filters; check --autobrr-url")
 	}
-	stored, err := c.Filter(ctx, created.ID, filter.token)
+	stored, err := c.filter(ctx, created.ID, filter.token)
 	if err != nil {
 		return created.ID, err
 	}
 	return created.ID, c.UpdateFilter(ctx, stored, filter)
 }
 
-// Filter reads the filter with id. secret is a seasonpackarr token to redact
-// from error messages.
+// Filter reads the filter with id from --filter-id. secret is a seasonpackarr
+// token to redact from error messages.
 func (c *Client) Filter(ctx context.Context, id int, secret string) (StoredFilter, error) {
+	stored, err := c.filter(ctx, id, secret)
+	if status, ok := errors.AsType[*statusError](err); ok && status.status == http.StatusNotFound {
+		status.hint = "check --filter-id"
+	}
+	return stored, err
+}
+
+func (c *Client) filter(ctx context.Context, id int, secret string) (StoredFilter, error) {
 	path := "/api/filters/" + strconv.Itoa(id)
 	var data jsontext.Value
 	if err := c.do(ctx, http.MethodGet, path, nil, http.StatusOK, &data, secret); err != nil {
-		if status, ok := errors.AsType[*statusError](err); ok && status.status == http.StatusNotFound {
-			status.hint = "check --filter-id"
-		}
 		return StoredFilter{}, err
 	}
 	var stored StoredFilter
@@ -150,7 +155,7 @@ func (c *Client) UpdateFilter(ctx context.Context, stored StoredFilter, filter F
 		return err
 	}
 	// autobrr reads a filter without actions when its action lookup fails, so an old download action can stay.
-	updated, err := c.Filter(ctx, stored.ID, filter.token)
+	updated, err := c.filter(ctx, stored.ID, filter.token)
 	if err != nil {
 		return fmt.Errorf("read the updated filter: %w", err)
 	}
