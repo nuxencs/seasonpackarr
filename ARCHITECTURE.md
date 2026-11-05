@@ -53,7 +53,10 @@
   entries and actions, and sends it back. An update with `--filter-id` does the
   same for an existing filter. It deletes the old actions first, because the
   autobrr update keeps actions that it does not send. Without `--filter-id`, an
-  existing filter with the same name stops the command before any write. See
+  existing filter with the same name stops the command before any write. Before
+  any write, the command reads each other filter and warns about each one that
+  calls a seasonpackarr endpoint, because the autobrr filter list has no
+  External entries or actions. It never writes to those filters. See
   [the API notes](docs/research/autobrr-filter-api.md) and ADR-0004.
 
 ### Release Matching

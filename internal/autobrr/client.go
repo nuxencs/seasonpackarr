@@ -67,7 +67,7 @@ type FilterSummary struct {
 	Name string `json:"name"`
 }
 
-// StaleFilter is a filter that calls seasonpackarr, for example a v0.16
+// StaleFilter is a filter that calls seasonpackarr, for example a v0.16.0
 // filter that calls /api/pack.
 type StaleFilter struct {
 	ID        int      `json:"id"`
@@ -75,7 +75,7 @@ type StaleFilter struct {
 	Endpoints []string `json:"endpoints"`
 }
 
-// seasonpackarrEndpoints are the endpoints that a filter for v0.16 or later calls.
+// seasonpackarrEndpoints are the endpoints that a filter for v0.16.0 or later calls.
 var seasonpackarrEndpoints = []string{"/api/pack", "/api/parse", "/api/candidate", "/api/match", "/api/import"}
 
 // Filters lists the filters in autobrr.

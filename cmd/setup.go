@@ -176,27 +176,31 @@ func (o *setupFilterOptions) run(cmd *cobra.Command) error {
 		fmt.Fprintln(cmd.ErrOrStderr(), "Warning: the seasonpackarr API token is empty, so the filters send no token. Set apiToken in config, SEASONPACKARR__API_TOKEN, or --api.")
 	}
 
-	if o.filterID != 0 {
-		result, err := o.update(cmd.Context(), cmd.ErrOrStderr(), api, clients[0], filters[0], token)
-		if err != nil {
-			return err
-		}
-		return o.print(cmd.OutOrStdout(), []setupFilterResult{result})
-	}
-
 	var stale []autobrr.StaleFilter
-	if !o.dryRun {
+	if api != nil {
 		existing, err := api.Filters(cmd.Context())
 		if err != nil {
 			return fmt.Errorf("list the autobrr filters: %w", err)
 		}
-		if err := checkFilterNames(existing, clients, filters); err != nil {
+		if o.filterID == 0 {
+			if err := checkFilterNames(existing, clients, filters); err != nil {
+				return err
+			}
+		}
+		// After the name check, only the filter from --filter-id can be a target.
+		others := slices.DeleteFunc(existing, func(other autobrr.FilterSummary) bool { return other.ID == o.filterID })
+		if stale, err = warnStaleFilters(cmd.Context(), cmd.ErrOrStderr(), api, others, token); err != nil {
 			return err
 		}
-		// No existing filter has the name of a new filter, so each existing filter is another filter.
-		if stale, err = warnStaleFilters(cmd.Context(), cmd.ErrOrStderr(), api, existing, token); err != nil {
+	}
+
+	if o.filterID != 0 {
+		result, err := o.update(cmd.Context(), api, clients[0], filters[0], token)
+		if err != nil {
 			return err
 		}
+		result.StaleFilters = stale
+		return o.print(cmd.OutOrStdout(), []setupFilterResult{result})
 	}
 
 	results := make([]setupFilterResult, 0, len(filters))
@@ -241,14 +245,15 @@ func checkFilterNames(existing []autobrr.FilterSummary, clients []string, filter
 }
 
 // warnStaleFilters warns on stderr about each filter of filters that calls
-// seasonpackarr, so the user can update it with --filter-id.
+// seasonpackarr, so the user can update it with --filter-id. The hint names no
+// client, because the filter can belong to a client that the run did not select.
 func warnStaleFilters(ctx context.Context, stderr io.Writer, api *autobrr.Client, filters []autobrr.FilterSummary, token string) ([]autobrr.StaleFilter, error) {
 	stale, err := api.StaleFilters(ctx, filters, token)
 	if err != nil {
 		return nil, fmt.Errorf("search the autobrr filters that call seasonpackarr: %w", err)
 	}
 	for _, filter := range stale {
-		fmt.Fprintf(stderr, "Warning: filter %d (%s) calls seasonpackarr at %s; update it with --filter-id %d\n",
+		fmt.Fprintf(stderr, "Warning: filter %d (%s) calls seasonpackarr at %s; update it with --filter-id %d --client <client>\n",
 			filter.ID, terminalText(filter.Name), strings.Join(filter.Endpoints, ", "), filter.ID)
 	}
 	return stale, nil
@@ -256,21 +261,12 @@ func warnStaleFilters(ctx context.Context, stderr io.Writer, api *autobrr.Client
 
 // update replaces the External entries and the actions of the filter from
 // --filter-id, or with --dry-run reads the filter and shows the changes.
-func (o *setupFilterOptions) update(ctx context.Context, stderr io.Writer, api *autobrr.Client, client string, filter autobrr.Filter, token string) (setupFilterResult, error) {
+func (o *setupFilterOptions) update(ctx context.Context, api *autobrr.Client, client string, filter autobrr.Filter, token string) (setupFilterResult, error) {
 	stored, err := api.Filter(ctx, o.filterID, token)
 	if err != nil {
 		return setupFilterResult{}, fmt.Errorf("read filter %d: %w", o.filterID, err)
 	}
-	existing, err := api.Filters(ctx)
-	if err != nil {
-		return setupFilterResult{}, fmt.Errorf("list the autobrr filters: %w", err)
-	}
-	others := slices.DeleteFunc(existing, func(other autobrr.FilterSummary) bool { return other.ID == stored.ID })
-	stale, err := warnStaleFilters(ctx, stderr, api, others, token)
-	if err != nil {
-		return setupFilterResult{}, err
-	}
-	result := setupFilterResult{Client: client, ID: stored.ID, Name: stored.Name, RemovedActions: stored.Actions, StaleFilters: stale}
+	result := setupFilterResult{Client: client, ID: stored.ID, Name: stored.Name, RemovedActions: stored.Actions}
 	if result.RemovedActions == nil {
 		result.RemovedActions = []autobrr.StoredAction{}
 	}

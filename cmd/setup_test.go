@@ -887,7 +887,7 @@ func TestSetupFilterCommand_WarnsAboutStaleFiltersWithoutWrites(t *testing.T) {
 
 	require.Equal(t, 0, code, stderr)
 	assert.Contains(t, stdout, "Created filter 4 (seasonpackarr-tv) for client tv")
-	assert.Contains(t, stderr, "Warning: filter 1 (TV packs) calls seasonpackarr at /api/pack; update it with --filter-id 1")
+	assert.Contains(t, stderr, "Warning: filter 1 (TV packs) calls seasonpackarr at /api/pack; update it with --filter-id 1 --client <client>")
 	assert.Equal(t, 1, strings.Count(stderr, "Warning:"), stderr)
 	assert.NotContains(t, stdout+stderr, "old-secret")
 	// The list has no External entries or actions, so the command reads each filter.
@@ -918,6 +918,8 @@ func TestSetupFilterCommand_UpdateWarnsAboutOtherStaleFiltersOnly(t *testing.T) 
 			id := fake.seed(t, v016Filter)
 			otherID := fake.seed(t, other)
 			otherActions := fake.storedJSON(t, otherID, "actions")
+			stored, _ := fake.filter(strconv.Itoa(otherID))
+			otherActionID := int(stored["actions"].([]any)[0].(map[string]any)["id"].(float64))
 			args := setupFilterArgs(server.URL, "--client", "tv", "--api", "secret", "--filter-id", strconv.Itoa(id), "--json")
 			if tt.dryRun {
 				args = append(args, "--dry-run")
@@ -926,7 +928,7 @@ func TestSetupFilterCommand_UpdateWarnsAboutOtherStaleFiltersOnly(t *testing.T) 
 			code, stdout, stderr := runCLI(t, args...)
 
 			require.Equal(t, 0, code, stderr)
-			assert.Equal(t, "Warning: filter 2 (Anime packs) calls seasonpackarr at /api/candidate, /api/import; update it with --filter-id 2\n", stderr)
+			assert.Equal(t, "Warning: filter 2 (Anime packs) calls seasonpackarr at /api/candidate, /api/import; update it with --filter-id 2 --client <client>\n", stderr)
 			var results []struct {
 				ID           int    `json:"id"`
 				Result       string `json:"result"`
@@ -947,7 +949,7 @@ func TestSetupFilterCommand_UpdateWarnsAboutOtherStaleFiltersOnly(t *testing.T) 
 			assert.NotContains(t, stdout+stderr, "other-secret")
 			for _, write := range fake.writes() {
 				assert.NotContains(t, write, "/api/filters/"+strconv.Itoa(otherID))
-				assert.NotContains(t, write, "/api/actions/3")
+				assert.NotEqual(t, "DELETE /api/actions/"+strconv.Itoa(otherActionID), write)
 			}
 			if tt.dryRun {
 				assert.Empty(t, fake.writes())

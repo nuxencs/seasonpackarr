@@ -192,11 +192,11 @@ webhook URL that contains `/api/pack`, `/api/parse`, `/api/candidate`,
 prints a warning with the ID, the name, and the endpoints:
 
 ```text
-Warning: filter 7 (TV packs) calls seasonpackarr at /api/pack; update it with --filter-id 7
+Warning: filter 7 (TV packs) calls seasonpackarr at /api/pack; update it with --filter-id 7 --client <client>
 ```
 
 The command never changes these filters. To update one, rerun the command with
-its ID in `--filter-id`. The search also finds the current filter of a client
+its ID in `--filter-id` and the client of that filter in `--client`. The search also finds the current filter of a client
 that you did not select, because that filter calls seasonpackarr too. The
 search skips the filter from `--filter-id`. A dry run without `--filter-id`
 makes no autobrr calls, so it does not search. The warnings keep exit code `0`.
