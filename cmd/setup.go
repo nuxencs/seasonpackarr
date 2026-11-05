@@ -18,7 +18,7 @@ func newSetupCommand() *cobra.Command {
 	setup := &cobra.Command{
 		Use:     "setup",
 		GroupID: "tools",
-		Short:   "Set up the integration with other services",
+		Short:   "Set up other services to work with seasonpackarr",
 		Args:    cobra.NoArgs,
 	}
 	setup.AddCommand(newSetupFilterCommand())
@@ -59,7 +59,7 @@ config; without a config, use --client and --api.
 
 Use --dry-run to print each filter without a call to autobrr.`,
 		Args: cobra.NoArgs,
-		Example: `  seasonpackarr setup filter --webhook-url http://seasonpackarr:42069 --autobrr-url http://autobrr:7474
+		Example: `  seasonpackarr setup filter --webhook-url http://seasonpackarr:42069 --autobrr-url http://autobrr:7474 --autobrr-api-key <key>
   seasonpackarr setup filter --webhook-url http://127.0.0.1:42069 --client tv --dry-run`,
 		RunE: func(cmd *cobra.Command, args []string) error { return o.run(cmd) },
 	}
