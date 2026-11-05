@@ -93,7 +93,8 @@ services:
 
 - `/config` holds `config.yaml` and the database. The container always starts with `--config /config`.
 - The working directory in the container is `/config`. CLI commands that you run with `docker exec` find
-  `/config/config.yaml` without `--config`, for example `docker exec seasonpackarr seasonpackarr gen-token`.
+  `/config/config.yaml` without `--config`, for example
+  `docker exec seasonpackarr seasonpackarr candidate "Series.S01.1080p.WEB-DL-GRP"`.
 - Mount your torrent data at the **same path** that the torrent client uses. seasonpackarr reads episode paths from the
   client and creates hardlinks at those paths. If the client sees `/data/torrents/tv`, seasonpackarr must also see
   `/data/torrents/tv`.

@@ -873,8 +873,23 @@ func TestUnknownEnvironmentVariables_AllowsComposeExample(t *testing.T) {
 }
 
 // TestFindConfigFile_ImageWorkingDirectoryIsConfigVolume keeps docker exec
-// working without --config: discovery checks ./config.yaml first.
+// working without --config: the image starts in the config volume, and
+// discovery checks ./config.yaml first.
 func TestFindConfigFile_ImageWorkingDirectoryIsConfigVolume(t *testing.T) {
+	t.Run("discovery checks the working directory first", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		homeConfig := filepath.Join(home, ".config", "seasonpackarr", "config.yaml")
+		require.NoError(t, os.MkdirAll(filepath.Dir(homeConfig), 0o755))
+		writeConfigFile(t, homeConfig, "clients: {}\n")
+		workingDir := t.TempDir()
+		writeConfigFile(t, filepath.Join(workingDir, "config.yaml"), "clients: {}\n")
+		t.Chdir(workingDir)
+
+		configFile, err := findConfigFile()
+		require.NoError(t, err)
+		assert.Equal(t, "./config.yaml", configFile)
+	})
 	for _, dockerfile := range []string{"Dockerfile", "ci.Dockerfile"} {
 		t.Run(dockerfile, func(t *testing.T) {
 			contents, err := os.ReadFile(filepath.Join("../..", dockerfile))
