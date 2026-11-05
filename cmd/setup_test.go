@@ -4,7 +4,9 @@
 package cmd
 
 import (
+	"cmp"
 	"encoding/json/v2"
+	"io"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -20,7 +22,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const fakeAutobrrKey = "autobrr-key"
+const (
+	fakeAutobrrKey   = "autobrr-key"
+	externalTestPath = "/api/filters/external/test"
+)
 
 // capturedRequest is one request that fakeAutobrrAPI received.
 type capturedRequest struct {
@@ -42,7 +47,17 @@ type fakeAutobrrAPI struct {
 	// hideActionsOnce omits the actions from the next filter read, like autobrr
 	// after a failed action lookup.
 	hideActionsOnce bool
+	// testStatus is the HTTP status of the External test route: 0 answers with
+	// testResult, and 404 is an autobrr before v1.88.0.
+	testStatus int
+	// testResult is the External test result, or empty for a pass with status 211.
+	testResult string
 }
+
+// passedExternalTest is the autobrr result for a candidate check that reached
+// seasonpackarr. autobrr sets success to false, because 211 is not 250.
+const passedExternalTest = `{"type": "WEBHOOK", "success": false, "status": 211, "expect_status": 250,
+	"output": "{\"error\":\"release is not a season pack\",\"statusCode\":211}", "duration_ms": 3}`
 
 func newFakeAutobrrAPI(t *testing.T) (*fakeAutobrrAPI, *httptest.Server) {
 	t.Helper()
@@ -123,6 +138,18 @@ func newFakeAutobrrAPI(t *testing.T) (*fakeAutobrrAPI, *httptest.Server) {
 		body["actions"] = actions
 		f.filters[id] = body
 		assert.NoError(t, json.MarshalWrite(w, body))
+	})
+	mux.HandleFunc("POST /api/filters/external/test", func(w http.ResponseWriter, r *http.Request) {
+		f.record(t, r)
+		f.mu.Lock()
+		status, result := f.testStatus, cmp.Or(f.testResult, passedExternalTest)
+		f.mu.Unlock()
+		if status != 0 {
+			http.Error(w, http.StatusText(status), status)
+			return
+		}
+		_, err := io.WriteString(w, result)
+		assert.NoError(t, err)
 	})
 	mux.HandleFunc("DELETE /api/actions/{id}", func(w http.ResponseWriter, r *http.Request) {
 		f.record(t, r)
@@ -206,7 +233,7 @@ func (f *fakeAutobrrAPI) writes() []string {
 	defer f.mu.Unlock()
 	var writes []string
 	for _, request := range f.requests {
-		if request.method != http.MethodGet {
+		if request.method != http.MethodGet && request.path != externalTestPath {
 			writes = append(writes, request.method+" "+request.path)
 		}
 	}
@@ -295,8 +322,8 @@ func TestSetupFilterCommand_CreatesFilterForEachConfiguredClient(t *testing.T) {
 	require.Equal(t, 0, code, stderr)
 	assert.Empty(t, stderr)
 	assert.JSONEq(t, `[
-		{"clientname": "anime", "id": 1, "name": "seasonpackarr-anime", "result": "created"},
-		{"clientname": "tv", "id": 2, "name": "seasonpackarr-tv", "result": "created"}
+		{"clientname": "anime", "id": 1, "name": "seasonpackarr-anime", "result": "created", "verification": {"result": "passed", "status": 211, "message": "the check reached seasonpackarr"}},
+		{"clientname": "tv", "id": 2, "name": "seasonpackarr-tv", "result": "created", "verification": {"result": "passed", "status": 211, "message": "the check reached seasonpackarr"}}
 	]`, stdout)
 	for id, client := range map[int]string{1: "anime", 2: "tv"} {
 		external := fake.storedJSON(t, id, "external")
@@ -641,7 +668,7 @@ func TestSetupFilterCommand_UpdateReportsRemovedActionsAsJSON(t *testing.T) {
 
 	require.Equal(t, 0, code, stderr)
 	assert.JSONEq(t, `[{
-		"clientname": "tv", "id": 1, "name": "TV packs", "result": "updated",
+		"clientname": "tv", "id": 1, "name": "TV packs", "result": "updated", "verification": {"result": "passed", "status": 211, "message": "the check reached seasonpackarr"},
 		"removed_actions": [
 			{"id": 1, "name": "qBittorrent", "type": "QBITTORRENT"},
 			{"id": 2, "name": "Old pack webhook", "type": "WEBHOOK"}
@@ -660,7 +687,7 @@ func TestSetupFilterCommand_RerunUpdateRemovesOnlyImportAction(t *testing.T) {
 
 	require.Equal(t, 0, code, stderr)
 	assert.JSONEq(t, `[{
-		"clientname": "tv", "id": 1, "name": "TV packs", "result": "updated",
+		"clientname": "tv", "id": 1, "name": "TV packs", "result": "updated", "verification": {"result": "passed", "status": 211, "message": "the check reached seasonpackarr"},
 		"removed_actions": [{"id": 3, "name": "Import with seasonpackarr", "type": "WEBHOOK"}]
 	}]`, stdout)
 	actions := fake.storedJSON(t, id, "actions")
@@ -864,7 +891,7 @@ func TestSetupFilterCommand_UpdateWithoutActionsReportsEmptyRemovedActions(t *te
 	code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--client", "tv", "--api", "secret", "--filter-id", strconv.Itoa(id), "--json")...)
 
 	require.Equal(t, 0, code, stderr)
-	assert.JSONEq(t, `[{"clientname": "tv", "id": 1, "name": "TV packs", "result": "updated", "removed_actions": []}]`, stdout)
+	assert.JSONEq(t, `[{"clientname": "tv", "id": 1, "name": "TV packs", "result": "updated", "verification": {"result": "passed", "status": 211, "message": "the check reached seasonpackarr"}, "removed_actions": []}]`, stdout)
 }
 
 // unrelatedWebhookFilter calls a webhook of another service.
@@ -1008,4 +1035,202 @@ func TestSetupFilterCommand_FailedStaleFilterReadStopsBeforeAnyWrite(t *testing.
 	assert.Empty(t, stdout)
 	assert.Contains(t, stderr, "search the autobrr filters that call seasonpackarr: read filter 2: autobrr returned HTTP 500 for GET /api/filters/2: internal error")
 	assert.Empty(t, fake.writes())
+}
+
+// externalTest is an autobrr External test result for a webhook that answered
+// with status and output, or that autobrr could not call (status 0 and errText).
+func externalTest(t *testing.T, status int, output, errText string) string {
+	t.Helper()
+	data, err := json.Marshal(map[string]any{
+		"type": "WEBHOOK", "success": status == 250, "status": status, "expect_status": 250,
+		"output": output, "error": errText, "duration_ms": 2,
+	})
+	require.NoError(t, err)
+	return string(data)
+}
+
+func TestSetupFilterCommand_VerifiesCandidateCheckThroughAutobrr(t *testing.T) {
+	isolateCLI(t)
+	for _, tt := range []struct {
+		name           string
+		testStatus     int
+		testResult     string
+		code           int
+		result         string
+		status         int
+		message, issue string
+	}{
+		{
+			name:       "no connection",
+			testResult: externalTest(t, 0, "", `could not make request for webhook: Post "http://seasonpackarr:42069/api/candidate": dial tcp: lookup seasonpackarr: no such host`),
+			code:       1, result: "failed",
+			message: "autobrr cannot reach the webhook URL: could not make request for webhook: Post",
+			issue:   "check --webhook-url",
+		},
+		{
+			name:       "rejected token",
+			testResult: externalTest(t, 401, `{"error":"unauthorized"}`, ""),
+			code:       1, result: "failed", status: 401,
+			message: "seasonpackarr rejected the token",
+			issue:   "check the seasonpackarr API token",
+		},
+		{
+			name:       "unknown client",
+			testResult: externalTest(t, 472, `{"error":"client not found in config","statusCode":472}`, ""),
+			code:       1, result: "failed", status: 472,
+			message: "seasonpackarr does not know the client tv",
+			issue:   "check --client",
+		},
+		{
+			name:       "unreachable torrent client",
+			testResult: externalTest(t, 471, `{"error":"could not get client: dial tcp 10.0.0.5:8080: connection refused","statusCode":471}`, ""),
+			code:       1, result: "failed", status: 471,
+			message: "seasonpackarr cannot reach the torrent client tv: could not get client: dial tcp 10.0.0.5:8080: connection refused",
+			issue:   "check the client settings",
+		},
+		{
+			name:       "failed torrent list",
+			testResult: externalTest(t, 468, `{"error":"could not get torrents from client","statusCode":468}`, ""),
+			code:       1, result: "failed", status: 468,
+			message: "seasonpackarr cannot reach the torrent client tv",
+			issue:   "check the client settings",
+		},
+		{
+			name: "not a season pack",
+			code: 0, result: "passed", status: 211,
+			message: "the check reached seasonpackarr",
+		},
+		{
+			name:       "no matching releases",
+			testResult: externalTest(t, 200, `{"error":"no matching releases in client","statusCode":200}`, ""),
+			code:       0, result: "passed", status: 200,
+			message: "the check reached seasonpackarr",
+		},
+		{
+			name:       "answer from another service",
+			testResult: externalTest(t, 404, "404 page not found", ""),
+			code:       1, result: "failed", status: 404,
+			message: "the webhook URL answered with HTTP 404 and not with a seasonpackarr status",
+			issue:   "check --webhook-url",
+		},
+		{
+			name:       "autobrr without the test route",
+			testStatus: http.StatusNotFound,
+			code:       0, result: "skipped",
+			message: "autobrr has no External test endpoint",
+		},
+		{
+			name:       "autobrr error",
+			testStatus: http.StatusInternalServerError,
+			code:       1, result: "failed",
+			message: "autobrr returned HTTP 500 for POST /api/filters/external/test",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			fake, server := newFakeAutobrrAPI(t)
+			fake.testStatus, fake.testResult = tt.testStatus, tt.testResult
+
+			code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--client", "tv", "--api", "secret", "--json")...)
+
+			assert.Equal(t, tt.code, code, stderr)
+			var results []struct {
+				Result       string `json:"result"`
+				Verification struct {
+					Result  string `json:"result"`
+					Status  int    `json:"status"`
+					Message string `json:"message"`
+				} `json:"verification"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(stdout), &results), stdout)
+			require.Len(t, results, 1)
+			assert.Equal(t, "created", results[0].Result)
+			assert.Equal(t, tt.result, results[0].Verification.Result)
+			assert.Equal(t, tt.status, results[0].Verification.Status)
+			assert.Contains(t, results[0].Verification.Message, tt.message)
+			assert.Contains(t, results[0].Verification.Message, tt.issue)
+			switch tt.result {
+			case "failed":
+				assert.Contains(t, stderr, "the candidate check of filter 1 (seasonpackarr-tv) failed")
+				assert.Contains(t, stderr, "the filter is written")
+				assert.Contains(t, stderr, "--filter-id 1 --client tv")
+			case "skipped":
+				assert.Contains(t, stderr, "Warning: autobrr has no External test endpoint")
+				assert.Contains(t, stderr, "did not verify filter 1 (seasonpackarr-tv)")
+			default:
+				assert.Empty(t, stderr)
+			}
+			assert.NotContains(t, stdout+stderr, "secret")
+			assert.Len(t, fake.filters, 1)
+		})
+	}
+}
+
+func TestSetupFilterCommand_VerificationSendsCandidateCheckEntry(t *testing.T) {
+	isolateCLI(t)
+	fake, server := newFakeAutobrrAPI(t)
+
+	code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--client", "tv", "--api", "secret")...)
+
+	require.Equal(t, 0, code, stderr)
+	index := slices.IndexFunc(fake.requests, func(r capturedRequest) bool { return r.path == externalTestPath })
+	require.GreaterOrEqual(t, index, 0, "no External test request")
+	// The test runs after the write, so it checks the filter that autobrr stores.
+	write := slices.IndexFunc(fake.requests, func(r capturedRequest) bool { return r.method == http.MethodPut })
+	assert.Less(t, write, index, "the External test must run after PUT /api/filters/1")
+	test := fake.requests[index]
+	assert.Equal(t, http.MethodPost, test.method)
+	assert.Equal(t, map[string]any{
+		"name": "1. Candidate check", "index": float64(1), "type": "WEBHOOK", "enabled": true, "on_error": "REJECT",
+		"webhook_host": "http://seasonpackarr:42069/api/candidate", "webhook_method": "POST",
+		"webhook_headers": "X-API-Token=secret", "webhook_expect_status": float64(250),
+		"webhook_data": "{\n  \"name\": \"{{ .TorrentName }}\",\n  \"clientname\": \"tv\"\n}",
+	}, test.body)
+	assert.Contains(t, stdout, "Created filter 1 (seasonpackarr-tv) for client tv\n  Candidate check through autobrr: passed (status 211): the check reached seasonpackarr\n")
+}
+
+func TestSetupFilterCommand_VerifiesUpdatedFilter(t *testing.T) {
+	isolateCLI(t)
+	fake, server := newFakeAutobrrAPI(t)
+	id := fake.seed(t, v016Filter)
+	fake.testResult = externalTest(t, 401, `{"error":"unauthorized"}`, "")
+
+	code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--client", "tv", "--api", "secret", "--filter-id", strconv.Itoa(id))...)
+
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stdout, "Updated filter 1 (TV packs) for client tv")
+	assert.Contains(t, stdout, "  Candidate check through autobrr: failed (status 401): seasonpackarr rejected the token")
+	assert.Contains(t, stderr, "the candidate check of filter 1 (TV packs) failed")
+	assert.Contains(t, stderr, "the filter is written")
+	assert.Contains(t, fake.storedJSON(t, id, "external"), "/api/candidate")
+}
+
+func TestSetupFilterCommand_FailedVerificationKeepsCreatingFilters(t *testing.T) {
+	isolateCLI(t)
+	t.Setenv("SEASONPACKARR__DISABLE_CONFIG_FILE", "")
+	configDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte("apiToken: config-token\nclients:\n  anime: {}\n  tv: {}\n"), 0o600))
+	fake, server := newFakeAutobrrAPI(t)
+	fake.testResult = externalTest(t, 0, "", "could not make request for webhook: connection refused")
+
+	code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--config", configDir)...)
+
+	assert.Equal(t, 1, code)
+	assert.Len(t, fake.filters, 2)
+	assert.Contains(t, stdout, "Created filter 1 (seasonpackarr-anime) for client anime")
+	assert.Contains(t, stdout, "Created filter 2 (seasonpackarr-tv) for client tv")
+	assert.Equal(t, 2, strings.Count(stdout, "Candidate check through autobrr: failed: autobrr cannot reach the webhook URL"), stdout)
+	assert.Contains(t, stderr, "the candidate check of filter 1 (seasonpackarr-anime) failed")
+	assert.Contains(t, stderr, "the candidate check of filter 2 (seasonpackarr-tv) failed")
+}
+
+func TestSetupFilterCommand_DryRunSkipsVerification(t *testing.T) {
+	isolateCLI(t)
+	fake, server := newFakeAutobrrAPI(t)
+	id := fake.seed(t, v016Filter)
+
+	code, stdout, stderr := runCLI(t, setupFilterArgs(server.URL, "--client", "tv", "--api", "secret", "--filter-id", strconv.Itoa(id), "--dry-run", "--json")...)
+
+	require.Equal(t, 0, code, stderr)
+	assert.NotContains(t, stdout, "verification")
+	assert.False(t, slices.ContainsFunc(fake.requests, func(r capturedRequest) bool { return r.path == externalTestPath }))
 }

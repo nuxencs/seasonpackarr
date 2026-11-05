@@ -46,6 +46,8 @@ type setupFilterResult struct {
 	RemovedActions []autobrr.StoredAction `json:"removed_actions,omitzero"`
 	// StaleFilters are the other filters that call seasonpackarr. The command does not change them.
 	StaleFilters []autobrr.StaleFilter `json:"stale_filters,omitempty"`
+	// Verification is the candidate check that autobrr ran after the write.
+	Verification autobrr.Verification `json:"verification,omitzero"`
 	// Filter is the payload of a dry run.
 	Filter any `json:"filter,omitempty"`
 }
@@ -71,6 +73,12 @@ filter with that name exists, the command writes nothing and prints its ID.
 --filter-id updates an existing filter for one client. The update replaces the
 External entries and all actions, prints each removed action, and keeps all
 other settings, such as the indexers, the priority, and the enabled state.
+
+After each write, autobrr runs the candidate check entry against a sample
+release, so the check uses the network position of autobrr. A check that does
+not reach seasonpackarr exits 1, and the filter stays written. An autobrr
+before v1.88.0 has no test endpoint, so the command skips the check with a
+warning.
 
 The command warns about each other filter that calls seasonpackarr, for example
 an old filter that calls /api/pack, and prints its ID. It never changes those
@@ -200,7 +208,11 @@ func (o *setupFilterOptions) run(cmd *cobra.Command) error {
 			return err
 		}
 		result.StaleFilters = stale
-		return o.print(cmd.OutOrStdout(), []setupFilterResult{result})
+		results := []setupFilterResult{result}
+		if err := o.print(cmd.OutOrStdout(), results); err != nil {
+			return err
+		}
+		return checkVerifications(cmd.ErrOrStderr(), results)
 	}
 
 	results := make([]setupFilterResult, 0, len(filters))
@@ -219,6 +231,8 @@ func (o *setupFilterOptions) run(cmd *cobra.Command) error {
 				break
 			}
 			result.Result, result.ID = "created", id
+			// A failed check leaves a complete filter, so the command writes the other filters too.
+			result.Verification = api.VerifyCandidateCheck(cmd.Context(), filter)
 		}
 		results = append(results, result)
 	}
@@ -226,7 +240,24 @@ func (o *setupFilterOptions) run(cmd *cobra.Command) error {
 	if err := o.print(cmd.OutOrStdout(), results); err != nil {
 		return err
 	}
-	return createErr
+	return errors.Join(checkVerifications(cmd.ErrOrStderr(), results), createErr)
+}
+
+// checkVerifications warns on stderr about each skipped verification and
+// returns an error for each failed verification.
+func checkVerifications(stderr io.Writer, results []setupFilterResult) error {
+	var errs []error
+	for _, result := range results {
+		switch result.Verification.Result {
+		case autobrr.VerificationSkipped:
+			fmt.Fprintf(stderr, "Warning: %s, so the command did not verify filter %d (%s)\n",
+				result.Verification.Message, result.ID, terminalText(result.Name))
+		case autobrr.VerificationFailed:
+			errs = append(errs, fmt.Errorf("the candidate check of filter %d (%s) failed: %s; the filter is written, so fix the cause and rerun with --filter-id %d --client %s",
+				result.ID, terminalText(result.Name), result.Verification.Message, result.ID, terminalText(result.Client)))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // checkFilterNames fails when a filter with the name of a new filter already
@@ -278,6 +309,7 @@ func (o *setupFilterOptions) update(ctx context.Context, api *autobrr.Client, cl
 		return setupFilterResult{}, fmt.Errorf("update filter %d for client %s: %w", stored.ID, terminalText(client), err)
 	}
 	result.Result = "updated"
+	result.Verification = api.VerifyCandidateCheck(ctx, filter)
 	return result, nil
 }
 
@@ -296,9 +328,11 @@ func (o *setupFilterOptions) print(w io.Writer, results []setupFilterResult) err
 		case result.Result == "updated":
 			fmt.Fprintf(w, "Updated filter %d (%s) for client %s\n", result.ID, terminalText(result.Name), terminalText(result.Client))
 			printActions(w, "Removed", result.RemovedActions)
+			printVerification(w, result.Verification)
 			continue
 		default:
 			fmt.Fprintf(w, "Created filter %d (%s) for client %s\n", result.ID, terminalText(result.Name), terminalText(result.Client))
+			printVerification(w, result.Verification)
 			created = true
 			continue
 		}
@@ -316,6 +350,15 @@ New filters are disabled and have no indexers. In autobrr, for each new filter:
 		return err
 	}
 	return nil
+}
+
+// printVerification prints the candidate check that autobrr ran for a filter.
+func printVerification(w io.Writer, verification autobrr.Verification) {
+	result := verification.Result
+	if verification.Status != 0 {
+		result += fmt.Sprintf(" (status %d)", verification.Status)
+	}
+	fmt.Fprintf(w, "  Candidate check through autobrr: %s: %s\n", result, verification.Message)
 }
 
 // printActions prints each action of an update with verb, such as Removed.

@@ -30,6 +30,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/daemontest"
 
@@ -201,9 +202,12 @@ func (h *harness) ensureFilter(t *testing.T, clientName string) {
 	if _, ok := h.filters.Load(clientName); ok {
 		return
 	}
+	// The verification of the command is a candidate check, so it fills the inventory cache of seasonpackarr.
+	verified := time.Now()
 	created := h.setupFilter(t, clientName)
 	require.Equal(t, "created", created.Result, "setup filter result")
 	require.NotZero(t, created.ID, "setup filter ID")
+	requireVerified(t, created)
 	require.NoError(t, h.autobrr.linkAndEnableFilter(created.ID), "link the indexer and enable the filter %s", created.Name)
 
 	updated := h.setupFilter(t, clientName, "--filter-id", strconv.Itoa(created.ID))
@@ -211,9 +215,15 @@ func (h *harness) ensureFilter(t *testing.T, clientName string) {
 	require.Equal(t, created.ID, updated.ID, "setup filter --filter-id ID")
 	require.Len(t, updated.RemovedActions, 1, "setup filter --filter-id must remove the import action of the create")
 	require.Equal(t, "Import with seasonpackarr", updated.RemovedActions[0].Name, "setup filter --filter-id removed action")
+	requireVerified(t, updated)
 	require.NoError(t, h.autobrr.checkUpdatedFilter(created.ID), "read the updated filter %s", created.Name)
 	h.filters.Store(clientName, created.Name)
+	// A scenario adds its episodes after this call, so it needs a fresh inventory.
+	time.Sleep(time.Until(verified.Add(inventoryCacheTTL + time.Second)))
 }
+
+// inventoryCacheTTL is inventoryCacheTTL in internal/http/processor_candidate.go.
+const inventoryCacheTTL = 30 * time.Second
 
 // setupFilterResult is one result of seasonpackarr setup filter --json.
 type setupFilterResult struct {
@@ -222,6 +232,19 @@ type setupFilterResult struct {
 	Name           string  `json:"name"`
 	Result         string  `json:"result"`
 	RemovedActions []named `json:"removed_actions"`
+	Verification   struct {
+		Result  string `json:"result"`
+		Status  int    `json:"status"`
+		Message string `json:"message"`
+	} `json:"verification"`
+}
+
+// requireVerified fails unless the candidate check that autobrr ran from its
+// network position reached seasonpackarr.
+func requireVerified(t *testing.T, result setupFilterResult) {
+	t.Helper()
+	require.Equal(t, "passed", result.Verification.Result, "setup filter verification of filter %d: %s", result.ID, result.Verification.Message)
+	require.NotZero(t, result.Verification.Status, "setup filter verification status")
 }
 
 // setupFilter runs seasonpackarr setup filter for clientName without a config

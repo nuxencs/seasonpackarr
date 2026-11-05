@@ -56,7 +56,11 @@
   existing filter with the same name stops the command before any write. Before
   any write, the command reads each other filter and warns about each one that
   calls a seasonpackarr endpoint, because the autobrr filter list has no
-  External entries or actions. It never writes to those filters. See
+  External entries or actions. It never writes to those filters. After each
+  write, `internal/autobrr/verify.go` asks autobrr to run the candidate check
+  entry through the autobrr External test endpoint. Thus the check uses the
+  network position of autobrr. The result is a pass, a failure with its cause,
+  or a skip on an autobrr without the endpoint. See
   [the API notes](docs/research/autobrr-filter-api.md) and ADR-0004.
 
 ### Release Matching

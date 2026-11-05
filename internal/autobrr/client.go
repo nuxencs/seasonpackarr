@@ -264,9 +264,7 @@ func (c *Client) do(ctx context.Context, method, path string, in any, want int, 
 		case resp.StatusCode == http.StatusNotFound || (resp.StatusCode >= 300 && resp.StatusCode < 400):
 			err.hint = "check --autobrr-url"
 		}
-		if err.detail = c.safe(string(data), secret); len(err.detail) > maxDetail {
-			err.detail = strings.ToValidUTF8(err.detail[:maxDetail], "") + "..."
-		}
+		err.detail = c.detail(string(data), secret)
 		return err
 	}
 	if out != nil {
@@ -295,6 +293,15 @@ func (e *statusError) Error() string {
 		message += ": " + e.detail
 	}
 	return message
+}
+
+// detail returns safe text from a response body, at most maxDetail bytes.
+func (c *Client) detail(text, secret string) string {
+	text = c.safe(text, secret)
+	if len(text) > maxDetail {
+		text = strings.ToValidUTF8(text[:maxDetail], "") + "..."
+	}
+	return text
 }
 
 // safe removes secrets and control characters from text that the command prints.

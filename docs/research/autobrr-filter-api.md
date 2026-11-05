@@ -49,3 +49,14 @@ The API model of an action has a `webhook_headers` field. Source: [`internal/dom
 ## External entry headers
 
 autobrr splits `webhook_headers` at `;` into headers and each header at `=` into a name and a value. It skips a header that does not split into exactly two parts and gives no error. Source: [`internal/filter/service.go` lines 1193-1204](https://github.com/autobrr/autobrr/blob/v1.88.0/internal/filter/service.go#L1193-L1204). A token that contains `;` or `=` would therefore give a filter that sends no token, so the command rejects such a token.
+
+## External test
+
+The filter handler serves `POST /api/filters/external/test`. Source: [`internal/http/filter.go` line 51](https://github.com/autobrr/autobrr/blob/v1.88.0/internal/http/filter.go#L51). The body is one External entry with the fields of the `external` array of a filter. The command sends the candidate check entry of the filter that it wrote, so autobrr sends the request from its own network position. v1.88.0 is the first release with this route. An older autobrr has only the `/{filterID}` routes, so the path does not match a route and the router answers `404`. Source: [`internal/http/filter.go` in v1.84.0](https://github.com/autobrr/autobrr/blob/v1.84.0/internal/http/filter.go). The command reads the filter list first, so a `404` from this route means that autobrr is older than v1.88.0 and not that the autobrr URL is wrong.
+
+`TestExternal` runs the entry against a fixed sample release, `Best.Show.Ever.S18E21.1080p.AMZN.WEB-DL.DDP2.0.H.264-GROUP`, a single episode. Source: [`internal/filter/service.go` lines 1025-1085](https://github.com/autobrr/autobrr/blob/v1.88.0/internal/filter/service.go#L1025-L1085). The route answers `200 OK` with `status`, `expect_status`, `output`, `error`, `success`, and `duration_ms`, also when the check fails. Source: [`internal/domain/filter.go` lines 253-264](https://github.com/autobrr/autobrr/blob/v1.88.0/internal/domain/filter.go#L253-L264).
+
+- `status` is the HTTP status of the webhook response, or `0` when the request failed, for example without a connection. `error` then has the request error.
+- `output` is the first 4096 bytes of the response body.
+- autobrr waits up to 120 seconds for the webhook. Source: [`internal/filter/service.go` line 110](https://github.com/autobrr/autobrr/blob/v1.88.0/internal/filter/service.go#L110). seasonpackarr waits up to 60 seconds for some torrent clients, so the command waits 130 seconds for the test route and 30 seconds for the other routes.
+- `success` is `true` only when `status` is `expect_status`, `250`. The single-episode sample never gets `250` from the candidate check, so the command ignores `success` and maps `status` and `error`.

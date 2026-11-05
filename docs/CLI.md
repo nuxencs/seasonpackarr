@@ -168,12 +168,16 @@ removes. Add `--json` for structured output. Each result has `clientname`,
 `filter` payload. An update and its dry run also have `removed_actions`, with
 the `id`, `name`, and `type` of each action. If the search finds old filters,
 each result also has `stale_filters`, with the `id`, `name`, and `endpoints` of
-each filter. Results go to stdout, and warnings go to stderr.
+each filter. A created or updated filter also has `verification`, with the
+`result` (`passed`, `failed`, or `skipped`), the HTTP `status` that autobrr got
+from the webhook URL, and a `message`. See
+[Verify the filter](#verify-the-filter). Results go to stdout, and warnings go
+to stderr.
 
 | Exit code | Meaning |
 | --- | --- |
-| `0` | Each filter is created or updated, or the dry run printed each filter. Warnings do not change the exit code |
-| `1` | Invalid input, an existing filter with the same name, or an autobrr API error |
+| `0` | Each filter is created or updated and its verification passed or was skipped, or the dry run printed each filter. Warnings do not change the exit code |
+| `1` | Invalid input, an existing filter with the same name, an autobrr API error, or a failed verification |
 
 After an autobrr error, the command stops and prints the filters that it
 created before the error. The update removes the old actions before it writes
@@ -181,6 +185,38 @@ the filter. If the write fails after that, the filter has no action and
 downloads nothing until you rerun the command. After the update, the command
 reads the filter again. If autobrr still has an old action, the command fails
 and names each action, so that you can delete the old actions in autobrr.
+
+### Verify the filter
+
+After each create or update, the command asks autobrr to run the candidate
+check entry of the filter through the autobrr External test endpoint. autobrr
+sends the request, so the check uses the network position of autobrr and the
+`--webhook-url` of the filter. autobrr sends a fixed single-episode sample
+release. seasonpackarr checks the client before the release name, so a pass is
+usually a rejection such as status `200` or `211`. The text output shows the
+result below each filter:
+
+```text
+Created filter 1 (seasonpackarr-tv) for client tv
+  Candidate check through autobrr: passed (status 211): the check reached seasonpackarr
+```
+
+| Result of the check | Cause in the message | Outcome |
+| --- | --- | --- |
+| No connection | autobrr cannot reach the webhook URL | Fail |
+| `401` | seasonpackarr rejected the token | Fail |
+| `472` | seasonpackarr does not know the client | Fail |
+| `471` or `468` | seasonpackarr cannot reach the torrent client | Fail |
+| A different answer that is not a seasonpackarr status, for example a `404` from a proxy | The webhook URL does not point to seasonpackarr | Fail |
+| A different seasonpackarr status, for example `211` | The check reached seasonpackarr | Pass |
+| `404` from autobrr | autobrr has no External test endpoint, because it is older than v1.88.0 | Skip with a warning |
+
+A failed verification does not remove the filter. The command writes the
+filters for all selected clients, prints each result, and exits with `1`. The
+error names each filter that failed and says that the filter is written. Fix
+the cause, then rerun the command with `--filter-id <id> --client <client>` to
+write and verify the filter again. A skipped verification prints a warning and
+keeps exit code `0`. A dry run writes nothing, so it does not verify.
 
 ### Find old filters
 

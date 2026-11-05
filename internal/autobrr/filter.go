@@ -11,10 +11,14 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 )
 
-const redacted = "[redacted]"
+const (
+	redacted          = "[redacted]"
+	candidateEndpoint = "/api/candidate"
+)
 
 // Filter is the complete autobrr filter for one seasonpackarr client.
 type Filter struct {
@@ -24,6 +28,8 @@ type Filter struct {
 
 	// token is the seasonpackarr API token, kept for error redaction.
 	token string
+	// client is the seasonpackarr client name of the filter, for messages.
+	client string
 }
 
 // Base holds the base settings of a new filter, the only part that a create
@@ -122,15 +128,21 @@ func newFilter(client, webhookURL, token string, redact bool) (Filter, error) {
 		Resolutions: []string{}, Sources: []string{}, Codecs: []string{}, Containers: []string{},
 		External: []External{
 			// The candidate check gets the higher index, so autobrr runs it before it downloads the torrent.
-			external("1. Candidate check", 1, "/api/candidate", candidateData),
+			external("1. Candidate check", 1, candidateEndpoint, candidateData),
 			external("2. Match", 0, "/api/match", matchData),
 		},
 		Actions: []Action{{
 			Name: "Import with seasonpackarr", Type: "WEBHOOK", Enabled: true, WebhookType: "JSON",
 			WebhookMethod: "POST", WebhookHost: webhookURL + "/api/import" + query, WebhookData: matchData,
 		}},
-		token: token,
+		token: token, client: client,
 	}, nil
+}
+
+// candidateCheck returns the candidate check External entry.
+func (f Filter) candidateCheck() External {
+	index := slices.IndexFunc(f.External, func(e External) bool { return strings.HasSuffix(e.WebhookHost, candidateEndpoint) })
+	return f.External[index]
 }
 
 // templateJSON formats an autobrr data template like the blocks in docs/AUTOBRR.md.

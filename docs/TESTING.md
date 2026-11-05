@@ -202,7 +202,11 @@ why the search test drives a real Prowlarr.
   The driver then runs the command again with `--filter-id`. It checks that the
   update removed the import action of the create, and that autobrr kept the
   indexer and the enabled state and stores one action and two External
-  entries. The announce scenarios run against the updated filter.
+  entries. After the create and after the update, the result must show that
+  the verification passed, so autobrr reached seasonpackarr with the candidate
+  check. The verification fills the inventory cache, so the driver waits until
+  the cache expires before the scenarios add their episodes. The announce
+  scenarios run against the updated filter.
   `TestSetupFilterCommand_MatchesAutobrrGuide` compares the filter definition
   in `internal/autobrr/filter.go` with AUTOBRR.md.
 - `packName` makes a unique release name with a letters-only title, so reruns
