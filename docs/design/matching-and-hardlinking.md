@@ -23,6 +23,16 @@ Current comparison logic checks:
   and exact plan once before the import fails
 - keep the refresh bounded; repeated source movement must not create an
   unbounded retry loop
+- keep each hardlink target below the import root. The pack name and the file
+  paths come from the torrent, so there are two checks:
+  - `torrents.Info` rejects a torrent when its name is not one folder name, or
+    when a file path is absolute or has a parent element that leaves the pack
+    folder. The match and the import then return status `465`.
+  - `files.CreateHardlink` makes the target folders through `os.Root`, which
+    also rejects a symlink below the import root that points outside of it. A
+    relative symlink that stays below the import root is allowed, and the
+    import root itself can be a symlink. `os.Root` rejects each symlink with
+    an absolute target, also when the target is below the import root.
 
 ## Safety Expectations
 

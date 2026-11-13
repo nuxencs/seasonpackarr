@@ -130,7 +130,7 @@ notification for the code. Codes without a level send no notification.
 | `462` | Could not find the added torrent in the client | `ERROR` |
 | `463` | Could not add the torrent to the client | `ERROR` |
 | `464` | Could not get episodes | `ERROR` |
-| `465` | Could not parse the torrent info | `ERROR` |
+| `465` | Could not parse the torrent info, or the torrent name or a file path leaves the pack folder | `ERROR` |
 | `466` | Could not decode the torrent bytes | `ERROR` |
 | `467` | Could not get the torrent bytes | `ERROR` |
 | `468` | Could not get torrents from the client | `ERROR` |

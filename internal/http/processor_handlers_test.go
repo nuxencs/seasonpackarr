@@ -29,6 +29,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -553,6 +554,57 @@ func TestEndpoints_FailuresDoNotMutateClientOrFilesystem(t *testing.T) {
 		require.Zero(t, f.torrentClient.importCalls)
 		require.NoDirExists(t, filepath.Join(f.importDir, f.releaseName))
 	})
+}
+
+// TestEndpoints_RejectTorrentPathsOutsidePackFolder: the pack name and the file
+// paths come from the torrent and become hardlink targets below the import root.
+func TestEndpoints_RejectTorrentPathsOutsidePackFolder(t *testing.T) {
+	const episodeFile = "Lifecycle.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"
+	tests := []struct {
+		name     string
+		packName string
+		filePath []string
+		escaped  string // below the parent of the import root
+	}{
+		{
+			name:     "pack name with parent element",
+			packName: "../outside-name",
+			filePath: []string{episodeFile},
+			escaped:  filepath.Join("outside-name", episodeFile),
+		},
+		{
+			name:     "file path with parent elements",
+			packName: "Lifecycle.S01.1080p.WEB-DL.H.264-RlsGrp",
+			filePath: []string{"..", "..", "outside-path", episodeFile},
+			escaped:  filepath.Join("outside-path", episodeFile),
+		},
+	}
+	for _, tt := range tests {
+		for _, path := range []string{"/api/match", "/api/import"} {
+			t.Run(tt.name+" "+path, func(t *testing.T) {
+				f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
+				infoBytes, err := bencode.Marshal(metainfo.Info{
+					Name:        tt.packName,
+					PieceLength: 256 * 1024,
+					Files:       []metainfo.FileInfo{{Path: tt.filePath, Length: 1}},
+				})
+				require.NoError(t, err)
+				var torrent bytes.Buffer
+				require.NoError(t, (&metainfo.MetaInfo{InfoBytes: infoBytes}).Write(&torrent))
+				payload := f.packPayload()
+				payload["torrent"] = base64.StdEncoding.EncodeToString(torrent.Bytes())
+
+				res := f.postJSON(t, path, payload)
+
+				assert.Equal(t, domain.StatusParseTorrentInfoError.Code(), res.Code)
+				assert.Zero(t, f.torrentClient.importCalls)
+				assert.NoFileExists(t, filepath.Join(filepath.Dir(f.importDir), tt.escaped))
+				entries, err := os.ReadDir(f.importDir)
+				require.NoError(t, err)
+				assert.Empty(t, entries)
+			})
+		}
+	}
 }
 
 func TestEndpoints_RemovedWebhookRoutesReturnNotFound(t *testing.T) {

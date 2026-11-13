@@ -216,7 +216,7 @@ func (p *processor) createPlanHardlinks(plan importPlan, importDestination torre
 	result := hardlinkAttemptResult{}
 	for _, link := range plan.links {
 		targetEpPath := importDestination.TargetPath(plan.packName, link.torrentEpPath)
-		if err := files.CreateHardlink(link.clientEpPath, targetEpPath); err != nil {
+		if err := files.CreateHardlink(importDestination.SavePath(), link.clientEpPath, targetEpPath); err != nil {
 			if _, statErr := os.Stat(link.clientEpPath); errors.Is(statErr, fs.ErrNotExist) {
 				result.sourceMissing = true
 				p.log.Warn().

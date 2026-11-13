@@ -5,6 +5,7 @@ package files
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -12,11 +13,25 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/errtrace"
 )
 
-func CreateHardlink(sourcePath, targetPath string) error {
-	targetDirectory := filepath.Dir(targetPath)
+// CreateHardlink links sourcePath to targetPath, which must be below root.
+// The target path comes from torrent metadata. os.Root makes the target
+// folders, because it rejects parent elements and symlinks that leave root.
+func CreateHardlink(root, sourcePath, targetPath string) error {
+	relTarget, err := filepath.Rel(root, targetPath)
+	if err != nil || !filepath.IsLocal(relTarget) {
+		return errtrace.WithStack(fmt.Errorf("hardlink target %q is not below %q", targetPath, root))
+	}
 
-	// create the target directory if it doesn't exist
-	if err := os.MkdirAll(targetDirectory, 0o755); err != nil {
+	// The operator sets the root, so it can be new and can be a symlink.
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return errtrace.WithStack(err)
+	}
+	rootDir, err := os.OpenRoot(root)
+	if err != nil {
+		return errtrace.WithStack(err)
+	}
+	defer func() { _ = rootDir.Close() }()
+	if err := rootDir.MkdirAll(filepath.Dir(relTarget), 0o755); err != nil {
 		return errtrace.WithStack(err)
 	}
 
