@@ -128,6 +128,23 @@ func Test_MatchEpToSeasonPackEp(t *testing.T) {
 			},
 		},
 		{
+			name: "wrong_container",
+			args: args{
+				clientEpPath:  "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
+				clientEpSize:  2316560346,
+				torrentEpPath: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mp4",
+				torrentEpSize: 2316560346,
+			},
+			want: compare{
+				path: "",
+				info: domain.CompareInfo{
+					StatusCode:   domain.StatusContainerMismatch,
+					RejectValueA: "mkv",
+					RejectValueB: "mp4",
+				},
+			},
+		},
+		{
 			name: "subfolder_in_client",
 			args: args{
 				clientEpPath:  "Test/Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
@@ -233,9 +250,30 @@ func Test_IsValidEpisodeFile(t *testing.T) {
 			want: false,
 		},
 		{
+			name: "extra_video",
+			args: args{
+				torrentFileName: "Extras/Interview.1080p.WEB-DL.mkv",
+			},
+			want: false,
+		},
+		{
+			name: "special_episode",
+			args: args{
+				torrentFileName: "test.release.s00e01.dutch.1080p.web.h264-rlsgrp.mkv",
+			},
+			want: true,
+		},
+		{
 			name: "valid_release",
 			args: args{
 				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.mkv",
+			},
+			want: true,
+		},
+		{
+			name: "valid_mp4_release",
+			args: args{
+				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.MP4",
 			},
 			want: true,
 		},

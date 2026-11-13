@@ -20,9 +20,9 @@ recheck if it reports missing files, and resumes it.
 
 ```mermaid
 flowchart TD
-    A["POST /api/parse<br/>processor.parseTorrent"] --> B["ImportDestination()<br/>save path + rooted or flat file layout"]
-    B --> C["collectMatches()<br/>episodes already in the client that match the announce"]
-    C --> D["hardlink matched episodes<br/>in the resolved client layout"]
+    A["POST /api/parse<br/>processor.parseTorrent"] --> B["load accepted plan<br/>or rebuild on cache miss"]
+    B --> C["ImportDestination()<br/>save path + rooted or flat file layout"]
+    C --> D["hardlink planned episodes<br/>in the resolved client layout"]
     D --> E["qbitClient.Import(bytes, hash, resolved import root)"]
 
     E --> F["buildTorrentAddOptions()<br/>SkipHashCheck = true, Paused = true"]

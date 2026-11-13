@@ -227,16 +227,15 @@ logLevel: "DEBUG"
 # logMaxBackups: 3
 
 # Smart Mode
-# Toggles smart mode to only download season packs that have a certain amount of episodes from a release group
-# already in the client
+# Toggles smart mode to accept only packs with enough reusable torrent episode files already in the client
 #
 # Default: false
 #
 # smartMode: false
 
 # Smart Mode Threshold
-# Sets the threshold for the percentage of episodes out of a season that must be present in the client
-# In this example 75% of the episodes in a season must be present in the client for it to be downloaded
+# Sets the minimum reusable share of distinct valid episode files in the announced torrent
+# In this example 75% of the torrent episode files must be reusable for the pack to be accepted
 #
 # Default: 0.75
 #
@@ -273,24 +272,6 @@ fuzzyMatching:
   # Default: false
   #
   skipYearCompare: false
-
-# Metadata
-# Here you can provide credentials for additional metadata providers
-#
-metadata:
-  # TVDB API Key
-  # Your TVDB API Key. If you have a user-subscription key, also provide your subscriber PIN in tvdbPIN.
-  #
-  # Optional
-  #
-  tvdbAPIKey: ""
-
-  # TVDB PIN
-  # Your TVDB Subscriber PIN.
-  #
-  # Optional
-  #
-  tvdbPIN: ""
 
 # API Token
 # If not defined, removes api authentication
@@ -441,10 +422,13 @@ func New(configPath string, version string) *AppConfig {
 }
 
 const (
-	deprecatedParseTorrentFileKey = "parseTorrentFile"
-	deprecatedParseTorrentFileEnv = "SEASONPACKARR__PARSE_TORRENT_FILE"
-	deprecatedPreImportPathKey    = "preImportPath"
-	deprecatedPreImportPathEnv    = "PREIMPORTPATH"
+	deprecatedParseTorrentFileKey   = "parseTorrentFile"
+	deprecatedParseTorrentFileEnv   = "SEASONPACKARR__PARSE_TORRENT_FILE"
+	deprecatedPreImportPathKey      = "preImportPath"
+	deprecatedPreImportPathEnv      = "PREIMPORTPATH"
+	deprecatedMetadataKey           = "metadata"
+	deprecatedMetadataTVDBAPIKeyEnv = "SEASONPACKARR__METADATA_TVDB_API_KEY"
+	deprecatedMetadataTVDBPINEnv    = "SEASONPACKARR__METADATA_TVDB_PIN"
 )
 
 // validateDeprecatedConfigInputs hard-fails when removed config keys or env vars
@@ -459,9 +443,23 @@ func validateDeprecatedConfigInputs(k *koanf.Koanf, lookupEnv func(string) (stri
 	}
 
 	if lookupEnv != nil {
-		if value, ok := lookupEnv(deprecatedParseTorrentFileEnv); ok && strings.TrimSpace(value) != "" {
+		if _, ok := lookupEnv(deprecatedParseTorrentFileEnv); ok {
 			return fmt.Errorf("deprecated environment variable detected: %s was removed; torrent parsing is always enabled now - remove this env var, add the new per-client import section (see the example config / README) and update your autobrr filter to use a single Webhook action",
 				deprecatedParseTorrentFileEnv)
+		}
+	}
+
+	if k != nil && k.Exists(deprecatedMetadataKey) {
+		return fmt.Errorf("deprecated config detected: %s was removed; smart mode now uses the actual torrent sent to /api/pack - remove the metadata block and update the autobrr external filters as described in the README",
+			deprecatedMetadataKey)
+	}
+
+	if lookupEnv != nil {
+		for _, envKey := range []string{deprecatedMetadataTVDBAPIKeyEnv, deprecatedMetadataTVDBPINEnv} {
+			if _, ok := lookupEnv(envKey); ok {
+				return fmt.Errorf("deprecated environment variable detected: %s was removed; smart mode now uses the actual torrent sent to /api/pack - remove this variable and update the autobrr external filters as described in the README",
+					envKey)
+			}
 		}
 	}
 
@@ -477,8 +475,8 @@ func validateDeprecatedConfigInputs(k *koanf.Koanf, lookupEnv func(string) (stri
 
 	if lookupEnv != nil {
 		for _, env := range os.Environ() {
-			envKey, envValue, ok := strings.Cut(env, "=")
-			if !ok || strings.TrimSpace(envValue) == "" {
+			envKey, _, ok := strings.Cut(env, "=")
+			if !ok {
 				continue
 			}
 			if strings.HasPrefix(envKey, "SEASONPACKARR__CLIENTS_") && strings.HasSuffix(envKey, "_"+deprecatedPreImportPathEnv) {
@@ -649,12 +647,6 @@ func applyEnvironment(cfg *domain.Config) {
 					if b, err := strconv.ParseBool(envValue); err == nil {
 						cfg.FuzzyMatching.SimplifyWebCompare = b
 					}
-
-				// metadata settings
-				case prefix + "METADATA_TVDB_API_KEY":
-					cfg.Metadata.TVDBAPIKey = envValue
-				case prefix + "METADATA_TVDB_PIN":
-					cfg.Metadata.TVDBPIN = envValue
 
 				// notifications settings
 				case prefix + "NOTIFICATIONS_DISCORD":

@@ -16,7 +16,7 @@ Use progressive disclosure. Do not read the whole repo up front unless the task 
 
 ## Product In One Paragraph
 
-`seasonpackarr` is a Go service and CLI helper for autobrr-driven TV automation. It receives authenticated webhook calls for season packs, compares announced releases against already-downloaded episode releases, optionally uses torrent parsing plus metadata providers to reduce false matches, and hardlinks matching episode files into the season-pack folder so existing data is reused instead of downloaded again.
+`seasonpackarr` is a Go service and CLI helper for autobrr-driven TV automation. It uses a cheap announce-only candidate check, then builds an exact plan from the torrent and already-downloaded episodes. It hardlinks reusable episode files into the season-pack folder and imports the pack so only missing data downloads.
 
 ## Source Of Truth
 
@@ -31,11 +31,10 @@ Use progressive disclosure. Do not read the whole repo up front unless the task 
 
 ## Repo Map
 
-- `cmd/`: CLI entrypoints for `start`, `test`, `parse`, `pack`, version/token helpers
+- `cmd/`: CLI entrypoints for `start`, `test`, `candidate`, `pack`, `parse`, version/token helpers
 - `internal/http/`: API server, auth, health, webhook handlers, processing orchestration
 - `internal/release/`: release matching logic and season-pack comparisons
 - `internal/torrents/`: torrent fetch/decode helpers
-- `internal/metadata/`: TVDB/TVMaze episode-count providers
 - `internal/files/`: hardlink creation
 - `internal/config/`: config defaults, loading, reload, schema-adjacent behavior
 - `internal/domain/`: shared domain structs and status codes
@@ -55,11 +54,13 @@ Use progressive disclosure. Do not read the whole repo up front unless the task 
 
 ## Core Invariants
 
-- `/api/pack` and `/api/parse` stay authenticated behind `APIToken`.
+- `/api/candidate`, `/api/pack`, and `/api/parse` stay authenticated behind `APIToken`.
 - Matching changes must preserve the core promise: prevent unnecessary redownloads without silently broadening false positives.
+- `/api/candidate` must not request torrent bytes or per-torrent file details.
+- `/api/pack` stays side-effect free. `/api/parse` owns filesystem and client mutations.
+- Smart-mode coverage counts distinct valid torrent episode targets and cannot exceed 100 percent.
 - Config changes must update `config.yaml`, `schemas/config-schema.json`, and relevant docs together.
 - Hardlink path behavior is safety-critical. Treat path construction and pre-import directory assumptions as high risk.
-- Metadata-provider fallbacks should fail loudly in logs and degrade predictably.
 - If a change alters webhook payload expectations or CLI testing flow, update product specs and references in the same diff.
 
 ## Verification
@@ -71,7 +72,8 @@ Primary local checks:
 - `gofumpt -w .` when Go files change
 - focused CLI/API smoke checks when behavior touches request flow:
   - `go run . start --config <dir>`
-  - `go run . test pack "<release>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>"`
+  - `go run . test candidate "<release>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>"`
+  - `go run . test pack "<release-or-torrent>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>"`
   - `go run . test parse "<release-or-torrent>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>"`
 
 CI currently enforces:

@@ -80,8 +80,6 @@ logLevel: "INFO"
 	require.False(t, snapshot.FuzzyMatching.SimplifyHdrCompare)
 	require.False(t, snapshot.FuzzyMatching.SimplifyWebCompare)
 	require.False(t, snapshot.FuzzyMatching.SkipYearCompare)
-	require.Equal(t, "", snapshot.Metadata.TVDBAPIKey)
-	require.Equal(t, "", snapshot.Metadata.TVDBPIN)
 	require.Equal(t, "", snapshot.APIToken)
 	require.Equal(t, []string{"MATCH", "ERROR"}, snapshot.Notifications.NotificationLevel)
 	require.Equal(t, "", snapshot.Notifications.Discord)
@@ -124,6 +122,15 @@ func TestValidateDeprecatedConfigInputs(t *testing.T) {
 		require.Contains(t, err.Error(), deprecatedParseTorrentFileEnv)
 	})
 
+	t.Run("rejects empty parseTorrentFile env", func(t *testing.T) {
+		lookup := func(key string) (string, bool) {
+			return "", key == deprecatedParseTorrentFileEnv
+		}
+		err := validateDeprecatedConfigInputs(nil, lookup)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), deprecatedParseTorrentFileEnv)
+	})
+
 	t.Run("rejects preImportPath in yaml", func(t *testing.T) {
 		k := loadTestKoanf(t, "clients:\n  default:\n    preImportPath: /data/tv-hd\n")
 		err := validateDeprecatedConfigInputs(k, nil)
@@ -137,6 +144,42 @@ func TestValidateDeprecatedConfigInputs(t *testing.T) {
 		err := validateDeprecatedConfigInputs(nil, os.LookupEnv)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH")
+	})
+
+	t.Run("rejects empty preImportPath env", func(t *testing.T) {
+		t.Setenv("SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH", "")
+		err := validateDeprecatedConfigInputs(nil, os.LookupEnv)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH")
+	})
+
+	t.Run("rejects metadata config", func(t *testing.T) {
+		err := validateDeprecatedConfigInputs(loadTestKoanf(t, "metadata:\n  tvdbAPIKey: old-key\n"), nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "metadata was removed")
+		require.Contains(t, err.Error(), "/api/pack")
+	})
+
+	t.Run("rejects metadata env", func(t *testing.T) {
+		lookup := func(key string) (string, bool) {
+			if key == deprecatedMetadataTVDBAPIKeyEnv {
+				return "old-key", true
+			}
+			return "", false
+		}
+		err := validateDeprecatedConfigInputs(nil, lookup)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), deprecatedMetadataTVDBAPIKeyEnv)
+		require.Contains(t, err.Error(), "/api/pack")
+	})
+
+	t.Run("rejects empty metadata env", func(t *testing.T) {
+		lookup := func(key string) (string, bool) {
+			return "", key == deprecatedMetadataTVDBPINEnv
+		}
+		err := validateDeprecatedConfigInputs(nil, lookup)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), deprecatedMetadataTVDBPINEnv)
 	})
 
 	t.Run("allows current config", func(t *testing.T) {

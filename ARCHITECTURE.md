@@ -2,14 +2,14 @@
 
 ## System Summary
 
-`seasonpackarr` is a config-driven Go service with a small CLI surface. Its main job: accept autobrr-triggered webhook requests, validate/authenticate them, compare season-pack announcements against already-downloaded episode releases in configured torrent clients, optionally fetch extra metadata, parse torrent contents, hardlink matched files into the expected season-pack folder, and import the pack into the torrent client.
+`seasonpackarr` is a config-driven Go service with a small CLI surface. It accepts authenticated autobrr webhook requests, filters announces against configured torrent clients, builds exact import plans from torrent contents, hardlinks reusable episode files into the expected season-pack folder, and imports the pack into the torrent client.
 
 ## Main Runtime Flow
 
 1. `main.go` calls Cobra commands in `cmd/`.
-2. `cmd/start.go` loads config, logger, notifications, metadata providers, then starts the HTTP server.
-3. `internal/http/server.go` builds `/api/healthz`, `/api/pack`, and `/api/parse`.
-4. `internal/http/processor.go` orchestrates payload decode, auth-adjacent request handling, client inspection, metadata lookups, and release matching; `/api/pack` is match-only, while `/api/parse` resolves the client's import destination (`internal/torrentclient` `ImportDestination`), hardlinks matched files in the client-selected layout, and imports the pack into the torrent client (`Import`). See [docs/design-docs/qbittorrent-import-flow.md](docs/design-docs/qbittorrent-import-flow.md) for the client-side import flow (complete vs partial pack, with diagrams).
+2. `cmd/start.go` loads config, logger, and notifications, then starts the HTTP server.
+3. `internal/http/server.go` builds `/api/healthz`, `/api/candidate`, `/api/pack`, and `/api/parse`.
+4. `internal/http/processor_*.go` keeps each processing stage together. The handler file owns payload decode and responses. The candidate file owns announce-only matching and inventory caching. The plan file parses torrent bytes and builds an exact side-effect-free plan. The import file reuses or rebuilds that plan, resolves the client import destination, hardlinks matched files, and imports the pack. See [docs/design-docs/qbittorrent-import-flow.md](docs/design-docs/qbittorrent-import-flow.md).
 5. `internal/release/` decides whether a client episode and announced season pack are compatible.
 6. `internal/files/` performs the hardlink operation.
 7. `internal/notification/` emits Discord notifications for notable events.
@@ -29,10 +29,11 @@
 - Implemented in `internal/http/`
 - Concerns: server lifecycle, middleware, auth, health, webhook handlers
 - External contract:
+  - `POST /api/candidate`
   - `POST /api/pack`
   - `POST /api/parse`
-  - `GET /api/healthz/live`
-  - `GET /api/healthz/ready`
+  - `GET /api/healthz/liveness`
+  - `GET /api/healthz/readiness`
 
 ### Release Matching
 
@@ -43,15 +44,16 @@
 ### Torrent Handling
 
 - Implemented in `internal/torrents/`
-- Concerns: obtaining torrent bytes from release names, decoding torrent contents, pack file discovery
+- Concerns: decoding supplied torrent bytes, deriving torrent identity, and discovering pack files
 
-### Metadata Enrichment
+### Pack Evaluation and Cache Reuse
 
-- Implemented in `internal/metadata/`
-- Providers: TVDB and TVMaze
-- Purpose: estimate total episodes for smart-mode decisions and cross-check provider disagreement
-- Lookup strategy: search with the parsed release title first, then retry with progressively shortened title variants (guarded by name/alias/translation matching), because provider searches often miss long or localized titles
-- Caching: successful episode counts are cached for 6 hours keyed by normalized title, year and season; concurrent lookups for the same key are collapsed via singleflight, so cross-seed announce bursts trigger only one provider fetch; expired entries are swept on each store, bounding the cache to the keys seen in the last TTL window
+- `/api/candidate` reads torrent summaries only. It does not need torrent bytes or file-detail calls.
+- `/api/pack` parses the announced torrent, maps reusable source files to distinct valid torrent targets, and applies smart mode to exact torrent coverage.
+- Client inventory is cached for 30 seconds, so the ordered candidate and pack checks normally share one client scan.
+- Accepted import plans are cached for 2 minutes. `/api/parse` normally performs no second inventory or file-detail reads.
+- Cache entries validate client configuration, matching settings, release name, and torrent identity. `/api/parse` rebuilds safely on a cache miss.
+- A successful import invalidates the plan and the client inventory.
 
 ### File Operations
 
@@ -69,11 +71,10 @@
 Preferred dependency direction:
 
 1. `cmd/` may depend on `internal/*`
-2. `internal/http/` may orchestrate across config, metadata, notifications, release logic, torrents, files
+2. `internal/http/` may orchestrate across config, notifications, release logic, torrents, and files
 3. leaf packages should stay narrow:
    - `internal/release/` should not know HTTP details
    - `internal/files/` should not know webhook payloads
-   - `internal/metadata/` should not know HTTP transport internals
 4. `internal/domain/` holds cross-package data shapes and status concepts
 
 If a change starts pushing transport concerns into matching logic or file ops, stop and re-check the boundary.
@@ -82,8 +83,6 @@ If a change starts pushing transport concerns into matching logic or file ops, s
 
 - autobrr webhook integration
 - qBittorrent, Transmission, and Deluge 1.3/2 native RPC access
-- TVDB API
-- TVMaze API
 - filesystem hardlink support
 - Docker/systemd packaging and release automation
 
@@ -94,10 +93,8 @@ Current explicit test coverage exists in:
 - `internal/torrentclient/*_test.go` (unit tests plus environment-gated Deluge V1/V2 live coverage)
 - `internal/release/release_test.go`
 - `internal/format/format_test.go`
-- `internal/metadata/metadata_test.go`
-- `internal/metadata/titles_test.go`
-- `internal/metadata/tvdb_test.go` (requires `TVDB_API_KEY` env var, skipped otherwise)
-- `internal/metadata/tvmaze_test.go`
+- `internal/http/processor*_test.go`
+- `internal/payload/payload_test.go`
 - `internal/slices/slices_test.go`
 
 High-value regression targets:

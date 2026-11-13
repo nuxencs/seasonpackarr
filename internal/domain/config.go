@@ -58,14 +58,6 @@ type Notifications struct {
 	// Shoutrrr  string `yaml:"shoutrrr"`
 }
 
-type Metadata struct {
-	TVDBAPIKey string `yaml:"tvdbAPIKey"`
-	TVDBPIN    string `yaml:"tvdbPIN"`
-	// SonarrHost   string `yaml:"sonarrHost"`
-	// SonarrPort   int    `yaml:"sonarrPort"`
-	// SonarrAPIKey string `yaml:"sonarrAPIKey"`
-}
-
 type Config struct {
 	Version            string
 	ConfigPath         string
@@ -80,7 +72,6 @@ type Config struct {
 	SmartMode          bool               `yaml:"smartMode"`
 	SmartModeThreshold float32            `yaml:"smartModeThreshold"`
 	FuzzyMatching      FuzzyMatching      `yaml:"fuzzyMatching"`
-	Metadata           Metadata           `yaml:"metadata"`
 	APIToken           string             `yaml:"apiToken"`
 	Notifications      Notifications      `yaml:"notifications"`
 }

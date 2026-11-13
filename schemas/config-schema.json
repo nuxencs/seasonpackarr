@@ -51,9 +51,6 @@
     "notifications": {
       "$ref": "#/$defs/notifications"
     },
-    "metadata": {
-      "$ref": "#/$defs/metadata"
-    },
     "apiToken": {
       "type": "string",
       "default": ""
@@ -309,20 +306,6 @@
         "skipYearCompare" : {
           "type": "boolean",
           "default": false
-        }
-      }
-    },
-    "metadata": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "tvdbAPIKey": {
-          "type": "string",
-          "default": ""
-        },
-        "tvdbPIN": {
-          "type": "string",
-          "default": ""
         }
       }
     },

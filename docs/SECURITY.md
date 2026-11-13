@@ -6,7 +6,7 @@ This is a self-hosted integration service with network-facing HTTP endpoints and
 
 ## Current Controls
 
-- API token auth for `/api/pack` and `/api/parse`
+- API token auth for `/api/candidate`, `/api/pack`, and `/api/parse`
 - explicit config-driven client credentials, including qBittorrent passwords or API keys
 - narrow HTTP surface
 - CodeQL in CI
@@ -14,19 +14,16 @@ This is a self-hosted integration service with network-facing HTTP endpoints and
 
 ## Known Dependency Risk
 
-Verified on 2026-03-14 with `govulncheck ./...`:
-
-- `github.com/go-viper/mapstructure/v2@v2.2.1` is flagged by `GO-2025-3900`
-- `github.com/go-viper/mapstructure/v2@v2.2.1` is flagged by `GO-2025-3787`
-
-Both traces reach config loading through `koanf.Unmarshal` in `internal/config/config.go`.
+Verified on 2026-08-09 with `govulncheck -show verbose ./...`: no reachable symbol or imported-package vulnerabilities.
+The scan reports `GO-2026-5932` in the required `golang.org/x/crypto` module, but seasonpackarr does not import the
+affected `openpgp` package. That advisory has no fixed module version.
 
 ## High-Risk Areas
 
 - path construction before hardlink creation
 - logging of sensitive config or tokens
 - webhook contract drift causing unexpected processing
-- external API dependencies and release-parser assumptions
+- torrent-client dependencies and release-parser assumptions
 
 ## Rules For Changes
 
@@ -37,4 +34,7 @@ Both traces reach config loading through `koanf.Unmarshal` in `internal/config/c
 
 ## Current Gap
 
-There is no dedicated secret-redaction test suite and no doc linter ensuring security docs stay synced with behavior.
+- no dedicated secret-redaction test suite
+- no containment or symlink-escape enforcement for torrent-derived hardlink targets
+- no adversarial traversal, absolute-path, or symlink tests
+- no doc linter ensuring security docs stay synced with behavior

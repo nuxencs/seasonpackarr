@@ -22,6 +22,7 @@ const (
 	StatusSizeMismatch             StatusCode = 212
 	StatusSeasonMismatch           StatusCode = 213
 	StatusEpisodeMismatch          StatusCode = 214
+	StatusContainerMismatch        StatusCode = 215
 	StatusBelowThreshold           StatusCode = 230
 	StatusSuccessfulMatch          StatusCode = 250
 	StatusSuccessfulHardlink       StatusCode = 250
@@ -41,7 +42,6 @@ const (
 	StatusRecheckTorrentError      StatusCode = 461
 	StatusResumeTorrentError       StatusCode = 460
 	StatusImportConfigError        StatusCode = 459
-	StatusEpisodeCountError        StatusCode = 450
 )
 
 func (s StatusCode) String() string {
@@ -74,6 +74,8 @@ func (s StatusCode) String() string {
 		return "season did not match"
 	case StatusEpisodeMismatch:
 		return "episode did not match"
+	case StatusContainerMismatch:
+		return "container did not match"
 	case StatusBelowThreshold:
 		return "number of matches below threshold"
 	case StatusSuccessfulMatch:
@@ -110,8 +112,6 @@ func (s StatusCode) String() string {
 		return "could not resume torrent in client"
 	case StatusImportConfigError:
 		return "invalid import config"
-	case StatusEpisodeCountError:
-		return "could not get episode count"
 	default:
 		return ""
 	}
@@ -139,6 +139,7 @@ var NotificationStatusMap = map[string][]StatusCode{
 		StatusRepackStatusMismatch,
 		StatusHdrMismatch,
 		StatusStreamingServiceMismatch,
+		StatusContainerMismatch,
 		StatusAlreadyInClient,
 		StatusNotASeasonPack,
 		StatusBelowThreshold,
@@ -160,6 +161,5 @@ var NotificationStatusMap = map[string][]StatusCode{
 		StatusRecheckTorrentError,
 		StatusResumeTorrentError,
 		StatusImportConfigError,
-		StatusEpisodeCountError,
 	},
 }
