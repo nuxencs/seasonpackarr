@@ -26,13 +26,14 @@ services:
       # Fuzzy matching settings
       SEASONPACKARR__FUZZY_MATCHING_SKIP_REPACK_COMPARE: false
       SEASONPACKARR__FUZZY_MATCHING_SIMPLIFY_HDR_COMPARE: false
+      SEASONPACKARR__FUZZY_MATCHING_SIMPLIFY_WEB_COMPARE: false
 
       # Notification settings
       SEASONPACKARR__NOTIFICATIONS_DISCORD:
       SEASONPACKARR__NOTIFICATIONS_NOTIFICATION_LEVEL: MATCH,ERROR
 
       # Client settings (can have multiple clients by changing DEFAULT to another name)
-      SEASONPACKARR__CLIENTS_DEFAULT_TYPE: qbittorrent # "qbittorrent" or "transmission"
+      SEASONPACKARR__CLIENTS_DEFAULT_TYPE: qbittorrent # "qbittorrent", "transmission", "deluge-v1", or "deluge-v2"
       SEASONPACKARR__CLIENTS_DEFAULT_HOST: 127.0.0.1
       SEASONPACKARR__CLIENTS_DEFAULT_PORT: 8080
       SEASONPACKARR__CLIENTS_DEFAULT_USERNAME: admin

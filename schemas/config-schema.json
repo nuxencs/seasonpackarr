@@ -279,10 +279,7 @@
           "type": "array",
           "items": {
             "type": "string"
-          },
-          "default": [
-            "seasonpackarr"
-          ]
+          }
         },
         "category": {
           "type": "string",

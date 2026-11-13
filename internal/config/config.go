@@ -46,7 +46,7 @@ host: "{{ .host }}"
 #
 port: 42069
 
-# Optional Prowlarr backfill. A zero interval disables scheduled runs.
+# Optional Prowlarr discovery: RSS monitoring and search.
 search:
   # Empty: all enabled torrent indexers that support the discovery mode.
   indexerIDs: []
