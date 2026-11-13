@@ -30,6 +30,7 @@ const (
 // call is serialized by delugeClient.mu.
 type delugeAPI interface {
 	Connect(ctx context.Context) error
+	Close() error
 	SessionState(ctx context.Context) ([]string, error)
 	TorrentsStatus(ctx context.Context, state deluge.TorrentState, ids []string) (map[string]*deluge.TorrentStatus, error)
 	TorrentStatus(ctx context.Context, id string) (*deluge.TorrentStatus, error)
@@ -51,6 +52,11 @@ type delugeClient struct {
 	mu     sync.Mutex
 	label  delugeLabelPluginFactory
 	v1     bool
+
+	// lost is true after a call failed below the RPC layer. go-deluge never
+	// dials again, and a late response would answer the next request, so the
+	// next call must connect again first. mu guards it.
+	lost bool
 
 	// pollInterval is a field so tests can shrink it to milliseconds.
 	pollInterval time.Duration
@@ -125,13 +131,73 @@ func buildDelugeSettings(client *domain.Client) (deluge.Settings, error) {
 	}, nil
 }
 
+// delugeRetry says whether a request can run again on a new connection.
+type delugeRetry bool
+
+const (
+	// retryOnce is only for a request that is safe to repeat.
+	retryOnce delugeRetry = true
+	// noRetry is for a request that the daemon can have applied although its
+	// response did not arrive.
+	noRetry delugeRetry = false
+)
+
+// call runs one request on the daemon connection. An error that is not a
+// deluge.RPCError means that the connection is lost. The next call then
+// connects again first. A retryOnce request also runs once more on the new
+// connection.
+func (d *delugeClient) call(ctx context.Context, retry delugeRetry, request func() error) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.callLocked(ctx, retry, request)
+}
+
+func (d *delugeClient) callLocked(ctx context.Context, retry delugeRetry, request func() error) error {
+	if d.lost {
+		if err := d.reconnect(ctx); err != nil {
+			return err
+		}
+	}
+
+	err := request()
+	if err == nil || isDelugeRPCError(err) {
+		return err
+	}
+	d.lost = true
+	if retry == noRetry || ctx.Err() != nil || d.reconnect(ctx) != nil {
+		return err
+	}
+
+	err = request()
+	d.lost = err != nil && !isDelugeRPCError(err)
+	return err
+}
+
+// reconnect closes the old connection first. A request on a closed go-deluge
+// connection panics, so lost stays true until a new connection is open.
+func (d *delugeClient) reconnect(ctx context.Context) error {
+	_ = d.c.Close()
+	if err := d.c.Connect(ctx); err != nil {
+		return errtrace.WithStack(fmt.Errorf("failed to reconnect to deluge: %w", err))
+	}
+	d.lost = false
+	return nil
+}
+
+func isDelugeRPCError(err error) bool {
+	_, ok := errors.AsType[deluge.RPCError](err)
+	return ok
+}
+
 func (d *delugeClient) GetTorrents(ctx context.Context) ([]Torrent, error) {
 	ctx, cancel := context.WithTimeout(ctx, delugeTimeout)
 	defer cancel()
 
-	d.mu.Lock()
-	ts, err := d.c.TorrentsStatus(ctx, deluge.StateUnspecified, nil)
-	d.mu.Unlock()
+	var ts map[string]*deluge.TorrentStatus
+	err := d.call(ctx, retryOnce, func() (err error) {
+		ts, err = d.c.TorrentsStatus(ctx, deluge.StateUnspecified, nil)
+		return err
+	})
 	if err != nil {
 		return nil, errtrace.WithStack(fmt.Errorf("failed to get torrents from deluge: %w", err))
 	}
@@ -176,9 +242,14 @@ func (d *delugeClient) GetFiles(ctx context.Context, hashes []string) []FileResu
 
 	requestedHashes := uniqueFoldedHashes(hashes)
 
+	// One lock for both requests, so no import changes the session between them.
 	d.mu.Lock()
 	if d.v1 {
-		sessionHashes, err := d.c.SessionState(ctx)
+		var sessionHashes []string
+		err := d.callLocked(ctx, retryOnce, func() (err error) {
+			sessionHashes, err = d.c.SessionState(ctx)
+			return err
+		})
 		if err != nil {
 			d.mu.Unlock()
 			return fileResultsWithError(hashes, errtrace.WithStack(fmt.Errorf("failed to list deluge torrents: %w", err)))
@@ -196,7 +267,10 @@ func (d *delugeClient) GetFiles(ctx context.Context, hashes []string) []FileResu
 	var statuses map[string]*deluge.TorrentStatus
 	var err error
 	if len(requestedHashes) != 0 {
-		statuses, err = d.c.TorrentsStatus(ctx, deluge.StateUnspecified, requestedHashes)
+		err = d.callLocked(ctx, retryOnce, func() (callErr error) {
+			statuses, callErr = d.c.TorrentsStatus(ctx, deluge.StateUnspecified, requestedHashes)
+			return callErr
+		})
 	}
 	d.mu.Unlock()
 	if err != nil {
@@ -288,9 +362,11 @@ func (d *delugeClient) Import(ctx context.Context, req ImportRequest) (ImportRep
 	report.record(ImportStageConfig, started)
 
 	started = time.Now()
-	d.mu.Lock()
-	addedHash, err := d.c.AddTorrentFile(ctx, req.LegacyHash+".torrent", content, options)
-	d.mu.Unlock()
+	var addedHash string
+	err := d.call(ctx, noRetry, func() (err error) {
+		addedHash, err = d.c.AddTorrentFile(ctx, req.LegacyHash+".torrent", content, options)
+		return err
+	})
 	if isDelugeAlreadyAdded(err) {
 		report.record(ImportStageAdd, started)
 		return report, nil
@@ -310,9 +386,10 @@ func (d *delugeClient) Import(ctx context.Context, req ImportRequest) (ImportRep
 	report.record(ImportStageAdd, started)
 
 	started = time.Now()
-	d.mu.Lock()
-	err = d.c.ResumeTorrents(ctx, addedHash)
-	d.mu.Unlock()
+	// A second resume of a started torrent changes nothing.
+	err = d.call(ctx, retryOnce, func() error {
+		return d.c.ResumeTorrents(ctx, addedHash)
+	})
 	if err != nil {
 		report.record(ImportStageResume, started)
 		return report, importErr(ImportStageResume, fmt.Errorf("failed to resume torrent in deluge: %w", err))
@@ -336,22 +413,22 @@ func (d *delugeClient) applyLabel(ctx context.Context, hash string) error {
 		return nil
 	}
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	plugin, err := d.label(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to load deluge Label plugin: %w", err)
-	}
-	// Match Autobrr's disabled-plugin behavior. When enabled, create the label
-	// definition if it does not exist, then assign it to the torrent.
-	if plugin == nil {
+	// One call for the plugin requests, so no other request runs between them.
+	return d.call(ctx, noRetry, func() error {
+		plugin, err := d.label(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to load deluge Label plugin: %w", err)
+		}
+		// Match Autobrr's disabled-plugin behavior. When enabled, create the label
+		// definition if it does not exist, then assign it to the torrent.
+		if plugin == nil {
+			return nil
+		}
+		if err := ensureDelugeLabel(ctx, plugin, hash, label); err != nil {
+			return fmt.Errorf("failed to assign deluge label %q: %w", label, err)
+		}
 		return nil
-	}
-	if err := ensureDelugeLabel(ctx, plugin, hash, label); err != nil {
-		return fmt.Errorf("failed to assign deluge label %q: %w", label, err)
-	}
-	return nil
+	})
 }
 
 func ensureDelugeLabel(ctx context.Context, plugin delugeLabelAPI, hash, label string) error {
@@ -383,9 +460,11 @@ func (d *delugeClient) waitForStarted(ctx context.Context, hash string) error {
 			return false, err
 		}
 
-		d.mu.Lock()
-		status, err := d.c.TorrentStatus(ctx, hash)
-		d.mu.Unlock()
+		var status *deluge.TorrentStatus
+		err := d.call(ctx, retryOnce, func() (err error) {
+			status, err = d.c.TorrentStatus(ctx, hash)
+			return err
+		})
 		if err != nil {
 			return false, err
 		}

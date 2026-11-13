@@ -7,18 +7,25 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"io"
 	"testing"
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 
 	"github.com/autobrr/go-deluge"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 type fakeDelugeAPI struct {
+	connectCalls int
+	connectErr   error
+	closeCalls   int
+
 	torrents      map[string]*deluge.TorrentStatus
 	torrentsErr   error
+	torrentsErrs  []error // one for each call, before torrentsErr
 	torrentCalls  int
 	gotTorrentIDs []string
 	sessionHashes []string
@@ -33,6 +40,7 @@ type fakeDelugeAPI struct {
 	addedOptions *deluge.Options
 	addedHash    string
 	addErr       error
+	addCalls     int
 	resumed      []string
 }
 
@@ -54,7 +62,15 @@ func (f *fakeDelugeLabelAPI) AddLabel(_ context.Context, label string) error {
 	return nil
 }
 
-func (f *fakeDelugeAPI) Connect(context.Context) error { return nil }
+func (f *fakeDelugeAPI) Connect(context.Context) error {
+	f.connectCalls++
+	return f.connectErr
+}
+
+func (f *fakeDelugeAPI) Close() error {
+	f.closeCalls++
+	return nil
+}
 
 func (f *fakeDelugeAPI) SessionState(context.Context) ([]string, error) {
 	f.sessionCalls++
@@ -64,6 +80,13 @@ func (f *fakeDelugeAPI) SessionState(context.Context) ([]string, error) {
 func (f *fakeDelugeAPI) TorrentsStatus(_ context.Context, _ deluge.TorrentState, ids []string) (map[string]*deluge.TorrentStatus, error) {
 	f.torrentCalls++
 	f.gotTorrentIDs = append([]string(nil), ids...)
+	if len(f.torrentsErrs) > 0 {
+		err := f.torrentsErrs[0]
+		f.torrentsErrs = f.torrentsErrs[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
 	return f.torrents, f.torrentsErr
 }
 
@@ -80,6 +103,7 @@ func (f *fakeDelugeAPI) TorrentStatus(context.Context, string) (*deluge.TorrentS
 }
 
 func (f *fakeDelugeAPI) AddTorrentFile(_ context.Context, name, content string, options *deluge.Options) (string, error) {
+	f.addCalls++
 	f.addedName = name
 	f.addedContent = content
 	f.addedOptions = options
@@ -198,6 +222,70 @@ func TestDelugeGetTorrents(t *testing.T) {
 		{Hash: "bbbb", Name: "Show.S01E02", SavePath: "/downloads"},
 	}, torrents)
 	require.Equal(t, 1, api.torrentCalls, "GetTorrents uses one status call")
+}
+
+// TestDelugeGetTorrents_ReconnectsAfterLostConnection: go-deluge keeps one
+// connection and never dials again. Without a new connection, a daemon restart
+// makes every request fail until seasonpackarr restarts.
+func TestDelugeGetTorrents_ReconnectsAfterLostConnection(t *testing.T) {
+	t.Parallel()
+
+	api := newListingDelugeAPI()
+	api.torrentsErrs = []error{io.ErrUnexpectedEOF}
+	client := newTestDelugeClient(api, domain.ImportPolicy{})
+
+	torrents, err := client.GetTorrents(t.Context())
+
+	require.NoError(t, err)
+	assert.Len(t, torrents, 2)
+	assert.Equal(t, 1, api.closeCalls, "the lost connection must not leak")
+	assert.Equal(t, 1, api.connectCalls)
+	assert.Equal(t, 2, api.torrentCalls)
+}
+
+// TestDelugeGetTorrents_KeepsConnectionOnRPCError: the daemon answered, so the
+// connection is intact and a second request would get the same answer.
+func TestDelugeGetTorrents_KeepsConnectionOnRPCError(t *testing.T) {
+	t.Parallel()
+
+	api := newListingDelugeAPI()
+	api.torrentsErrs = []error{deluge.RPCError{ExceptionType: "InvalidTorrentError"}}
+	client := newTestDelugeClient(api, domain.ImportPolicy{})
+
+	_, err := client.GetTorrents(t.Context())
+	require.Error(t, err)
+	assert.Equal(t, 1, api.torrentCalls)
+	assert.Zero(t, api.connectCalls)
+
+	_, err = client.GetTorrents(t.Context())
+	require.NoError(t, err)
+	assert.Zero(t, api.connectCalls)
+}
+
+// TestDelugeGetTorrents_ConnectsAgainUntilDaemonReturns: a request on a closed
+// go-deluge connection panics, so no request runs before a connect succeeds.
+func TestDelugeGetTorrents_ConnectsAgainUntilDaemonReturns(t *testing.T) {
+	t.Parallel()
+
+	errDown := errors.New("connection refused")
+	api := newListingDelugeAPI()
+	api.torrentsErrs = []error{io.ErrUnexpectedEOF}
+	api.connectErr = errDown
+	client := newTestDelugeClient(api, domain.ImportPolicy{})
+
+	_, err := client.GetTorrents(t.Context())
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+
+	_, err = client.GetTorrents(t.Context())
+	require.ErrorIs(t, err, errDown)
+	require.Equal(t, 1, api.torrentCalls, "no request on the closed connection")
+
+	api.connectErr = nil
+	torrents, err := client.GetTorrents(t.Context())
+	require.NoError(t, err)
+	assert.Len(t, torrents, 2)
+	assert.Equal(t, 3, api.connectCalls)
+	assert.Equal(t, 3, api.closeCalls)
 }
 
 func TestDelugeGetFiles_ReturnsFilesPerRequestedHash(t *testing.T) {
@@ -319,6 +407,32 @@ func TestDelugeImport_ResumesWithoutWaitingForCheck(t *testing.T) {
 	require.True(t, *api.addedOptions.AddPaused)
 	require.Equal(t, []string{"returned-hash"}, api.resumed)
 	require.Equal(t, 2, api.statusAt)
+}
+
+// TestDelugeImport_DoesNotRepeatAddOnLostConnection: the daemon can have the
+// torrent although the response did not arrive, so only the next request
+// connects again.
+func TestDelugeImport_DoesNotRepeatAddOnLostConnection(t *testing.T) {
+	t.Parallel()
+
+	api := newListingDelugeAPI()
+	api.addErr = io.ErrUnexpectedEOF
+	client := newTestDelugeClient(api, domain.ImportPolicy{SavePath: "/downloads/tv"})
+
+	_, err := client.Import(t.Context(), ImportRequest{
+		TorrentBytes: []byte("torrent bytes"),
+		SavePath:     "/downloads/tv",
+		LegacyHash:   "legacy-hash",
+		HasV1:        true,
+	})
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	assert.Equal(t, 1, api.addCalls)
+	assert.Zero(t, api.connectCalls)
+
+	_, err = client.GetTorrents(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, 1, api.connectCalls)
+	assert.Equal(t, 1, api.torrentCalls)
 }
 
 func TestDelugeImport_RejectsPureV2Torrent(t *testing.T) {

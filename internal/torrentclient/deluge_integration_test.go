@@ -7,10 +7,13 @@ package torrentclient
 
 import (
 	"context"
+	"io"
+	"net"
 	"os"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -103,6 +106,79 @@ func TestDelugeDaemon_DownloadsMissingEpisodes(t *testing.T) {
 			assertDownloadedPack(t, importDir, pack, tt.missing, status.AllTimeDownload)
 		})
 	}
+}
+
+// TestDelugeDaemon_ReconnectsAfterLostConnection drops the connection as a
+// daemon restart does. go-deluge never dials again, so the adapter must connect
+// again, and the Label plugin must work on the new connection.
+func TestDelugeDaemon_ReconnectsAfterLostConnection(t *testing.T) {
+	importDir := requireDaemon(t, envDelugeType)
+	relay := newTCPRelay(t, net.JoinHostPort(delugeHost(), envOrDefault(envDelugePort, "58846")))
+	t.Setenv(envDelugeHost, relay.host)
+	t.Setenv(envDelugePort, relay.port)
+	c := newDelugeDaemonClient(t, importDir)
+	_, err := c.GetTorrents(t.Context())
+	require.NoError(t, err, "read the inventory through the relay")
+
+	relay.drop()
+
+	_, err = c.GetTorrents(t.Context())
+	require.NoError(t, err, "read the inventory after the connection was lost")
+	pack := daemontest.WriteCompletePack(t, importDir, daemontest.PackName(t, os.Getenv(envDelugeType)))
+	importDelugePack(t, c, importRequest(pack, importDir, true))
+	requireListedPack(t, c, pack, importDir)
+	requireDelugeLabel(t, c, pack.Hashes.Legacy, "seasonpackarr")
+}
+
+// tcpRelay forwards connections to the daemon. drop closes them all, which the
+// adapter sees in the same way as a daemon restart.
+type tcpRelay struct {
+	host, port string
+
+	mu    sync.Mutex
+	conns []net.Conn
+}
+
+func newTCPRelay(t *testing.T, target string) *tcpRelay {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	host, port, err := net.SplitHostPort(listener.Addr().String())
+	require.NoError(t, err)
+	r := &tcpRelay{host: host, port: port}
+	t.Cleanup(func() {
+		assert.NoError(t, listener.Close())
+		r.drop()
+	})
+
+	go func() {
+		for {
+			client, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			daemon, err := net.Dial("tcp", target)
+			if err != nil {
+				_ = client.Close()
+				continue
+			}
+			r.mu.Lock()
+			r.conns = append(r.conns, client, daemon)
+			r.mu.Unlock()
+			go func() { _, _ = io.Copy(daemon, client) }()
+			go func() { _, _ = io.Copy(client, daemon) }()
+		}
+	}()
+	return r
+}
+
+func (r *tcpRelay) drop() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, conn := range r.conns {
+		_ = conn.Close()
+	}
+	r.conns = nil
 }
 
 // newDelugeDaemonClient connects with SEASONPACKARR_TEST_DELUGE_TYPE, checks
