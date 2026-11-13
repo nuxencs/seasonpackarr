@@ -1,6 +1,8 @@
 // Copyright (c) 2023 - 2025, nuxen and the seasonpackarr contributors.
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+//go:build integration
+
 package torrentclient
 
 import (
@@ -70,10 +72,10 @@ func torrentBytesFromFolder(t *testing.T, folderPath string) []byte {
 	return torrentBytes.Bytes()
 }
 
-// buildLivePack writes a complete season pack under importDir and returns the
+// buildCompletePack writes a complete season pack under importDir and returns the
 // pack name, its .torrent bytes, and its info hashes. The data is left on disk so
 // the client can verify it as an already-present import.
-func buildLivePack(t *testing.T, importDir, packName string, episodes int) (string, []byte, torrents.Hashes) {
+func buildCompletePack(t *testing.T, importDir, packName string, episodes int) (string, []byte, torrents.Hashes) {
 	t.Helper()
 
 	packDir := filepath.Join(importDir, packName)
@@ -145,9 +147,10 @@ func requireTransmissionStarted(t *testing.T, c *transmissionClient, hash string
 	}
 }
 
-// requireFileReadLoad exercises the adapter's multi-hash read shape against a
-// live client. Repeating one known hash isolates read batching and concurrency
-// from torrent setup cost. The missing hash verifies partial-result handling.
+// requireFileReadLoad exercises the adapter's multi-hash read shape against an
+// integration client. Repeating one known hash isolates read batching and
+// concurrency from torrent setup cost. The missing hash verifies partial-result
+// handling.
 func requireFileReadLoad(t *testing.T, client TorrentClient, hash string) {
 	t.Helper()
 
@@ -175,16 +178,17 @@ func requireFileReadLoad(t *testing.T, client TorrentClient, hash string) {
 	t.Logf("GetFiles returned %d successful file lists plus one missing result in %s", readCount, duration)
 }
 
-// TestQbitImportLive drives qbitClient.Import against a real qBittorrent.
+// TestQbitImport_ImportsCompletePack drives qbitClient.Import against a real qBittorrent.
 //
 //	SEASONPACKARR_TEST_QBIT_HOST=127.0.0.1:8080 \
 //	SEASONPACKARR_TEST_QBIT_USER=admin SEASONPACKARR_TEST_QBIT_PASS=... \
-//	SEASONPACKARR_TEST_IMPORT_DIR=/shared/downloads go test -run Live ./internal/torrentclient/
-func TestQbitImportLive(t *testing.T) {
+//	SEASONPACKARR_TEST_IMPORT_DIR=/shared/downloads \
+//	go test -tags=integration -count=1 -run '^TestQbit' ./internal/torrentclient
+func TestQbitImport_ImportsCompletePack(t *testing.T) {
 	host := os.Getenv("SEASONPACKARR_TEST_QBIT_HOST")
 	importDir := os.Getenv("SEASONPACKARR_TEST_IMPORT_DIR")
 	if host == "" || importDir == "" {
-		t.Skip("SEASONPACKARR_TEST_QBIT_HOST / SEASONPACKARR_TEST_IMPORT_DIR not set - skipping live import test")
+		t.Skip("SEASONPACKARR_TEST_QBIT_HOST / SEASONPACKARR_TEST_IMPORT_DIR not set - skipping integration import test")
 	}
 
 	policy := domain.ImportPolicy{SavePath: importDir, Tags: []string{"seasonpackarr"}}
@@ -198,7 +202,7 @@ func TestQbitImportLive(t *testing.T) {
 		t.Fatalf("newQbitClient: %v", err)
 	}
 
-	packName, torrentBytes, hashes := buildLivePack(t, importDir, "LiveQbit.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
+	packName, torrentBytes, hashes := buildCompletePack(t, importDir, "IntegrationQbit.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
 	t.Logf("importing pack %q hash=%s", packName, hashes.Legacy)
 
 	if _, err := c.Import(t.Context(), ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
@@ -208,16 +212,16 @@ func TestQbitImportLive(t *testing.T) {
 	requireFileReadLoad(t, c, hashes.Legacy)
 }
 
-// TestQbitImportDestinationPreferencesLive verifies the category-only path
+// TestQbitImportDestination_UsesDaemonPreferences verifies the category-only path
 // matrix against a real qBittorrent preferences and categories API.
-func TestQbitImportDestinationPreferencesLive(t *testing.T) {
+func TestQbitImportDestination_UsesDaemonPreferences(t *testing.T) {
 	host := os.Getenv("SEASONPACKARR_TEST_QBIT_HOST")
 	importDir := os.Getenv("SEASONPACKARR_TEST_IMPORT_DIR")
 	if host == "" || importDir == "" {
-		t.Skip("SEASONPACKARR_TEST_QBIT_HOST / SEASONPACKARR_TEST_IMPORT_DIR not set - skipping live destination test")
+		t.Skip("SEASONPACKARR_TEST_QBIT_HOST / SEASONPACKARR_TEST_IMPORT_DIR not set - skipping integration destination test")
 	}
 
-	categoryName := fmt.Sprintf("seasonpackarr-live-%d", time.Now().UnixNano())
+	categoryName := fmt.Sprintf("seasonpackarr-integration-%d", time.Now().UnixNano())
 	categoryPath := filepath.Join(importDir, "category")
 	c, err := newQbitClient(t.Context(), &domain.Client{
 		Host:     host,
@@ -287,13 +291,13 @@ func TestQbitImportDestinationPreferencesLive(t *testing.T) {
 	}
 }
 
-// TestTransmissionImportLive drives transmissionClient.Import against a real
+// TestTransmissionImport_ImportsCompletePack drives transmissionClient.Import against a real
 // Transmission (add paused -> verify -> poll -> start).
-func TestTransmissionImportLive(t *testing.T) {
+func TestTransmissionImport_ImportsCompletePack(t *testing.T) {
 	host := os.Getenv("SEASONPACKARR_TEST_TRANSMISSION_HOST")
 	importDir := os.Getenv("SEASONPACKARR_TEST_IMPORT_DIR")
 	if host == "" || importDir == "" {
-		t.Skip("SEASONPACKARR_TEST_TRANSMISSION_HOST / SEASONPACKARR_TEST_IMPORT_DIR not set - skipping live import test")
+		t.Skip("SEASONPACKARR_TEST_TRANSMISSION_HOST / SEASONPACKARR_TEST_IMPORT_DIR not set - skipping integration import test")
 	}
 
 	policy := domain.ImportPolicy{SavePath: importDir, Tags: []string{"seasonpackarr"}}
@@ -307,7 +311,7 @@ func TestTransmissionImportLive(t *testing.T) {
 		t.Fatalf("newTransmissionClient: %v", err)
 	}
 
-	packName, torrentBytes, hashes := buildLivePack(t, importDir, "LiveTransmission.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
+	packName, torrentBytes, hashes := buildCompletePack(t, importDir, "IntegrationTransmission.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
 	t.Logf("importing pack %q hash=%s", packName, hashes.Legacy)
 
 	if _, err := c.Import(t.Context(), ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {

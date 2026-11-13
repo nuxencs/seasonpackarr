@@ -9,49 +9,49 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_Dedupe(t *testing.T) {
+func TestDedupe(t *testing.T) {
 	tests := []struct {
 		name  string
 		slice any
 		want  any
 	}{
 		{
-			name:  "string_slice_some_duplicates",
+			name:  "string slice some duplicates",
 			slice: []string{"string_1", "string_2", "string_3", "string_2", "string_1"},
 			want:  []string{"string_1", "string_2", "string_3"},
 		},
 		{
-			name:  "string_slice_all_duplicates",
+			name:  "string slice all duplicates",
 			slice: []string{"string_1", "string_1", "string_1", "string_1", "string_1"},
 			want:  []string{"string_1"},
 		},
 		{
-			name:  "string_slice_no_duplicates",
+			name:  "string slice no duplicates",
 			slice: []string{"string_1", "string_2", "string_3"},
 			want:  []string{"string_1", "string_2", "string_3"},
 		},
 		{
-			name:  "string_slice_empty",
+			name:  "string slice empty",
 			slice: []string{},
 			want:  []string{},
 		},
 		{
-			name:  "int_slice_some_duplicates",
+			name:  "int slice some duplicates",
 			slice: []int{1, 2, 3, 2, 1},
 			want:  []int{1, 2, 3},
 		},
 		{
-			name:  "int_slice_all_duplicates",
+			name:  "int slice all duplicates",
 			slice: []int{1, 1, 1, 1, 1},
 			want:  []int{1},
 		},
 		{
-			name:  "int_slice_no_duplicates",
+			name:  "int slice no duplicates",
 			slice: []int{1, 2, 3},
 			want:  []int{1, 2, 3},
 		},
 		{
-			name:  "int_slice_empty",
+			name:  "int slice empty",
 			slice: []int{},
 			want:  []int{},
 		},
@@ -70,7 +70,7 @@ func Test_Dedupe(t *testing.T) {
 	}
 }
 
-func Test_EqualElements(t *testing.T) {
+func TestEqualElements(t *testing.T) {
 	tests := []struct {
 		name string
 		x    any
@@ -78,61 +78,61 @@ func Test_EqualElements(t *testing.T) {
 		want bool
 	}{
 		{
-			name: "string_slice_identical_elements",
+			name: "string slice identical elements",
 			x:    []string{"a", "b", "c"},
 			y:    []string{"a", "b", "c"},
 			want: true,
 		},
 		{
-			name: "string_slice_different_order",
+			name: "string slice different order",
 			x:    []string{"a", "b", "c"},
 			y:    []string{"c", "b", "a"},
 			want: true,
 		},
 		{
-			name: "string_slice_different_elements",
+			name: "string slice different elements",
 			x:    []string{"a", "b", "c"},
 			y:    []string{"a", "b", "d"},
 			want: false,
 		},
 		{
-			name: "string_slice_different_lengths",
+			name: "string slice different lengths",
 			x:    []string{"a", "b", "c"},
 			y:    []string{"a", "b"},
 			want: false,
 		},
 		{
-			name: "int_slice_identical_elements",
+			name: "int slice identical elements",
 			x:    []int{1, 2, 3},
 			y:    []int{1, 2, 3},
 			want: true,
 		},
 		{
-			name: "int_slice_different_order",
+			name: "int slice different order",
 			x:    []int{1, 2, 3},
 			y:    []int{3, 2, 1},
 			want: true,
 		},
 		{
-			name: "int_slice_different_elements",
+			name: "int slice different elements",
 			x:    []int{1, 2, 3},
 			y:    []int{1, 2, 4},
 			want: false,
 		},
 		{
-			name: "int_slice_different_lengths",
+			name: "int slice different lengths",
 			x:    []int{1, 2, 3},
 			y:    []int{1, 2},
 			want: false,
 		},
 		{
-			name: "empty_slices",
+			name: "empty slices",
 			x:    []int{},
 			y:    []int{},
 			want: true,
 		},
 		{
-			name: "one_empty_slice",
+			name: "one empty slice",
 			x:    []int{},
 			y:    []int{1},
 			want: false,
@@ -154,29 +154,29 @@ func Test_EqualElements(t *testing.T) {
 	}
 }
 
-func Test_SimplifyHDR(t *testing.T) {
+func TestSimplifyHDR(t *testing.T) {
 	tests := []struct {
 		name  string
 		input []string
 		want  []string
 	}{
 		{
-			name:  "contains_HDR",
+			name:  "contains HDR",
 			input: []string{"HDR10", "HDR10+", "HDR"},
 			want:  []string{"HDR", "HDR", "HDR"},
 		},
 		{
-			name:  "no_HDR",
+			name:  "no HDR",
 			input: []string{"SDR", "DV"},
 			want:  []string{"SDR", "DV"},
 		},
 		{
-			name:  "empty_slice",
+			name:  "empty slice",
 			input: []string{},
 			want:  []string{},
 		},
 		{
-			name:  "mixed_HDR_and_others",
+			name:  "mixed HDR and others",
 			input: []string{"HDR10", "DV", "SDR", "HDR10+"},
 			want:  []string{"HDR", "DV", "SDR", "HDR"},
 		},

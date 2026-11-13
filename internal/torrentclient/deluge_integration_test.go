@@ -1,6 +1,8 @@
 // Copyright (c) 2023 - 2026, nuxen and the seasonpackarr contributors.
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+//go:build integration
+
 package torrentclient
 
 import (
@@ -18,7 +20,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 )
 
-type delugeLiveAPI interface {
+type delugeIntegrationAPI interface {
 	Close() error
 	DaemonVersion(context.Context) (string, error)
 	EnablePlugin(context.Context, string) error
@@ -26,17 +28,17 @@ type delugeLiveAPI interface {
 	RemoveTorrent(context.Context, string, bool) (bool, error)
 }
 
-type delugeLiveLabelAPI interface {
+type delugeIntegrationLabelAPI interface {
 	GetTorrentLabel(string) (string, error)
 }
 
-// TestDelugeImportLive drives the adapter against a real native-RPC daemon.
+// TestDelugeImport_ImportsAgainstDaemon drives the adapter against a real native RPC daemon.
 // It is environment-gated and is not part of the CI workflow.
-func TestDelugeImportLive(t *testing.T) {
+func TestDelugeImport_ImportsAgainstDaemon(t *testing.T) {
 	clientType := os.Getenv("SEASONPACKARR_TEST_DELUGE_TYPE")
 	importDir := os.Getenv("SEASONPACKARR_TEST_IMPORT_DIR")
 	if clientType == "" || importDir == "" {
-		t.Skip("Deluge live-test environment is not set")
+		t.Skip("Deluge integration-test environment is not set")
 	}
 
 	port := 58846
@@ -63,9 +65,9 @@ func TestDelugeImportLive(t *testing.T) {
 	}
 	c.pollInterval = 25 * time.Millisecond
 
-	raw, ok := c.c.(delugeLiveAPI)
+	raw, ok := c.c.(delugeIntegrationAPI)
 	if !ok {
-		t.Fatal("Deluge client does not expose live-test operations")
+		t.Fatal("Deluge client does not expose integration-test operations")
 	}
 	t.Cleanup(func() {
 		if err := raw.Close(); err != nil {
@@ -98,8 +100,8 @@ func TestDelugeImportLive(t *testing.T) {
 	}
 
 	t.Run("complete import, paths, and label", func(t *testing.T) {
-		packName := fmt.Sprintf("LiveDeluge%s.S01.1080p.WEB-DL.H.264-RlsGrp", strings.TrimPrefix(clientType, "deluge-"))
-		_, torrentBytes, hashes := buildLivePack(t, importDir, packName, 3)
+		packName := fmt.Sprintf("IntegrationDeluge%s.S01.1080p.WEB-DL.H.264-RlsGrp", strings.TrimPrefix(clientType, "deluge-"))
+		_, torrentBytes, hashes := buildCompletePack(t, importDir, packName, 3)
 		req := ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}
 		importAndRegisterCleanup(t, c, raw, req)
 
@@ -144,7 +146,7 @@ func TestDelugeImportLive(t *testing.T) {
 	})
 }
 
-func importAndRegisterCleanup(t *testing.T, c *delugeClient, raw delugeLiveAPI, req ImportRequest) {
+func importAndRegisterCleanup(t *testing.T, c *delugeClient, raw delugeIntegrationAPI, req ImportRequest) {
 	t.Helper()
 	if _, err := c.Import(t.Context(), req); err != nil {
 		t.Fatalf("import: %v", err)
@@ -198,7 +200,7 @@ func requireDelugeLabel(t *testing.T, c *delugeClient, hash, want string) {
 	if err != nil || plugin == nil {
 		t.Fatalf("load Label plugin: plugin=%v err=%v", plugin, err)
 	}
-	reader, ok := plugin.(delugeLiveLabelAPI)
+	reader, ok := plugin.(delugeIntegrationLabelAPI)
 	if !ok {
 		t.Fatal("Label plugin does not expose label reads")
 	}

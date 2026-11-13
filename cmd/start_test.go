@@ -39,7 +39,7 @@ func (s *fakeManagedServer) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func TestRunServerShutsDownWithBoundedContext(t *testing.T) {
+func TestRunServer_ShutsDownWithBoundedContext(t *testing.T) {
 	server := newFakeManagedServer()
 	ctx, cancel := context.WithCancel(t.Context())
 	result := make(chan error, 1)

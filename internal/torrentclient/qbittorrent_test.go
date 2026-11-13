@@ -114,7 +114,7 @@ func newTestQbitClient(stub *stubQbitAPI, policy domain.ImportPolicy) *qbitClien
 	}
 }
 
-func TestQbitGetFilesUsesBoundedOrderedReads(t *testing.T) {
+func TestQbitGetFiles_UsesBoundedOrderedReads(t *testing.T) {
 	t.Parallel()
 
 	stub := &stubQbitAPI{
@@ -321,7 +321,7 @@ func TestQbitImportDestination(t *testing.T) {
 	}
 }
 
-func TestQbitImportDestinationUsesConfiguredContentLayout(t *testing.T) {
+func TestQbitImportDestination_UsesConfiguredContentLayout(t *testing.T) {
 	q := newTestQbitClient(&stubQbitAPI{}, domain.ImportPolicy{
 		SavePath:      "/data/tv-hd",
 		ContentLayout: "nosubfolder",
@@ -335,7 +335,7 @@ func TestQbitImportDestinationUsesConfiguredContentLayout(t *testing.T) {
 	)
 }
 
-func TestQbitImportDestinationUsesClientDefaultContentLayout(t *testing.T) {
+func TestQbitImportDestination_UsesClientDefaultContentLayout(t *testing.T) {
 	q := newTestQbitClient(&stubQbitAPI{
 		preferences: qbittorrent.AppPreferences{TorrentContentLayout: "NoSubfolder"},
 	}, domain.ImportPolicy{SavePath: "/data/tv-hd"})
@@ -348,7 +348,7 @@ func TestQbitImportDestinationUsesClientDefaultContentLayout(t *testing.T) {
 	)
 }
 
-func TestQbitImportRechecksMissingFilesThenResumes(t *testing.T) {
+func TestQbitImport_RechecksMissingFilesThenResumes(t *testing.T) {
 	const hash = "abcdef"
 	stub := &stubQbitAPI{
 		lookupSeq: []qbittorrent.Torrent{
@@ -375,7 +375,7 @@ func TestQbitImportRechecksMissingFilesThenResumes(t *testing.T) {
 	require.Equal(t, []string{hash}, stub.resumeCalls[0])
 }
 
-func TestQbitImportAutomaticManagementOption(t *testing.T) {
+func TestQbitImport_SetsAutomaticManagementOption(t *testing.T) {
 	const hash = "abcdef"
 	tests := []struct {
 		name            string
@@ -426,12 +426,12 @@ func TestQbitImportAutomaticManagementOption(t *testing.T) {
 	}
 }
 
-// TestQbitImportWaitsForCheckingToSettle is the regression guard for the bug the
+// TestQbitImport_WaitsForCheckingToSettle is the regression guard for the bug the
 // live partial-pack test surfaced: after a paused skip-check add, qBittorrent
 // reports checkingResumeData (with a misleading 100% progress) before flipping
 // to missingFiles. waitForTorrent must skip the transient checking state and
 // observe missingFiles, so the recheck actually runs.
-func TestQbitImportWaitsForCheckingToSettle(t *testing.T) {
+func TestQbitImport_WaitsForCheckingToSettle(t *testing.T) {
 	const hash = "abcdef"
 	stub := &stubQbitAPI{
 		lookupSeq: []qbittorrent.Torrent{
@@ -456,7 +456,7 @@ func TestQbitImportWaitsForCheckingToSettle(t *testing.T) {
 	}, importStageNames(report))
 }
 
-func TestQbitImportSkipsResumeWhenAlreadyActive(t *testing.T) {
+func TestQbitImport_SkipsResumeWhenAlreadyActive(t *testing.T) {
 	const hash = "abcdef"
 	stub := &stubQbitAPI{
 		lookupSeq: []qbittorrent.Torrent{
@@ -476,7 +476,7 @@ func TestQbitImportSkipsResumeWhenAlreadyActive(t *testing.T) {
 	require.Empty(t, stub.resumeCalls, "already-active torrent must not be resumed")
 }
 
-func TestQbitImportUsesV2HashForPureV2Torrent(t *testing.T) {
+func TestQbitImport_UsesV2HashForPureV2Torrent(t *testing.T) {
 	const (
 		legacyHash = "1111111111111111111111111111111111111111"
 		v2Hash     = "2222222222222222222222222222222222222222222222222222222222222222"
@@ -501,7 +501,7 @@ func TestQbitImportUsesV2HashForPureV2Torrent(t *testing.T) {
 	require.Equal(t, [][]string{{v2Hash}}, stub.resumeCalls)
 }
 
-func TestQbitImportRejectsMissingHashBeforeAdd(t *testing.T) {
+func TestQbitImport_RejectsMissingHashBeforeAdd(t *testing.T) {
 	stub := &stubQbitAPI{}
 	q := newTestQbitClient(stub, domain.ImportPolicy{SavePath: "/data/tv-hd"})
 

@@ -84,7 +84,7 @@ func newTestTransmissionClient(stub *stubTransmissionAPI, policy domain.ImportPo
 	}
 }
 
-func TestTransmissionImportVerifiesThenStarts(t *testing.T) {
+func TestTransmissionImport_VerifiesThenStarts(t *testing.T) {
 	const hash = "abc123"
 	stub := &stubTransmissionAPI{
 		statusSeq: []transmissionrpc.TorrentStatus{
@@ -117,7 +117,7 @@ func TestTransmissionImportVerifiesThenStarts(t *testing.T) {
 	require.Equal(t, []string{hash}, stub.startCalls[0])
 }
 
-func TestTransmissionImportFailsOnError(t *testing.T) {
+func TestTransmissionImport_FailsOnError(t *testing.T) {
 	stub := &stubTransmissionAPI{
 		statusSeq:   []transmissionrpc.TorrentStatus{transmissionrpc.TorrentStatusStopped},
 		errorString: "no data found",

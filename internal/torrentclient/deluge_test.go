@@ -108,7 +108,7 @@ func TestEnsureDelugeLabel(t *testing.T) {
 	require.Equal(t, []string{"seasonpackarr"}, plugin.setLabels)
 }
 
-func TestDelugeImportAppliesLowercaseLabel(t *testing.T) {
+func TestDelugeImport_AppliesLowercaseLabel(t *testing.T) {
 	t.Parallel()
 
 	stub := &stubDelugeAPI{
@@ -166,7 +166,7 @@ func TestBuildDelugeSettings(t *testing.T) {
 	}
 }
 
-func TestDelugeGetTorrentsAndFiles(t *testing.T) {
+func TestDelugeClient_ListsTorrentsAndFiles(t *testing.T) {
 	t.Parallel()
 
 	stub := &stubDelugeAPI{
@@ -205,7 +205,7 @@ func TestDelugeGetTorrentsAndFiles(t *testing.T) {
 	require.Equal(t, []string{"AAAA", "missing"}, stub.gotTorrentIDs)
 }
 
-func TestDelugeGetFilesExpandsWholeCallError(t *testing.T) {
+func TestDelugeGetFiles_ExpandsWholeCallError(t *testing.T) {
 	t.Parallel()
 
 	errBoom := errors.New("boom")
@@ -219,7 +219,7 @@ func TestDelugeGetFilesExpandsWholeCallError(t *testing.T) {
 	}
 }
 
-func TestDelugeGetFilesRejectsEmptyV1Status(t *testing.T) {
+func TestDelugeGetFiles_RejectsEmptyV1Status(t *testing.T) {
 	t.Parallel()
 
 	client := newTestDelugeClient(&stubDelugeAPI{
@@ -231,7 +231,7 @@ func TestDelugeGetFilesRejectsEmptyV1Status(t *testing.T) {
 	require.Error(t, results[0].Err)
 }
 
-func TestDelugeV1GetFilesFiltersUnknownAndDuplicateHashes(t *testing.T) {
+func TestDelugeV1GetFiles_FiltersUnknownAndDuplicateHashes(t *testing.T) {
 	t.Parallel()
 
 	stub := &stubDelugeAPI{
@@ -269,7 +269,7 @@ func TestDelugeImportDestination(t *testing.T) {
 	require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
 }
 
-func TestDelugeImportResumesThenWaitsForCheck(t *testing.T) {
+func TestDelugeImport_ResumesThenWaitsForCheck(t *testing.T) {
 	t.Parallel()
 
 	stub := &stubDelugeAPI{
@@ -304,7 +304,7 @@ func TestDelugeImportResumesThenWaitsForCheck(t *testing.T) {
 	require.Equal(t, 2, stub.statusAt)
 }
 
-func TestDelugeImportRejectsPureV2Torrent(t *testing.T) {
+func TestDelugeImport_RejectsPureV2Torrent(t *testing.T) {
 	t.Parallel()
 
 	client := newTestDelugeClient(&stubDelugeAPI{}, domain.ImportPolicy{SavePath: "/downloads/tv"})
@@ -314,7 +314,7 @@ func TestDelugeImportRejectsPureV2Torrent(t *testing.T) {
 	require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
 }
 
-func TestDelugeImportDoesNotMutateExistingV2Torrent(t *testing.T) {
+func TestDelugeImport_DoesNotMutateExistingV2Torrent(t *testing.T) {
 	t.Parallel()
 
 	stub := &stubDelugeAPI{
@@ -336,7 +336,7 @@ func TestDelugeImportDoesNotMutateExistingV2Torrent(t *testing.T) {
 	require.Empty(t, stub.resumed)
 }
 
-func TestDelugeImportDoesNotMutateExistingV1Torrent(t *testing.T) {
+func TestDelugeImport_DoesNotMutateExistingV1Torrent(t *testing.T) {
 	t.Parallel()
 
 	stub := &stubDelugeAPI{

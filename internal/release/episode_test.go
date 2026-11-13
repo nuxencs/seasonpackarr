@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestEpisodeMatcherChecksEveryCompatibilityField(t *testing.T) {
+func TestEpisodeMatcher_ChecksEveryCompatibilityField(t *testing.T) {
 	t.Parallel()
 
 	target := requireEpisodeFile(t, "Show.S01/Show.S01E01.1080p.WEB-DL-GROUP.mkv", 100)
@@ -31,7 +31,7 @@ func TestEpisodeMatcherChecksEveryCompatibilityField(t *testing.T) {
 	}}, result.Matches)
 }
 
-func TestEpisodeMatcherPreservesTargetOrderAndDeduplicatesSources(t *testing.T) {
+func TestEpisodeMatcher_PreservesTargetOrderAndDeduplicatesSources(t *testing.T) {
 	t.Parallel()
 
 	targets := []EpisodeFile{
@@ -57,7 +57,7 @@ func TestEpisodeMatcherPreservesTargetOrderAndDeduplicatesSources(t *testing.T) 
 	}, result.Matches)
 }
 
-func TestEpisodeMatcherKeepsFirstDuplicateTarget(t *testing.T) {
+func TestEpisodeMatcher_KeepsFirstDuplicateTarget(t *testing.T) {
 	t.Parallel()
 
 	targets := []EpisodeFile{
@@ -80,7 +80,7 @@ func TestEpisodeMatcherKeepsFirstDuplicateTarget(t *testing.T) {
 	}}, result.Unmatched)
 }
 
-func TestEpisodeMatcherReportsTargetWithoutSourceEpisode(t *testing.T) {
+func TestEpisodeMatcher_ReportsTargetWithoutSourceEpisode(t *testing.T) {
 	t.Parallel()
 
 	targets := []EpisodeFile{
@@ -98,7 +98,7 @@ func TestEpisodeMatcherReportsTargetWithoutSourceEpisode(t *testing.T) {
 	}}, result.Unmatched)
 }
 
-func TestEpisodeMatcherReportsClosestCompatibilityMismatch(t *testing.T) {
+func TestEpisodeMatcher_ReportsClosestCompatibilityMismatch(t *testing.T) {
 	t.Parallel()
 
 	target := requireEpisodeFile(t, "Show.S01/Show.S01E05.1080p.WEB-DL-GROUP.mkv", 100)
@@ -120,7 +120,7 @@ func TestEpisodeMatcherReportsClosestCompatibilityMismatch(t *testing.T) {
 	}}, result.Unmatched)
 }
 
-func TestEpisodeMatcherReportsWantAndGotForEveryCompatibilityMismatch(t *testing.T) {
+func TestEpisodeMatcher_ReportsWantAndGotForEveryCompatibilityMismatch(t *testing.T) {
 	t.Parallel()
 
 	target := requireEpisodeFile(t, "Show.S01/Show.S01E05.1080p.WEB-DL-GROUP.mkv", 100)

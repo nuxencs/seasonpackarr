@@ -7,7 +7,7 @@ Scored on 1-5. `5` means strong confidence with clear docs, tests, and operation
 | Domain | Score | Notes | Main Gaps |
 | --- | --- | --- | --- |
 | Core season-pack matching | 4 | Focused code and tests exist | More regression cases for renamed/weird releases |
-| Torrent parsing flow | 4 | Exact plans are built before side effects and covered through authenticated HTTP component tests | Live autobrr-to-client verification and adversarial path cases |
+| Torrent parsing flow | 4 | Exact plans are built before side effects and covered through authenticated HTTP component tests | External autobrr-to-client verification and adversarial path cases |
 | Smart mode / torrent coverage | 4 | Uses distinct MKV and MP4 episode targets, excludes extra videos, and has focused cache and threshold tests | Broader multi-episode and container corpus cases |
 | Config experience | 2 | Rich defaults and schema surface | Migration notes and doc sync need discipline |
 | Notifications / observability | 3 | Logging and Discord hooks exist | Sharper operator playbooks |
