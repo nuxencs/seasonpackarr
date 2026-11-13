@@ -415,7 +415,7 @@ has a `full` input for the integration group.
 
 Packages without tests: `internal/api`, `internal/buildinfo`,
 `internal/daemontest`, `internal/domain`, `internal/logger`,
-`internal/logger/loggertest`, `internal/notification`.
+`internal/logger/loggertest`.
 
 High-value regression targets:
 

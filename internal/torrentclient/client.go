@@ -265,6 +265,10 @@ func buildHost(client *domain.Client) (string, error) {
 
 	parsedURL, err := url.Parse(host)
 	if err != nil {
+		// A url.Error holds the host, and its path or user info can be a secret.
+		if parseErr, ok := errors.AsType[*url.Error](err); ok {
+			err = parseErr.Err
+		}
 		return "", fmt.Errorf("failed to parse host: %w", err)
 	}
 

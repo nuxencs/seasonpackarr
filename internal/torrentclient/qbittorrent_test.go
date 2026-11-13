@@ -6,7 +6,10 @@ package torrentclient
 import (
 	stderrors "errors"
 	"maps"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +17,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 
 	"github.com/autobrr/go-qbittorrent"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -572,4 +576,88 @@ func TestQbitImport_RejectsMissingHashBeforeAdd(t *testing.T) {
 	require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
 	require.Equal(t, []ImportStage{ImportStageConfig}, importStageNames(report))
 	require.Empty(t, api.addBytes)
+}
+
+// TestQbitGetTorrents_ErrorOmitsHostPath: go-qbittorrent puts the request URL
+// into its errors, and the path of a qui proxy address is a key. The error goes
+// to the log, the API response, and the notification.
+func TestQbitGetTorrents_ErrorOmitsHostPath(t *testing.T) {
+	// go-qbittorrent retries a failed connection for seconds, but not a 500.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(server.Close)
+
+	// go-qbittorrent cleans the path, so the URL in an error can differ from the configured text.
+	for _, path := range []string{
+		"/proxy/SECRET-KEY",
+		"/proxy/SECRET-KEY/",
+		"/proxy//SECRET-KEY",
+		"/proxy/./SECRET-KEY",
+		"/x/../proxy/SECRET-KEY",
+		"/proxy/SECRET-KEY?x=1",
+		"/proxy/SECRET-KEY#fragment",
+	} {
+		t.Run(path, func(t *testing.T) {
+			client, err := newQbitClient(t.Context(), &domain.Client{Type: "qbittorrent", Host: server.URL + path})
+			require.NoError(t, err, "a client without credentials sends no login request")
+
+			_, err = client.GetTorrents(t.Context())
+
+			require.Error(t, err)
+			assert.NotContains(t, err.Error(), "SECRET-KEY")
+			assert.Contains(t, err.Error(), strings.TrimPrefix(server.URL, "http://")+"/[redacted]/api/v2/torrents/info",
+				"the address without the path stays for diagnosis")
+			assert.Contains(t, err.Error(), "status: 500", "the cause stays for diagnosis")
+		})
+	}
+}
+
+// TestNewQbitClient_HostErrorOmitsHost: a host that does not parse can still
+// hold a proxy key or a password.
+func TestNewQbitClient_HostErrorOmitsHost(t *testing.T) {
+	for _, host := range []string{"http://localhost:abc/proxy/SECRET-KEY", "http://user:SECRET KEY@localhost"} {
+		t.Run(host, func(t *testing.T) {
+			_, err := newQbitClient(t.Context(), &domain.Client{Type: "qbittorrent", Host: host})
+
+			require.Error(t, err)
+			assert.NotContains(t, err.Error(), "SECRET")
+		})
+	}
+}
+
+func TestQbitAddressRedactor(t *testing.T) {
+	tests := []struct {
+		name, host, text, want string
+	}{
+		{
+			name: "proxy path",
+			host: "http://localhost:7476/proxy/SECRET-KEY",
+			text: `get: http://localhost:7476/proxy/SECRET-KEY/api/v2/app: Get "http://localhost:7476/proxy/SECRET-KEY/api/v2/app": EOF`,
+			want: `get: http://localhost:7476/[redacted]/api/v2/app: Get "http://localhost:7476/[redacted]/api/v2/app": EOF`,
+		},
+		{
+			name: "user info as written and as net/http shows it",
+			host: "https://user:pass@qbit.example:8080",
+			text: `get: https://user:pass@qbit.example:8080/api/v2/app: Get "https://user:***@qbit.example:8080/api/v2/app": EOF`,
+			want: `get: https://qbit.example:8080/[redacted]/api/v2/app: Get "https://qbit.example:8080/[redacted]/api/v2/app": EOF`,
+		},
+		{
+			name: "address without a request path",
+			host: "http://localhost:7476/proxy/SECRET-KEY",
+			text: `dial http://localhost:7476/proxy/SECRET-KEY failed`,
+			want: `dial http://localhost:7476/[redacted] failed`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			redact := qbitAddressRedactor(tt.host)
+			require.NotNil(t, redact)
+			assert.Equal(t, tt.want, redact(tt.text))
+		})
+	}
+
+	for _, host := range []string{"http://localhost:8080", "http://localhost:8080/"} {
+		assert.Nil(t, qbitAddressRedactor(host), "%s has no secret part", host)
+	}
 }

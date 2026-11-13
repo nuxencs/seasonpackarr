@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -59,21 +61,103 @@ func newQbitClient(ctx context.Context, client *domain.Client) (*qbitClient, err
 		Password: client.Password,
 		APIKey:   client.APIKey,
 	})
+	api := safeQbitAPI{api: c, redact: qbitAddressRedactor(host)}
 
 	if err := c.Login(); err != nil {
-		return nil, errtrace.WithStack(fmt.Errorf("failed to login to qbittorrent: %w", err))
+		return nil, errtrace.WithStack(fmt.Errorf("failed to login to qbittorrent: %w", api.safe(err)))
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
 	return &qbitClient{
-		c:            c,
+		c:            api,
 		policy:       client.Import,
 		findTimeout:  15 * time.Second,
 		pollInterval: 250 * time.Millisecond,
 	}, nil
 }
+
+// qbitAddressRedactor returns a function that hides what follows the host in
+// each URL of the client address: the path, which is the key of a qui proxy
+// address, the user info, and the query. The request path stays for diagnosis.
+// It returns nil when the address has no such part.
+func qbitAddressRedactor(host string) func(string) string {
+	u, err := url.Parse(host)
+	if err != nil || (strings.Trim(u.Path, "/") == "" && u.User == nil && u.RawQuery == "" && u.Fragment == "") {
+		return nil
+	}
+	base := u.Scheme + "://" + u.Host
+	// The pattern matches by host, not by the configured text: go-qbittorrent
+	// cleans the path, and net/http shows the password as "***".
+	address := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(u.Scheme) + `://(?:[^/\s"]*@)?` + regexp.QuoteMeta(u.Host) + `[^\s"]*`)
+	return func(text string) string {
+		return address.ReplaceAllStringFunc(text, func(found string) string {
+			if _, request, ok := strings.Cut(found, "/api/v2/"); ok {
+				return base + "/[redacted]/api/v2/" + request
+			}
+			return base + "/[redacted]"
+		})
+	}
+}
+
+// safeQbitAPI removes the secret parts of the client address from every error
+// of the wrapped client. go-qbittorrent puts the request URL into its error
+// text, and the adapter errors go to the log, the API response, and the
+// notification.
+type safeQbitAPI struct {
+	api    qbitAPI
+	redact func(string) string
+}
+
+// safe returns the text only when it hides something, so that no wrapped error
+// can show the address.
+func (s safeQbitAPI) safe(err error) error {
+	if err == nil || s.redact == nil {
+		return err
+	}
+	text := err.Error()
+	if safe := s.redact(text); safe != text {
+		return errors.New(safe)
+	}
+	return err
+}
+
+func (s safeQbitAPI) GetTorrents(o qbittorrent.TorrentFilterOptions) ([]qbittorrent.Torrent, error) {
+	torrents, err := s.api.GetTorrents(o)
+	return torrents, s.safe(err)
+}
+
+func (s safeQbitAPI) GetFilesInformation(hash string) (*qbittorrent.TorrentFiles, error) {
+	files, err := s.api.GetFilesInformation(hash)
+	return files, s.safe(err)
+}
+
+func (s safeQbitAPI) AddTorrentFromMemory(buf []byte, options map[string]string) (*qbittorrent.TorrentAddResponse, error) {
+	response, err := s.api.AddTorrentFromMemory(buf, options)
+	return response, s.safe(err)
+}
+
+func (s safeQbitAPI) GetCategories() (map[string]qbittorrent.Category, error) {
+	categories, err := s.api.GetCategories()
+	return categories, s.safe(err)
+}
+
+func (s safeQbitAPI) GetDefaultSavePath() (string, error) {
+	path, err := s.api.GetDefaultSavePath()
+	return path, s.safe(err)
+}
+
+func (s safeQbitAPI) GetAppPreferences() (qbittorrent.AppPreferences, error) {
+	preferences, err := s.api.GetAppPreferences()
+	return preferences, s.safe(err)
+}
+
+func (s safeQbitAPI) Recheck(hashes []string) error { return s.safe(s.api.Recheck(hashes)) }
+
+func (s safeQbitAPI) Stop(hashes []string) error { return s.safe(s.api.Stop(hashes)) }
+
+func (s safeQbitAPI) Resume(hashes []string) error { return s.safe(s.api.Resume(hashes)) }
 
 func (q *qbitClient) GetTorrents(ctx context.Context) ([]Torrent, error) {
 	if err := ctx.Err(); err != nil {

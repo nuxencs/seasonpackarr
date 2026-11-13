@@ -9,9 +9,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"time"
 
@@ -95,7 +97,7 @@ func (s *discordSender) Send(ctx context.Context, statusCode domain.StatusCode, 
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, notifications.Discord, bytes.NewReader(jsonData))
 	if err != nil {
-		return errtrace.WithStack(fmt.Errorf("could not create request for status %v and payload %v: %w", statusCode, payload, err))
+		return errtrace.WithStack(fmt.Errorf("could not create request for status %v and payload %v: %w", statusCode, payload, withoutURL(err)))
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -103,7 +105,7 @@ func (s *discordSender) Send(ctx context.Context, statusCode domain.StatusCode, 
 
 	res, err := s.httpClient.Do(req)
 	if err != nil {
-		return errtrace.WithStack(fmt.Errorf("client request error for status %v and payload %v: %w", statusCode, payload, err))
+		return errtrace.WithStack(fmt.Errorf("client request error for status %v and payload %v: %w", statusCode, payload, withoutURL(err)))
 	}
 
 	defer func() { _ = res.Body.Close() }()
@@ -123,6 +125,15 @@ func (s *discordSender) Send(ctx context.Context, statusCode domain.StatusCode, 
 	s.log.Debug().Msg("notification successfully sent to discord")
 
 	return nil
+}
+
+// withoutURL returns the cause of a request error without the request URL. The
+// webhook URL holds the token, and the caller logs the error.
+func withoutURL(err error) error {
+	if requestErr, ok := errors.AsType[*url.Error](err); ok {
+		return requestErr.Err
+	}
+	return err
 }
 
 func (s *discordSender) isEnabled(notifications domain.Notifications) bool {

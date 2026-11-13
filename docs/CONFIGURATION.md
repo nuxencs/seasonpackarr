@@ -71,7 +71,8 @@ Supported versions: 4.3.9 to 5.2.4. The integration tests check 4.3.9, 4.5.5, 4.
   seasonpackarr uses it and ignores `username` and `password`.
 - With [qui's reverse proxy](https://getqui.com/docs/features/reverse-proxy/), set `host` to the full proxy URL, for
   example `http://localhost:7476/proxy/abc123...`, and leave `username`, `password`, and `apiKey` empty. qui handles
-  the authentication. The URL must include its `/proxy/...` path.
+  the authentication. The URL must include its `/proxy/...` path. The path is a key, so errors and logs show it as
+  `[redacted]`.
 - qBittorrent listens on port `8080` by default.
 
 ### Transmission
