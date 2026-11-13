@@ -5,9 +5,12 @@ seasonpackarr operations and verification reference
 - formatting for Go changes: gofumpt -w .
 - smoke flows:
   - go run . start --config <dir>
-  - go run . test candidate "<release>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>"
-  - go run . test match "<release-or-torrent>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>"
-  - go run . test import "<release-or-torrent>" --client "<name>" --host 127.0.0.1 --port 42069 --api "<token>" (mutating: creates hardlinks and imports the torrent)
+  - go run . candidate "<release>" --config <dir> [--client <name>]
+  - go run . match "<file.torrent>" --config <dir> [--client <name>]
+  - go run . import "<file.torrent>" --config <dir> [--client <name>] (mutating: creates hardlinks and imports the torrent)
+- CLI contract: docs/product-specs/cli.md. API commands reuse config/environment connection settings; --url supports remote services.
+- CLI exit codes: 0 accepted/search complete; 1 operational/input failure; 2 pack rejected. Search defaults to readable output; --json preserves the API report.
+- The test command group is removed in v1. Use candidate, match, and import directly. Match/import require real torrent files and default to the embedded release name; --release supplies the full tracker name when the torrent folder name lacks release metadata.
 - if E2E cannot run because external services or credentials are missing, say that explicitly
 
 Prowlarr backfill:

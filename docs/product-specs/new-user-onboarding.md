@@ -28,7 +28,10 @@ start searches on demand.
    The reorder arrows appear only after multiple external checks exist. Save and reload, then confirm candidate is
    displayed above match because the persisted display order is the execution order.
    Add one Webhook action on `/api/import` for hardlink creation and client import. Do not add a torrent-client action.
-8. Run smoke tests with the CLI helper commands.
+8. Follow the [command-line guide](cli.md#first-successful-check) to check a release
+   with `candidate`, then verify a real torrent with `match`. These commands
+   read connection settings from your local config. Use `import` only when you
+   want to create hardlinks and add the torrent.
 
 ## First Success Criteria
 

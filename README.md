@@ -129,6 +129,23 @@ See `docker-compose.yml` for an example.
 Make sure you use the correct path you have mapped within the container in the config file. After the first start you
 will need to adjust the created config file to your needs and start the container again.
 
+## Command-Line Checks
+
+Start the service, then check a release name or a real torrent file:
+
+```sh
+seasonpackarr candidate "Series.S01.1080p.WEB-DL-GRP"
+seasonpackarr match ./pack.torrent
+```
+
+The CLI reads connection settings from your local config and environment. With
+one configured client, no connection flags are needed. Add `--client <name>`
+when several clients exist, or `--config <directory>` for a custom config path.
+Use `import ./pack.torrent` to create hardlinks and import the pack.
+
+See the [command-line guide](docs/product-specs/cli.md) for required inputs,
+remote connections, output formats, exit codes, and migration from `test`.
+
 ## Configuration
 
 You can configure a decent part of the features seasonpackarr provides. I will explain the most important ones here in
@@ -299,9 +316,9 @@ search:
 For historical backfill, search manually, optionally verify reuse, then import:
 
 ```sh
-seasonpackarr search --dry-run --api "your-seasonpackarr-api-token"
-seasonpackarr search --dry-run --verify --api "your-seasonpackarr-api-token"
-seasonpackarr search --api "your-seasonpackarr-api-token"
+seasonpackarr search --dry-run
+seasonpackarr search --dry-run --verify
+seasonpackarr search
 ```
 
 The default dry run reports candidates with unknown coverage. `--verify` retrieves

@@ -132,7 +132,7 @@ Use manual backfill for releases outside the feed and retention window.
 Start the service, then preview a targeted historical search:
 
 ```sh
-seasonpackarr search --dry-run --api "your-seasonpackarr-api-token"
+seasonpackarr search --dry-run
 ```
 
 This dry run queries selected trackers and applies release-name checks. It does
@@ -144,7 +144,7 @@ still apply.
 To check exact reuse, explicitly enable verification:
 
 ```sh
-seasonpackarr search --dry-run --verify --api "your-seasonpackarr-api-token"
+seasonpackarr search --dry-run --verify
 ```
 
 Exact preview checks local source files, retrieves or reuses torrent metadata,
@@ -155,18 +155,22 @@ Neither preview mode creates hardlinks, adds torrents, or sends notifications.
 Import accepted packs:
 
 ```sh
-seasonpackarr search --api "your-seasonpackarr-api-token"
+seasonpackarr search
 ```
 
 RSS runs only on its configured interval and always evaluates imports for all
 clients. The CLI and API run targeted searches across the configured searchable
 indexers. Preview flags apply only to those manual searches.
 
-All three modes scan all configured clients by default. Add `--client default` to
-select one client. Use `--url http://127.0.0.1:42069` to set the seasonpackarr base
-URL. The `--api` token belongs to seasonpackarr, not Prowlarr.
+All three CLI modes scan all configured clients unless `SEASONPACKARR__CLIENT`
+selects one. Add `--client default` to select one client.
+Use `--url http://127.0.0.1:42069` to set the seasonpackarr base
+URL. The CLI reads connection settings from local config and environment. Add
+`--config <directory>` for a custom config directory. The `--api` token belongs
+to seasonpackarr, not Prowlarr. See the [CLI guide](cli.md#connection-settings).
 
-The CLI prints JSON with scan counts, logical search group count, search request
+The CLI prints a readable summary. Add `--json` to get the complete API report
+with scan counts, logical search group count, search request
 count, completed torrent downloads, metadata cache hits, per-result outcomes,
 and operation failures. `requests` counts targeted feed requests, excluding
 indexer discovery and torrent downloads. Automatic RSS logs include `rss: true`.

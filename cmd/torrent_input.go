@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,12 +13,16 @@ import (
 )
 
 func torrentInput(input string) (string, []byte, error) {
-	releaseName := strings.TrimSuffix(filepath.Base(input), ".torrent")
-	if filepath.Ext(input) != ".torrent" {
-		torrentBytes, err := torrents.TorrentFromRls(releaseName, 5)
-		return releaseName, torrentBytes, err
+	if !strings.EqualFold(filepath.Ext(input), ".torrent") {
+		return "", nil, fmt.Errorf("match and import require a real .torrent file; use seasonpackarr candidate \"<release>\" for a release-name check")
 	}
-
-	torrentBytes, err := os.ReadFile(input)
-	return releaseName, torrentBytes, err
+	data, err := os.ReadFile(input)
+	if err != nil {
+		return "", nil, fmt.Errorf("read torrent file: %w", err)
+	}
+	info, err := torrents.Info(data)
+	if err != nil || strings.TrimSpace(info.BestName()) == "" {
+		return "", nil, fmt.Errorf("invalid torrent file %q; provide the original .torrent file from your tracker", input)
+	}
+	return info.BestName(), data, nil
 }

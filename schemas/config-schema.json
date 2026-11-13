@@ -5,7 +5,8 @@
   "properties": {
     "host": {
       "type": "string",
-      "default": "0.0.0.0"
+      "default": "0.0.0.0",
+      "description": "Service listener address. Local CLI requests use this address, with wildcard addresses mapped to loopback."
     },
     "port": {
       "type": "integer",
@@ -56,6 +57,7 @@
     },
     "apiToken": {
       "type": "string",
+      "description": "Service API token. CLI commands read this value unless environment settings or --api override it.",
       "default": ""
     }
   },

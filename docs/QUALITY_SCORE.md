@@ -18,7 +18,7 @@ Scored on 1-5. `5` means strong confidence with clear docs, tests, and operation
 
 | Layer | Score | Notes | Main Gaps |
 | --- | --- | --- | --- |
-| CLI / entrypoints | 4 | Small and understandable | More task-oriented smoke docs |
+| CLI / entrypoints | 4 | Shared connection handling, explicit inputs, readable results, exit-code tests, and a task-oriented guide | Live external-service validation |
 | HTTP server / middleware | 4 | Narrow surface, auth gate, health endpoints, and authenticated failure-contract tests | No external autobrr contract harness |
 | Processing orchestration | 4 | Candidate discovery, exact planning, transport, and import execution have separate files and lifecycle tests | Outcome classification still couples expected rejections to errors |
 | Matching logic | 4 | Isolated package plus tests | Edge-case corpus should grow |

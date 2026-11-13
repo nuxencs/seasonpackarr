@@ -6,6 +6,7 @@ Product specs define user-visible behavior and operator expectations.
 
 | Doc | Audience | Scope | Status |
 | --- | --- | --- | --- |
+| `cli.md` | Operators and script authors | Command inputs, connection settings, results, and migration from `test` | Active |
 | `prowlarr-backfill.md` | Operators and integrators | Prowlarr RSS monitoring, manual backfill, preview, and duplicate policy | Active |
 | `config-reload.md` | Operators and maintainers | Live reload guarantees and restart-only settings | Active |
 | `new-user-onboarding.md` | New operators | First setup and first successful run | Active |

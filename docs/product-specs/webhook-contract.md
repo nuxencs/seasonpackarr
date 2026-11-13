@@ -8,7 +8,8 @@
 
 `/api/match` replaces `/api/pack`, and `/api/import` replaces `/api/parse`.
 The old routes return `404`; there are no aliases or redirects. The CLI uses
-`test match` and `test import`; `test pack` and `test parse` are removed.
+`match` and `import` directly. The `test` command group and all its subcommands
+are removed. See the [CLI guide](cli.md).
 Authentication, payloads, status codes, and processing behavior are unchanged
 for the renamed operations. Update callers when upgrading the service.
 

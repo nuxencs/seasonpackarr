@@ -10,6 +10,7 @@ This upgrade needs changes in two places:
 
 Also check the [application data directory](#prepare-the-application-data-directory)
 before starting v1.0.0. This check applies to autobrr-only installations too.
+If you use CLI commands or scripts, also [update those calls](#update-cli-commands-and-scripts).
 
 Plan a short maintenance window. Keep the autobrr filter disabled until both
 parts are complete.
@@ -332,6 +333,50 @@ authentication is enabled, put the token in the endpoint as shown above.
 
 Save the filter, but keep it disabled until seasonpackarr v1.0.0 is running.
 
+## Update CLI commands and scripts
+
+V1 removes the entire `test` command group, including the v0.16.0 commands
+`test pack` and `test parse`. Choose the new command by the task you want to perform:
+
+| Task | v1.0.0 command |
+| --- | --- |
+| Check a release name, previously `test pack` | `seasonpackarr candidate "<release>"` |
+| Check exact reuse without creating hardlinks or adding a torrent | `seasonpackarr match <file.torrent>` |
+| Create hardlinks and import the pack | `seasonpackarr import <file.torrent>` |
+
+Replace `test parse` with `import` only when you intend to add the torrent to
+the client too. Use `match` for an exact check without those changes.
+
+Match and import require a real `.torrent` file. A release-name input no longer
+creates a mock torrent. The command reads the release name from the torrent
+contents, so the downloaded filename does not need to match the release name.
+If the torrent's internal folder name lacks the full release metadata, add
+`--release "<full-tracker-release-name>"` to both match and import. This preserves
+the torrent contents and destination folder name. See
+[torrents with a short folder name](cli.md#torrents-with-a-short-folder-name).
+
+API commands now read connection settings from local config and environment.
+Explicit flags still override those settings. Add `--config <directory>` for
+a custom config directory and `--client <name>` when several clients exist.
+If you used `test candidate`, `test match`, or `test import` from development
+builds, remove `test` from those calls. No aliases remain.
+
+Update scripts that inspect command output or exit codes:
+
+- Results are readable text by default. Add `--json` for structured results,
+  including the new `search` command. Search imports accepted packs unless
+  `--dry-run` is set.
+- Exit code `0` means accepted, or search completed without operational failures.
+  Exit code `1` means an input, configuration, connection, authentication, or
+  operation failure. Exit code `2` means candidate, match, or import rejected
+  the pack. Search rejections and empty results return `0`.
+- Errors that previously printed a message and returned success now return a
+  nonzero exit code. Result data goes to stdout; diagnostics go to stderr.
+- `version` prints local build information and no longer checks GitHub for the
+  latest release.
+
+See the [CLI guide](cli.md) for connection precedence, remote use, and result formats.
+
 ## 3. Start v1.0.0 and check the setup
 
 1. Install the v1.0.0 binary or container image.
@@ -357,21 +402,25 @@ checking it.
 <details>
 <summary>Optional command-line checks before enabling the filter</summary>
 
+The commands read connection settings from local config and environment. Add
+`--config <directory>` if the service uses a custom directory. For remote
+connections and migration from `test`, see the [CLI guide](cli.md).
+
 Test the quick check with a representative release name:
 
 ```bash
-seasonpackarr test candidate "Series.S01.1080p.WEB-DL.H.264-RlsGrp" \
-  --client default --host 127.0.0.1 --port 42069 --api your-api-token
+seasonpackarr candidate "Series.S01.1080p.WEB-DL.H.264-RlsGrp" \
+  --client default
 ```
 
 Test the exact, read-only check with a representative torrent file:
 
 ```bash
-seasonpackarr test match "/path/to/Series.S01.torrent" \
-  --client default --host 127.0.0.1 --port 42069 --api your-api-token
+seasonpackarr match "/path/to/Series.S01.torrent" \
+  --client default
 ```
 
-Do not use `seasonpackarr test import` as a read-only test. It creates hardlinks
+Do not use `seasonpackarr import` as a read-only test. It creates hardlinks
 and adds the torrent to the client.
 
 </details>
