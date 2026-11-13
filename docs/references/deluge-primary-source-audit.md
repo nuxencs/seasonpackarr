@@ -312,7 +312,7 @@ SEASONPACKARR_TEST_DELUGE_USER=seasonpackarr \
 SEASONPACKARR_TEST_DELUGE_PASS=integration \
 SEASONPACKARR_TEST_IMPORT_DIR=/path/shared/with/deluge \
 go test -tags=integration -v -count=1 \
-  -run '^TestDelugeImport_ImportsAgainstDaemon$' ./internal/torrentclient
+  -run '^TestDelugeDaemon_' ./internal/torrentclient
 ```
 
 Repeat with `SEASONPACKARR_TEST_DELUGE_TYPE=deluge-v2` against a Deluge 2
@@ -359,7 +359,7 @@ Run these assertions against both matrix entries unless a daemon capability is v
 8. Stop and restart the daemon with the same state directory. Reconnect and assert that the torrent path and label persist.
 
 These checks test the native protocol, daemon-version selection, filesystem
-path semantics, initial-check behavior, and Label plugin behavior. Unit stubs
+path semantics, initial-check behavior, and Label plugin behavior. Unit fakes
 cannot verify these contracts. Unit tests cover the direct-adapter V1 and V2
 duplicate no-action results because normal HTTP duplicate requests stop at the
 request-level gate.

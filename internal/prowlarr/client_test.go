@@ -11,26 +11,27 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestClient_IndexersAndSeasonQueries(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "test-key", r.Header.Get("X-Api-Key"))
-		require.Empty(t, r.URL.Query().Get("apikey"))
+		assert.Equal(t, "test-key", r.Header.Get("X-Api-Key"))
+		assert.Empty(t, r.URL.Query().Get("apikey"))
 		switch r.URL.Path {
 		case "/prowlarr/api/v1/indexer":
 			fmt.Fprint(w, `[{"id":2,"priority":50,"enable":true,"protocol":"torrent","supportsSearch":true},{"id":1,"priority":10,"enable":true,"protocol":"torrent","supportsSearch":true,"capabilities":{"tvSearchParams":["q","season"],"limitsMax":25,"categories":[{"id":5000}]}},{"id":3,"enable":false,"protocol":"torrent","supportsSearch":true},{"id":4,"enable":true,"protocol":"usenet","supportsSearch":true}]`)
 		case "/prowlarr/1/api":
-			require.Equal(t, "tvsearch", r.URL.Query().Get("t"))
-			require.Equal(t, "Example", r.URL.Query().Get("q"))
-			require.Equal(t, "2", r.URL.Query().Get("season"))
-			require.Equal(t, "5000", r.URL.Query().Get("cat"))
-			require.Equal(t, "25", r.URL.Query().Get("limit"))
-			require.Equal(t, "50", r.URL.Query().Get("offset"))
+			assert.Equal(t, "tvsearch", r.URL.Query().Get("t"))
+			assert.Equal(t, "Example", r.URL.Query().Get("q"))
+			assert.Equal(t, "2", r.URL.Query().Get("season"))
+			assert.Equal(t, "5000", r.URL.Query().Get("cat"))
+			assert.Equal(t, "25", r.URL.Query().Get("limit"))
+			assert.Equal(t, "50", r.URL.Query().Get("offset"))
 			fmt.Fprint(w, `<rss><channel><item><title>Example.S02</title><guid>one</guid></item></channel></rss>`)
 		default:
-			t.Errorf("unexpected request %s", r.URL.Path)
+			assert.Failf(t, "unexpected request", "%s", r.URL.Path)
 			w.WriteHeader(404)
 		}
 	}))
@@ -49,7 +50,7 @@ func TestClient_IndexersAndSeasonQueries(t *testing.T) {
 }
 
 func TestClient_TextFallbackAndInvalidFeeds(t *testing.T) {
-	for _, test := range []struct {
+	for _, tt := range []struct {
 		name, body string
 		fail       bool
 	}{
@@ -58,12 +59,12 @@ func TestClient_TextFallbackAndInvalidFeeds(t *testing.T) {
 		{"login page", `<html><body>login</body></html>`, true},
 		{"malformed", `<rss>`, true},
 	} {
-		t.Run(test.name, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				require.Empty(t, r.URL.Query().Get("cat"), "uncategorized trackers must not be excluded")
-				require.Equal(t, "search", r.URL.Query().Get("t"))
-				require.Equal(t, "Example S01", r.URL.Query().Get("q"))
-				fmt.Fprint(w, test.body)
+				assert.Empty(t, r.URL.Query().Get("cat"), "uncategorized trackers must not be excluded")
+				assert.Equal(t, "search", r.URL.Query().Get("t"))
+				assert.Equal(t, "Example S01", r.URL.Query().Get("q"))
+				fmt.Fprint(w, tt.body)
 			}))
 			defer server.Close()
 			client, err := New(server.URL, "secret-key", 0)
@@ -71,7 +72,7 @@ func TestClient_TextFallbackAndInvalidFeeds(t *testing.T) {
 			indexer := Indexer{ID: 1}
 			indexer.Capabilities.SearchParams = []string{"q"}
 			_, _, err = client.SearchPage(t.Context(), indexer, Query{Title: "Example", Season: 1}, 0)
-			if test.fail {
+			if tt.fail {
 				require.Error(t, err)
 				require.NotContains(t, err.Error(), "secret-key")
 			} else {
@@ -85,8 +86,8 @@ func TestClient_DownloadProxyBoundary(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
-		require.Equal(t, "key", r.Header.Get("X-Api-Key"))
-		require.Empty(t, r.URL.Query().Get("apikey"))
+		assert.Equal(t, "key", r.Header.Get("X-Api-Key"))
+		assert.Empty(t, r.URL.Query().Get("apikey"))
 		if r.URL.Query().Get("link") == "redirect" {
 			http.Redirect(w, r, "https://tracker.invalid/?passkey=secret", http.StatusFound)
 			return

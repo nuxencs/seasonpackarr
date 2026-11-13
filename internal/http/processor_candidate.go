@@ -10,11 +10,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/autobrr/rls"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/format"
 	"github.com/nuxencs/seasonpackarr/internal/release"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
+
+	"github.com/autobrr/rls"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/rs/zerolog"
 )

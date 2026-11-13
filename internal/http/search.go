@@ -17,8 +17,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/autobrr/rls"
-	"github.com/gin-gonic/gin"
 	"github.com/nuxencs/seasonpackarr/internal/config"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/errtrace"
@@ -28,6 +26,9 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/release"
 	"github.com/nuxencs/seasonpackarr/internal/state"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
+
+	"github.com/autobrr/rls"
+	"github.com/gin-gonic/gin"
 )
 
 var (

@@ -9,11 +9,12 @@ import (
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/prowlarr"
+
 	"github.com/stretchr/testify/require"
 )
 
 func TestMetadata_ExpiryIdentityAndEviction(t *testing.T) {
-	s, _ := testStore(t)
+	s, _ := newTestStore(t)
 	ctx := t.Context()
 	now := time.Now()
 	key := MetadataKey(1, prowlarr.Result{GUID: "pack", Title: "show"})
@@ -43,7 +44,7 @@ func TestMetadata_ExpiryIdentityAndEviction(t *testing.T) {
 }
 
 func TestMetadata_ByteBudget(t *testing.T) {
-	s, _ := testStore(t)
+	s, _ := newTestStore(t)
 	ctx := t.Context()
 	now := time.Now()
 	first, second := MetadataKey(1, prowlarr.Result{GUID: "first"}), MetadataKey(1, prowlarr.Result{GUID: "second"})

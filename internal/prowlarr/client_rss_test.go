@@ -11,23 +11,24 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestClient_RSSWithoutSearchCapability(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "test-key", r.Header.Get("X-Api-Key"))
+		assert.Equal(t, "test-key", r.Header.Get("X-Api-Key"))
 		if r.URL.Path == "/base/api/v1/indexer" {
 			fmt.Fprint(w, `[{"id":1,"enable":true,"protocol":"torrent","supportsRss":true,"capabilities":{"limitsMax":20,"categories":[{"id":5000}]}}]`)
 			return
 		}
-		require.Equal(t, "/base/1/api", r.URL.Path)
-		require.Equal(t, "search", r.URL.Query().Get("t"))
-		require.Equal(t, "5000", r.URL.Query().Get("cat"))
-		require.Equal(t, "20", r.URL.Query().Get("limit"))
-		require.Equal(t, "40", r.URL.Query().Get("offset"))
+		assert.Equal(t, "/base/1/api", r.URL.Path)
+		assert.Equal(t, "search", r.URL.Query().Get("t"))
+		assert.Equal(t, "5000", r.URL.Query().Get("cat"))
+		assert.Equal(t, "20", r.URL.Query().Get("limit"))
+		assert.Equal(t, "40", r.URL.Query().Get("offset"))
 		for _, key := range []string{"q", "season", "year", "apikey"} {
-			require.False(t, r.URL.Query().Has(key))
+			assert.False(t, r.URL.Query().Has(key))
 		}
 		fmt.Fprint(w, `<rss><channel><item><title>Example.S01</title><guid>one</guid></item></channel></rss>`)
 	}))
@@ -46,16 +47,12 @@ func TestClient_RSSWithoutSearchCapability(t *testing.T) {
 	require.ErrorContains(t, err, "does not support RSS")
 }
 
-type rssRoundTripper func(*http.Request) (*http.Response, error)
-
-func (f rssRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
-
 func TestClient_SpacingSurvivesIntervalReload(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		client, err := New("http://prowlarr.invalid", "key", 10*time.Second)
 		require.NoError(t, err)
 		var times []time.Time
-		client.http.Transport = rssRoundTripper(func(*http.Request) (*http.Response, error) {
+		client.http.Transport = fakeTransport(func(*http.Request) (*http.Response, error) {
 			times = append(times, time.Now())
 			return &http.Response{StatusCode: 204, Body: http.NoBody, Header: make(http.Header)}, nil
 		})

@@ -15,6 +15,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/release"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
+
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/rs/zerolog"
 )

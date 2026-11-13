@@ -7,9 +7,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/autobrr/rls"
 	"github.com/nuxencs/seasonpackarr/internal/prowlarr"
 	"github.com/nuxencs/seasonpackarr/internal/state"
+
+	"github.com/autobrr/rls"
 )
 
 func rssGroup(result prowlarr.Result, groups map[seasonSearchKey]*seasonSearch) *seasonSearch {
