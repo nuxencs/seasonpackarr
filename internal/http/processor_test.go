@@ -580,6 +580,34 @@ func TestTorrentEntryCacheIsScopedToClientAndFuzzyConfig(t *testing.T) {
 	require.Equal(t, 3, mock.torrentCalls, "fuzzy config change should refresh cached entries")
 }
 
+func TestTorrentEntryCacheReusesParsedReleaseAndComparableTitle(t *testing.T) {
+	resetProcessorGlobals()
+	const torrentName = "Series.S01E01.1080p.WEB-DL-GRP"
+	mock := &mockTorrentClient{torrents: []torrentclient.Torrent{{Name: torrentName}}}
+	p := newTestProcessor(mock)
+	client := &domain.Client{Type: "qbittorrent"}
+
+	_, err := p.getAllTorrents("default", client, domain.FuzzyMatching{})
+	require.NoError(t, err)
+	original, ok := entryMap.Load("default")
+	require.True(t, ok)
+	originalRelease, ok := original.rlsMap[torrentName]
+	require.True(t, ok)
+	require.NotEmpty(t, originalRelease.comparableTitle)
+
+	original.expiresAt = time.Time{}
+	_, err = p.getAllTorrents("default", client, domain.FuzzyMatching{})
+	require.NoError(t, err)
+	refreshed, ok := entryMap.Load("default")
+	require.True(t, ok)
+	refreshedRelease, ok := refreshed.rlsMap[torrentName]
+	require.True(t, ok)
+
+	require.Same(t, originalRelease.release, refreshedRelease.release)
+	require.Equal(t, originalRelease.comparableTitle, refreshedRelease.comparableTitle)
+	require.Same(t, refreshedRelease.release, refreshed.entriesMap[refreshedRelease.comparableTitle][0].release)
+}
+
 func newImportProcessor() *processor {
 	cfg := staticConfig{config: domain.Config{
 		Clients: map[string]*domain.Client{
