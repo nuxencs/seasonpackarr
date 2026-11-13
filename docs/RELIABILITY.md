@@ -27,8 +27,10 @@ Reliable does not mean perfect acceptance. It means predictable outcomes when de
 - safe stack capture for unexpected filesystem, torrent-client, notification, and server errors; expected rejections and cancellation stay stack-free
 - request cancellation propagated through processing and context-aware torrent-client calls
 - bounded signal shutdown that drains HTTP handlers and tracked notification tasks
-- in-memory Prowlarr cooldowns across runs for rate limits and temporary failures, with
-  Retry-After support and no automatic request retries
+- SQLite-backed RSS checkpoints, retained candidates, metadata, and Prowlarr cooldowns
+  that survive restart, with Retry-After support and no automatic request retries
+- transactional schema migrations and RSS checkpoints committed with candidates;
+  database failures stop discovery instead of discarding state
 
 ## Known Reliability Gaps
 

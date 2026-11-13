@@ -28,3 +28,7 @@ dist/
 
 # Environment variables
 .env
+
+# Local discovery state can contain tracker credentials.
+seasonpackarr.db
+seasonpackarr.db-*

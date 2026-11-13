@@ -134,6 +134,16 @@ will need to adjust the created config file to your needs and start the containe
 You can configure a decent part of the features seasonpackarr provides. I will explain the most important ones here in
 more detail.
 
+### Application Data
+
+seasonpackarr creates `seasonpackarr.db` beside the active `config.yaml`. Docker
+stores it in the existing `/config` volume. No database installation or settings
+are required. Keep this directory writable and on local storage.
+
+The database preserves discovery progress across restarts. Configuration stays in
+YAML, and imports remain synchronous. See [database locations and backups](docs/product-specs/prowlarr-backfill.md#persistent-discovery-state)
+for environment-only setups, backups, and startup errors.
+
 ### Config Reload
 
 seasonpackarr watches the active `config.yaml` file. It loads each change into a new snapshot, reapplies
@@ -295,8 +305,9 @@ seasonpackarr search --api "your-seasonpackarr-api-token"
 ```
 
 The default dry run reports candidates with unknown coverage. `--verify` retrieves
-torrent metadata after local source checks. Valid metadata is cached in memory for
-up to seven days; every run checks current files and smart-mode settings again.
+torrent metadata after local source checks. Valid metadata is cached in SQLite for
+up to seven days, including across restarts. Every run checks current files and
+smart-mode settings again.
 
 Add `--client default` to select one client. See [Prowlarr backfill](docs/product-specs/prowlarr-backfill.md)
 for RSS polling, API usage, limits, and result reporting. RSS runs only on its

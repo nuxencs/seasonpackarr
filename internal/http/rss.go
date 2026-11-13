@@ -9,6 +9,7 @@ import (
 
 	"github.com/autobrr/rls"
 	"github.com/nuxencs/seasonpackarr/internal/prowlarr"
+	"github.com/nuxencs/seasonpackarr/internal/state"
 )
 
 func rssGroup(result prowlarr.Result, groups map[seasonSearchKey]*seasonSearch) *seasonSearch {
@@ -20,24 +21,26 @@ func rssGroup(result prowlarr.Result, groups map[seasonSearchKey]*seasonSearch) 
 	return groups[key]
 }
 
-func (run *discoveryRun) pollRSS(ctx context.Context, indexer prowlarr.Indexer, groups map[seasonSearchKey]*seasonSearch, state *rssState) {
-	previous := state.checkpoints[indexer.ID]
-	firstPage := make(map[searchMetadataKey]bool)
-	seen := make(map[searchMetadataKey]bool)
+func (run *discoveryRun) pollRSS(ctx context.Context, indexer prowlarr.Indexer, groups map[seasonSearchKey]*seasonSearch, feeds *state.Feeds, persist bool) {
+	previous := feeds.Checkpoint(indexer.ID)
+	firstPage := make(map[state.Key]bool)
+	seen := make(map[state.Key]bool)
 	var fresh []prowlarr.Result
 	offset := 0
 	for page := range 10 {
 		run.report.Requests++
 		results, limit, err := run.runner.provider.RSSPage(ctx, indexer, offset)
 		if err != nil {
-			run.runner.recordCooldown(indexer.ID, err)
+			if stateErr := run.runner.recordCooldown(ctx, indexer.ID, err); stateErr != nil {
+				run.storageFailure(stateErr)
+			}
 			run.report.Failures = append(run.report.Failures, searchFailure{IndexerID: indexer.ID, Reason: err.Error()})
 			// Preserve the checkpoint after a partial fetch so the next poll can retry.
 			return
 		}
 		overlap, added := false, 0
 		for _, result := range results {
-			key := rssIdentity(indexer.ID, result)
+			key := state.RSSIdentity(indexer.ID, result)
 			if page == 0 && len(firstPage) < 100 {
 				firstPage[key] = true
 			}
@@ -49,7 +52,7 @@ func (run *discoveryRun) pollRSS(ctx context.Context, indexer prowlarr.Indexer, 
 			added++
 			if rssGroup(result, groups) != nil {
 				fresh = append(fresh, result)
-				state.remember(key, result, time.Now())
+				feeds.Remember(key, result, time.Now())
 			}
 		}
 		if len(previous) == 0 || overlap {
@@ -65,16 +68,19 @@ func (run *discoveryRun) pollRSS(ctx context.Context, indexer prowlarr.Indexer, 
 		return
 	}
 	if len(firstPage) > 0 {
-		state.checkpoints[indexer.ID] = firstPage
+		feeds.SetCheckpoint(indexer.ID, firstPage)
+	}
+	if !run.saveFeeds(ctx, feeds, persist) {
+		return
 	}
 	// Feed order wins. Retained releases follow, including packs that failed
 	// coverage before their episodes finished downloading. Never cache decisions.
-	evaluated := make(map[searchMetadataKey]bool)
-	for _, result := range append(fresh, state.results(indexer.ID)...) {
-		if ctx.Err() != nil {
+	evaluated := make(map[state.Key]bool)
+	for _, result := range append(fresh, feeds.Results(indexer.ID)...) {
+		if ctx.Err() != nil || run.storageFailed {
 			return
 		}
-		key := rssIdentity(indexer.ID, result)
+		key := state.RSSIdentity(indexer.ID, result)
 		if evaluated[key] {
 			continue
 		}
@@ -88,4 +94,14 @@ func (run *discoveryRun) pollRSS(ctx context.Context, indexer prowlarr.Indexer, 
 			return
 		}
 	}
+}
+
+func (run *discoveryRun) saveFeeds(ctx context.Context, feeds *state.Feeds, persist bool) bool {
+	if persist {
+		if err := run.runner.state.SaveFeeds(ctx, feeds); err != nil {
+			run.storageFailure(err)
+			return false
+		}
+	}
+	return true
 }

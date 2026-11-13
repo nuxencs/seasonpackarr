@@ -90,6 +90,7 @@ func TestRSS_RetainedPackRechecksCoverageAfterLeavingFeed(t *testing.T) {
 	require.Equal(t, new(1), first.Outcomes[0].ReusableEpisodes)
 	require.Equal(t, 1, first.TorrentDownloads)
 	require.Zero(t, f.mock.importCalls)
+	f.restart(t)
 	f.titles = nil
 	require.NoError(t, os.Rename(path+"-moved", path))
 	second := f.runRSS(t)
@@ -135,6 +136,7 @@ func TestRSS_CheckpointCatchUpAndRetainedCoverage(t *testing.T) {
 	first := f.runRSS(t)
 	require.Empty(t, first.Failures)
 	require.Equal(t, 1, first.Requests, "first poll reads only the newest page")
+	f.restart(t)
 	f.titles = append([]string{"New.S01.1080p.WEB-DL.H.264-RlsGrp", f.releaseName}, f.titles...)
 	actual := f.runRSS(t)
 	require.Empty(t, actual.Failures)
@@ -232,6 +234,7 @@ func TestRSS_FailedCatchUpPreservesCheckpoint(t *testing.T) {
 	failed := f.runRSS(t)
 	require.Len(t, failed.Failures, 1)
 	require.Zero(t, f.downloads, "do not download from an indexer after a feed failure")
+	f.restart(t)
 	f.respond = nil
 	recovered := f.runRSS(t)
 	require.Empty(t, recovered.Failures)
@@ -290,7 +293,7 @@ func TestRSSSchedule_PollsRSSAndCancels(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	f.beforeSearch = cancel
-	runner := &searchRunner{cfg: f.config, log: logger.New(&domain.Config{LogLevel: "ERROR"})}
+	runner := &searchRunner{cfg: f.config, log: logger.New(&domain.Config{LogLevel: "ERROR"}), state: f.search.state}
 	done := make(chan struct{})
 	go func() { runner.schedule(ctx); close(done) }()
 	select {
@@ -319,6 +322,7 @@ func TestRSS_UnavailableClientDoesNotLoseFeedEntries(t *testing.T) {
 	partial := f.runRSS(t)
 	require.Len(t, partial.Failures, 1)
 	require.Equal(t, "other", partial.Failures[0].ClientName)
+	f.restart(t)
 	other.torrentsErr = nil
 	recovered := f.runRSS(t)
 	require.Empty(t, recovered.Failures)
