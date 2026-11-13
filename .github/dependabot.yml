@@ -11,6 +11,18 @@ updates:
         patterns:
           - "*"
 
+  # Covers Dockerfile and ci.Dockerfile. Keep GO_VERSION in the workflows in step with the golang tag.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: saturday
+      time: "07:00"
+    groups:
+      docker:
+        patterns:
+          - "*"
+
   - package-ecosystem: gomod
     directory: /
     schedule:
