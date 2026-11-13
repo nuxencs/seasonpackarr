@@ -50,6 +50,7 @@
 
 - `/api/candidate` reads torrent summaries only. It does not need torrent bytes or file-detail calls.
 - `/api/pack` parses the announced torrent, maps reusable source files to distinct valid torrent targets, and applies smart mode to exact torrent coverage.
+- Exact plan matching parses each episode filename once and uses an indexed compatibility key instead of scanning every source-target pair.
 - Exact planning requests candidate file details once. Transmission and Deluge v2 batch hashes in one client call. Deluge v1 uses one session-state preflight and one bulk status call. qBittorrent uses a bounded four-worker adapter pool.
 - Client inventory is cached for 30 seconds, so the ordered candidate and pack checks normally share one client scan.
 - Accepted import plans are cached for 2 minutes. `/api/parse` normally performs no second inventory or file-detail reads.

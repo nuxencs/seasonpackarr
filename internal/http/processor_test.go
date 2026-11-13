@@ -384,9 +384,9 @@ func newTestProcessor(client torrentclient.TorrentClient) *processor {
 // torrentclient.TorrentClient: the hardlink source the processor uses is
 // filepath.Join(Torrent.SavePath, <file name from GetFiles>). File names keep
 // their torrent-root-folder prefix and SavePath is the absolute on-disk download
-// dir, so the join is the real file path. A future TorrentClient implementation
-// that returns a bare basename or a non-absolute SavePath would break hardlinking
-// silently — this test fails first.
+// dir, so the parsed episode path is the real file path. A future TorrentClient
+// implementation that returns a bare basename or a non-absolute SavePath would
+// break hardlinking silently. This test fails first.
 func TestTorrentClientPathContract(t *testing.T) {
 	const savePath = "/data/torrents/tv"
 	mock := &mockTorrentClient{
@@ -407,29 +407,24 @@ func TestTorrentClientPathContract(t *testing.T) {
 		t.Fatalf("len(torrents) = %d, want 1", len(ts))
 	}
 
-	results := p.getFiles([]entry{{torrent: ts[0]}})
-	if len(results) != 1 || results[0].Err != nil {
-		t.Fatalf("getFiles: %+v", results)
-	}
-	fileName, size, err := episodeFileFromFiles(results[0].Files)
+	results := p.req.Client.GetFiles([]string{ts[0].Hash})
+	require.Len(t, results, 1)
+	require.NoError(t, results[0].Err)
+	episode, err := episodeFileFromFiles(results[0].Files, ts[0].SavePath)
 	if err != nil {
-		t.Fatalf("episodeFileFromFiles: %v", err)
+		t.Fatalf("getEpisodeFile: %v", err)
 	}
 	if mock.gotHash != "abc123" {
 		t.Errorf("GetFiles called with hash %q, want abc123", mock.gotHash)
 	}
-	if size != 1_000_000 {
-		t.Errorf("size = %d, want 1000000", size)
-	}
-
-	gotSource := filepath.Join(ts[0].SavePath, fileName)
+	gotSource := episode.Path()
 	const wantSource = "/data/torrents/tv/Some.Show.S01.1080p/Some.Show.S01E01.1080p.mkv"
 	if gotSource != wantSource {
 		t.Errorf("hardlink source = %q, want %q", gotSource, wantSource)
 	}
 }
 
-func TestGetFilesSelectsFirstValidEpisode(t *testing.T) {
+func TestGetEpisodeFileSelectsFirstValidEpisode(t *testing.T) {
 	mock := &mockTorrentClient{
 		files: []torrentclient.File{
 			{Name: "Some.Show.S01/poster.jpg", Size: 50},                  // not a video
@@ -437,38 +432,46 @@ func TestGetFilesSelectsFirstValidEpisode(t *testing.T) {
 			{Name: "Some.Show.S01/Some.Show.S01E02.mkv", Size: 1_100_000},
 		},
 	}
-	fileName, size, err := episodeFileFromFiles(mock.files)
+	episode, err := episodeFileFromFiles(mock.files, "")
 	if err != nil {
-		t.Fatalf("getFiles: %v", err)
+		t.Fatalf("getEpisodeFile: %v", err)
 	}
-	if fileName != "Some.Show.S01/Some.Show.S01E01.mkv" {
-		t.Errorf("fileName = %q, want Some.Show.S01/Some.Show.S01E01.mkv", fileName)
-	}
-	if size != 1_000_000 {
-		t.Errorf("size = %d, want 1000000", size)
+	if episode.Path() != "Some.Show.S01/Some.Show.S01E01.mkv" {
+		t.Errorf("episode path = %q, want Some.Show.S01/Some.Show.S01E01.mkv", episode.Path())
 	}
 }
 
-func TestGetFilesErrorsWhenNoValidEpisode(t *testing.T) {
+func TestGetEpisodeFileErrorsWhenNoValidEpisode(t *testing.T) {
 	mock := &mockTorrentClient{
 		files: []torrentclient.File{
 			{Name: "Some.Show.S01/poster.jpg", Size: 50},
 			{Name: "Some.Show.S01/readme.txt", Size: 10},
 		},
 	}
-	if _, _, err := episodeFileFromFiles(mock.files); err == nil {
+	if _, err := episodeFileFromFiles(mock.files, ""); err == nil {
 		t.Fatal("expected error when no valid episode file is present, got nil")
 	}
 }
 
-func TestGetFilesPropagatesClientError(t *testing.T) {
-	errBoom := errors.New("boom")
-	p := newTestProcessor(&mockTorrentClient{filesErr: errBoom})
-
-	results := p.getFiles([]entry{{torrent: torrentclient.Torrent{Hash: "h"}}})
-	if len(results) != 1 || !errors.Is(results[0].Err, errBoom) {
-		t.Fatalf("getFiles result = %+v, want it to wrap errBoom", results)
+func TestGetEpisodeFilesKeepsSuccessfulBulkResults(t *testing.T) {
+	mock := &mockTorrentClient{
+		filesByHash: map[string][]torrentclient.File{
+			"one": {{Name: "Show.S01E01.1080p.WEB-DL-GROUP.mkv", Size: 100}},
+		},
+		fileErrByHash: map[string]error{"two": errors.New("boom")},
 	}
+	p := newTestProcessor(mock)
+	candidates := []entry{
+		{torrent: torrentclient.Torrent{Hash: "one", Name: "Show.S01E01", SavePath: "/one"}},
+		{torrent: torrentclient.Torrent{Hash: "two", Name: "Show.S01E02", SavePath: "/two"}},
+	}
+
+	episodes := p.getEpisodeFiles(candidates)
+	require.Len(t, episodes, 1)
+	require.Equal(t, "/one/Show.S01E01.1080p.WEB-DL-GROUP.mkv", episodes[0].Path())
+	require.Equal(t, 1, mock.fileBatchCalls)
+	require.Equal(t, 2, mock.fileCalls)
+	require.Equal(t, []string{"one", "two"}, mock.gotHashes)
 }
 
 func resetProcessorGlobals() {

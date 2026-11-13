@@ -165,22 +165,8 @@ func PercentOfTotalEpisodes(totalEps int, foundEps int) float32 {
 }
 
 func IsValidEpisodeFile(torrentFileName string) bool {
-	torrentFileRls := parseEpisodeFile(torrentFileName)
-
-	// ignore non video files
-	if !strings.EqualFold(torrentFileRls.Ext, "mkv") && !strings.EqualFold(torrentFileRls.Ext, "mp4") {
-		return false
-	}
-	if torrentFileRls.Type != rls.Episode && len(torrentFileRls.SeriesEpisodes()) == 0 {
-		return false
-	}
-
-	// ignore sample files
-	if rls.MustNormalize(torrentFileRls.Group) == "sample" {
-		return false
-	}
-
-	return true
+	_, ok := ParseEpisodeFile(torrentFileName, 0)
+	return ok
 }
 
 func parseEpisodeFile(path string) rls.Release {
