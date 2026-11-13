@@ -176,7 +176,9 @@ func newQbitDaemonClient(t *testing.T, policy domain.ImportPolicy) *qbitClient {
 // that the adapter does not use.
 func qbitDaemonAPI(t *testing.T, c *qbitClient) *qbittorrent.Client {
 	t.Helper()
-	raw, ok := c.c.(*qbittorrent.Client)
+	safe, ok := c.c.(safeQbitAPI)
+	require.True(t, ok, "adapter does not wrap its Web API client for safe errors")
+	raw, ok := safe.api.(*qbittorrent.Client)
 	require.True(t, ok, "adapter does not wrap a Web API client")
 	return raw
 }
