@@ -27,7 +27,6 @@ import (
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/file"
-	"github.com/knadh/koanf/providers/structs"
 	"github.com/knadh/koanf/v2"
 )
 
@@ -785,25 +784,19 @@ func findConfigFile() (string, error) {
 
 func (c *AppConfig) loadSnapshot() (*domain.Config, error) {
 	cfg := defaultConfig(c.version, c.configFile, c.disableConfigFile)
-	k := koanf.New(".")
-	if err := k.Load(structs.Provider(&cfg, "yaml"), nil); err != nil {
-		return nil, fmt.Errorf("loading config defaults: %w", err)
-	}
 
-	// The file keys stay separate from the defaults, so the unknown-key check sees only what the user wrote.
+	// The defaults live only in cfg. As keys next to the file keys, a default and a
+	// case variant from the file would both match one field, and map order would pick.
 	fileK := koanf.New(".")
 	if !c.disableConfigFile {
 		if err := fileK.Load(file.Provider(c.configFile), yaml.Parser()); err != nil {
 			return nil, fmt.Errorf("reading config file %s: %w", c.configFile, err)
 		}
-		if err := k.Merge(fileK); err != nil {
-			return nil, fmt.Errorf("merging config file %s: %w", c.configFile, err)
-		}
 	}
-	if err := validateDeprecatedConfigInputs(k, os.LookupEnv); err != nil {
+	if err := validateDeprecatedConfigInputs(fileK, os.LookupEnv); err != nil {
 		return nil, fmt.Errorf("validating config file %s: %w", c.configFile, err)
 	}
-	if err := k.Unmarshal("", &cfg); err != nil {
+	if err := fileK.Unmarshal("", &cfg); err != nil {
 		return nil, fmt.Errorf("decoding config file %s: %w", c.configFile, err)
 	}
 	unknown, err := unknownConfigKeys(fileK)
@@ -827,8 +820,7 @@ func (c *AppConfig) loadSnapshot() (*domain.Config, error) {
 var unusedKeyPath = strings.NewReplacer("[", ".", "]", "")
 
 // unknownConfigKeys returns the sorted dotted paths of the file keys that no
-// config field uses. It gets only the file keys, because a default key and its
-// case variant in the file would both match one field.
+// config field uses.
 func unknownConfigKeys(fileK *koanf.Koanf) ([]string, error) {
 	var (
 		md      mapstructure.Metadata
