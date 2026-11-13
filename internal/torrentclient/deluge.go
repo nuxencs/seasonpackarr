@@ -28,6 +28,7 @@ const (
 // call is serialized by delugeClient.mu.
 type delugeAPI interface {
 	Connect(ctx context.Context) error
+	SessionState(ctx context.Context) ([]string, error)
 	TorrentsStatus(ctx context.Context, state deluge.TorrentState, ids []string) (map[string]*deluge.TorrentStatus, error)
 	TorrentStatus(ctx context.Context, id string) (*deluge.TorrentStatus, error)
 	AddTorrentFile(ctx context.Context, fileName, fileContentBase64 string, options *deluge.Options) (string, error)
@@ -47,6 +48,7 @@ type delugeClient struct {
 	policy domain.ImportPolicy
 	mu     sync.Mutex
 	label  delugeLabelPluginFactory
+	v1     bool
 
 	// timeouts are fields so tests can shrink them to milliseconds.
 	checkTimeout time.Duration
@@ -65,6 +67,9 @@ func newDelugeClient(client *domain.Client) (*delugeClient, error) {
 	case "deluge-v1":
 		raw := deluge.NewV1(settings)
 		c = raw
+		// Deluge v1 returns an empty status dictionary for an unknown ID.
+		// go-deluge cannot decode that dictionary, so GetFiles must filter
+		// unknown IDs through SessionState before its bulk status request.
 		label = func(ctx context.Context) (delugeLabelAPI, error) {
 			return raw.LabelPlugin(ctx)
 		}
@@ -88,6 +93,7 @@ func newDelugeClient(client *domain.Client) (*delugeClient, error) {
 		c:            c,
 		policy:       client.Import,
 		label:        label,
+		v1:           client.Type == "deluge-v1",
 		checkTimeout: 10 * time.Minute,
 		pollInterval: 500 * time.Millisecond,
 	}, nil
@@ -164,29 +170,81 @@ func (d *delugeClient) GetTorrents() ([]Torrent, error) {
 	return torrents, nil
 }
 
-func (d *delugeClient) GetFiles(hash string) ([]File, error) {
+func (d *delugeClient) GetFiles(hashes []string) []FileResult {
+	if len(hashes) == 0 {
+		return nil
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), delugeTimeout)
 	defer cancel()
 
-	d.mu.Lock()
-	status, err := d.c.TorrentStatus(ctx, hash)
-	d.mu.Unlock()
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get files from deluge")
-	}
-	if status == nil {
-		return nil, fmt.Errorf("deluge: torrent not found: %s", hash)
-	}
+	requestedHashes := uniqueFoldedHashes(hashes)
 
-	files := make([]File, 0, len(status.Files))
-	for _, file := range status.Files {
-		files = append(files, File{
-			Name: file.Path,
-			Size: file.Size,
+	d.mu.Lock()
+	if d.v1 {
+		sessionHashes, err := d.c.SessionState(ctx)
+		if err != nil {
+			d.mu.Unlock()
+			return fileResultsWithError(hashes, errors.Wrap(err, "failed to list deluge torrents"))
+		}
+		knownHashes := make(map[string]struct{}, len(sessionHashes))
+		for _, hash := range sessionHashes {
+			knownHashes[strings.ToLower(hash)] = struct{}{}
+		}
+		requestedHashes = slices.DeleteFunc(requestedHashes, func(hash string) bool {
+			_, ok := knownHashes[strings.ToLower(hash)]
+			return !ok
 		})
 	}
 
-	return files, nil
+	var statuses map[string]*deluge.TorrentStatus
+	var err error
+	if len(requestedHashes) != 0 {
+		statuses, err = d.c.TorrentsStatus(ctx, deluge.StateUnspecified, requestedHashes)
+	}
+	d.mu.Unlock()
+	if err != nil {
+		return fileResultsWithError(hashes, errors.Wrap(err, "failed to get files from deluge"))
+	}
+
+	statusByHash := make(map[string]*deluge.TorrentStatus, len(statuses))
+	for _, status := range statuses {
+		if status == nil || strings.TrimSpace(status.Hash) == "" {
+			continue
+		}
+		statusByHash[strings.ToLower(status.Hash)] = status
+	}
+
+	results := make([]FileResult, len(hashes))
+	for index, hash := range hashes {
+		results[index].Hash = hash
+		status, ok := statusByHash[strings.ToLower(hash)]
+		if !ok {
+			results[index].Err = fmt.Errorf("deluge: torrent not found: %s", hash)
+			continue
+		}
+
+		files := make([]File, 0, len(status.Files))
+		for _, file := range status.Files {
+			files = append(files, File{Name: file.Path, Size: file.Size})
+		}
+		results[index].Files = files
+	}
+	return results
+}
+
+func uniqueFoldedHashes(hashes []string) []string {
+	seen := make(map[string]struct{}, len(hashes))
+	unique := make([]string, 0, len(hashes))
+	for _, hash := range hashes {
+		key := strings.ToLower(hash)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		unique = append(unique, hash)
+	}
+	return unique
 }
 
 // ImportDestination uses an explicit path because go-deluge does not expose

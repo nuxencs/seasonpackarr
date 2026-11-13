@@ -40,6 +40,15 @@ type File struct {
 	Size int64
 }
 
+// FileResult is one ordered response to a hash supplied to GetFiles. Err is
+// scoped to that hash, so callers can keep successful results from a partial
+// read.
+type FileResult struct {
+	Hash  string
+	Files []File
+	Err   error
+}
+
 // ImportRequest carries a parsed season pack to be (re-)imported into the
 // client on /api/parse. The processor has already hardlinked the matched local
 // episodes into SavePath before Import is called.
@@ -145,9 +154,19 @@ func ImportStatusCode(err error) domain.StatusCode {
 // Import failures are returned as *ImportError.
 type TorrentClient interface {
 	GetTorrents() ([]Torrent, error)
-	GetFiles(hash string) ([]File, error)
+	// GetFiles returns exactly one result per input hash in input order. Each
+	// adapter owns its safe batching or concurrency strategy.
+	GetFiles(hashes []string) []FileResult
 	ImportDestination() (ImportDestination, error)
 	Import(req ImportRequest) error
+}
+
+func fileResultsWithError(hashes []string, err error) []FileResult {
+	results := make([]FileResult, len(hashes))
+	for index, hash := range hashes {
+		results[index] = FileResult{Hash: hash, Err: err}
+	}
+	return results
 }
 
 // pollUntil invokes cond every interval until it reports done, cond returns an

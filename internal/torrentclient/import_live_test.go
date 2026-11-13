@@ -145,6 +145,36 @@ func requireTransmissionStarted(t *testing.T, c *transmissionClient, hash string
 	}
 }
 
+// requireFileReadLoad exercises the adapter's multi-hash read shape against a
+// live client. Repeating one known hash isolates read batching and concurrency
+// from torrent setup cost. The missing hash verifies partial-result handling.
+func requireFileReadLoad(t *testing.T, client TorrentClient, hash string) {
+	t.Helper()
+
+	const readCount = 24
+	hashes := make([]string, readCount+1)
+	for index := range readCount {
+		hashes[index] = hash
+	}
+	hashes[readCount] = strings.Repeat("0", 40)
+
+	started := time.Now()
+	results := client.GetFiles(hashes)
+	duration := time.Since(started)
+	if len(results) != len(hashes) {
+		t.Fatalf("GetFiles returned %d results, want %d", len(results), len(hashes))
+	}
+	for index := range readCount {
+		if results[index].Hash != hash || results[index].Err != nil || len(results[index].Files) == 0 {
+			t.Fatalf("GetFiles result %d = %+v, want successful hash %s", index, results[index], hash)
+		}
+	}
+	if results[readCount].Err == nil {
+		t.Fatalf("GetFiles missing-hash result = %+v, want an error", results[readCount])
+	}
+	t.Logf("GetFiles returned %d successful file lists plus one missing result in %s", readCount, duration)
+}
+
 // TestQbitImportLive drives qbitClient.Import against a real qBittorrent.
 //
 //	SEASONPACKARR_TEST_QBIT_HOST=127.0.0.1:8080 \
@@ -175,6 +205,7 @@ func TestQbitImportLive(t *testing.T) {
 		t.Fatalf("qbit Import: %v", err)
 	}
 	requireQbitStarted(t, c, hashes.Legacy)
+	requireFileReadLoad(t, c, hashes.Legacy)
 }
 
 // TestQbitImportDestinationPreferencesLive verifies the category-only path
@@ -283,4 +314,5 @@ func TestTransmissionImportLive(t *testing.T) {
 		t.Fatalf("transmission Import: %v", err)
 	}
 	requireTransmissionStarted(t, c, hashes.Legacy)
+	requireFileReadLoad(t, c, hashes.Legacy)
 }

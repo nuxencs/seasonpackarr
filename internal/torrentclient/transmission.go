@@ -107,29 +107,39 @@ func (t *transmissionClient) GetTorrents() ([]Torrent, error) {
 	return torrents, nil
 }
 
-func (t *transmissionClient) GetFiles(hash string) ([]File, error) {
+func (t *transmissionClient) GetFiles(hashes []string) []FileResult {
+	if len(hashes) == 0 {
+		return nil
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), transmissionTimeout)
 	defer cancel()
 
-	ts, err := t.c.TorrentGetHashes(ctx, []string{"files"}, []string{hash})
+	ts, err := t.c.TorrentGetHashes(ctx, []string{"hashString", "files"}, hashes)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get files")
+		return fileResultsWithError(hashes, errors.Wrap(err, "failed to get files"))
 	}
 
-	if len(ts) == 0 {
-		return nil, fmt.Errorf("transmission: torrent not found: %s", hash)
+	filesByHash := make(map[string][]File, len(ts))
+	for _, torrent := range ts {
+		files := make([]File, 0, len(torrent.Files))
+		for _, file := range torrent.Files {
+			files = append(files, File{Name: file.Name, Size: file.Length})
+		}
+		filesByHash[strings.ToLower(derefString(torrent.HashString))] = files
 	}
 
-	rawFiles := ts[0].Files
-	files := make([]File, 0, len(rawFiles))
-	for _, f := range rawFiles {
-		files = append(files, File{
-			Name: f.Name,
-			Size: f.Length,
-		})
+	results := make([]FileResult, len(hashes))
+	for index, hash := range hashes {
+		results[index].Hash = hash
+		files, ok := filesByHash[strings.ToLower(hash)]
+		if !ok {
+			results[index].Err = fmt.Errorf("transmission: torrent not found: %s", hash)
+			continue
+		}
+		results[index].Files = files
 	}
-
-	return files, nil
+	return results
 }
 
 // ImportDestination resolves the final import destination for this transmission client:

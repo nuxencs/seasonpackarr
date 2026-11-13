@@ -6,10 +6,12 @@ package http
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/release"
+	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 	"github.com/nuxencs/seasonpackarr/pkg/errors"
 
@@ -121,9 +123,25 @@ func (p *processor) buildImportPlan(clientName string, clientCfg *domain.Client,
 		return importPlan{}, domain.StatusParseTorrentInfoError, fmt.Errorf("%s: %w", domain.StatusParseTorrentInfoError, err)
 	}
 
+	fileResults := p.getFiles(candidates)
 	linksByTarget := make(map[string]plannedLink)
-	for _, candidate := range candidates {
-		fileName, size, err := p.getFiles(candidate.torrent.Hash)
+	for index, candidate := range candidates {
+		if index >= len(fileResults) {
+			p.log.Error().Msgf("torrent client omitted file result for %s", candidate.torrent.Name)
+			continue
+		}
+
+		result := fileResults[index]
+		if !strings.EqualFold(result.Hash, candidate.torrent.Hash) {
+			p.log.Error().Msgf("torrent client returned out-of-order file result for %s", candidate.torrent.Name)
+			continue
+		}
+		if result.Err != nil {
+			p.log.Error().Err(result.Err).Msgf("error getting file info: %s", candidate.torrent.Name)
+			continue
+		}
+
+		fileName, size, err := episodeFileFromFiles(result.Files)
 		if err != nil {
 			p.log.Error().Err(err).Msgf("error getting file info: %s", candidate.torrent.Name)
 			continue
@@ -162,12 +180,15 @@ func (p *processor) buildImportPlan(clientName string, clientCfg *domain.Client,
 	}, domain.StatusSuccessfulMatch, nil
 }
 
-func (p *processor) getFiles(hash string) (string, int64, error) {
-	torrentFiles, err := p.req.Client.GetFiles(hash)
-	if err != nil {
-		return "", 0, err
+func (p *processor) getFiles(candidates []entry) []torrentclient.FileResult {
+	hashes := make([]string, len(candidates))
+	for index, candidate := range candidates {
+		hashes[index] = candidate.torrent.Hash
 	}
+	return p.req.Client.GetFiles(hashes)
+}
 
+func episodeFileFromFiles(torrentFiles []torrentclient.File) (string, int64, error) {
 	var fileName string
 	var size int64
 	for _, f := range torrentFiles {

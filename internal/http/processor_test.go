@@ -30,14 +30,17 @@ import (
 // mockTorrentClient is a configurable in-memory torrentclient.TorrentClient for
 // exercising the processor without a live torrent client.
 type mockTorrentClient struct {
-	torrents     []torrentclient.Torrent
-	torrentsErr  error
-	torrentCalls int
-	files        []torrentclient.File            // returned for any hash when filesByHash is nil
-	filesByHash  map[string][]torrentclient.File // per-hash file lists
-	filesErr     error
-	gotHash      string
-	fileCalls    int
+	torrents       []torrentclient.Torrent
+	torrentsErr    error
+	torrentCalls   int
+	files          []torrentclient.File            // returned for any hash when filesByHash is nil
+	filesByHash    map[string][]torrentclient.File // per-hash file lists
+	filesErr       error
+	fileErrByHash  map[string]error
+	gotHash        string
+	gotHashes      []string
+	fileCalls      int
+	fileBatchCalls int
 
 	importRoot    string
 	importRootErr error
@@ -63,16 +66,32 @@ func (m *mockTorrentClient) GetTorrents() ([]torrentclient.Torrent, error) {
 	return m.torrents, m.torrentsErr
 }
 
-func (m *mockTorrentClient) GetFiles(hash string) ([]torrentclient.File, error) {
-	m.fileCalls++
-	m.gotHash = hash
-	if m.filesErr != nil {
-		return nil, m.filesErr
+func (m *mockTorrentClient) GetFiles(hashes []string) []torrentclient.FileResult {
+	m.fileBatchCalls++
+	m.fileCalls += len(hashes)
+	m.gotHashes = append([]string(nil), hashes...)
+	if len(hashes) > 0 {
+		m.gotHash = hashes[0]
 	}
-	if m.filesByHash != nil {
-		return m.filesByHash[hash], nil
+
+	results := make([]torrentclient.FileResult, len(hashes))
+	for index, hash := range hashes {
+		results[index].Hash = hash
+		if m.filesErr != nil {
+			results[index].Err = m.filesErr
+			continue
+		}
+		if err := m.fileErrByHash[hash]; err != nil {
+			results[index].Err = err
+			continue
+		}
+		if m.filesByHash != nil {
+			results[index].Files = m.filesByHash[hash]
+			continue
+		}
+		results[index].Files = m.files
 	}
-	return m.files, nil
+	return results
 }
 
 func TestCandidateSeasonPackUsesTorrentSummariesOnly(t *testing.T) {
@@ -197,6 +216,7 @@ func TestProcessSeasonPackUsesTorrentEpisodeCoverage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
 	require.False(t, mock.importCalled, "pack evaluation must remain side-effect free")
+	require.Equal(t, 1, mock.fileBatchCalls, "one plan must use one bulk file read")
 }
 
 func TestProcessSeasonPackRejectsCoverageBelowTorrentThreshold(t *testing.T) {
@@ -387,9 +407,13 @@ func TestTorrentClientPathContract(t *testing.T) {
 		t.Fatalf("len(torrents) = %d, want 1", len(ts))
 	}
 
-	fileName, size, err := p.getFiles(ts[0].Hash)
+	results := p.getFiles([]entry{{torrent: ts[0]}})
+	if len(results) != 1 || results[0].Err != nil {
+		t.Fatalf("getFiles: %+v", results)
+	}
+	fileName, size, err := episodeFileFromFiles(results[0].Files)
 	if err != nil {
-		t.Fatalf("getFiles: %v", err)
+		t.Fatalf("episodeFileFromFiles: %v", err)
 	}
 	if mock.gotHash != "abc123" {
 		t.Errorf("GetFiles called with hash %q, want abc123", mock.gotHash)
@@ -413,9 +437,7 @@ func TestGetFilesSelectsFirstValidEpisode(t *testing.T) {
 			{Name: "Some.Show.S01/Some.Show.S01E02.mkv", Size: 1_100_000},
 		},
 	}
-	p := newTestProcessor(mock)
-
-	fileName, size, err := p.getFiles("h")
+	fileName, size, err := episodeFileFromFiles(mock.files)
 	if err != nil {
 		t.Fatalf("getFiles: %v", err)
 	}
@@ -434,9 +456,7 @@ func TestGetFilesErrorsWhenNoValidEpisode(t *testing.T) {
 			{Name: "Some.Show.S01/readme.txt", Size: 10},
 		},
 	}
-	p := newTestProcessor(mock)
-
-	if _, _, err := p.getFiles("h"); err == nil {
+	if _, _, err := episodeFileFromFiles(mock.files); err == nil {
 		t.Fatal("expected error when no valid episode file is present, got nil")
 	}
 }
@@ -445,8 +465,9 @@ func TestGetFilesPropagatesClientError(t *testing.T) {
 	errBoom := errors.New("boom")
 	p := newTestProcessor(&mockTorrentClient{filesErr: errBoom})
 
-	if _, _, err := p.getFiles("h"); !errors.Is(err, errBoom) {
-		t.Fatalf("getFiles error = %v, want it to wrap errBoom", err)
+	results := p.getFiles([]entry{{torrent: torrentclient.Torrent{Hash: "h"}}})
+	if len(results) != 1 || !errors.Is(results[0].Err, errBoom) {
+		t.Fatalf("getFiles result = %+v, want it to wrap errBoom", results)
 	}
 }
 

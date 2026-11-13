@@ -5,6 +5,7 @@ package torrentclient
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -171,49 +172,69 @@ func TestTransmissionGetTorrents(t *testing.T) {
 
 func TestTransmissionGetFiles(t *testing.T) {
 	t.Parallel()
-	// Multi-file torrent: file paths include the top-level folder prefix.
-	const resp = `{"torrents":[{"files":[{"name":"Show.S01/E01.mkv","length":1000000},{"name":"Show.S01/E02.mkv","length":1050000}]}]}`
+	// The server response order differs from the requested hash order.
+	const resp = `{"torrents":[{"hashString":"DEF456","files":[{"name":"Other.S01/E01.mkv","length":2000000}]},{"hashString":"abc123","files":[{"name":"Show.S01/E01.mkv","length":1000000},{"name":"Show.S01/E02.mkv","length":1050000}]}]}`
 	srv, captured := transmissionTestServer(t, map[string]string{
 		"session-get": emptySessionResp,
 		"torrent-get": resp,
 	})
 	c := newTransmissionClientFromServer(t, srv, "", "")
 
-	files, err := c.GetFiles("abc123")
-	if err != nil {
-		t.Fatalf("GetFiles: %v", err)
+	results := c.GetFiles([]string{"abc123", "def456"})
+	if len(results) != 2 {
+		t.Fatalf("len(results) = %d, want 2", len(results))
 	}
-	if len(files) != 2 {
-		t.Fatalf("len(files) = %d, want 2", len(files))
+	if results[0].Err != nil || results[0].Hash != "abc123" || len(results[0].Files) != 2 {
+		t.Fatalf("results[0] = %+v, want abc123 with two files", results[0])
 	}
-	if files[0].Name != "Show.S01/E01.mkv" || files[0].Size != 1000000 {
-		t.Errorf("files[0] = %+v, want {Name:Show.S01/E01.mkv Size:1000000}", files[0])
+	if results[0].Files[0].Name != "Show.S01/E01.mkv" || results[0].Files[0].Size != 1000000 {
+		t.Errorf("results[0].Files[0] = %+v, want {Name:Show.S01/E01.mkv Size:1000000}", results[0].Files[0])
 	}
-	if files[1].Name != "Show.S01/E02.mkv" || files[1].Size != 1050000 {
-		t.Errorf("files[1] = %+v, want {Name:Show.S01/E02.mkv Size:1050000}", files[1])
+	if results[1].Err != nil || results[1].Hash != "def456" || len(results[1].Files) != 1 {
+		t.Fatalf("results[1] = %+v, want def456 with one file", results[1])
 	}
 
-	// Wire-format assertion: the hash is sent as the ids identifier, files requested.
+	// Wire-format assertion: both hashes use one request with identity and files.
 	req := lastRequest(t, captured, "torrent-get")
-	assertStringSlice(t, req.Arguments["fields"], []string{"files"})
-	assertStringSlice(t, req.Arguments["ids"], []string{"abc123"})
+	assertStringSlice(t, req.Arguments["fields"], []string{"hashString", "files"})
+	assertStringSlice(t, req.Arguments["ids"], []string{"abc123", "def456"})
 }
 
 func TestTransmissionGetFiles_NotFound(t *testing.T) {
 	t.Parallel()
-	const resp = `{"torrents":[]}`
+	const resp = `{"torrents":[{"hashString":"abc123","files":[{"name":"Show.S01/E01.mkv","length":1}]}]}`
 	srv, _ := transmissionTestServer(t, map[string]string{
 		"session-get": emptySessionResp,
 		"torrent-get": resp,
 	})
 	c := newTransmissionClientFromServer(t, srv, "", "")
 
-	_, err := c.GetFiles("notexist")
-	if err == nil {
+	results := c.GetFiles([]string{"abc123", "notexist"})
+	if len(results) != 2 || results[0].Err != nil {
+		t.Fatalf("results = %+v, want first hash to succeed", results)
+	}
+	if results[1].Err == nil {
 		t.Fatal("expected error for missing torrent, got nil")
 	}
-	if !strings.Contains(err.Error(), "not found") {
-		t.Errorf("error = %q, want to contain 'not found'", err.Error())
+	if !strings.Contains(results[1].Err.Error(), "not found") {
+		t.Errorf("error = %q, want to contain 'not found'", results[1].Err.Error())
+	}
+}
+
+func TestTransmissionGetFilesExpandsWholeCallError(t *testing.T) {
+	t.Parallel()
+
+	errBoom := errors.New("boom")
+	client := newTestTransmissionClient(&stubTransmissionAPI{getErr: errBoom}, domain.ImportPolicy{})
+	results := client.GetFiles([]string{"one", "two"})
+
+	if len(results) != 2 {
+		t.Fatalf("len(results) = %d, want 2", len(results))
+	}
+	for index, hash := range []string{"one", "two"} {
+		if results[index].Hash != hash || !errors.Is(results[index].Err, errBoom) {
+			t.Errorf("results[%d] = %+v, want hash %q wrapping boom", index, results[index], hash)
+		}
 	}
 }
 
