@@ -76,11 +76,16 @@ changelog:
       - Merge remote-tracking branch
       - Merge branch
   groups:
-    - title: "New Features"
-      regexp: "^.*feat[(\\w)]*:+.*$"
+    # A commit goes into the first group in this list that matches it, so the
+    # group for the breaking-change mark "!" must stay first.
+    - title: "Breaking changes"
+      regexp: "^.*\\w(\\([^)]+\\))?!:.*$"
       order: 0
-    - title: "Bug fixes"
-      regexp: "^.*fix[(\\w)]*:+.*$"
+    - title: "New Features"
+      regexp: "^.*feat(\\([^)]+\\))?:+.*$"
       order: 10
+    - title: "Bug fixes"
+      regexp: "^.*fix(\\([^)]+\\))?:+.*$"
+      order: 20
     - title: Other work
       order: 999
