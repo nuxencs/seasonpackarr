@@ -3,10 +3,12 @@
 
 //go:build e2e
 
-// Package e2e holds the end-to-end tests. They send one announce line into a
-// real autobrr and check only what a user can see: the client API, the /data
-// filesystem, and the autobrr release status or log. test/harness/run.sh e2e
-// starts autobrr, the seasonpackarr image, the client, and the seeder.
+// Package e2e holds the end-to-end tests. They start an import at the user's
+// entry point: one announce line into a real autobrr, or one search request to
+// seasonpackarr, which searches a real Prowlarr. They check only what a user
+// can see: the client API, the /data filesystem, the autobrr release status or
+// log, and the search report. test/harness/run.sh e2e starts autobrr or
+// Prowlarr, the seasonpackarr image, the client, and the seeder.
 package e2e
 
 import (
@@ -36,8 +38,9 @@ const (
 	envAutobrrURL       = "SEASONPACKARR_TEST_E2E_AUTOBRR_URL"
 	envSeasonpackarrURL = "SEASONPACKARR_TEST_E2E_SEASONPACKARR_URL"
 	envAPIToken         = "SEASONPACKARR_TEST_E2E_API_TOKEN"
-	// envTorrentURL is the address at which autobrr reaches the torrent server
-	// of the driver. The driver listens on its port.
+	// envTorrentURL is the address at which autobrr and Prowlarr reach the
+	// torrent server and the fake Torznab feed of the driver. The driver
+	// listens on its port.
 	envTorrentURL = "SEASONPACKARR_TEST_E2E_TORRENT_URL"
 	envImportDir  = "SEASONPACKARR_TEST_IMPORT_DIR"
 )
@@ -52,31 +55,49 @@ const (
 	announceChannel = "announces"
 )
 
-// harness is the autobrr setup and the torrent server that all tests share.
-// autobrr starts empty for each runner entry, so the setup runs once.
+// harness is the setup that all tests share: the torrent server and the fake
+// Torznab feed, and autobrr or Prowlarr when a test needs it. autobrr and
+// Prowlarr start empty for each runner entry, so each setup runs once.
 type harness struct {
-	autobrr   *autobrrAPI
-	networkID int
 	importDir string
 
 	torrentURL string
 	torrents   sync.Map // file name to .torrent bytes
+	feedMu     sync.Mutex
+	feed       []torznabItem
+
+	autobrr   *autobrrAPI
+	networkID int
 }
 
 var (
 	harnessOnce sync.Once
 	shared      *harness
 	harnessErr  error
+
+	autobrrOnce sync.Once
+	autobrrErr  error
 )
 
 // requireHarness returns the shared harness. Like daemontest.RequireSettings,
 // it skips the test when a setting is missing, and fails it in strict mode.
 func requireHarness(t *testing.T) *harness {
 	t.Helper()
-	daemontest.RequireSettings(t, envAutobrrURL, envSeasonpackarrURL, envAPIToken, envTorrentURL, envImportDir)
+	daemontest.RequireSettings(t, envSeasonpackarrURL, envAPIToken, envTorrentURL, envImportDir)
 	harnessOnce.Do(func() { shared, harnessErr = newHarness() })
 	require.NoError(t, harnessErr, "set up the end-to-end harness")
 	return shared
+}
+
+// requireAutobrr returns the shared harness with autobrr set up. Only the
+// e2e-<client> entries start autobrr.
+func requireAutobrr(t *testing.T) *harness {
+	t.Helper()
+	daemontest.RequireSettings(t, envAutobrrURL)
+	h := requireHarness(t)
+	autobrrOnce.Do(func() { autobrrErr = h.setupAutobrr() })
+	require.NoError(t, autobrrErr, "set up autobrr")
+	return h
 }
 
 func newHarness() (*harness, error) {
@@ -84,19 +105,22 @@ func newHarness() (*harness, error) {
 	if err := h.serveTorrents(); err != nil {
 		return nil, err
 	}
-	api, err := setupAutobrr(os.Getenv(envAutobrrURL))
-	if err != nil {
-		return nil, err
-	}
-	h.autobrr = api
-	if h.networkID, err = api.createIndexer(h.torrentURL); err != nil {
-		return nil, err
-	}
 	return h, nil
 }
 
-// serveTorrents serves the .torrent files that tests add with addTorrent, for
-// the rest of the test process. autobrr downloads them with a plain GET.
+func (h *harness) setupAutobrr() error {
+	api, err := setupAutobrr(os.Getenv(envAutobrrURL))
+	if err != nil {
+		return err
+	}
+	h.autobrr = api
+	h.networkID, err = api.createIndexer(h.torrentURL)
+	return err
+}
+
+// serveTorrents serves the .torrent files that tests announce or add with
+// addRelease, and the fake Torznab feed, for the rest of the test process.
+// autobrr and Prowlarr download the .torrent files with a plain GET.
 func (h *harness) serveTorrents() error {
 	u, err := url.Parse(h.torrentURL)
 	if err != nil {
@@ -116,6 +140,7 @@ func (h *harness) serveTorrents() error {
 		w.Header().Set("Content-Type", "application/x-bittorrent")
 		_, _ = w.Write(torrent.([]byte))
 	})
+	mux.HandleFunc("GET /api", h.serveTorznab)
 	go func() { _ = http.Serve(listener, mux) }()
 	return nil
 }
@@ -131,6 +156,14 @@ func (h *harness) announce(t *testing.T, name string, torrent []byte) {
 	path := fmt.Sprintf("/api/irc/network/%d/channel/%s/announce/process", h.networkID, announceChannel)
 	require.NoError(t, h.autobrr.do(http.MethodPost, path, map[string]string{"msg": line}, http.StatusNoContent, nil),
 		"send the announce to autobrr")
+}
+
+// announceImport is the importPack of the announce flow: it announces the
+// pack name and waits until autobrr sent the import.
+func (h *harness) announceImport(t *testing.T, name string, torrent []byte) {
+	t.Helper()
+	h.announce(t, name, torrent)
+	h.requireImportSent(t, name)
 }
 
 // filterConfig reads testdata/filter.json and fills in its placeholders for
@@ -172,11 +205,18 @@ func packName() string {
 	return "Seasonpackarr.Harness." + string(title) + ".S01.1080p.WEB-DL.H.264-RlsGrp"
 }
 
+// jsonAPI calls a REST API with JSON bodies. When apiKey is set, each request
+// sends it in the keyHeader header.
+type jsonAPI struct {
+	baseURL   string
+	client    *http.Client
+	keyHeader string
+	apiKey    string
+}
+
 // autobrrAPI calls the autobrr REST API with an API key after setup.
 type autobrrAPI struct {
-	baseURL string
-	client  *http.Client
-	apiKey  string
+	jsonAPI
 }
 
 // setupAutobrr creates the first user, logs in, and creates an API key. The
@@ -186,7 +226,11 @@ func setupAutobrr(baseURL string) (*autobrrAPI, error) {
 	if err != nil {
 		return nil, err
 	}
-	api := &autobrrAPI{baseURL: strings.TrimSuffix(baseURL, "/"), client: &http.Client{Timeout: daemontest.Timeout, Jar: jar}}
+	api := &autobrrAPI{jsonAPI{
+		baseURL:   strings.TrimSuffix(baseURL, "/"),
+		client:    &http.Client{Timeout: daemontest.Timeout, Jar: jar},
+		keyHeader: "X-API-Token",
+	}}
 	credentials := map[string]any{"username": "e2e", "password": "e2e-harness"}
 	if err := api.do(http.MethodPost, "/api/auth/onboard", credentials, http.StatusOK, nil); err != nil {
 		return nil, fmt.Errorf("onboard: %w", err)
@@ -392,7 +436,7 @@ func (h *harness) requireImportSent(t *testing.T, name string) {
 	}
 }
 
-// autobrrLogFile is the file name of AUTOBRR__LOG_PATH in compose.e2e.yaml.
+// autobrrLogFile is the file name of AUTOBRR__LOG_PATH in compose.autobrr.yaml.
 const autobrrLogFile = "autobrr.log"
 
 // logLine is the part of an autobrr JSON log line that the tests check.
@@ -461,7 +505,7 @@ func (a *autobrrAPI) waitRejection(t *testing.T, filter, name string) rejection 
 	return rej
 }
 
-func (a *autobrrAPI) request(method, path string, body any) (*http.Request, error) {
+func (a *jsonAPI) request(method, path string, body any) (*http.Request, error) {
 	var reader io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -476,14 +520,14 @@ func (a *autobrrAPI) request(method, path string, body any) (*http.Request, erro
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if a.apiKey != "" {
-		req.Header.Set("X-API-Token", a.apiKey)
+		req.Header.Set(a.keyHeader, a.apiKey)
 	}
 	return req, nil
 }
 
 // do sends body as JSON and decodes the response into out when out is not
 // nil. A *[]byte out gets the response body as it is.
-func (a *autobrrAPI) do(method, path string, body any, wantStatus int, out any) error {
+func (a *jsonAPI) do(method, path string, body any, wantStatus int, out any) error {
 	req, err := a.request(method, path, body)
 	if err != nil {
 		return err
@@ -491,7 +535,7 @@ func (a *autobrrAPI) do(method, path string, body any, wantStatus int, out any) 
 	return a.send(req, wantStatus, out)
 }
 
-func (a *autobrrAPI) send(req *http.Request, wantStatus int, out any) error {
+func (a *jsonAPI) send(req *http.Request, wantStatus int, out any) error {
 	res, err := a.client.Do(req)
 	if err != nil {
 		return err

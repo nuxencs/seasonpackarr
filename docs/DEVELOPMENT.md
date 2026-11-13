@@ -27,7 +27,7 @@ Run the checks for the code you changed:
 | Dependencies or security-sensitive code | `govulncheck ./...` |
 | Torrent client adapters | `test/harness/run.sh` (add `all` for every client version, or name entries such as `qbit-4.3.9`) |
 | Request flow, planning, hardlinks, client adapters, config loading, or the image | `test/harness/run.sh e2e` (or `e2e-qbit` for one client) |
-| Prowlarr discovery | `go test ./internal/state ./internal/prowlarr ./internal/http ./internal/config ./cmd` |
+| Prowlarr discovery | `go test ./internal/state ./internal/prowlarr ./internal/http ./internal/config ./cmd` and `test/harness/run.sh e2e-search` |
 
 `test/harness/run.sh list [all]` and `test/harness/run.sh list e2e` print the entries. The harness needs only Docker. If Docker or an external service is not available, say in the pull request which checks did not run.
 
