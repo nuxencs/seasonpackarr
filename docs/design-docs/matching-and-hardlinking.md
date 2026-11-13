@@ -19,6 +19,10 @@ Current comparison logic checks:
 - do not link when the pack file is not a real episode video
 - do not link when file sizes disagree for episode-to-pack matching
 - path naming must reflect the pack folder users actually need, not just the announce title when parsing is enabled
+- if a planned source disappears before linking, refresh the client inventory
+  and exact plan once before the import fails
+- keep the refresh bounded; repeated source movement must not create an
+  unbounded retry loop
 
 ## Safety Expectations
 

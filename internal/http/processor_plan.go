@@ -33,6 +33,13 @@ type importPlan struct {
 	totalEps     int
 }
 
+func (plan importPlan) meetsPlannedCoverageThreshold(cfg domain.Config) bool {
+	if !cfg.SmartMode {
+		return true
+	}
+	return release.PercentOfTotalEpisodes(plan.totalEps, len(plan.links)) >= cfg.SmartModeThreshold
+}
+
 type cachedImportPlan struct {
 	plan          importPlan
 	releaseName   string
@@ -68,18 +75,15 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 	p.log.Info().Msgf("using %s client", clientName)
 
 	plan, statusCode, err := p.buildImportPlan(clientName, clientCfg, snapshot)
-	coverage := float32(0)
 	if plan.totalEps > 0 {
-		coverage = p.logImportPlan(plan, snapshot)
+		p.logImportPlan(plan, snapshot)
 	}
 	if err != nil {
 		return statusCode, err
 	}
 
-	if snapshot.SmartMode {
-		if coverage < snapshot.SmartModeThreshold {
-			return domain.StatusBelowThreshold, domain.StatusBelowThreshold.Error()
-		}
+	if !plan.meetsPlannedCoverageThreshold(snapshot) {
+		return domain.StatusBelowThreshold, domain.StatusBelowThreshold.Error()
 	}
 
 	p.storeImportPlan(clientName, *clientCfg, snapshot.FuzzyMatching, plan)
@@ -87,7 +91,7 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 	return domain.StatusSuccessfulMatch, nil
 }
 
-func (p *processor) logImportPlan(plan importPlan, cfg domain.Config) float32 {
+func (p *processor) logImportPlan(plan importPlan, cfg domain.Config) {
 	for _, unmatched := range plan.unmatched {
 		event := p.log.Info().
 			Str("torrent_path", unmatched.TorrentPath).
@@ -119,7 +123,6 @@ func (p *processor) logImportPlan(plan importPlan, cfg domain.Config) float32 {
 		summary = summary.Float32("threshold_percent", cfg.SmartModeThreshold*100)
 	}
 	summary.Msg("season pack import plan built")
-	return coverage
 }
 
 func (p *processor) buildImportPlan(clientName string, clientCfg *domain.Client, cfg domain.Config) (importPlan, domain.StatusCode, error) {
@@ -237,6 +240,11 @@ func episodeFileFromFiles(files []torrentclient.File, savePath string) (release.
 
 func importPlanKey(clientName string, hashes torrents.Hashes) importPlanCacheKey {
 	return importPlanCacheKey{clientName: clientName, hashes: hashes}
+}
+
+func invalidateImportCaches(clientName string, hashes torrents.Hashes) {
+	planMap.Delete(importPlanKey(clientName, hashes))
+	entryMap.Delete(clientName)
 }
 
 func (p *processor) storeImportPlan(clientName string, clientCfg domain.Client, fuzzyMatching domain.FuzzyMatching, plan importPlan) {

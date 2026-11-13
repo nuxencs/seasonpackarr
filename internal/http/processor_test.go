@@ -41,6 +41,7 @@ type mockTorrentClient struct {
 	gotHashes      []string
 	fileCalls      int
 	fileBatchCalls int
+	afterGetFiles  func()
 
 	importRoot    string
 	importRootErr error
@@ -91,6 +92,9 @@ func (m *mockTorrentClient) GetFiles(hashes []string) []torrentclient.FileResult
 			continue
 		}
 		results[index].Files = m.files
+	}
+	if m.afterGetFiles != nil {
+		m.afterGetFiles()
 	}
 	return results
 }
