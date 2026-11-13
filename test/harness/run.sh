@@ -106,9 +106,10 @@ configure_entry() {
 		test_pattern=TransmissionDaemon_
 		# transmission-daemon -f logs to the container output, which save_logs captures.
 		# Plain version tags move with every weekly rebuild. The build tags do not.
+		# ghcr.io, not lscr.io, so the GHCR login of the integration workflow applies.
 		case $1 in
-		transmission-4.0.6) TRANSMISSION_IMAGE=lscr.io/linuxserver/transmission:4.0.6-r4-ls311 ;;
-		transmission-4.1.3) TRANSMISSION_IMAGE=lscr.io/linuxserver/transmission:4.1.3-r0-ls363 ;;
+		transmission-4.0.6) TRANSMISSION_IMAGE=ghcr.io/linuxserver/transmission:4.0.6-r4-ls311 ;;
+		transmission-4.1.3) TRANSMISSION_IMAGE=ghcr.io/linuxserver/transmission:4.1.3-r0-ls363 ;;
 		*)
 			printf 'no Transmission image for %s\n' "$1" >&2
 			exit 2
@@ -180,6 +181,17 @@ save_logs() {
 	printf 'saved daemon logs to %s\n' "$dir" >&2
 }
 
+# Registries limit bursts of pulls from shared CI addresses, so a failed pull gets two more tries.
+pull_images() {
+	local attempt
+	for attempt in 1 2 3; do
+		compose pull --quiet --ignore-buildable && return 0
+		[[ $attempt -lt 3 ]] || return 1
+		printf 'image pull failed, retrying in %ss\n' $((attempt * 10)) >&2
+		sleep $((attempt * 10))
+	done
+}
+
 run_entry() {
 	local entry=$1 status
 	configure_entry "$entry"
@@ -187,7 +199,7 @@ run_entry() {
 	rm -rf "${artifacts_dir:?}/$entry"
 	# A killed earlier run can leave containers and volumes behind.
 	teardown
-	if compose pull --quiet --ignore-buildable &&
+	if pull_images &&
 		compose build &&
 		run_tests; then
 		status=0

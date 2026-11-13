@@ -262,7 +262,9 @@ The no-argument run, `all`, and `list [all]` stay integration-only.
   move the oldest pins.
 - For each entry, the runner pulls or builds the images, starts the daemon,
   waits for its health check, and runs that client's `Test<Client>Daemon_`
-  tests with `-tags=integration -count=1` in strict mode.
+  tests with `-tags=integration -count=1` in strict mode. A failed image pull
+  gets two more tries after 10 and 20 seconds, because registries limit bursts
+  of pulls from shared CI addresses.
 - `go test` passes when `-run` matches no test. Thus for each entry, also an
   end-to-end entry, the runner first lists the tests with `-list` and fails
   the entry when no test matches its pattern.
@@ -303,7 +305,7 @@ The no-argument run, `all`, and `list [all]` stay integration-only.
 - Daemons use committed credentials, and DHT, PEX and LPD are off. qBittorrent
   uses hotio images and `qbittorrent/qBittorrent.conf` (`admin:integration`).
   hotio publishes 4.3.9 only under the moving `legacy` tag, so the runner
-  pins it by digest. Transmission uses linuxserver images, which set the RPC
+  pins it by digest. Transmission uses linuxserver images from `ghcr.io`, which set the RPC
   credentials (`admin:integration`) from the `USER` and `PASS` environment
   variables. The runner pins their build tags (`4.1.3-r0-ls363`), because the
   plain version tags move with each weekly rebuild. The daemon starts from
@@ -344,6 +346,12 @@ has a `full` input for the integration group.
   GitHub Actions layer cache with one scope for each package version. Local
   runs leave it unset, because the default docker build driver cannot export a
   cache.
+- Each harness job logs in to `ghcr.io` with `GITHUB_TOKEN` before it pulls.
+  Anonymous GHCR pulls share a rate limit with every job on the same runner
+  address. The daemon, seeder, and autobrr images are on `ghcr.io`. Use
+  `ghcr.io` and not `lscr.io` for linuxserver images, because a Docker login
+  applies only to its own registry host. The Go test image and the Debian and
+  Alpine base images come from Docker Hub, which this login does not cover.
 
 ## Coverage
 
