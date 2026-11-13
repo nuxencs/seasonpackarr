@@ -19,13 +19,34 @@ type Episode struct {
 	Size int64
 }
 
+// Info parses the torrent metadata. It rejects a torrent whose name or file
+// paths can leave the pack folder, because both become hardlink targets below
+// the import root.
 func Info(torrent []byte) (metainfo.Info, error) {
 	metaInfo, err := metainfo.Load(bytes.NewReader(torrent))
 	if err != nil {
 		return metainfo.Info{}, err
 	}
 
-	return metaInfo.UnmarshalInfo()
+	info, err := metaInfo.UnmarshalInfo()
+	if err != nil {
+		return metainfo.Info{}, err
+	}
+
+	name := info.BestName()
+	if name == "." || !filepath.IsLocal(name) || filepath.Base(name) != name {
+		return metainfo.Info{}, fmt.Errorf("torrent name %q is not a single folder or file name", name)
+	}
+	if info.IsDir() {
+		for _, file := range info.UpvertedFiles() {
+			path := file.DisplayPath(&info)
+			if !filepath.IsLocal(filepath.FromSlash(path)) {
+				return metainfo.Info{}, fmt.Errorf("torrent file path %q leaves the pack folder", path)
+			}
+		}
+	}
+
+	return info, nil
 }
 
 type Hashes struct {
