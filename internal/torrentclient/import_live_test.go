@@ -101,7 +101,7 @@ func requireQbitStarted(t *testing.T, c *qbitClient, hash string) {
 	t.Helper()
 	var final qbittorrent.Torrent
 	for range 20 {
-		tor, ok, err := c.lookupTorrent(hash)
+		tor, ok, err := c.lookupTorrent(t.Context(), hash)
 		if err != nil || !ok {
 			t.Fatalf("lookup after import: ok=%v err=%v", ok, err)
 		}
@@ -121,7 +121,7 @@ func requireQbitStarted(t *testing.T, c *qbitClient, hash string) {
 // and has no error.
 func requireTransmissionStarted(t *testing.T, c *transmissionClient, hash string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), transmissionTimeout)
+	ctx, cancel := context.WithTimeout(t.Context(), transmissionTimeout)
 	defer cancel()
 	ts, err := c.c.TorrentGetHashes(ctx, []string{"status", "percentDone", "errorString"}, []string{hash})
 	if err != nil || len(ts) == 0 {
@@ -159,7 +159,7 @@ func requireFileReadLoad(t *testing.T, client TorrentClient, hash string) {
 	hashes[readCount] = strings.Repeat("0", 40)
 
 	started := time.Now()
-	results := client.GetFiles(hashes)
+	results := client.GetFiles(t.Context(), hashes)
 	duration := time.Since(started)
 	if len(results) != len(hashes) {
 		t.Fatalf("GetFiles returned %d results, want %d", len(results), len(hashes))
@@ -188,7 +188,7 @@ func TestQbitImportLive(t *testing.T) {
 	}
 
 	policy := domain.ImportPolicy{SavePath: importDir, Tags: []string{"seasonpackarr"}}
-	c, err := newQbitClient(&domain.Client{
+	c, err := newQbitClient(t.Context(), &domain.Client{
 		Host:     host,
 		Username: os.Getenv("SEASONPACKARR_TEST_QBIT_USER"),
 		Password: os.Getenv("SEASONPACKARR_TEST_QBIT_PASS"),
@@ -201,7 +201,7 @@ func TestQbitImportLive(t *testing.T) {
 	packName, torrentBytes, hashes := buildLivePack(t, importDir, "LiveQbit.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
 	t.Logf("importing pack %q hash=%s", packName, hashes.Legacy)
 
-	if _, err := c.Import(ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
+	if _, err := c.Import(t.Context(), ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
 		t.Fatalf("qbit Import: %v", err)
 	}
 	requireQbitStarted(t, c, hashes.Legacy)
@@ -219,7 +219,7 @@ func TestQbitImportDestinationPreferencesLive(t *testing.T) {
 
 	categoryName := fmt.Sprintf("seasonpackarr-live-%d", time.Now().UnixNano())
 	categoryPath := filepath.Join(importDir, "category")
-	c, err := newQbitClient(&domain.Client{
+	c, err := newQbitClient(t.Context(), &domain.Client{
 		Host:     host,
 		Username: os.Getenv("SEASONPACKARR_TEST_QBIT_USER"),
 		Password: os.Getenv("SEASONPACKARR_TEST_QBIT_PASS"),
@@ -276,7 +276,7 @@ func TestQbitImportDestinationPreferencesLive(t *testing.T) {
 				t.Fatalf("set preferences: %v", err)
 			}
 
-			destination, err := c.ImportDestination()
+			destination, err := c.ImportDestination(t.Context())
 			if err != nil {
 				t.Fatalf("ImportDestination: %v", err)
 			}
@@ -297,7 +297,7 @@ func TestTransmissionImportLive(t *testing.T) {
 	}
 
 	policy := domain.ImportPolicy{SavePath: importDir, Tags: []string{"seasonpackarr"}}
-	c, err := newTransmissionClient(&domain.Client{
+	c, err := newTransmissionClient(t.Context(), &domain.Client{
 		Host:     host,
 		Username: os.Getenv("SEASONPACKARR_TEST_TRANSMISSION_USER"),
 		Password: os.Getenv("SEASONPACKARR_TEST_TRANSMISSION_PASS"),
@@ -310,7 +310,7 @@ func TestTransmissionImportLive(t *testing.T) {
 	packName, torrentBytes, hashes := buildLivePack(t, importDir, "LiveTransmission.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
 	t.Logf("importing pack %q hash=%s", packName, hashes.Legacy)
 
-	if _, err := c.Import(ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
+	if _, err := c.Import(t.Context(), ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
 		t.Fatalf("transmission Import: %v", err)
 	}
 	requireTransmissionStarted(t, c, hashes.Legacy)

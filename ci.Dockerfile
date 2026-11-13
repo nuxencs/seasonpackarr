@@ -1,5 +1,5 @@
 # build base
-FROM --platform=$BUILDPLATFORM golang:1.26.3-alpine3.23 AS app-base
+FROM --platform=$BUILDPLATFORM golang:1.26.6-alpine3.23 AS app-base
 
 WORKDIR /src
 

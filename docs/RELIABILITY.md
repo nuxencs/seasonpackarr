@@ -24,6 +24,9 @@ Reliable does not mean perfect acceptance. It means predictable outcomes when de
 - distinct torrent-target accounting that caps smart-mode coverage at 100 percent
 - hardlink creation isolated from matching logic
 - authenticated HTTP component coverage across candidate, pack, parse, cache invalidation, and filesystem failure paths
+- safe stack capture for unexpected filesystem, torrent-client, notification, and server errors; expected rejections and cancellation stay stack-free
+- request cancellation propagated through processing and context-aware torrent-client calls
+- bounded signal shutdown that drains HTTP handlers and tracked notification tasks
 
 ## Known Reliability Gaps
 
@@ -35,6 +38,8 @@ Reliable does not mean perfect acceptance. It means predictable outcomes when de
 ## Change Checklist
 
 - Did request validation stay strict?
+- Does cancellation stop new client work and polling promptly?
+- Can shutdown finish within its fixed deadline?
 - Did matching become broader or narrower? Why?
 - Can duplicate or unrelated client episodes broaden acceptance?
 - What log line would an operator use to debug this?

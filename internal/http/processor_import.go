@@ -4,6 +4,7 @@
 package http
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -21,7 +22,7 @@ import (
 
 // parseTorrent is the /api/parse path. It reuses an accepted plan or rebuilds it
 // on a cache miss, hardlinks the planned episodes, then imports the pack.
-func (p *processor) parseTorrent() (statusCode domain.StatusCode, err error) {
+func (p *processor) parseTorrent(ctx context.Context) (statusCode domain.StatusCode, err error) {
 	totalStarted := time.Now()
 	defer func() {
 		event := p.log.Info().
@@ -50,7 +51,7 @@ func (p *processor) parseTorrent() (statusCode domain.StatusCode, err error) {
 		return domain.StatusTorrentBytesError, domain.StatusTorrentBytesError.Error()
 	}
 
-	if err := p.getClient(clientCfg, clientName); err != nil {
+	if err := p.getClient(ctx, clientCfg, clientName); err != nil {
 		return domain.StatusGetClientError, fmt.Errorf("%s: %w", domain.StatusGetClientError, err)
 	}
 
@@ -69,7 +70,7 @@ func (p *processor) parseTorrent() (statusCode domain.StatusCode, err error) {
 	if !ok {
 		planSource = "rebuilt"
 		var planStatusCode domain.StatusCode
-		plan, planStatusCode, err = p.buildImportPlan(clientName, clientCfg, snapshot)
+		plan, planStatusCode, err = p.buildImportPlan(ctx, clientName, clientCfg, snapshot)
 		statusCode = planStatusCode
 	}
 	p.log.Info().
@@ -86,7 +87,7 @@ func (p *processor) parseTorrent() (statusCode domain.StatusCode, err error) {
 	}
 
 	destinationStarted := time.Now()
-	importDestination, err := p.req.Client.ImportDestination()
+	importDestination, err := p.req.Client.ImportDestination(ctx)
 	destinationEvent := p.log.Info().
 		Bool("successful", err == nil).
 		Int64("duration_ms", time.Since(destinationStarted).Milliseconds())
@@ -107,7 +108,7 @@ func (p *processor) parseTorrent() (statusCode domain.StatusCode, err error) {
 		invalidateImportCaches(clientName, plan.hashes)
 
 		refreshStarted := time.Now()
-		refreshedPlan, refreshStatusCode, refreshErr := p.buildImportPlan(clientName, clientCfg, snapshot)
+		refreshedPlan, refreshStatusCode, refreshErr := p.buildImportPlan(ctx, clientName, clientCfg, snapshot)
 		refreshEvent := p.log.Info().
 			Bool("successful", refreshErr == nil).
 			Int64("duration_ms", time.Since(refreshStarted).Milliseconds())
@@ -141,7 +142,7 @@ func (p *processor) parseTorrent() (statusCode domain.StatusCode, err error) {
 	}
 
 	clientImportStarted := time.Now()
-	importReport, err := p.req.Client.Import(torrentclient.ImportRequest{
+	importReport, err := p.req.Client.Import(ctx, torrentclient.ImportRequest{
 		TorrentBytes: plan.torrentBytes,
 		SavePath:     importRoot,
 		LegacyHash:   plan.hashes.Legacy,

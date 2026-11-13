@@ -22,7 +22,7 @@ func TestTransmissionLive(t *testing.T) {
 		t.Skip("SEASONPACKARR_TEST_TRANSMISSION_HOST not set — skipping live smoke test")
 	}
 
-	c, err := newTransmissionClient(&domain.Client{
+	c, err := newTransmissionClient(t.Context(), &domain.Client{
 		Host:     host,
 		Username: os.Getenv("SEASONPACKARR_TEST_TRANSMISSION_USER"),
 		Password: os.Getenv("SEASONPACKARR_TEST_TRANSMISSION_PASS"),
@@ -31,7 +31,7 @@ func TestTransmissionLive(t *testing.T) {
 		t.Fatalf("newTransmissionClient: %v", err)
 	}
 
-	torrents, err := c.GetTorrents()
+	torrents, err := c.GetTorrents(t.Context())
 	if err != nil {
 		t.Fatalf("GetTorrents: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestTransmissionLive(t *testing.T) {
 	first := torrents[0]
 	t.Logf("first torrent: hash=%s name=%q savePath=%q", first.Hash, first.Name, first.SavePath)
 
-	results := c.GetFiles([]string{first.Hash})
+	results := c.GetFiles(t.Context(), []string{first.Hash})
 	if len(results) != 1 || results[0].Err != nil {
 		t.Fatalf("GetFiles(%q): %+v", first.Hash, results)
 	}

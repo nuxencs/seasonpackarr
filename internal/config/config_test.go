@@ -278,18 +278,12 @@ logMaxSize: 99
 }
 
 func TestResolveConfigFileReturnsDiscoveredFile(t *testing.T) {
-	originalWorkingDir, err := os.Getwd()
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.Chdir(originalWorkingDir))
-	})
-
 	workingDir := t.TempDir()
 	homeDir := t.TempDir()
 	configFile := filepath.Join(homeDir, ".config", "seasonpackarr", "config.yaml")
 	require.NoError(t, os.MkdirAll(filepath.Dir(configFile), 0o755))
 	writeConfigFile(t, configFile, "clients: {}\n")
-	require.NoError(t, os.Chdir(workingDir))
+	t.Chdir(workingDir)
 	t.Setenv("HOME", homeDir)
 
 	cfg := &AppConfig{}

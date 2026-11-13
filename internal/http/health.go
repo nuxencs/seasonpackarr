@@ -33,8 +33,3 @@ func writeHealthy(c *gin.Context) {
 	c.Header("Content-Type", "text/plain")
 	c.String(http.StatusOK, "OK")
 }
-
-func writeUnhealthy(c *gin.Context) {
-	c.Header("Content-Type", "text/plain")
-	c.String(http.StatusInternalServerError, "Unhealthy")
-}

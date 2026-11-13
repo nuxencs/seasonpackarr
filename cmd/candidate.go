@@ -27,7 +27,7 @@ var candidateCmd = &cobra.Command{
 			return
 		}
 
-		if err = payload.Exec(fmt.Sprintf("http://%s:%d/api/candidate", host, port), body, apiKey); err != nil {
+		if err = payload.Exec(cmd.Context(), fmt.Sprintf("http://%s:%d/api/candidate", host, port), body, apiKey); err != nil {
 			fmt.Println(err.Error())
 		}
 	},

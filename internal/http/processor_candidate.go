@@ -4,18 +4,17 @@
 package http
 
 import (
+	"context"
 	"fmt"
 	stdslices "slices"
 	"sync"
 	"time"
 
+	"github.com/autobrr/rls"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/format"
 	"github.com/nuxencs/seasonpackarr/internal/release"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
-	"github.com/nuxencs/seasonpackarr/pkg/errors"
-
-	"github.com/autobrr/rls"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/rs/zerolog"
 )
@@ -54,7 +53,7 @@ var (
 // candidateSeasonPack is the announce-only prefilter. It establishes that the
 // client contains at least one release-compatible episode without requesting
 // per-torrent file details or requiring the announced torrent bytes.
-func (p *processor) candidateSeasonPack() (domain.StatusCode, error) {
+func (p *processor) candidateSeasonPack(ctx context.Context) (domain.StatusCode, error) {
 	clientName := p.getClientName()
 	snapshot := p.cfg.Snapshot()
 
@@ -67,7 +66,7 @@ func (p *processor) candidateSeasonPack() (domain.StatusCode, error) {
 		return domain.StatusClientNotFound, domain.StatusClientNotFound.Error()
 	}
 
-	candidates, statusCode, err := p.findCandidates(clientName, clientCfg, snapshot)
+	candidates, statusCode, err := p.findCandidates(ctx, clientName, clientCfg, snapshot)
 	if err != nil {
 		return statusCode, err
 	}
@@ -80,16 +79,16 @@ func (p *processor) candidateSeasonPack() (domain.StatusCode, error) {
 	return domain.StatusSuccessfulMatch, nil
 }
 
-func (p *processor) findCandidates(clientName string, clientCfg *domain.Client, cfg domain.Config) ([]entry, domain.StatusCode, error) {
+func (p *processor) findCandidates(ctx context.Context, clientName string, clientCfg *domain.Client, cfg domain.Config) ([]entry, domain.StatusCode, error) {
 	if len(p.req.Name) == 0 {
 		return nil, domain.StatusAnnounceNameError, domain.StatusAnnounceNameError.Error()
 	}
 
-	if err := p.getClient(clientCfg, clientName); err != nil {
+	if err := p.getClient(ctx, clientCfg, clientName); err != nil {
 		return nil, domain.StatusGetClientError, fmt.Errorf("%s: %w", domain.StatusGetClientError, err)
 	}
 
-	entries, err := p.getAllTorrents(clientName, clientCfg, cfg.FuzzyMatching)
+	entries, err := p.getAllTorrents(ctx, clientName, clientCfg, cfg.FuzzyMatching)
 	if err != nil {
 		return nil, domain.StatusGetTorrentsError, fmt.Errorf("%s: %w", domain.StatusGetTorrentsError, err)
 	}
@@ -149,7 +148,7 @@ func candidateMismatchField(statusCode domain.StatusCode) string {
 	}
 }
 
-func (p *processor) getClient(client *domain.Client, clientName string) error {
+func (p *processor) getClient(ctx context.Context, client *domain.Client, clientName string) error {
 	// allow tests (and repeated calls within a request) to inject/keep a client
 	if p.req.Client != nil {
 		return nil
@@ -160,9 +159,9 @@ func (p *processor) getClient(client *domain.Client, clientName string) error {
 		return nil
 	}
 
-	c, err := torrentclient.New(client)
+	c, err := torrentclient.New(ctx, client)
 	if err != nil {
-		return errors.Wrap(err, "failed to create torrent client")
+		return fmt.Errorf("failed to create torrent client: %w", err)
 	}
 
 	clientMap.Store(clientName, cachedTorrentClient{
@@ -193,7 +192,7 @@ func clientConfigsEqual(a, b domain.Client) bool {
 		a.Import.ContentLayout == b.Import.ContentLayout
 }
 
-func (p *processor) getAllTorrents(clientName string, clientConfig *domain.Client, fuzzyMatching domain.FuzzyMatching) (map[string][]entry, error) {
+func (p *processor) getAllTorrents(ctx context.Context, clientName string, clientConfig *domain.Client, fuzzyMatching domain.FuzzyMatching) (map[string][]entry, error) {
 	entries, _ := entryMap.Compute(clientName, func(current *entryCache, loaded bool) (*entryCache, bool) {
 		if loaded && clientConfigsEqual(current.clientConfig, *clientConfig) && current.fuzzyMatching == fuzzyMatching {
 			return current, false
@@ -220,7 +219,7 @@ func (p *processor) getAllTorrents(clientName string, clientConfig *domain.Clien
 		return latest.entriesMap, nil
 	}
 
-	ts, err := p.req.Client.GetTorrents()
+	ts, err := p.req.Client.GetTorrents(ctx)
 	if err != nil {
 		return nil, err
 	}

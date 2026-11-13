@@ -7,7 +7,7 @@
 ## Main Runtime Flow
 
 1. `main.go` calls Cobra commands in `cmd/`.
-2. `cmd/start.go` loads config, logger, and notifications, then starts the HTTP server.
+2. `cmd/start.go` loads config, logger, and notifications, then starts the HTTP server. Signal cancellation starts a bounded graceful shutdown.
 3. `internal/http/server.go` builds `/api/healthz`, `/api/candidate`, `/api/pack`, and `/api/parse`.
 4. `internal/http/processor_*.go` keeps each processing stage together. The handler file owns payload decode and responses. The candidate file owns announce-only matching and inventory caching. The plan file parses torrent bytes and builds an exact side-effect-free plan. The import file reuses or rebuilds that plan, resolves the client import destination, hardlinks matched files, and imports the pack. See [docs/design-docs/qbittorrent-import-flow.md](docs/design-docs/qbittorrent-import-flow.md).
 5. `internal/release/` decides whether a client episode and announced season pack are compatible.
@@ -70,6 +70,22 @@
 
 - Implemented in `internal/notification/`
 - Current primary output: Discord webhook notifications
+- Notification sends run in a server-owned task group. Graceful shutdown waits for them until the shutdown deadline, then cancels them.
+
+### Cancellation And Shutdown
+
+- Each webhook passes its request context through planning and torrent-client operations.
+- Transmission and Deluge derive adapter timeouts from that request context.
+- qBittorrent polling stops on cancellation. The upstream qBittorrent API is context-free, so an in-flight library call can finish only when its own HTTP behavior returns.
+- Process signals start a 15-second graceful shutdown. The server first drains HTTP handlers, then waits for notification tasks within the same deadline.
+- A future persistent import worker must derive each execution context from the worker lifecycle, not from the intake request. The request context can cover validation and durable job admission only.
+
+### Error Diagnostics
+
+- Standard error wrapping keeps `errors.Is` and `errors.As` behavior across modules.
+- Unexpected filesystem, torrent-client, notification, and server-operation errors capture one safe stack trace near the failing operation.
+- Expected matching and validation outcomes, plus normal context cancellation, do not capture stacks.
+- Stack traces are operator log data. HTTP responses and notifications contain the error message only.
 
 ## Package Layering
 

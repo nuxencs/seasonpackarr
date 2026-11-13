@@ -1,6 +1,6 @@
 module github.com/nuxencs/seasonpackarr
 
-go 1.26.3
+go 1.26.6
 
 require (
 	github.com/autobrr/go-deluge v1.4.0

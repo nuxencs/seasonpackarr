@@ -37,7 +37,7 @@ var parseCmd = &cobra.Command{
 			return
 		}
 
-		err = payload.Exec(fmt.Sprintf("http://%s:%d/api/parse", host, port), body, apiKey)
+		err = payload.Exec(cmd.Context(), fmt.Sprintf("http://%s:%d/api/parse", host, port), body, apiKey)
 		if err != nil {
 			fmt.Println(err.Error())
 			return

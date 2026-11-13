@@ -6,10 +6,10 @@ Describe the normal path from webhook hit to hardlink creation and client import
 
 ## Flow
 
-1. Service starts through `cmd/start.go`.
+1. Service starts through `cmd/start.go`. `signal.NotifyContext` converts termination signals into cancellation and starts a 15-second graceful shutdown.
 2. Config, logger, and notification sender are initialized.
 3. `internal/http/server.go` exposes authenticated `/api/candidate`, `/api/pack`, and `/api/parse`.
-4. A webhook request enters `internal/http/webhook.go`.
+4. A webhook request enters `internal/http/webhook.go`. Its context is passed through planning and torrent-client operations, so client disconnects and request cancellation stop context-aware work.
 5. `internal/http/processor_handlers.go` decodes the payload. The candidate, plan, and import processor files keep the three lifecycle stages separate.
 6. `/api/candidate` compares the announce with cached torrent summaries. It does not read torrent bytes or file details. At debug level, it logs each client release that caused the gate to pass.
 7. `/api/pack` reuses the short-lived inventory, parses the announced torrent, and requests details only for candidate client torrents.
@@ -23,7 +23,7 @@ Describe the normal path from webhook hit to hardlink creation and client import
     client import flow with diagrams.
 14. Pack logs explain unmatched torrent targets. Parse logs report plan reuse,
     hardlink work, client-import stage durations, and total duration.
-    Notifications communicate the final outcome.
+    Notifications communicate the final outcome. They run in a server-owned task group. Shutdown waits for those tasks until its deadline, then cancels them.
 
 ## Failure Classes
 
@@ -37,4 +37,4 @@ Describe the normal path from webhook hit to hardlink creation and client import
 
 ## Verification Notes
 
-Verified against code on 2026-08-20. The lifecycle is implementation-backed, not aspirational.
+Verified against code on 2026-08-28. The lifecycle is implementation-backed, not aspirational.

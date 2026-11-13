@@ -4,7 +4,8 @@
 package torrentclient
 
 import (
-	stderrors "errors"
+	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -14,7 +15,7 @@ import (
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
-	"github.com/nuxencs/seasonpackarr/pkg/errors"
+	"github.com/nuxencs/seasonpackarr/internal/errtrace"
 )
 
 // Torrent is the neutral view of a torrent shared across client implementations.
@@ -148,6 +149,9 @@ func (e *ImportError) Error() string { return e.Err.Error() }
 func (e *ImportError) Unwrap() error { return e.Err }
 
 func importErr(stage ImportStage, err error) *ImportError {
+	if stage != ImportStageConfig {
+		err = errtrace.WithStack(err)
+	}
 	return &ImportError{Stage: stage, Err: err}
 }
 
@@ -155,7 +159,7 @@ func importErr(stage ImportStage, err error) *ImportError {
 // domain.StatusCode the caller should report. Errors that aren't a stage-tagged
 // *ImportError fall back to StatusAddTorrentError.
 func ImportStatusCode(err error) domain.StatusCode {
-	if ie, ok := stderrors.AsType[*ImportError](err); ok {
+	if ie, ok := errors.AsType[*ImportError](err); ok {
 		switch ie.Stage {
 		case ImportStageConfig:
 			return domain.StatusImportConfigError
@@ -187,12 +191,12 @@ func ImportStatusCode(err error) domain.StatusCode {
 // Import returns neutral stage timings in execution order. Import failures are
 // returned as *ImportError together with the attempted stage timings.
 type TorrentClient interface {
-	GetTorrents() ([]Torrent, error)
+	GetTorrents(ctx context.Context) ([]Torrent, error)
 	// GetFiles returns exactly one result per input hash in input order. Each
 	// adapter owns its safe batching or concurrency strategy.
-	GetFiles(hashes []string) []FileResult
-	ImportDestination() (ImportDestination, error)
-	Import(req ImportRequest) (ImportReport, error)
+	GetFiles(ctx context.Context, hashes []string) []FileResult
+	ImportDestination(ctx context.Context) (ImportDestination, error)
+	Import(ctx context.Context, req ImportRequest) (ImportReport, error)
 }
 
 func fileResultsWithError(hashes []string, err error) []FileResult {
@@ -206,8 +210,10 @@ func fileResultsWithError(hashes []string, err error) []FileResult {
 // pollUntil invokes cond every interval until it reports done, cond returns an
 // error, or timeout elapses. It is shared by the client adapters to wait for a
 // torrent to appear or for a (re)check to settle.
-func pollUntil(interval, timeout time.Duration, cond func() (bool, error)) error {
-	deadline := time.Now().Add(timeout)
+func pollUntil(ctx context.Context, interval time.Duration, cond func() (bool, error)) error {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
 	for {
 		done, err := cond()
 		if err != nil {
@@ -216,21 +222,23 @@ func pollUntil(interval, timeout time.Duration, cond func() (bool, error)) error
 		if done {
 			return nil
 		}
-		if !time.Now().Before(deadline) {
-			return errors.New("timed out")
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
 		}
-		time.Sleep(interval)
 	}
 }
 
-func New(client *domain.Client) (TorrentClient, error) {
+func New(ctx context.Context, client *domain.Client) (TorrentClient, error) {
 	switch client.Type {
 	case "", "qbittorrent":
-		return newQbitClient(client)
+		return newQbitClient(ctx, client)
 	case "transmission":
-		return newTransmissionClient(client)
+		return newTransmissionClient(ctx, client)
 	case "deluge", "deluge-v1", "deluge-v2":
-		return newDelugeClient(client)
+		return newDelugeClient(ctx, client)
 	default:
 		return nil, fmt.Errorf("unknown client type: %s", client.Type)
 	}
@@ -254,7 +262,7 @@ func buildHost(client *domain.Client) (string, error) {
 
 	parsedURL, err := url.Parse(host)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to parse host")
+		return "", fmt.Errorf("failed to parse host: %w", err)
 	}
 
 	if client.Port != 0 {

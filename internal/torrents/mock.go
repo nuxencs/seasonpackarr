@@ -32,7 +32,7 @@ func mockEpisodes(dir string, numEpisodes int) error {
 	season := match.String()
 
 	for i := 1; i <= numEpisodes; i++ {
-		episodeName := strings.Replace(filepath.Base(dir), season, season+fmt.Sprintf("E%02d", i), -1) + ".mkv"
+		episodeName := strings.ReplaceAll(filepath.Base(dir), season, season+fmt.Sprintf("E%02d", i)) + ".mkv"
 		episodePath := filepath.Join(dir, episodeName)
 
 		// Create a minimal file.
@@ -126,7 +126,7 @@ func TorrentFromRls(rlsName string, numEpisodes int) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(tempDirPath)
+	defer func() { _ = os.RemoveAll(tempDirPath) }()
 
 	if err = mockEpisodes(tempDirPath, numEpisodes); err != nil {
 		return nil, err

@@ -4,6 +4,8 @@
 package files
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -35,4 +37,13 @@ func TestCreateHardlinkRejectsConflictingTarget(t *testing.T) {
 	require.NoError(t, os.WriteFile(target, []byte("different"), 0o644))
 
 	require.Error(t, CreateHardlink(source, target))
+}
+
+func TestCreateHardlinkPreservesFilesystemErrorIdentity(t *testing.T) {
+	dir := t.TempDir()
+	err := CreateHardlink(filepath.Join(dir, "missing.mkv"), filepath.Join(dir, "pack", "target.mkv"))
+
+	require.ErrorIs(t, err, fs.ErrNotExist)
+	_, ok := errors.AsType[*os.LinkError](err)
+	require.True(t, ok)
 }

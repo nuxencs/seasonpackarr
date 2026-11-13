@@ -4,9 +4,11 @@
 
 package domain
 
+import "context"
+
 type Sender interface {
 	Name() string
-	Send(statusCode StatusCode, payload NotificationPayload) error
+	Send(ctx context.Context, statusCode StatusCode, payload NotificationPayload) error
 }
 
 const (

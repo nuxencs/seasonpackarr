@@ -94,7 +94,7 @@ func TestTransmissionImportVerifiesThenStarts(t *testing.T) {
 	}
 	tc := newTestTransmissionClient(stub, domain.ImportPolicy{SavePath: "/data/tv", Tags: []string{"seasonpackarr"}})
 
-	report, err := tc.Import(ImportRequest{TorrentBytes: []byte("torrent"), LegacyHash: hash, HasV1: true, SavePath: "/data/tv"})
+	report, err := tc.Import(t.Context(), ImportRequest{TorrentBytes: []byte("torrent"), LegacyHash: hash, HasV1: true, SavePath: "/data/tv"})
 	require.NoError(t, err)
 	require.Equal(t, []ImportStage{
 		ImportStageConfig,
@@ -124,7 +124,7 @@ func TestTransmissionImportFailsOnError(t *testing.T) {
 	}
 	tc := newTestTransmissionClient(stub, domain.ImportPolicy{SavePath: "/data/tv"})
 
-	_, err := tc.Import(ImportRequest{TorrentBytes: []byte("t"), LegacyHash: "h", HasV1: true, SavePath: "/data/tv"})
+	_, err := tc.Import(t.Context(), ImportRequest{TorrentBytes: []byte("t"), LegacyHash: "h", HasV1: true, SavePath: "/data/tv"})
 	require.Error(t, err)
 	require.Equal(t, domain.StatusRecheckTorrentError, ImportStatusCode(err))
 	require.Empty(t, stub.startCalls)
@@ -133,21 +133,21 @@ func TestTransmissionImportFailsOnError(t *testing.T) {
 func TestTransmissionImportDestination(t *testing.T) {
 	t.Run("explicit save path wins", func(t *testing.T) {
 		tc := newTestTransmissionClient(&stubTransmissionAPI{sessionDir: "/downloads"}, domain.ImportPolicy{SavePath: "/data/tv"})
-		destination, err := tc.ImportDestination()
+		destination, err := tc.ImportDestination(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, normalizePath("/data/tv"), destination.SavePath())
 	})
 
 	t.Run("falls back to session download dir", func(t *testing.T) {
 		tc := newTestTransmissionClient(&stubTransmissionAPI{sessionDir: "/downloads"}, domain.ImportPolicy{})
-		destination, err := tc.ImportDestination()
+		destination, err := tc.ImportDestination(t.Context())
 		require.NoError(t, err)
 		require.Equal(t, normalizePath("/downloads"), destination.SavePath())
 	})
 
 	t.Run("errors when download dir empty", func(t *testing.T) {
 		tc := newTestTransmissionClient(&stubTransmissionAPI{sessionDir: ""}, domain.ImportPolicy{})
-		_, err := tc.ImportDestination()
+		_, err := tc.ImportDestination(t.Context())
 		require.Error(t, err)
 		require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
 	})

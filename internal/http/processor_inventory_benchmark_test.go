@@ -34,9 +34,9 @@ func BenchmarkInventoryColdBuild(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for range b.N {
+			for b.Loop() {
 				entryMap.Delete(inventoryBenchmarkClientName)
-				entries, err := p.getAllTorrents(inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
+				entries, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -51,19 +51,19 @@ func BenchmarkInventoryWarmRefresh(b *testing.B) {
 		b.Run(strconv.Itoa(torrentCount), func(b *testing.B) {
 			p, _, clientConfig := newInventoryBenchmarkProcessor(torrentCount)
 			resetInventoryBenchmarkCache(b)
-			if _, err := p.getAllTorrents(inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{}); err != nil {
+			if _, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{}); err != nil {
 				b.Fatal(err)
 			}
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for range b.N {
+			for b.Loop() {
 				cached, ok := entryMap.Load(inventoryBenchmarkClientName)
 				if !ok {
 					b.Fatal("inventory snapshot missing")
 				}
 				cached.expiresAt = time.Time{}
-				entries, err := p.getAllTorrents(inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
+				entries, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -85,13 +85,14 @@ func BenchmarkInventoryRefreshChurn(b *testing.B) {
 			p := newTestProcessor(client)
 			clientConfig := inventoryBenchmarkClientConfig()
 			resetInventoryBenchmarkCache(b)
-			if _, err := p.getAllTorrents(inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{}); err != nil {
+			if _, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{}); err != nil {
 				b.Fatal(err)
 			}
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for index := range b.N {
+			index := 0
+			for b.Loop() {
 				if index%2 == 0 {
 					client.torrents = inventoryB
 				} else {
@@ -102,11 +103,12 @@ func BenchmarkInventoryRefreshChurn(b *testing.B) {
 					b.Fatal("inventory snapshot missing")
 				}
 				cached.expiresAt = time.Time{}
-				entries, err := p.getAllTorrents(inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
+				entries, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
 				if err != nil {
 					b.Fatal(err)
 				}
 				inventoryMapSink = entries
+				index++
 			}
 		})
 	}
@@ -117,14 +119,14 @@ func BenchmarkInventoryCachedAccess(b *testing.B) {
 		b.Run(strconv.Itoa(torrentCount), func(b *testing.B) {
 			p, _, clientConfig := newInventoryBenchmarkProcessor(torrentCount)
 			resetInventoryBenchmarkCache(b)
-			if _, err := p.getAllTorrents(inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{}); err != nil {
+			if _, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{}); err != nil {
 				b.Fatal(err)
 			}
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for range b.N {
-				entries, err := p.getAllTorrents(inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
+			for b.Loop() {
+				entries, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -139,7 +141,7 @@ func BenchmarkInventoryTitleLookup(b *testing.B) {
 		b.Run(strconv.Itoa(torrentCount), func(b *testing.B) {
 			p, _, clientConfig := newInventoryBenchmarkProcessor(torrentCount)
 			resetInventoryBenchmarkCache(b)
-			entries, err := p.getAllTorrents(inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
+			entries, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -154,7 +156,7 @@ func BenchmarkInventoryTitleLookup(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for range b.N {
+			for b.Loop() {
 				inventoryBucketLen = len(entries[title])
 			}
 		})
@@ -179,7 +181,7 @@ func TestInventoryRetainedMemory(t *testing.T) {
 
 	client := &mockTorrentClient{torrents: inventoryBenchmarkTorrents(torrentCount)}
 	p := newTestProcessor(client)
-	entries, err := p.getAllTorrents(inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
+	entries, err := p.getAllTorrents(t.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
 	if err != nil {
 		t.Fatal(err)
 	}

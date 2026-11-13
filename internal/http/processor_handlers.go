@@ -4,6 +4,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -19,7 +20,7 @@ func (p *processor) CandidateSeasonPackHandler(c *gin.Context) {
 		return
 	}
 
-	statusCode, err := p.candidateSeasonPack()
+	statusCode, err := p.candidateSeasonPack(c.Request.Context())
 	if err != nil {
 		if isExpectedGateRejection(statusCode) {
 			p.log.Info().Err(err).Msg("season pack candidate rejected")
@@ -41,7 +42,7 @@ func (p *processor) ProcessSeasonPackHandler(c *gin.Context) {
 		return
 	}
 
-	statusCode, err := p.processSeasonPack()
+	statusCode, err := p.processSeasonPack(c.Request.Context())
 	if err != nil {
 		p.sendNotification(statusCode, "Pack", err)
 		if isExpectedGateRejection(statusCode) {
@@ -69,7 +70,7 @@ func (p *processor) ParseTorrentHandler(c *gin.Context) {
 		return
 	}
 
-	statusCode, err := p.parseTorrent()
+	statusCode, err := p.parseTorrent(c.Request.Context())
 	if err != nil {
 		p.sendNotification(statusCode, "Parse", err)
 		p.log.Error().Err(err).Msg("error parsing torrent")
@@ -99,7 +100,7 @@ func abortWithError(c *gin.Context, statusCode domain.StatusCode, err error) {
 }
 
 func (p *processor) sendNotification(statusCode domain.StatusCode, action string, err error) {
-	if p.noti == nil {
+	if p.noti == nil || p.tasks == nil {
 		return
 	}
 
@@ -111,9 +112,9 @@ func (p *processor) sendNotification(statusCode domain.StatusCode, action string
 		Error:       err,
 	}
 	log := p.log
-	go func() {
-		if sendErr := sender.Send(statusCode, payload); sendErr != nil {
+	p.tasks.Go(func(ctx context.Context) {
+		if sendErr := sender.Send(ctx, statusCode, payload); sendErr != nil {
 			log.Error().Err(sendErr).Msgf("error sending %s notification for %d", sender.Name(), statusCode)
 		}
-	}()
+	})
 }

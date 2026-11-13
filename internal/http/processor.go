@@ -15,10 +15,11 @@ import (
 )
 
 type processor struct {
-	log  zerolog.Logger
-	cfg  config.Provider
-	noti domain.Sender
-	req  *request
+	log   zerolog.Logger
+	cfg   config.Provider
+	noti  domain.Sender
+	tasks *taskGroup
+	req   *request
 }
 
 type request struct {
@@ -28,11 +29,12 @@ type request struct {
 	ClientName string
 }
 
-func newProcessor(log logger.Logger, config config.Provider, notification domain.Sender) *processor {
+func newProcessor(log logger.Logger, config config.Provider, notification domain.Sender, tasks *taskGroup) *processor {
 	return &processor{
-		log:  log.With().Str("module", "processor").Logger(),
-		cfg:  config,
-		noti: notification,
+		log:   log.With().Str("module", "processor").Logger(),
+		cfg:   config,
+		noti:  notification,
+		tasks: tasks,
 	}
 }
 

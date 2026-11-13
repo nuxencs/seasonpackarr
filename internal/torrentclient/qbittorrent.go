@@ -4,6 +4,9 @@
 package torrentclient
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -11,7 +14,7 @@ import (
 
 	"github.com/autobrr/go-qbittorrent"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
-	"github.com/nuxencs/seasonpackarr/pkg/errors"
+	"github.com/nuxencs/seasonpackarr/internal/errtrace"
 )
 
 const qbitFileReadWorkers = 4
@@ -39,10 +42,14 @@ type qbitClient struct {
 	pollInterval   time.Duration
 }
 
-func newQbitClient(client *domain.Client) (*qbitClient, error) {
+func newQbitClient(ctx context.Context, client *domain.Client) (*qbitClient, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	host, err := buildHost(client)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to build host")
+		return nil, fmt.Errorf("failed to build host: %w", err)
 	}
 
 	c := qbittorrent.NewClient(qbittorrent.Config{
@@ -53,7 +60,10 @@ func newQbitClient(client *domain.Client) (*qbitClient, error) {
 	})
 
 	if err := c.Login(); err != nil {
-		return nil, errors.Wrap(err, "failed to login to qbittorrent")
+		return nil, errtrace.WithStack(fmt.Errorf("failed to login to qbittorrent: %w", err))
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	return &qbitClient{
@@ -65,10 +75,16 @@ func newQbitClient(client *domain.Client) (*qbitClient, error) {
 	}, nil
 }
 
-func (q *qbitClient) GetTorrents() ([]Torrent, error) {
+func (q *qbitClient) GetTorrents(ctx context.Context) ([]Torrent, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	ts, err := q.c.GetTorrents(qbittorrent.TorrentFilterOptions{})
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get torrents")
+		return nil, errtrace.WithStack(fmt.Errorf("failed to get torrents: %w", err))
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	torrents := make([]Torrent, 0, len(ts))
@@ -83,7 +99,7 @@ func (q *qbitClient) GetTorrents() ([]Torrent, error) {
 	return torrents, nil
 }
 
-func (q *qbitClient) GetFiles(hashes []string) []FileResult {
+func (q *qbitClient) GetFiles(ctx context.Context, hashes []string) []FileResult {
 	results := make([]FileResult, len(hashes))
 	if len(hashes) == 0 {
 		return results
@@ -92,26 +108,46 @@ func (q *qbitClient) GetFiles(hashes []string) []FileResult {
 	jobs := make(chan int)
 	var workers sync.WaitGroup
 	for range min(qbitFileReadWorkers, len(hashes)) {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
-			for index := range jobs {
-				results[index] = q.getFiles(hashes[index])
+		workers.Go(func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case index, ok := <-jobs:
+					if !ok {
+						return
+					}
+					results[index] = q.getFiles(ctx, hashes[index])
+				}
 			}
-		}()
+		})
 	}
+
+sendJobs:
 	for index := range hashes {
-		jobs <- index
+		select {
+		case jobs <- index:
+		case <-ctx.Done():
+			break sendJobs
+		}
 	}
 	close(jobs)
 	workers.Wait()
+	for index, result := range results {
+		if result.Hash == "" {
+			results[index] = FileResult{Hash: hashes[index], Err: ctx.Err()}
+		}
+	}
 	return results
 }
 
-func (q *qbitClient) getFiles(hash string) FileResult {
+func (q *qbitClient) getFiles(ctx context.Context, hash string) FileResult {
 	torrentFiles, err := q.c.GetFilesInformation(hash)
 	if err != nil {
-		return FileResult{Hash: hash, Err: errors.Wrap(err, "failed to get files")}
+		return FileResult{Hash: hash, Err: errtrace.WithStack(fmt.Errorf("failed to get files: %w", err))}
+	}
+	if err := ctx.Err(); err != nil {
+		return FileResult{Hash: hash, Err: err}
 	}
 
 	files := make([]File, 0, len(*torrentFiles))
@@ -124,7 +160,10 @@ func (q *qbitClient) getFiles(hash string) FileResult {
 // ImportDestination resolves the final import destination for this qBittorrent client.
 // An explicit savePath wins. Category-only policy follows qBittorrent's Auto TMM
 // and manual category-path preferences.
-func (q *qbitClient) ImportDestination() (ImportDestination, error) {
+func (q *qbitClient) ImportDestination(ctx context.Context) (ImportDestination, error) {
+	if err := ctx.Err(); err != nil {
+		return ImportDestination{}, err
+	}
 	categoryOnly := strings.TrimSpace(q.policy.SavePath) == "" && strings.TrimSpace(q.policy.DownloadPath) == ""
 	contentLayout := strings.TrimSpace(q.policy.ContentLayout)
 
@@ -133,7 +172,10 @@ func (q *qbitClient) ImportDestination() (ImportDestination, error) {
 		var err error
 		preferences, err = q.c.GetAppPreferences()
 		if err != nil {
-			return ImportDestination{}, importErr(ImportStageConfig, errors.Wrap(err, "could not read qbittorrent preferences"))
+			return ImportDestination{}, importErr(ImportStageConfig, errtrace.WithStack(fmt.Errorf("could not read qbittorrent preferences: %w", err)))
+		}
+		if err := ctx.Err(); err != nil {
+			return ImportDestination{}, err
 		}
 	}
 
@@ -143,24 +185,30 @@ func (q *qbitClient) ImportDestination() (ImportDestination, error) {
 	} else {
 		categories, err := q.c.GetCategories()
 		if err != nil {
-			return ImportDestination{}, importErr(ImportStageConfig, errors.Wrap(err, "could not read qbittorrent categories"))
+			return ImportDestination{}, importErr(ImportStageConfig, errtrace.WithStack(fmt.Errorf("could not read qbittorrent categories: %w", err)))
+		}
+		if err := ctx.Err(); err != nil {
+			return ImportDestination{}, err
 		}
 
 		_, ok := categories[q.policy.Category]
 		if !ok {
-			return ImportDestination{}, importErr(ImportStageConfig, errors.New("qbit category %q was not found in qbittorrent", q.policy.Category))
+			return ImportDestination{}, importErr(ImportStageConfig, fmt.Errorf("qbit category %q was not found in qbittorrent", q.policy.Category))
 		}
 
 		useCategoryPath := !categoryOnly || preferences.AutoTmmEnabled || preferences.UseCategoryPathsInManualMode
 		if !useCategoryPath {
 			defaultSavePath, err := q.c.GetDefaultSavePath()
 			if err != nil {
-				return ImportDestination{}, importErr(ImportStageConfig, errors.Wrap(err, "could not read qbittorrent default save path"))
+				return ImportDestination{}, importErr(ImportStageConfig, errtrace.WithStack(fmt.Errorf("could not read qbittorrent default save path: %w", err)))
+			}
+			if err := ctx.Err(); err != nil {
+				return ImportDestination{}, err
 			}
 			actualPath = defaultSavePath
 		} else {
 			var err error
-			actualPath, err = q.resolveCategorySavePath(q.policy.Category, categories)
+			actualPath, err = q.resolveCategorySavePath(ctx, q.policy.Category, categories)
 			if err != nil {
 				return ImportDestination{}, err
 			}
@@ -188,11 +236,17 @@ func (q *qbitClient) ImportDestination() (ImportDestination, error) {
 	return NewRootedImportDestination(root), nil
 }
 
-func (q *qbitClient) resolveCategorySavePath(categoryName string, categories map[string]qbittorrent.Category) (string, error) {
+func (q *qbitClient) resolveCategorySavePath(ctx context.Context, categoryName string, categories map[string]qbittorrent.Category) (string, error) {
 	defaultSavePath := func() (string, error) {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		path, err := q.c.GetDefaultSavePath()
 		if err != nil {
-			return "", importErr(ImportStageConfig, errors.Wrap(err, "could not read qbittorrent default save path"))
+			return "", importErr(ImportStageConfig, errtrace.WithStack(fmt.Errorf("could not read qbittorrent default save path: %w", err)))
+		}
+		if err := ctx.Err(); err != nil {
+			return "", err
 		}
 		return path, nil
 	}
@@ -236,9 +290,12 @@ func (q *qbitClient) resolveCategorySavePath(categoryName string, categories map
 // if qBittorrent reports missing files, then resumes it unless the client is
 // configured to leave it paused. The returned report identifies how long each
 // client operation took.
-func (q *qbitClient) Import(req ImportRequest) (ImportReport, error) {
+func (q *qbitClient) Import(ctx context.Context, req ImportRequest) (ImportReport, error) {
 	var report ImportReport
 	started := time.Now()
+	if err := ctx.Err(); err != nil {
+		return report, err
+	}
 	opts, err := q.buildTorrentAddOptions()
 	if err != nil {
 		report.record(ImportStageConfig, started)
@@ -272,12 +329,12 @@ func (q *qbitClient) Import(req ImportRequest) (ImportReport, error) {
 	started = time.Now()
 	if _, err := q.c.AddTorrentFromMemory(req.TorrentBytes, opts.Prepare()); err != nil {
 		report.record(ImportStageAdd, started)
-		return report, importErr(ImportStageAdd, errors.Wrap(err, "failed to add torrent to qbittorrent"))
+		return report, importErr(ImportStageAdd, fmt.Errorf("failed to add torrent to qbittorrent: %w", err))
 	}
 	report.record(ImportStageAdd, started)
 
 	started = time.Now()
-	added, err := q.waitForTorrent(lookupHash)
+	added, err := q.waitForTorrent(ctx, lookupHash)
 	report.record(ImportStageFind, started)
 	if err != nil {
 		return report, importErr(ImportStageFind, err)
@@ -287,10 +344,10 @@ func (q *qbitClient) Import(req ImportRequest) (ImportReport, error) {
 		started = time.Now()
 		if err := q.c.Recheck([]string{added.Hash}); err != nil {
 			report.record(ImportStageRecheck, started)
-			return report, importErr(ImportStageRecheck, errors.Wrap(err, "failed to recheck torrent"))
+			return report, importErr(ImportStageRecheck, fmt.Errorf("failed to recheck torrent: %w", err))
 		}
 
-		added, err = q.waitForRecheck(added.Hash)
+		added, err = q.waitForRecheck(ctx, added.Hash)
 		report.record(ImportStageRecheck, started)
 		if err != nil {
 			return report, importErr(ImportStageRecheck, err)
@@ -305,7 +362,10 @@ func (q *qbitClient) Import(req ImportRequest) (ImportReport, error) {
 	started = time.Now()
 	if err := q.c.Resume([]string{added.Hash}); err != nil {
 		report.record(ImportStageResume, started)
-		return report, importErr(ImportStageResume, errors.Wrap(err, "failed to resume torrent"))
+		return report, importErr(ImportStageResume, fmt.Errorf("failed to resume torrent: %w", err))
+	}
+	if err := ctx.Err(); err != nil {
+		return report, importErr(ImportStageResume, err)
 	}
 	report.record(ImportStageResume, started)
 
@@ -366,7 +426,7 @@ func resolveContentLayout(mode string) (qbittorrent.ContentLayout, bool, error) 
 	case "original":
 		return qbittorrent.ContentLayoutOriginal, true, nil
 	default:
-		return "", false, errors.New("unsupported content layout %q", mode)
+		return "", false, fmt.Errorf("unsupported content layout %q", mode)
 	}
 }
 
@@ -376,10 +436,13 @@ func resolveContentLayout(mode string) (qbittorrent.ContentLayout, bool, error) 
 // progress) before flipping to missingFiles when data is actually missing.
 // Returning on first appearance would miss that and resume into an errored
 // torrent, so we wait for the state to stabilise before the caller inspects it.
-func (q *qbitClient) waitForTorrent(hash string) (qbittorrent.Torrent, error) {
+func (q *qbitClient) waitForTorrent(ctx context.Context, hash string) (qbittorrent.Torrent, error) {
+	ctx, cancel := context.WithTimeout(ctx, q.findTimeout)
+	defer cancel()
+
 	var settled qbittorrent.Torrent
-	err := pollUntil(q.pollInterval, q.findTimeout, func() (bool, error) {
-		t, ok, err := q.lookupTorrent(hash)
+	err := pollUntil(ctx, q.pollInterval, func() (bool, error) {
+		t, ok, err := q.lookupTorrent(ctx, hash)
 		if err != nil {
 			return false, err
 		}
@@ -395,10 +458,13 @@ func (q *qbitClient) waitForTorrent(hash string) (qbittorrent.Torrent, error) {
 	return settled, nil
 }
 
-func (q *qbitClient) waitForRecheck(hash string) (qbittorrent.Torrent, error) {
+func (q *qbitClient) waitForRecheck(ctx context.Context, hash string) (qbittorrent.Torrent, error) {
+	ctx, cancel := context.WithTimeout(ctx, q.recheckTimeout)
+	defer cancel()
+
 	var settled qbittorrent.Torrent
-	err := pollUntil(q.pollInterval, q.recheckTimeout, func() (bool, error) {
-		t, ok, err := q.lookupTorrent(hash)
+	err := pollUntil(ctx, q.pollInterval, func() (bool, error) {
+		t, ok, err := q.lookupTorrent(ctx, hash)
 		if err != nil {
 			return false, err
 		}
@@ -427,9 +493,15 @@ func isCheckingState(state qbittorrent.TorrentState) bool {
 	}
 }
 
-func (q *qbitClient) lookupTorrent(hash string) (qbittorrent.Torrent, bool, error) {
+func (q *qbitClient) lookupTorrent(ctx context.Context, hash string) (qbittorrent.Torrent, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return qbittorrent.Torrent{}, false, err
+	}
 	torrents, err := q.c.GetTorrents(qbittorrent.TorrentFilterOptions{Hashes: []string{hash}})
 	if err != nil {
+		return qbittorrent.Torrent{}, false, err
+	}
+	if err := ctx.Err(); err != nil {
 		return qbittorrent.Torrent{}, false, err
 	}
 

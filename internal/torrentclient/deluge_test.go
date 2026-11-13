@@ -103,7 +103,7 @@ func TestEnsureDelugeLabel(t *testing.T) {
 	t.Parallel()
 
 	plugin := &stubDelugeLabelAPI{}
-	require.NoError(t, ensureDelugeLabel(context.Background(), plugin, "hash", "seasonpackarr"))
+	require.NoError(t, ensureDelugeLabel(t.Context(), plugin, "hash", "seasonpackarr"))
 	require.Equal(t, []string{"seasonpackarr"}, plugin.addLabels)
 	require.Equal(t, []string{"seasonpackarr"}, plugin.setLabels)
 }
@@ -122,7 +122,7 @@ func TestDelugeImportAppliesLowercaseLabel(t *testing.T) {
 	})
 	client.label = func(context.Context) (delugeLabelAPI, error) { return plugin, nil }
 
-	_, err := client.Import(ImportRequest{
+	_, err := client.Import(t.Context(), ImportRequest{
 		TorrentBytes: []byte("torrent bytes"),
 		SavePath:     "/downloads/tv",
 		LegacyHash:   "legacy-hash",
@@ -185,14 +185,14 @@ func TestDelugeGetTorrentsAndFiles(t *testing.T) {
 	}
 	client := newTestDelugeClient(stub, domain.ImportPolicy{})
 
-	torrents, err := client.GetTorrents()
+	torrents, err := client.GetTorrents(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []Torrent{
 		{Hash: "aaaa", Name: "Show.S01E01", SavePath: "/legacy-downloads"},
 		{Hash: "bbbb", Name: "Show.S01E02", SavePath: "/downloads"},
 	}, torrents)
 
-	results := client.GetFiles([]string{"AAAA", "missing"})
+	results := client.GetFiles(t.Context(), []string{"AAAA", "missing"})
 	require.Len(t, results, 2)
 	require.NoError(t, results[0].Err)
 	require.Equal(t, "AAAA", results[0].Hash)
@@ -210,7 +210,7 @@ func TestDelugeGetFilesExpandsWholeCallError(t *testing.T) {
 
 	errBoom := errors.New("boom")
 	client := newTestDelugeClient(&stubDelugeAPI{torrentsErr: errBoom}, domain.ImportPolicy{})
-	results := client.GetFiles([]string{"one", "two"})
+	results := client.GetFiles(t.Context(), []string{"one", "two"})
 
 	require.Len(t, results, 2)
 	for index, hash := range []string{"one", "two"} {
@@ -226,7 +226,7 @@ func TestDelugeGetFilesRejectsEmptyV1Status(t *testing.T) {
 		torrents: map[string]*deluge.TorrentStatus{"missing": {}},
 	}, domain.ImportPolicy{})
 
-	results := client.GetFiles([]string{"missing"})
+	results := client.GetFiles(t.Context(), []string{"missing"})
 	require.Len(t, results, 1)
 	require.Error(t, results[0].Err)
 }
@@ -243,7 +243,7 @@ func TestDelugeV1GetFilesFiltersUnknownAndDuplicateHashes(t *testing.T) {
 	client := newTestDelugeClient(stub, domain.ImportPolicy{})
 	client.v1 = true
 
-	results := client.GetFiles([]string{"KNOWN", "known", "missing"})
+	results := client.GetFiles(t.Context(), []string{"KNOWN", "known", "missing"})
 
 	require.Len(t, results, 3)
 	require.NoError(t, results[0].Err)
@@ -258,13 +258,13 @@ func TestDelugeImportDestination(t *testing.T) {
 	t.Parallel()
 
 	client := newTestDelugeClient(&stubDelugeAPI{}, domain.ImportPolicy{SavePath: "/downloads/tv"})
-	destination, err := client.ImportDestination()
+	destination, err := client.ImportDestination(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, "/downloads/tv", destination.SavePath())
 	require.Equal(t, "/downloads/tv/Show.S01/Show.S01E01.mkv", destination.TargetPath("Show.S01", "Show.S01E01.mkv"))
 
 	client.policy.SavePath = ""
-	_, err = client.ImportDestination()
+	_, err = client.ImportDestination(t.Context())
 	require.Error(t, err)
 	require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
 }
@@ -282,7 +282,7 @@ func TestDelugeImportResumesThenWaitsForCheck(t *testing.T) {
 	client := newTestDelugeClient(stub, domain.ImportPolicy{SavePath: "/downloads/tv"})
 	torrentBytes := []byte("torrent bytes")
 
-	report, err := client.Import(ImportRequest{
+	report, err := client.Import(t.Context(), ImportRequest{
 		TorrentBytes: torrentBytes,
 		SavePath:     "/downloads/tv",
 		LegacyHash:   "legacy-hash",
@@ -308,7 +308,7 @@ func TestDelugeImportRejectsPureV2Torrent(t *testing.T) {
 	t.Parallel()
 
 	client := newTestDelugeClient(&stubDelugeAPI{}, domain.ImportPolicy{SavePath: "/downloads/tv"})
-	_, err := client.Import(ImportRequest{SavePath: "/downloads/tv", V2Hash: "v2-hash"})
+	_, err := client.Import(t.Context(), ImportRequest{SavePath: "/downloads/tv", V2Hash: "v2-hash"})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "v1 or hybrid")
 	require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
@@ -326,7 +326,7 @@ func TestDelugeImportDoesNotMutateExistingV2Torrent(t *testing.T) {
 	}
 	client := newTestDelugeClient(stub, domain.ImportPolicy{SavePath: "/downloads/tv"})
 
-	_, err := client.Import(ImportRequest{
+	_, err := client.Import(t.Context(), ImportRequest{
 		TorrentBytes: []byte("torrent bytes"),
 		SavePath:     "/downloads/tv",
 		LegacyHash:   "legacy-hash",
@@ -344,7 +344,7 @@ func TestDelugeImportDoesNotMutateExistingV1Torrent(t *testing.T) {
 	}
 	client := newTestDelugeClient(stub, domain.ImportPolicy{SavePath: "/downloads/tv"})
 
-	_, err := client.Import(ImportRequest{
+	_, err := client.Import(t.Context(), ImportRequest{
 		TorrentBytes: []byte("torrent bytes"),
 		SavePath:     "/downloads/tv",
 		LegacyHash:   "legacy-hash",

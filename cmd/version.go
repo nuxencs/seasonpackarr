@@ -5,14 +5,12 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/buildinfo"
-	"github.com/nuxencs/seasonpackarr/pkg/errors"
-
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +18,7 @@ import (
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Display version info",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Version: %v\nCommit: %v\nBuild date: %v\n", buildinfo.Version, buildinfo.Commit, buildinfo.Date)
 
 		// get the latest release tag from api
@@ -28,30 +26,31 @@ var versionCmd = &cobra.Command{
 			Timeout: 10 * time.Second,
 		}
 
-		resp, err := client.Get("https://api.github.com/repos/nuxencs/seasonpackarr/releases/latest")
+		req, err := http.NewRequestWithContext(cmd.Context(), http.MethodGet, "https://api.github.com/repos/nuxencs/seasonpackarr/releases/latest", nil)
+		if err != nil {
+			return fmt.Errorf("could not create latest-release request: %w", err)
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			if errors.Is(err, http.ErrHandlerTimeout) {
-				fmt.Println("Server timed out while fetching latest release from api")
-			} else {
-				fmt.Printf("Failed to fetch latest release from api: %v\n", err)
+				return fmt.Errorf("server timed out while fetching the latest release: %w", err)
 			}
-			os.Exit(1)
+			return fmt.Errorf("failed to fetch the latest release: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		// api returns 500 instead of 404 here
 		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusInternalServerError {
-			fmt.Print("No release found")
-			os.Exit(1)
+			return errors.New("no release found")
 		}
 
 		var rel struct {
 			TagName string `json:"tag_name"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-			fmt.Printf("Failed to decode response from api: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("failed to decode the latest-release response: %w", err)
 		}
 		fmt.Printf("Latest release: %v\n", rel.TagName)
+		return nil
 	},
 }
