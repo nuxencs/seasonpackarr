@@ -43,4 +43,4 @@ Reliable does not mean perfect acceptance. It means predictable outcomes when de
 - Did matching become broader or narrower? Why?
 - Can duplicate or unrelated client episodes broaden acceptance?
 - What log line would an operator use to debug this?
-- Can the new behavior be exercised with `go run . test candidate`, `test pack`, or `test parse`?
+- Can the new behavior be exercised with `go run . test candidate`, `test match`, or `test import`?

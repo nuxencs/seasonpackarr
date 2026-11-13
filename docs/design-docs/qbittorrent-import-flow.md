@@ -1,6 +1,6 @@
-# qBittorrent import flow (`/api/parse`)
+# qBittorrent import flow (`/api/import`)
 
-How `/api/parse` re-imports a matched season pack into qBittorrent, and how the
+How `/api/import` re-imports a matched season pack into qBittorrent, and how the
 same code path behaves when the pack is **complete on disk** (every episode was
 already hardlinked) versus **partial on disk** (only some episodes were present,
 the rest still need downloading - the normal seasonpackarr case).
@@ -20,7 +20,7 @@ recheck if it reports missing files, and resumes it.
 
 ```mermaid
 flowchart TD
-    A["POST /api/parse<br/>processor.parseTorrent"] --> B["load accepted plan<br/>or rebuild on cache miss"]
+    A["POST /api/import<br/>processor.importSeasonPack"] --> B["load accepted plan<br/>or rebuild on cache miss"]
     B --> C["ImportDestination()<br/>save path + rooted or flat file layout"]
     C --> D["hardlink planned episodes<br/>in the resolved client layout"]
     D --> E["qbitClient.Import(bytes, hash, resolved import root)"]
@@ -56,7 +56,7 @@ which opts that torrent out of Auto TMM.
 
 ```mermaid
 sequenceDiagram
-    participant P as processor (/api/parse)
+    participant P as processor (/api/import)
     participant A as qbitClient.Import
     participant Q as qBittorrent
 

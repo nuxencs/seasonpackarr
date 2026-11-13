@@ -11,4 +11,8 @@ import (
 var testCmd = &cobra.Command{
 	Use:   "test",
 	Short: "Test a specified feature",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return cmd.Help()
+	},
 }

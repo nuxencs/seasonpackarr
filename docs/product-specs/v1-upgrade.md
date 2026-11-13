@@ -210,13 +210,16 @@ the filter before Autobrr downloads the torrent file.
 
 ### External entry 2: exact torrent check
 
+The exact check now uses `/api/match`. Replace the old `/api/pack` URL.
+The old `/api/pack` and `/api/parse` routes are removed without aliases.
+
 Select **Add new** again and choose **Webhook**. Enter:
 
 | Field | Value |
 | --- | --- |
 | Name | `2. Torrent-aware check` |
 | On Error | `Reject` |
-| Endpoint | `http://seasonpackarr:42069/api/pack` |
+| Endpoint | `http://seasonpackarr:42069/api/match` |
 | HTTP method | `POST` |
 | HTTP Request Headers | `X-API-Token=your-api-token` |
 | Expected HTTP status code | `250` |
@@ -235,7 +238,7 @@ Enable the entry. This check downloads and reads the torrent only after the
 quick check passes. It decides whether the pack is useful, but it does not add
 the torrent or create files.
 
-![Autobrr External tab with the torrent-aware webhook](images/v1-upgrade-autobrr-pack.jpg)
+![Autobrr External tab with the exact match webhook](images/v1-upgrade-autobrr-pack.jpg)
 
 ### Confirm the External order
 
@@ -256,8 +259,9 @@ Open the filter's **Actions** tab.
 1. Remove the old qBittorrent or Transmission action. seasonpackarr now adds
    the torrent itself. Leaving the old action in place can add the torrent
    twice.
-2. Keep the existing `/api/parse` Webhook action, or add one if torrent parsing
-   was disabled before the upgrade.
+2. Change the existing Webhook action endpoint from `/api/parse` to
+   `/api/import`, or add the action if torrent parsing was disabled before
+   the upgrade. Preserve the `apikey` query parameter when it is set.
 3. Make sure it is the only action that adds or sends this torrent.
 
 Enter:
@@ -266,8 +270,8 @@ Enter:
 | --- | --- |
 | Action type | `Webhook` |
 | Name | `Import with seasonpackarr` |
-| Endpoint with API authentication | `http://seasonpackarr:42069/api/parse?apikey=your-api-token` |
-| Endpoint without API authentication | `http://seasonpackarr:42069/api/parse` |
+| Endpoint with API authentication | `http://seasonpackarr:42069/api/import?apikey=your-api-token` |
+| Endpoint without API authentication | `http://seasonpackarr:42069/api/import` |
 
 Use this in **Payload (JSON)**:
 
@@ -282,7 +286,7 @@ Use this in **Payload (JSON)**:
 The Autobrr Webhook Action form does not have a request-header field. When API
 authentication is enabled, put the token in the endpoint as shown above.
 
-![Autobrr Actions tab with the parse webhook](images/v1-upgrade-autobrr-action.jpg)
+![Autobrr Actions tab with the import webhook](images/v1-upgrade-autobrr-action.jpg)
 
 Save the filter, but keep it disabled until seasonpackarr v1.0.0 is running.
 
@@ -319,11 +323,11 @@ seasonpackarr test candidate "Series.S01.1080p.WEB-DL.H.264-RlsGrp" \
 Test the exact, read-only check with a representative torrent file:
 
 ```bash
-seasonpackarr test pack "/path/to/Series.S01.torrent" \
+seasonpackarr test match "/path/to/Series.S01.torrent" \
   --client default --host 127.0.0.1 --port 42069 --api your-api-token
 ```
 
-Do not use `seasonpackarr test parse` as a read-only test. It creates hardlinks
+Do not use `seasonpackarr test import` as a read-only test. It creates hardlinks
 and adds the torrent to the client.
 
 </details>
@@ -350,9 +354,9 @@ produce a different result than v0.16.0. Review the first few representative
 matches and adjust the threshold only if the new result does not fit your
 preference.
 
-## If the parse action times out
+## If the import action times out
 
-Autobrr waits 120 seconds for a Webhook action. `/api/parse` waits while the
+Autobrr waits 120 seconds for a Webhook action. `/api/import` waits while the
 torrent client checks the available data, and a large or slow check can take
 longer with qBittorrent, Transmission, or Deluge.
 

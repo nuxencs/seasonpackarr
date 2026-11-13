@@ -35,26 +35,26 @@ func (p *processor) CandidateSeasonPackHandler(c *gin.Context) {
 	c.String(statusCode.Code(), statusCode.String())
 }
 
-func (p *processor) ProcessSeasonPackHandler(c *gin.Context) {
-	p.log.Info().Msg("starting to process season pack request")
+func (p *processor) MatchSeasonPackHandler(c *gin.Context) {
+	p.log.Info().Msg("starting season pack match check")
 
 	if !p.decodeRequest(c) {
 		return
 	}
 
-	statusCode, err := p.processSeasonPack(c.Request.Context())
+	statusCode, err := p.matchSeasonPack(c.Request.Context())
 	if err != nil {
-		p.sendNotification(statusCode, "Pack", err)
+		p.sendNotification(statusCode, "Match", err)
 		if isExpectedGateRejection(statusCode) {
 			p.log.Info().Err(err).Msg("season pack rejected")
 		} else {
-			p.log.Error().Err(err).Msg("error processing season pack")
+			p.log.Error().Err(err).Msg("error matching season pack")
 		}
 		abortWithError(c, statusCode, err)
 		return
 	}
 
-	p.sendNotification(statusCode, "Pack", nil)
+	p.sendNotification(statusCode, "Match", nil)
 	p.log.Info().Msg("successfully matched season pack to episodes in client")
 	c.String(statusCode.Code(), statusCode.String())
 }
@@ -63,23 +63,23 @@ func isExpectedGateRejection(statusCode domain.StatusCode) bool {
 	return statusCode.Code() < http.StatusBadRequest || statusCode == domain.StatusFailedMatchToTorrentEps
 }
 
-func (p *processor) ParseTorrentHandler(c *gin.Context) {
-	p.log.Info().Msg("starting to parse season pack torrent")
+func (p *processor) ImportSeasonPackHandler(c *gin.Context) {
+	p.log.Info().Msg("starting season pack import")
 
 	if !p.decodeRequest(c) {
 		return
 	}
 
-	statusCode, err := p.parseTorrent(c.Request.Context())
+	statusCode, err := p.importSeasonPack(c.Request.Context())
 	if err != nil {
-		p.sendNotification(statusCode, "Parse", err)
-		p.log.Error().Err(err).Msg("error parsing torrent")
+		p.sendNotification(statusCode, "Import", err)
+		p.log.Error().Err(err).Msg("error importing season pack")
 		abortWithError(c, statusCode, err)
 		return
 	}
 
-	p.sendNotification(statusCode, "Parse", nil)
-	p.log.Info().Msg("successfully parsed torrent, hardlinked episodes, and imported the season pack")
+	p.sendNotification(statusCode, "Import", nil)
+	p.log.Info().Msg("successfully hardlinked episodes and imported the season pack")
 	c.String(statusCode.Code(), statusCode.String())
 }
 

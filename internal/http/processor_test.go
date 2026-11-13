@@ -195,7 +195,7 @@ func TestCandidateEndpoint_ReturnsSuccessfulMatchWithoutFileReads(t *testing.T) 
 	require.Zero(t, mock.fileCalls)
 }
 
-func TestCandidateAndPack_ShareOneClientInventory(t *testing.T) {
+func TestCandidateAndMatch_ShareOneClientInventory(t *testing.T) {
 	resetProcessorGlobals()
 	torrentBytes, err := torrents.TorrentFromRls("Inventory.S01.1080p.WEB-DL.H.264-RlsGrp", 1)
 	require.NoError(t, err)
@@ -219,20 +219,20 @@ func TestCandidateAndPack_ShareOneClientInventory(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
 
-	packProcessor := newImportProcessor()
-	packProcessor.req = &request{
+	matchProcessor := newImportProcessor()
+	matchProcessor.req = &request{
 		Name:       "Inventory.S01.1080p.WEB-DL.H.264-RlsGrp",
 		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
 		Client:     mock,
 		ClientName: "default",
 	}
-	statusCode, err = packProcessor.processSeasonPack(t.Context())
+	statusCode, err = matchProcessor.matchSeasonPack(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
-	require.Equal(t, 1, mock.torrentCalls, "candidate and pack must share one inventory snapshot")
+	require.Equal(t, 1, mock.torrentCalls, "candidate and match must share one inventory snapshot")
 }
 
-func TestProcessSeasonPack_UsesTorrentEpisodeCoverage(t *testing.T) {
+func TestMatchSeasonPack_UsesTorrentEpisodeCoverage(t *testing.T) {
 	resetProcessorGlobals()
 
 	const releaseName = "Coverage.S01.1080p.WEB-DL.H.264-RlsGrp"
@@ -262,14 +262,14 @@ func TestProcessSeasonPack_UsesTorrentEpisodeCoverage(t *testing.T) {
 		ClientName: "default",
 	}
 
-	statusCode, err := p.processSeasonPack(t.Context())
+	statusCode, err := p.matchSeasonPack(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
-	require.False(t, mock.importCalled, "pack evaluation must remain side-effect free")
+	require.False(t, mock.importCalled, "match evaluation must remain side-effect free")
 	require.Equal(t, 1, mock.fileBatchCalls, "one plan must use one bulk file read")
 }
 
-func TestProcessSeasonPack_RejectsCoverageBelowTorrentThreshold(t *testing.T) {
+func TestMatchSeasonPack_RejectsCoverageBelowTorrentThreshold(t *testing.T) {
 	resetProcessorGlobals()
 
 	const releaseName = "BelowThreshold.S01.1080p.WEB-DL.H.264-RlsGrp"
@@ -299,7 +299,7 @@ func TestProcessSeasonPack_RejectsCoverageBelowTorrentThreshold(t *testing.T) {
 		ClientName: "default",
 	}
 
-	statusCode, err := p.processSeasonPack(t.Context())
+	statusCode, err := p.matchSeasonPack(t.Context())
 	require.EqualError(t, err, domain.StatusBelowThreshold.String())
 	require.Equal(t, domain.StatusBelowThreshold, statusCode)
 	require.False(t, mock.importCalled)
@@ -336,7 +336,7 @@ func TestImportPlanCoverage_CannotExceedTorrentEpisodeCount(t *testing.T) {
 	require.Len(t, plan.links, 6, "client episodes outside the torrent cannot increase coverage")
 }
 
-func TestParseTorrent_ReusesAcceptedPlanWithoutClientReads(t *testing.T) {
+func TestImportSeasonPack_ReusesAcceptedPlanWithoutClientReads(t *testing.T) {
 	resetProcessorGlobals()
 
 	tempDir := t.TempDir()
@@ -373,22 +373,22 @@ func TestParseTorrent_ReusesAcceptedPlanWithoutClientReads(t *testing.T) {
 		SmartMode:          true,
 		SmartModeThreshold: 0.75,
 	}}
-	packProcessor := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil, nil)
-	packProcessor.req = &request{Name: releaseName, Torrent: encodedTorrent, Client: mock, ClientName: "default"}
+	matchProcessor := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil, nil)
+	matchProcessor.req = &request{Name: releaseName, Torrent: encodedTorrent, Client: mock, ClientName: "default"}
 
-	statusCode, err := packProcessor.processSeasonPack(t.Context())
+	statusCode, err := matchProcessor.matchSeasonPack(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
 	require.Equal(t, 1, mock.torrentCalls)
 	require.Equal(t, 2, mock.fileCalls)
 
-	parseProcessor := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil, nil)
-	parseProcessor.req = &request{Name: releaseName, Torrent: encodedTorrent, Client: mock, ClientName: "default"}
-	statusCode, err = parseProcessor.parseTorrent(t.Context())
+	importProcessor := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil, nil)
+	importProcessor.req = &request{Name: releaseName, Torrent: encodedTorrent, Client: mock, ClientName: "default"}
+	statusCode, err = importProcessor.importSeasonPack(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
-	require.Equal(t, 1, mock.torrentCalls, "parse must reuse the accepted inventory")
-	require.Equal(t, 2, mock.fileCalls, "parse must reuse the accepted import plan")
+	require.Equal(t, 1, mock.torrentCalls, "import must reuse the accepted inventory")
+	require.Equal(t, 2, mock.fileCalls, "import must reuse the accepted import plan")
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep1))
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep2))
 }
@@ -649,9 +649,9 @@ func writeEpisode(t *testing.T, path string) {
 	require.NoError(t, os.WriteFile(path, []byte("0"), 0o644))
 }
 
-// TestProcessSeasonPack_IsGateOnly locks in that /api/pack is a pure match gate:
+// TestMatchSeasonPack_IsGateOnly locks in that /api/match is a pure match gate:
 // it reports a successful match without importing or hardlinking anything.
-func TestProcessSeasonPack_IsGateOnly(t *testing.T) {
+func TestMatchSeasonPack_IsGateOnly(t *testing.T) {
 	resetProcessorGlobals()
 
 	tempDir := t.TempDir()
@@ -683,17 +683,17 @@ func TestProcessSeasonPack_IsGateOnly(t *testing.T) {
 		ClientName: "default",
 	}
 
-	statusCode, err := p.processSeasonPack(t.Context())
+	statusCode, err := p.matchSeasonPack(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
 	require.False(t, mock.importCalled, "gate must not import")
 	require.NoFileExists(t, filepath.Join(importDir, "Series.S01.1080p.WEB-DL.H.264-RlsGrp", epName))
 }
 
-// TestParseTorrent_ImportsAndPassesResolvedRoot verifies the /api/parse flow
+// TestImportSeasonPack_ImportsAndPassesResolvedRoot verifies the /api/import flow
 // resolves the import root, hardlinks the matched episodes under it, and hands
 // the decoded torrent + info hash + resolved root to the client's Import.
-func TestParseTorrent_ImportsAndPassesResolvedRoot(t *testing.T) {
+func TestImportSeasonPack_ImportsAndPassesResolvedRoot(t *testing.T) {
 	resetProcessorGlobals()
 
 	tempDir := t.TempDir()
@@ -733,7 +733,7 @@ func TestParseTorrent_ImportsAndPassesResolvedRoot(t *testing.T) {
 		ClientName: "default",
 	}
 
-	statusCode, err := p.parseTorrent(t.Context())
+	statusCode, err := p.importSeasonPack(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
 
@@ -748,7 +748,7 @@ func TestParseTorrent_ImportsAndPassesResolvedRoot(t *testing.T) {
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep2))
 }
 
-func TestParseTorrent_RejectsArchivePackWithSampleVideos(t *testing.T) {
+func TestImportSeasonPack_RejectsArchivePackWithSampleVideos(t *testing.T) {
 	resetProcessorGlobals()
 
 	tempDir := t.TempDir()
@@ -792,14 +792,14 @@ func TestParseTorrent_RejectsArchivePackWithSampleVideos(t *testing.T) {
 		ClientName: "default",
 	}
 
-	statusCode, err := p.parseTorrent(t.Context())
+	statusCode, err := p.importSeasonPack(t.Context())
 	require.EqualError(t, err, domain.StatusFailedMatchToTorrentEps.String())
 	require.Equal(t, domain.StatusFailedMatchToTorrentEps, statusCode)
 	require.False(t, mock.importCalled, "rejected archive pack must not be imported")
 	require.NoFileExists(t, filepath.Join(importDir, releaseName, episodeName))
 }
 
-func TestParseTorrent_UsesFlatImportDestination(t *testing.T) {
+func TestImportSeasonPack_UsesFlatImportDestination(t *testing.T) {
 	resetProcessorGlobals()
 
 	tempDir := t.TempDir()
@@ -834,14 +834,14 @@ func TestParseTorrent_UsesFlatImportDestination(t *testing.T) {
 		ClientName: "default",
 	}
 
-	statusCode, err := p.parseTorrent(t.Context())
+	statusCode, err := p.importSeasonPack(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
 	require.FileExists(t, filepath.Join(importDir, episodeName))
 	require.NoFileExists(t, filepath.Join(importDir, releaseName, episodeName))
 }
 
-func TestParseTorrent_RetryReusesExistingHardlinks(t *testing.T) {
+func TestImportSeasonPack_RetryReusesExistingHardlinks(t *testing.T) {
 	resetProcessorGlobals()
 
 	tempDir := t.TempDir()
@@ -875,16 +875,16 @@ func TestParseTorrent_RetryReusesExistingHardlinks(t *testing.T) {
 		p.req.Torrent = encodedTorrent
 		mock.importCalled = false
 
-		statusCode, err := p.parseTorrent(t.Context())
+		statusCode, err := p.importSeasonPack(t.Context())
 		require.NoError(t, err, "attempt %d", attempt+1)
 		require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
 		require.True(t, mock.importCalled, "attempt %d must reach client import", attempt+1)
 	}
 }
 
-// TestParseTorrent_SkipsCrossSeedDuplicates ensures a target is hardlinked only
+// TestImportSeasonPack_SkipsCrossSeedDuplicates ensures a target is hardlinked only
 // once even when multiple cross-seeded client torrents match the same episode.
-func TestParseTorrent_SkipsCrossSeedDuplicates(t *testing.T) {
+func TestImportSeasonPack_SkipsCrossSeedDuplicates(t *testing.T) {
 	resetProcessorGlobals()
 
 	tempDir := t.TempDir()
@@ -930,7 +930,7 @@ func TestParseTorrent_SkipsCrossSeedDuplicates(t *testing.T) {
 		ClientName: "default",
 	}
 
-	statusCode, err := p.parseTorrent(t.Context())
+	statusCode, err := p.importSeasonPack(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
 

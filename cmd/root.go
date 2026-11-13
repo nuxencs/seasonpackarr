@@ -41,7 +41,7 @@ func init() {
 	testCmd.PersistentFlags().StringVarP(&apiKey, "api", "a", "", "api key used by seasonpackarr")
 
 	rootCmd.AddCommand(genTokenCmd, startCmd, testCmd, versionCmd)
-	testCmd.AddCommand(candidateCmd, packCmd, parseCmd)
+	testCmd.AddCommand(candidateCmd, matchCmd, importCmd)
 }
 
 func Execute() {

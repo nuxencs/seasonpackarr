@@ -51,7 +51,7 @@ type FileResult struct {
 }
 
 // ImportRequest carries a parsed season pack to be (re-)imported into the
-// client on /api/parse. The processor has already hardlinked the matched local
+// client on /api/import. The processor has already hardlinked the matched local
 // episodes into SavePath before Import is called.
 //
 // SavePath MUST equal ImportDestination.SavePath for the same client, so the

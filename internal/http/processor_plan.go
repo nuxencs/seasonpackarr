@@ -57,10 +57,10 @@ const importPlanCacheTTL = 2 * time.Minute
 
 var planMap = xsync.NewMapOf[importPlanCacheKey, cachedImportPlan]()
 
-// processSeasonPack is the /api/pack gate. It builds an exact torrent-aware
+// matchSeasonPack is the /api/match gate. It builds an exact torrent-aware
 // import plan but has no filesystem or client side effects. Hardlinking and
-// importing happen on /api/parse.
-func (p *processor) processSeasonPack(ctx context.Context) (domain.StatusCode, error) {
+// importing happen on /api/import.
+func (p *processor) matchSeasonPack(ctx context.Context) (domain.StatusCode, error) {
 	clientName := p.getClientName()
 	snapshot := p.cfg.Snapshot()
 

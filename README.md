@@ -270,7 +270,7 @@ For example, if the torrent contains 12 episode files and the client can reuse 8
 A threshold of `0.75` rejects that pack. A client can contain more episodes than the pack, but duplicate or unrelated
 episodes cannot increase coverage above 100 percent.
 
-### Parse Torrent
+### Torrent Matching and Import
 
 seasonpackarr always parses the torrent file of an announced season pack. This makes sure that the season pack folder
 that gets created by seasonpackarr will always have the correct name. One example that will make the benefit of this
@@ -283,9 +283,9 @@ Using the announce name would create the wrong folder and would lead to all the 
 again. The issue in the given example is the additional `A` after `DDP` which is not present in the folder name. By
 using the parsed folder name the files will be hardlinked into the exact folder that is being used in the torrent.
 
-Parsing first happens on `POST /api/pack`. That endpoint builds and caches an exact import plan without changing the
-filesystem or torrent client. `POST /api/parse` reuses the accepted plan, hardlinks the matched episodes, and imports
-the season pack. If the short-lived plan is unavailable after a restart or delay, `/api/parse` safely rebuilds it.
+Parsing first happens on `POST /api/match`. That endpoint builds and caches an exact import plan without changing the
+filesystem or torrent client. `POST /api/import` reuses the accepted plan, hardlinks the matched episodes, and imports
+the season pack. If the short-lived plan is unavailable after a restart or delay, `/api/import` safely rebuilds it.
 
 ### Fuzzy Matching
 
@@ -377,7 +377,7 @@ Its `Data (JSON)` is:
 The second entry is the exact torrent-aware check. Its endpoint is:
 
 ```
-http://host:port/api/pack
+http://host:port/api/match
 ```
 
 Its `Data (JSON)` includes the torrent bytes:
@@ -395,10 +395,10 @@ config under the `clients` section. Use the same value in both entries. If you o
 the `default` client. The request fails if that client does not exist.
 
 autobrr runs the entries in order. A rejected announce stops at `/api/candidate`, so autobrr does not download its
-torrent file. A candidate that passes continues to `/api/pack`, where seasonpackarr checks the actual torrent and
+torrent file. A candidate that passes continues to `/api/match`, where seasonpackarr checks the actual torrent and
 builds the import plan. Both endpoints are match gates. They do not change the filesystem or torrent client.
 
-After you save the filter, reload it and confirm that `/api/candidate` is displayed above `/api/pack`. The persisted
+After you save the filter, reload it and confirm that `/api/candidate` is displayed above `/api/match`. The persisted
 top-to-bottom display order is the execution order. If necessary, use the arrows beside the entries to correct it,
 then save and reload again.
 
@@ -411,25 +411,25 @@ generate a token for you that you can copy and paste into your config:
 seasonpackarr gen-token
 ```
 
-After you set the API token, include it on both external webhook entries and the `/api/parse` action. Use the
+After you set the API token, include it on both external webhook entries and the `/api/import` action. Use the
 `X-API-Token` request header for the two external entries. The autobrr Webhook action has no request-header field, so
-put the token in the `/api/parse` endpoint as a query parameter.
+put the token in the `/api/import` endpoint as a query parameter.
 
 1. **External entries**: Edit `HTTP Request Headers` on both entries and replace `api_token` with the token from your
    config.
     ```
     X-API-Token=api_token
     ```
-2. **Parse action**: Append `?apikey=api_token` to its endpoint.
+2. **Import action**: Append `?apikey=api_token` to its endpoint.
     ```
-    http://host:port/api/parse?apikey=api_token
+    http://host:port/api/import?apikey=api_token
     ```
 
 The external filter you just created will be disabled by default. To avoid unwanted downloads, make sure to enable it!
 
 ### Actions
 
-The only action your filter needs is the Webhook action described below. When it hits `/api/parse`, seasonpackarr
+The only action your filter needs is the Webhook action described below. When it hits `/api/import`, seasonpackarr
 parses the torrent file, hardlinks the matching episodes into the correct season pack folder, adds the torrent to your
 torrent client, checks it so the already present files are recognised, and starts it. Do **not** add a separate
 torrent-client action to the filter. seasonpackarr owns adding the torrent to the client, and another client action
@@ -441,7 +441,7 @@ Navigate to the `Actions` tab, click on `Add new` and change the `Action type` o
 The `Endpoint` field should look like this, with `host`, `port` and `api_token` taken from your config:
 
 ```
-http://host:port/api/parse?apikey=api_token
+http://host:port/api/import?apikey=api_token
 ```
 
 Append the API query parameter `?apikey=api_token` only if you have enabled API authentication by providing an API token

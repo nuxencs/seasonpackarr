@@ -14,7 +14,7 @@ type Client struct {
 	Import   ImportPolicy `yaml:"import"`
 }
 
-// ImportPolicy controls how /api/parse re-imports a matched season pack back
+// ImportPolicy controls how /api/import re-imports a matched season pack back
 // into the torrent client after the local episodes have been hardlinked.
 //
 // SavePath is shared by all clients. Tags apply to qBittorrent and Transmission.

@@ -8,7 +8,7 @@
 
 1. `main.go` calls Cobra commands in `cmd/`.
 2. `cmd/start.go` loads config, logger, and notifications, then starts the HTTP server. Signal cancellation starts a bounded graceful shutdown.
-3. `internal/http/server.go` builds `/api/healthz`, `/api/candidate`, `/api/pack`, and `/api/parse`.
+3. `internal/http/server.go` builds `/api/healthz`, `/api/candidate`, `/api/match`, and `/api/import`.
 4. `internal/http/processor_*.go` keeps each processing stage together. The handler file owns payload decode and responses. The candidate file owns announce-only matching and inventory caching. The plan file parses torrent bytes and builds an exact side-effect-free plan. The import file reuses or rebuilds that plan, resolves the client import destination, hardlinks matched files, and imports the pack. See [docs/design-docs/qbittorrent-import-flow.md](docs/design-docs/qbittorrent-import-flow.md).
 5. `internal/release/` decides whether a client episode and announced season pack are compatible.
 6. `internal/files/` performs the hardlink operation.
@@ -30,8 +30,8 @@
 - Concerns: server lifecycle, middleware, auth, health, webhook handlers
 - External contract:
   - `POST /api/candidate`
-  - `POST /api/pack`
-  - `POST /api/parse`
+  - `POST /api/match`
+  - `POST /api/import`
   - `GET /api/healthz/liveness`
   - `GET /api/healthz/readiness`
 
@@ -49,12 +49,12 @@
 ### Pack Evaluation and Cache Reuse
 
 - `/api/candidate` reads torrent summaries only. It does not need torrent bytes or file-detail calls.
-- `/api/pack` parses the announced torrent, maps reusable source files to distinct valid torrent targets, and applies smart mode to exact torrent coverage.
+- `/api/match` parses the announced torrent, maps reusable source files to distinct valid torrent targets, and applies smart mode to exact torrent coverage.
 - Exact plan matching parses each episode filename once and uses an indexed compatibility key instead of scanning every source-target pair.
 - Exact planning requests candidate file details once. Transmission and Deluge v2 batch hashes in one client call. Deluge v1 uses one session-state preflight and one bulk status call. qBittorrent uses a bounded four-worker adapter pool.
-- Client inventory is cached for 30 seconds, so the ordered candidate and pack checks normally share one client scan.
-- Accepted import plans are cached for 2 minutes. `/api/parse` normally performs no second inventory or file-detail reads.
-- Cache entries validate client configuration, matching settings, release name, and torrent identity. `/api/parse` rebuilds safely on a cache miss.
+- Client inventory is cached for 30 seconds, so the ordered candidate and match checks normally share one client scan.
+- Accepted import plans are cached for 2 minutes. `/api/import` normally performs no second inventory or file-detail reads.
+- Cache entries validate client configuration, matching settings, release name, and torrent identity. `/api/import` rebuilds safely on a cache miss.
 - A successful import invalidates the plan and the client inventory.
 - Exact plans retain one compact reason for every unmatched torrent target.
   Torrent-client adapters return neutral stage timings for successful and failed

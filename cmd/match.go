@@ -11,12 +11,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// packCmd represents the pack command
-var packCmd = &cobra.Command{
-	Use:   "pack",
-	Short: "Test the pack API endpoint with a release or torrent file",
-	Example: `  seasonpackarr test pack "Series.S01.1080p.WEB-DL.H.264-RlsGrp" --client "default" --host "127.0.0.1" --port 42069 --api "your-api-key"
-  seasonpackarr test pack "/path/to/Series.S01.1080p.WEB-DL.H.264-RlsGrp.torrent" --client "default" --host "127.0.0.1" --port 42069 --api "your-api-key"`,
+var matchCmd = &cobra.Command{
+	Use:   "match",
+	Short: "Check exact torrent matches without creating hardlinks or importing",
+	Example: `  seasonpackarr test match "Series.S01.1080p.WEB-DL.H.264-RlsGrp" --client "default" --host "127.0.0.1" --port 42069 --api "your-api-key"
+  seasonpackarr test match "/path/to/Series.S01.1080p.WEB-DL.H.264-RlsGrp.torrent" --client "default" --host "127.0.0.1" --port 42069 --api "your-api-key"`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
 			fmt.Println("Please provide either a release name or a .torrent file")
@@ -31,13 +30,13 @@ var packCmd = &cobra.Command{
 			return
 		}
 
-		body, err := payload.CompilePack(rlsName, torrentBytes, clientName)
+		body, err := payload.CompileMatch(rlsName, torrentBytes, clientName)
 		if err != nil {
 			fmt.Println(err.Error())
 			return
 		}
 
-		err = payload.Exec(cmd.Context(), fmt.Sprintf("http://%s:%d/api/pack", host, port), body, apiKey)
+		err = payload.Exec(cmd.Context(), fmt.Sprintf("http://%s:%d/api/match", host, port), body, apiKey)
 		if err != nil {
 			fmt.Println(err.Error())
 			return
