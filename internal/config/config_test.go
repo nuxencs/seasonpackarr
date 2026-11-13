@@ -127,6 +127,24 @@ clients:
 	assert.Equal(t, "tv-hd", snapshot.Clients["default"].Import.Category)
 }
 
+// TestLoadSnapshot_ReadsKeyCaseVariants: a case variant once competed with the
+// default of the same key, and map order chose the winner. A lost apiToken
+// turns off the API authentication.
+func TestLoadSnapshot_ReadsKeyCaseVariants(t *testing.T) {
+	for _, key := range []string{"apiToken", "apitoken", "APITOKEN", "APIToken"} {
+		t.Run(key, func(t *testing.T) {
+			configFile := writeTestConfig(t, "clients: {}\nNOTIFICATIONS:\n  DISCORD: hook\n"+key+": secret\n")
+			// One load proves nothing when map order decides the result.
+			for range 20 {
+				snapshot, err := (&AppConfig{configFile: configFile, version: "test"}).loadSnapshot()
+				require.NoError(t, err)
+				require.Equal(t, "secret", snapshot.APIToken)
+				require.Equal(t, "hook", snapshot.Notifications.Discord)
+			}
+		})
+	}
+}
+
 func TestLoadSnapshot_KeepsMigrationErrorsForRemovedKeys(t *testing.T) {
 	tests := []struct {
 		name, content, want string
