@@ -70,7 +70,7 @@ services:
       SEASONPACKARR_TEST_SEEDER_PASS: integration
       SEASONPACKARR_TEST_SEED_DIR: /data/seed
     volumes:
-      - ../../../..:/src:ro
+      - ../..:/src:ro
       - data:/data
       - go-cache:/cache
 

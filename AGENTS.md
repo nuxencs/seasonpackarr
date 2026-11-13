@@ -40,6 +40,9 @@ Use progressive disclosure. Do not read the whole repo up front unless the task 
 - `internal/domain/`: shared domain structs and status codes
 - `internal/notification/`: Discord notifications
 - `schemas/`: JSON schema for config surface
+- `test/harness/`: Docker Compose harness that runs the tests against real torrent client daemons
+- `test/e2e/`: end-to-end tests from an autobrr announce to a seeding pack
+- `internal/daemontest/`: helpers shared by the tests against real daemons (seeder, pack builders, waits)
 - `distrib/`, `Dockerfile`, `ci.Dockerfile`: runtime packaging
 
 ## Agent Operating Loop
@@ -70,9 +73,14 @@ Primary local checks:
 - `go test -v ./...`
 - `govulncheck ./...`
 - `gofumpt -w .` when Go files change
-- `internal/torrentclient/testdata/harness/run.sh` when torrent client adapter code changes. It runs the
+- `test/harness/run.sh` when torrent client adapter code changes. It runs the
   integration suites against real daemons in Docker Compose. Pass entry names, for example `qbit-4.3.9`, to run
   one client version, `all` for the full version range, or `list [all]` to print the entries.
+- `test/harness/run.sh e2e` before you claim that a change to the request flow, planning, hardlinks, client
+  adapters, config loading, or the image works. It runs the end-to-end tests: real autobrr gets one announce, and the
+  seasonpackarr release image, a real client, and the seeder take it to a seeding pack. Pass `e2e-qbit` to run one
+  client, or `list e2e` to print the entries. The terms end-to-end, integration, and CLI test are defined in
+  `ARCHITECTURE.md` under Testing Surface.
 - focused CLI/API smoke checks when behavior touches request flow:
   - `go run . start --config <dir>`
   - `go run . candidate "<release>" --config <dir> --client "<name>"`
@@ -86,8 +94,11 @@ CI currently enforces:
 - Docker builds
 - CodeQL
 - integration tests in `.github/workflows/integration.yml`: one job for each entry of `run.sh list`, when torrent
-  client code or its dependencies change (the workflow lists the paths). A manual run with `full` uses
+  client code, the harness, or their dependencies change (the workflow lists the paths). A manual run with `full` uses
   `run.sh list all`. It is not a required check.
+- end-to-end tests in the same workflow: one job for each entry of `run.sh list e2e`, when the production source
+  (`main.go`, `cmd`, and `internal` without test files), the Dockerfiles, the Go module files, the harness, the
+  end-to-end tests, or the workflow change, and on each manual run. It is not a required check.
 
 ## Plans As Artifacts
 

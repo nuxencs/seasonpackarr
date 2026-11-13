@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
-# Runs the torrent client integration tests against real daemons in Docker Compose.
+# Runs the integration and end-to-end tests against real daemons in Docker Compose.
 #
 # Usage:
-#   run.sh               run the default entries (the CI set)
-#   run.sh all           run the default entries and the middle qBittorrent versions
-#   run.sh <entry>...    run the named entries, for example qbit-4.3.9
-#   run.sh list [all]    print the entries as a JSON array
+#   run.sh                   run the default integration entries (the CI set)
+#   run.sh all               run the default entries and the middle qBittorrent versions
+#   run.sh e2e               run every end-to-end entry
+#   run.sh <entry>...        run the named entries, for example qbit-4.3.9 or e2e-qbit
+#   run.sh list [all|e2e]    print the entries as a JSON array
 #
-# Each entry starts fresh daemons and a fresh /data volume, runs that client's
-# integration tests in strict mode, saves the daemon logs to artifacts/<entry>
-# when it fails, and removes its containers and volumes.
+# Each entry starts fresh daemons and a fresh /data volume, runs its tests in
+# strict mode, saves the daemon logs to artifacts/<entry> when it fails, and
+# removes its containers and volumes. An integration entry runs one client's
+# integration tests. An end-to-end entry e2e-<client> runs that client's
+# end-to-end tests with autobrr, the seasonpackarr image, and the newest
+# integration version of the client.
 set -euo pipefail
 
 # Oldest and newest supported version of each client. Bump the newest by hand.
@@ -20,18 +24,20 @@ default_entries=(
 )
 # Middle versions that only `all` runs. hotio publishes no 4.4.x image.
 extra_entries=(qbit-4.5.5 qbit-4.6.7 qbit-5.0.5 qbit-5.1.4)
+# End-to-end entries that only `e2e` runs.
+e2e_entries=(e2e-qbit e2e-transmission e2e-deluge)
 # Every entry seeds its download test from this qBittorrent. Bump it with the newest qBittorrent entry.
 export SEEDER_IMAGE=ghcr.io/hotio/qbittorrent:release-5.2.4
 
 harness_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-repo_root=$(cd "$harness_dir/../../../.." && pwd)
+repo_root=$(cd "$harness_dir/../.." && pwd)
 artifacts_dir="$harness_dir/artifacts"
 # One project per checkout, so two worktrees can run at the same time.
 project="seasonpackarr-harness-$(printf '%s' "$repo_root" | cksum | cut -d ' ' -f 1)"
 
-# usage prints the Usage lines of the header comment, lines 4 to 8 of this file.
+# usage prints the Usage lines of the header comment, lines 4 to 9 of this file.
 usage() {
-	sed -n '4,8s/^# \{0,1\}//p' "${BASH_SOURCE[0]}" >&2
+	sed -n '4,9s/^# \{0,1\}//p' "${BASH_SOURCE[0]}" >&2
 	exit 2
 }
 
@@ -47,18 +53,43 @@ json_array() {
 
 is_known_entry() {
 	local known
-	for known in "${default_entries[@]}" "${extra_entries[@]}"; do
+	for known in "${default_entries[@]}" "${extra_entries[@]}" "${e2e_entries[@]}"; do
 		[[ $known == "$1" ]] && return 0
 	done
 	return 1
 }
 
-# configure_entry sets client, test_pattern, log_files, and the image variables
-# that the client's compose overlay reads. log_files lists <service>:<path>
+# newest_entry prints the newest default entry of client $1. default_entries
+# lists the versions of each client from oldest to newest.
+newest_entry() {
+	local entry newest=''
+	for entry in "${default_entries[@]}"; do
+		[[ $entry == "$1"-* ]] && newest=$entry
+	done
+	printf '%s' "$newest"
+}
+
+# configure_entry sets client, e2e, test_pattern, test_tags, test_package,
+# log_files, and the image variables that the compose overlays read. log_files lists <service>:<path>
 # entries for daemon logs that are not on stdout.
 configure_entry() {
+	e2e=''
+	test_tags=integration test_package=./internal/torrentclient
 	log_files=(seeder:/config/data/logs/qbittorrent.log)
 	case $1 in
+	e2e-*)
+		local newest
+		newest=$(newest_entry "${1#e2e-}")
+		[[ -n $newest ]] || {
+			printf 'no integration entry for %s\n' "$1" >&2
+			exit 2
+		}
+		configure_entry "$newest"
+		e2e=1
+		test_tags=e2e test_package=./test/e2e
+		# TestQbitDaemon_ becomes TestQbitE2E_.
+		test_pattern=${test_pattern%Daemon_}E2E_
+		;;
 	qbit-*)
 		client=qbit
 		test_pattern=QbitDaemon_
@@ -105,8 +136,26 @@ configure_entry() {
 }
 
 compose() {
-	docker compose --project-directory "$harness_dir" --project-name "$project" \
-		--file "$harness_dir/compose.yaml" --file "$harness_dir/compose.$client.yaml" "$@"
+	local files=(--file "$harness_dir/compose.yaml" --file "$harness_dir/compose.$client.yaml")
+	[[ -z $e2e ]] || files+=(--file "$harness_dir/compose.e2e.yaml")
+	docker compose --project-directory "$harness_dir" --project-name "$project" "${files[@]}" "$@"
+}
+
+# run_tests runs the tests of the configured entry in the test container.
+run_tests() {
+	local listed run=(compose run --rm)
+	# go test passes when -run matches no test, so check that the pattern lists one.
+	listed=$(compose run --rm -T test go test -tags="$test_tags" -list "$test_pattern" "$test_package") || {
+		printf '%s\n' "$listed" >&2
+		return 1
+	}
+	if ! grep -q '^Test' <<<"$listed"; then
+		printf 'no test in %s matches %s\n' "$test_package" "$test_pattern" >&2
+		return 1
+	fi
+	# --use-aliases lets autobrr reach the torrent server of the test at "test".
+	[[ -z $e2e ]] || run+=(--use-aliases)
+	"${run[@]}" test go test -tags="$test_tags" -count=1 -v -run "$test_pattern" "$test_package"
 }
 
 teardown() {
@@ -140,7 +189,7 @@ run_entry() {
 	teardown
 	if compose pull --quiet --ignore-buildable &&
 		compose build &&
-		compose run --rm test go test -tags=integration -count=1 -v -run "$test_pattern" ./internal/torrentclient; then
+		run_tests; then
 		status=0
 	else
 		status=$?
@@ -156,6 +205,7 @@ list)
 	case ${2:-} in
 	'') json_array "${default_entries[@]}" ;;
 	all) json_array "${default_entries[@]}" "${extra_entries[@]}" ;;
+	e2e) json_array "${e2e_entries[@]}" ;;
 	*) usage ;;
 	esac
 	exit 0
@@ -166,12 +216,16 @@ all)
 	[[ $# -eq 1 ]] || usage
 	entries=("${default_entries[@]}" "${extra_entries[@]}")
 	;;
+e2e)
+	[[ $# -eq 1 ]] || usage
+	entries=("${e2e_entries[@]}")
+	;;
 *) entries=("$@") ;;
 esac
 
 for entry in "${entries[@]}"; do
 	if ! is_known_entry "$entry"; then
-		printf 'unknown entry %s, known entries: %s %s\n' "$entry" "${default_entries[*]}" "${extra_entries[*]}" >&2
+		printf 'unknown entry %s, known entries: %s %s %s\n' "$entry" "${default_entries[*]}" "${extra_entries[*]}" "${e2e_entries[*]}" >&2
 		exit 2
 	fi
 done
@@ -183,6 +237,17 @@ GO_IMAGE=$(awk '$1 == "FROM" && $2 ~ /^golang:/ { print $2; exit }' "$repo_root/
 }
 export GO_IMAGE
 docker volume create seasonpackarr-harness-go-cache >/dev/null
+
+# The end-to-end entries share one seasonpackarr image. The release workflow
+# publishes the image from ci.Dockerfile, so the tests run that build.
+for entry in "${entries[@]}"; do
+	if [[ $entry == e2e-* ]]; then
+		export SEASONPACKARR_IMAGE="$project-seasonpackarr:e2e"
+		printf '\n==> build %s\n' "$SEASONPACKARR_IMAGE"
+		docker build --file "$repo_root/ci.Dockerfile" --tag "$SEASONPACKARR_IMAGE" "$repo_root"
+		break
+	fi
+done
 
 trap teardown EXIT
 trap 'exit 130' INT TERM

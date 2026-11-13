@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/nuxencs/seasonpackarr/internal/daemontest"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 
 	"github.com/hekmon/transmissionrpc/v3"
@@ -21,24 +22,24 @@ import (
 func TestTransmissionDaemon_ImportsCompletePack(t *testing.T) {
 	importDir := requireDaemon(t, envTransmissionHost)
 	c := newTransmissionDaemonClient(t, domain.ImportPolicy{SavePath: importDir, Tags: []string{"seasonpackarr"}})
-	pack := writeCompletePack(t, importDir, packName(t))
+	pack := daemontest.WriteCompletePack(t, importDir, daemontest.PackName(t))
 
-	importTransmissionPack(t, c, pack.importRequest(importDir, true))
+	importTransmissionPack(t, c, importRequest(pack, importDir, true))
 
-	tr := waitTransmissionChecked(t, c, pack.hashes.Legacy)
+	tr := waitTransmissionChecked(t, c, pack.Hashes.Legacy)
 	assertTransmissionStarted(t, tr)
 	requireListedPack(t, c, pack, importDir)
-	requireFileReadLoad(t, c, pack.hashes.Legacy)
+	requireFileReadLoad(t, c, pack.Hashes.Legacy)
 }
 
 func TestTransmissionDaemon_ResumesPartialPack(t *testing.T) {
 	importDir := requireDaemon(t, envTransmissionHost)
 	c := newTransmissionDaemonClient(t, domain.ImportPolicy{SavePath: importDir})
-	pack := writePartialPack(t, importDir, packName(t), 1)
+	pack := daemontest.WritePartialPack(t, importDir, daemontest.PackName(t), 1)
 
-	importTransmissionPack(t, c, pack.importRequest(importDir, false))
+	importTransmissionPack(t, c, importRequest(pack, importDir, false))
 
-	tr := waitTransmissionChecked(t, c, pack.hashes.Legacy)
+	tr := waitTransmissionChecked(t, c, pack.Hashes.Legacy)
 	assertTransmissionStarted(t, tr)
 	assertPartialProgress(t, transmissionPercentDone(tr), 1)
 }
@@ -55,7 +56,7 @@ func TestTransmissionDaemon_ResumesPartialPackWithIncompleteDir(t *testing.T) {
 	original, err := raw.SessionArgumentsGetAll(t.Context())
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		ctx, cancel := cleanupContext(t)
+		ctx, cancel := daemontest.CleanupContext(t)
 		defer cancel()
 		assert.NoError(t, raw.SessionArgumentsSet(ctx, transmissionrpc.SessionArguments{
 			IncompleteDirEnabled: original.IncompleteDirEnabled,
@@ -68,11 +69,11 @@ func TestTransmissionDaemon_ResumesPartialPackWithIncompleteDir(t *testing.T) {
 		IncompleteDirEnabled: new(true),
 		IncompleteDir:        new(incompleteDir),
 	}))
-	pack := writePartialPack(t, importDir, packName(t), packEpisodes)
+	pack := daemontest.WritePartialPack(t, importDir, daemontest.PackName(t), daemontest.PackEpisodes)
 
-	importTransmissionPack(t, c, pack.importRequest(importDir, false))
+	importTransmissionPack(t, c, importRequest(pack, importDir, false))
 
-	tr := waitTransmissionChecked(t, c, pack.hashes.Legacy)
+	tr := waitTransmissionChecked(t, c, pack.Hashes.Legacy)
 	assertTransmissionStarted(t, tr)
 	assertPartialProgress(t, transmissionPercentDone(tr), 1)
 }
@@ -82,7 +83,7 @@ func TestTransmissionDaemon_ResumesPartialPackWithIncompleteDir(t *testing.T) {
 // seeder, and the reused episodes stay hardlinks of their source files.
 func TestTransmissionDaemon_DownloadsMissingEpisodes(t *testing.T) {
 	importDir := requireDaemon(t, envTransmissionHost)
-	s := newSeeder(t)
+	s := daemontest.NewSeeder(t)
 	c := newTransmissionDaemonClient(t, domain.ImportPolicy{SavePath: importDir})
 	host, err := url.Parse(os.Getenv(envTransmissionHost))
 	require.NoError(t, err)
@@ -92,33 +93,33 @@ func TestTransmissionDaemon_DownloadsMissingEpisodes(t *testing.T) {
 		missing int
 	}{
 		{name: "first episode missing", missing: 1},
-		{name: "last episode missing", missing: packEpisodes},
+		{name: "last episode missing", missing: daemontest.PackEpisodes},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			name := packName(t)
-			seeded := s.seed(t, name)
-			pack := writeLinkedPack(t, importDir, name, tt.missing)
-			require.Equal(t, seeded.hashes, pack.hashes, "the seeder and the import must have the same torrent")
+			name := daemontest.PackName(t)
+			seeded := s.Seed(t, name)
+			pack := daemontest.WriteLinkedPack(t, importDir, name, tt.missing)
+			require.Equal(t, seeded.Hashes, pack.Hashes, "the seeder and the import must have the same torrent")
 
-			importTransmissionPack(t, c, pack.importRequest(importDir, false))
-			tr := waitTransmissionChecked(t, c, pack.hashes.Legacy)
+			importTransmissionPack(t, c, importRequest(pack, importDir, false))
+			tr := waitTransmissionChecked(t, c, pack.Hashes.Legacy)
 			if !assertTransmissionStarted(t, tr) {
 				// A stopped torrent cannot download, so the wait would only time out.
 				t.FailNow()
 			}
-			assertPartialProgress(t, transmissionPercentDone(tr), packEpisodes-1)
+			assertPartialProgress(t, transmissionPercentDone(tr), daemontest.PackEpisodes-1)
 
 			session, err := transmissionDaemonAPI(t, c).SessionArgumentsGetAll(t.Context())
 			require.NoError(t, err)
 			require.NotNil(t, session.PeerPort, "session has no peer-port")
-			peer := newPeerAddress(t, host.Hostname(), int(*session.PeerPort))
-			tr, complete := waitSeededDownload(t, s, pack.hashes.Legacy, peer, readTransmissionTorrent(t, c, pack.hashes.Legacy),
+			peer := daemontest.PeerAddress(t, host.Hostname(), int(*session.PeerPort))
+			tr, complete := daemontest.WaitSeededDownload(t, s, pack.Hashes.Legacy, peer, readTransmissionTorrent(t, c, pack.Hashes.Legacy),
 				func(tr transmissionrpc.Torrent) bool {
 					// Transmission downloads into <file>.part and renames it when
 					// the file completes. Seeding comes after the rename.
 					return transmissionPercentDone(tr) >= 1 && tr.Status != nil && *tr.Status == transmissionrpc.TorrentStatusSeed &&
-						transmissionDownloaded(tr) >= packEpisodeSize
+						transmissionDownloaded(tr) >= daemontest.PackEpisodeSize
 				})
 			require.True(t, complete, "download did not complete: status=%s percentDone=%.2f error=%q",
 				tr.Status, transmissionPercentDone(tr), derefString(tr.ErrorString))
@@ -154,7 +155,7 @@ func importTransmissionPack(t *testing.T, c *transmissionClient, req ImportReque
 	t.Helper()
 	raw := transmissionDaemonAPI(t, c)
 	t.Cleanup(func() {
-		ctx, cancel := cleanupContext(t)
+		ctx, cancel := daemontest.CleanupContext(t)
 		defer cancel()
 		lookup := func() ([]transmissionrpc.Torrent, error) {
 			return raw.TorrentGetHashes(ctx, []string{"id"}, []string{req.LegacyHash})
@@ -164,7 +165,7 @@ func importTransmissionPack(t *testing.T, c *transmissionClient, req ImportReque
 			return
 		}
 		assert.NoError(t, raw.TorrentRemove(ctx, transmissionrpc.TorrentRemovePayload{IDs: []int64{*found[0].ID}}), "remove torrent")
-		assertRemoved(t, req.LegacyHash, func() (bool, error) {
+		daemontest.AssertRemoved(t, req.LegacyHash, func() (bool, error) {
 			found, err := lookup()
 			return len(found) > 0, err
 		})
@@ -185,7 +186,7 @@ func waitTransmissionChecked(t *testing.T, c *transmissionClient, hash string) t
 	}
 	// A torrent that stays stopped ends the wait at the timeout, and
 	// assertTransmissionStarted reports it.
-	tr, _ := waitFor(t.Context(), readTransmissionTorrent(t, c, hash), func(tr transmissionrpc.Torrent) bool {
+	tr, _ := daemontest.WaitFor(t.Context(), readTransmissionTorrent(t, c, hash), func(tr transmissionrpc.Torrent) bool {
 		return !checking(tr) && (*tr.Status != transmissionrpc.TorrentStatusStopped || derefString(tr.ErrorString) != "")
 	})
 	require.False(t, checking(tr), "Transmission did not finish its check")
@@ -193,7 +194,7 @@ func waitTransmissionChecked(t *testing.T, c *transmissionClient, hash string) t
 	return tr
 }
 
-// readTransmissionTorrent returns a waitFor read function that stops the test
+// readTransmissionTorrent returns a daemontest.WaitFor read function that stops the test
 // when the torrent is missing.
 func readTransmissionTorrent(t *testing.T, c *transmissionClient, hash string) func() transmissionrpc.Torrent {
 	return func() transmissionrpc.Torrent {

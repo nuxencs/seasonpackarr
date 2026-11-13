@@ -1,0 +1,50 @@
+# seasonpackarr config for the end-to-end entries. compose.e2e.yaml mounts it
+# read-only at /config/config.yaml. test/e2e/testdata/filter.json sends the
+# same API token and client names to autobrr.
+host: "0.0.0.0"
+port: 42069
+
+apiToken: "e2e-harness-token"
+
+clients:
+  qbit:
+    type: "qbittorrent"
+    host: "qbit"
+    port: 8080
+    username: "admin"
+    password: "integration"
+    import:
+      # The shared /data volume, at the same path as in the clients (ADR-0001).
+      savePath: "/data/import"
+      tags: [ "seasonpackarr" ]
+  transmission:
+    type: "transmission"
+    host: "transmission"
+    port: 9091
+    username: "admin"
+    password: "integration"
+    import:
+      savePath: "/data/import"
+      tags: [ "seasonpackarr" ]
+  deluge:
+    # The client type of the newest Deluge entry in run.sh. TestDelugeE2E_Scenarios checks it.
+    type: "deluge-v2"
+    host: "deluge"
+    port: 58846
+    username: "seasonpackarr"
+    password: "integration"
+    import:
+      savePath: "/data/import"
+      # Deluge applies it through the Label plugin, which the test enables.
+      tags: [ "seasonpackarr" ]
+
+logLevel: "DEBUG"
+
+# The partial pack reuses 2 of its 3 episodes, a coverage of 0.67.
+smartMode: true
+smartModeThreshold: 0.5
+
+notifications:
+  notificationLevel: [ "MATCH", "ERROR" ]
+  # Empty turns off notifications.
+  discord: ""
