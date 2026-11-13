@@ -227,5 +227,16 @@ The integration harness runs the tagged integration tests against Deluge
 1.3.15, 2.0.3 and 2.2.0. They verify that complete packs seed and partial
 packs account for present bytes before they download missing pieces.
 
+The daemon RPC uses one long-lived connection, and go-deluge does not dial
+again. The service keeps one adapter for each client, so the adapter must
+recover the connection. A request error that is not a Deluge RPC error means
+that the connection is lost, for example after a daemon restart, or that a
+late response would answer the next request. The adapter then closes the
+connection and connects again before the next request. Reads and the resume
+also run once more on the new connection. The add and the label requests do
+not, because the daemon can have applied them although the response did not
+arrive. `TestDelugeDaemon_ReconnectsAfterLostConnection` drops the connection
+between the adapter and a real daemon.
+
 The adapter currently requires a v1 or hybrid torrent because seasonpackarr
 uses the legacy info hash as the daemon torrent ID.
