@@ -2,13 +2,13 @@
 
 ## System Summary
 
-`seasonpackarr` is a config-driven Go service with a small CLI surface. It accepts authenticated autobrr webhook requests, filters announces against configured torrent clients, builds exact import plans from torrent contents, hardlinks reusable episode files into the expected season-pack folder, and imports the pack into the torrent client.
+`seasonpackarr` is a config-driven Go service with a small CLI surface. It discovers packs through opt-in Prowlarr RSS polling, manual searches, and authenticated autobrr webhook requests. It filters releases against configured torrent clients, builds exact import plans from torrent contents, hardlinks reusable episode files into the expected season-pack folder, and imports the pack into the torrent client.
 
 ## Main Runtime Flow
 
 1. `main.go` calls Cobra commands in `cmd/`.
 2. `cmd/start.go` loads config, logger, and notifications, then starts the HTTP server. Signal cancellation starts a bounded graceful shutdown.
-3. `internal/http/server.go` builds `/api/healthz`, `/api/candidate`, `/api/match`, and `/api/import`.
+3. `internal/http/server.go` builds `/api/healthz`, `/api/candidate`, `/api/match`, `/api/import`, and `/api/search`.
 4. `internal/http/processor_*.go` keeps each processing stage together. The handler file owns payload decode and responses. The candidate file owns announce-only matching and inventory caching. The plan file parses torrent bytes and builds an exact side-effect-free plan. The import file reuses or rebuilds that plan, resolves the client import destination, hardlinks matched files, and imports the pack. See [docs/design-docs/qbittorrent-import-flow.md](docs/design-docs/qbittorrent-import-flow.md).
 5. `internal/release/` decides whether a client episode and announced season pack are compatible.
 6. `internal/files/` performs the hardlink operation.
@@ -32,6 +32,7 @@
   - `POST /api/candidate`
   - `POST /api/match`
   - `POST /api/import`
+  - `POST /api/search`
   - `GET /api/healthz/liveness`
   - `GET /api/healthz/readiness`
 
@@ -55,10 +56,42 @@
 - Client inventory is cached for 30 seconds, so the ordered candidate and match checks normally share one client scan.
 - Accepted import plans are cached for 2 minutes. `/api/import` normally performs no second inventory or file-detail reads.
 - Cache entries validate client configuration, matching settings, release name, and torrent identity. `/api/import` rebuilds safely on a cache miss.
-- A successful import invalidates the plan and the client inventory.
+- Imports to the same client type, host, and port are serialized. The candidate gate is checked again before a cached plan is used.
+- Every client import attempt invalidates plans and inventories for that endpoint, including aliases. A failed attempt may already have added the torrent.
+- An inventory scan invalidated during an import cannot publish its older data back into the cache.
 - Exact plans retain one compact reason for every unmatched torrent target.
   Torrent-client adapters return neutral stage timings for successful and failed
   imports. The HTTP processor owns the operator-facing structured logs.
+
+### Prowlarr Discovery
+
+- `internal/prowlarr/` owns indexer discovery, capability-aware Torznab queries,
+  bounded HTTP reads, request spacing, and torrent proxy retrieval.
+- `internal/http/search.go` groups episode inventories by series/season,
+  excludes variants already covered by a pack in each client, shares remaining
+  searches across years and clients, and feeds results through existing candidate,
+  exact-plan, and import processing. It accepts one pack per release variant.
+- `POST /api/search` and `cmd/search.go` expose search-only dry runs, exact previews, and imports. The
+  request context owns a manual run; there is no persistent job queue.
+- `internal/http/search_schedule.go` polls RSS on an opt-in interval from the
+  server lifecycle context. Targeted searches are manual only. All discovery runs
+  share an overlap guard.
+- `internal/http/rss.go` reads recent feeds once per indexer and pages back to the
+  previous poll when possible. `rss_state.go` retains bounded relevant listings
+  for later coverage checks. Feed state is process-local. Only the scheduler can
+  start an RSS poll. Manual CLI/API requests always use targeted search.
+- `internal/http/search_cache.go` bounds process-local metadata reuse to seven
+  days, 64 MiB, and 1024 entries. Exact runs check local sources before retrieval
+  and rebuild decisions from current inputs.
+- Each run keeps one config snapshot and applies the configured indexer allowlist.
+  RSS selects RSS-capable indexers; targeted search selects searchable indexers.
+  Both modes share one connection whose request spacing survives across runs.
+- In-memory cooldowns retain retry deadlines across runs. HTTP 429, temporary HTTP
+  errors, and transport failures pause the affected indexer. Discovery failures
+  pause the whole Prowlarr connection. Restart or connection changes reset these
+  deadlines. Requests are not retried automatically.
+- See [Prowlarr backfill](docs/product-specs/prowlarr-backfill.md) for operator
+  behavior and [the API audit](docs/references/prowlarr-backfill-api.md) for source contracts.
 
 ### File Operations
 
@@ -102,10 +135,14 @@ If a change starts pushing transport concerns into matching logic or file ops, s
 
 ## External Dependencies
 
-- autobrr webhook integration
+- optional autobrr webhook integration
+- optional Prowlarr API and Torznab tracker access
 - qBittorrent, Transmission, and Deluge 1.3/2 native RPC access
 - filesystem hardlink support
 - Docker/systemd packaging and release automation
+
+Automatic discovery requires Prowlarr RSS, autobrr, or an external scheduler for
+targeted Prowlarr searches. Prowlarr RSS and autobrr can run independently or together.
 
 ## Testing Surface
 

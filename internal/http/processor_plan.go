@@ -126,6 +126,10 @@ func (p *processor) logImportPlan(plan importPlan, cfg domain.Config) {
 }
 
 func (p *processor) buildImportPlan(ctx context.Context, clientName string, clientCfg *domain.Client, cfg domain.Config) (importPlan, domain.StatusCode, error) {
+	return p.buildImportPlanWithSources(ctx, clientName, clientCfg, cfg, nil)
+}
+
+func (p *processor) buildImportPlanWithSources(ctx context.Context, clientName string, clientCfg *domain.Client, cfg domain.Config, sources []release.EpisodeFile) (importPlan, domain.StatusCode, error) {
 	if len(p.req.Torrent) == 0 {
 		return importPlan{}, domain.StatusTorrentBytesError, domain.StatusTorrentBytesError.Error()
 	}
@@ -165,7 +169,10 @@ func (p *processor) buildImportPlan(ctx context.Context, clientName string, clie
 	}
 
 	matcher := release.NewEpisodeMatcher(eligibleEps)
-	matchResult := matcher.Match(p.getEpisodeFiles(ctx, candidates))
+	if sources == nil {
+		sources = p.getEpisodeFiles(ctx, candidates)
+	}
+	matchResult := matcher.Match(sources)
 
 	links := make([]plannedLink, 0, len(matchResult.Matches))
 	for _, match := range matchResult.Matches {
@@ -190,6 +197,12 @@ func (p *processor) buildImportPlan(ctx context.Context, clientName string, clie
 }
 
 func (p *processor) getEpisodeFiles(ctx context.Context, candidates []entry) []release.EpisodeFile {
+	episodes, _ := p.getEpisodeFilesChecked(ctx, candidates)
+	return episodes
+}
+
+func (p *processor) getEpisodeFilesChecked(ctx context.Context, candidates []entry) ([]release.EpisodeFile, error) {
+	var failures []error
 	hashes := make([]string, len(candidates))
 	for index, candidate := range candidates {
 		hashes[index] = candidate.torrent.Hash
@@ -199,16 +212,19 @@ func (p *processor) getEpisodeFiles(ctx context.Context, candidates []entry) []r
 	episodes := make([]release.EpisodeFile, 0, len(results))
 	for index, candidate := range candidates {
 		if index >= len(results) {
+			failures = append(failures, errors.New("torrent client omitted a file result"))
 			p.log.Error().Msgf("torrent client omitted file result for %s", candidate.torrent.Name)
 			continue
 		}
 
 		result := results[index]
 		if !strings.EqualFold(result.Hash, candidate.torrent.Hash) {
+			failures = append(failures, errors.New("torrent client returned an out-of-order file result"))
 			p.log.Error().Msgf("torrent client returned out-of-order file result for %s", candidate.torrent.Name)
 			continue
 		}
 		if result.Err != nil {
+			failures = append(failures, result.Err)
 			p.log.Error().Err(result.Err).Msgf("error getting file info: %s", candidate.torrent.Name)
 			continue
 		}
@@ -220,7 +236,7 @@ func (p *processor) getEpisodeFiles(ctx context.Context, candidates []entry) []r
 		}
 		episodes = append(episodes, episode)
 	}
-	return episodes
+	return episodes, errors.Join(failures...)
 }
 
 func episodeFileFromFiles(files []torrentclient.File, savePath string) (release.EpisodeFile, error) {

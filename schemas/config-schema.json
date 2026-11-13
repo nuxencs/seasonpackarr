@@ -11,6 +11,9 @@
       "type": "integer",
       "default": 42069
     },
+    "search": {
+      "$ref": "#/$defs/search"
+    },
     "clients": {
       "$ref": "#/$defs/clients"
     },
@@ -63,6 +66,17 @@
     "logLevel"
   ],
   "$defs": {
+    "search": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "prowlarrURL": {"type": "string", "default": ""},
+        "apiKey": {"type": "string", "default": ""},
+        "rssInterval": {"type": "string", "default": "0s", "description": "0s disables RSS monitoring. Positive durations must be at least 10m. Targeted searches are manual only."},
+        "indexerIDs": {"type": "array", "items": {"type": "integer", "minimum": 1}, "uniqueItems": true, "default": [], "description": "Prowlarr indexer allowlist for RSS and manual search. Empty selects all enabled torrent indexers that support the discovery mode."},
+        "requestInterval": {"type": "string", "default": "10s", "description": "Go duration between Prowlarr requests. Must be at least 10s."}
+      }
+    },
     "clients": {
       "type": "object",
       "additionalProperties": false,

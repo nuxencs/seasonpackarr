@@ -45,6 +45,11 @@ func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.Sta
 	if !ok {
 		return domain.StatusClientNotFound, domain.StatusClientNotFound.Error()
 	}
+	unlock, lockErr := lockImport(ctx, *clientCfg)
+	if lockErr != nil {
+		return domain.StatusGetClientError, lockErr
+	}
+	defer unlock()
 	p.log.Info().Msgf("using %s client", clientName)
 
 	if len(p.req.Torrent) == 0 {
@@ -62,6 +67,10 @@ func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.Sta
 	hashes, err := torrents.InfoHashes(torrentBytes)
 	if err != nil {
 		return domain.StatusParseTorrentInfoError, fmt.Errorf("%s: %w", domain.StatusParseTorrentInfoError, err)
+	}
+
+	if _, gateStatus, gateErr := p.findCandidates(ctx, clientName, clientCfg, snapshot); gateErr != nil {
+		return gateStatus, gateErr
 	}
 
 	planStarted := time.Now()
@@ -141,6 +150,7 @@ func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.Sta
 		}
 	}
 
+	defer invalidateClientImports(*clientCfg)
 	clientImportStarted := time.Now()
 	importReport, err := p.req.Client.Import(ctx, torrentclient.ImportRequest{
 		TorrentBytes: plan.torrentBytes,
