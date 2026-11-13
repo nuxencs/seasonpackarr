@@ -6,7 +6,7 @@ require (
 	github.com/autobrr/go-deluge v1.4.0
 	github.com/autobrr/go-qbittorrent v1.17.0
 	github.com/autobrr/go-torrent v1.1.0
-	github.com/autobrr/rls v0.9.0
+	github.com/autobrr/rls v0.10.0
 	github.com/dlclark/regexp2 v1.12.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gin-contrib/cors v1.7.7
@@ -81,12 +81,9 @@ require (
 	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/exp v0.0.0-20251219203646-944ab1f22d93 // indirect
 	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-// Pending https://github.com/autobrr/rls/pull/26.
-replace github.com/autobrr/rls v0.9.0 => github.com/nuxencs/rls v0.0.0-20260905093517-4be6135d5cac

@@ -413,3 +413,17 @@ func TestCheckCandidates_SiloWebTitle(t *testing.T) {
 	result = CheckCandidates(pack, otherSource, domain.FuzzyMatching{})
 	require.Equal(t, domain.StatusSourceMismatch, result.StatusCode)
 }
+
+func TestCheckCandidates_CodecAttachedToAudio(t *testing.T) {
+	// rls before v0.10.0 read "FLAC2.0x265" as episode 265.
+	pack := rls.ParseString("Cells.at.Work.S01.1080p.BluRay.FLAC2.0x265-Main10p-CTR")
+	require.Equal(t, rls.Series, pack.Type)
+	require.Equal(t, 1, pack.Series)
+	require.Zero(t, pack.Episode)
+	assert.Equal(t, []string{"x265"}, pack.Codec)
+	assert.Equal(t, []string{"FLAC"}, pack.Audio)
+
+	episode := rls.ParseString("Cells.at.Work.S01E01.1080p.BluRay.FLAC2.0x265-Main10p-CTR")
+	result := CheckCandidates(pack, episode, domain.FuzzyMatching{})
+	require.Equal(t, domain.StatusSuccessfulMatch, result.StatusCode, "%+v", result)
+}
