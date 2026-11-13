@@ -134,11 +134,11 @@
 
 ### Cancellation And Shutdown
 
-- Each webhook passes its request context through planning and torrent-client operations.
-- Transmission and Deluge derive adapter timeouts from that request context.
-- qBittorrent polling stops on cancellation. The upstream qBittorrent API is context-free, so an in-flight library call can finish only when its own HTTP behavior returns.
+- Each webhook passes its request context through planning and hardlinking.
+- The torrent-client import runs with that context detached from cancellation, so a caller disconnect cannot leave a half-imported torrent stopped. Each adapter bounds its own client calls with timeouts.
+- Client imports do not wait for the client's data check. The client checks the data and starts the torrent by itself, so a request finishes within seconds.
+- qBittorrent polling stops at its own timeouts. The upstream qBittorrent API is context-free, so an in-flight library call can finish only when its own HTTP behavior returns.
 - Process signals start a 15-second graceful shutdown. The server first drains HTTP handlers, then waits for notification tasks within the same deadline.
-- A future persistent import worker must derive each execution context from the worker lifecycle, not from the intake request. The request context can cover validation and durable job admission only.
 
 ### Error Diagnostics
 

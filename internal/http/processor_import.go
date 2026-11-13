@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
@@ -151,13 +152,17 @@ func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.Sta
 	}
 
 	defer invalidateClientImports(*clientCfg)
+	dataComplete := packDataComplete(plan, importDestination)
 	clientImportStarted := time.Now()
-	importReport, err := p.req.Client.Import(ctx, torrentclient.ImportRequest{
+	// A caller disconnect must not interrupt a started client mutation and
+	// leave the torrent stopped. Each adapter bounds its own client calls.
+	importReport, err := p.req.Client.Import(context.WithoutCancel(ctx), torrentclient.ImportRequest{
 		TorrentBytes: plan.torrentBytes,
 		SavePath:     importRoot,
 		LegacyHash:   plan.hashes.Legacy,
 		V2Hash:       plan.hashes.V2,
 		HasV1:        plan.hashes.HasV1,
+		DataComplete: dataComplete,
 	})
 	for _, stage := range importReport.Stages {
 		p.log.Info().
@@ -167,6 +172,7 @@ func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.Sta
 	}
 	p.log.Info().
 		Bool("successful", err == nil).
+		Bool("data_complete", dataComplete).
 		Int64("duration_ms", time.Since(clientImportStarted).Milliseconds()).
 		Msg("torrent client import completed")
 	if err != nil {
@@ -177,6 +183,28 @@ func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.Sta
 	invalidateImportCaches(clientName, plan.hashes)
 
 	return domain.StatusSuccessfulHardlink, nil
+}
+
+// packDataComplete reports whether every torrent file already exists at its
+// import target with the expected size. Clients skip their full hash check only
+// for complete data, so any doubt reports the pack as partial. Season packs are
+// directory torrents; a single-file torrent always gets a normal client check.
+func packDataComplete(plan importPlan, importDestination torrentclient.ImportDestination) bool {
+	info, err := torrents.Info(plan.torrentBytes)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	for _, file := range info.UpvertedFiles() {
+		// BEP 47 padding files are never written to disk.
+		if strings.Contains(file.Attr, "p") {
+			continue
+		}
+		stat, err := os.Stat(importDestination.TargetPath(plan.packName, file.DisplayPath(&info)))
+		if err != nil || !stat.Mode().IsRegular() || stat.Size() != file.Length {
+			return false
+		}
+	}
+	return true
 }
 
 type hardlinkAttemptResult struct {

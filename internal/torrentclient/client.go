@@ -58,12 +58,15 @@ type FileResult struct {
 // client adds the torrent pointing at the directory that already contains the
 // hardlinks. LegacyHash is the SHA-1 client identifier. V2Hash is the BEP 52
 // SHA-256 identity. HasV1 distinguishes hybrid torrents from pure v2 torrents.
+// DataComplete reports that every torrent file already exists at its import
+// target with the expected size, so a client may skip its full hash check.
 type ImportRequest struct {
 	TorrentBytes []byte
 	SavePath     string
 	LegacyHash   string
 	V2Hash       string
 	HasV1        bool
+	DataComplete bool
 }
 
 // ImportDestination describes both the client save path and the on-disk file
@@ -184,10 +187,10 @@ func ImportStatusCode(err error) domain.StatusCode {
 // returned by GetTorrents must be accepted as-is by GetFiles.
 //
 // Import contract: ImportDestination resolves the absolute directory and file
-// layout the season pack must use. Import adds the pack,
-// ensures its already-present hardlinked data is accounted for (skip-check +
-// conditional recheck on qBittorrent, forced verify on Transmission, Deluge's
-// normal initial check) and starts it without leaving the import paused.
+// layout the season pack must use. Import adds the pack so the client accounts
+// for its already-present hardlinked data and then starts it by itself. Import
+// must not wait for a client hash check: a large pack can take longer than the
+// caller's request timeout, so the client owns the check after the add.
 // Import returns neutral stage timings in execution order. Import failures are
 // returned as *ImportError together with the attempted stage timings.
 type TorrentClient interface {

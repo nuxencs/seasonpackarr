@@ -45,14 +45,16 @@ type mockTorrentClient struct {
 	fileBatchCalls int
 	afterGetFiles  func()
 
-	importRoot    string
-	importRootErr error
-	flatImport    bool
-	importErr     error
-	importReport  torrentclient.ImportReport
-	importCalled  bool
-	importCalls   int
-	importReq     torrentclient.ImportRequest
+	importRoot          string
+	importRootErr       error
+	flatImport          bool
+	onImportDestination func()
+	importErr           error
+	importReport        torrentclient.ImportReport
+	importCalled        bool
+	importCalls         int
+	importReq           torrentclient.ImportRequest
+	importCtxErr        error
 }
 
 type staticConfig struct {
@@ -410,6 +412,9 @@ func TestStoreImportPlan_SweepsExpiredPlans(t *testing.T) {
 }
 
 func (m *mockTorrentClient) ImportDestination(context.Context) (torrentclient.ImportDestination, error) {
+	if m.onImportDestination != nil {
+		m.onImportDestination()
+	}
 	if m.importRootErr != nil {
 		return torrentclient.ImportDestination{}, m.importRootErr
 	}
@@ -419,10 +424,11 @@ func (m *mockTorrentClient) ImportDestination(context.Context) (torrentclient.Im
 	return torrentclient.NewRootedImportDestination(m.importRoot), nil
 }
 
-func (m *mockTorrentClient) Import(_ context.Context, req torrentclient.ImportRequest) (torrentclient.ImportReport, error) {
+func (m *mockTorrentClient) Import(ctx context.Context, req torrentclient.ImportRequest) (torrentclient.ImportReport, error) {
 	m.importCalled = true
 	m.importCalls++
 	m.importReq = req
+	m.importCtxErr = ctx.Err()
 	return m.importReport, m.importErr
 }
 
@@ -743,9 +749,98 @@ func TestImportSeasonPack_ImportsAndPassesResolvedRoot(t *testing.T) {
 	require.Equal(t, infoHashes.HasV1, mock.importReq.HasV1)
 	require.Equal(t, importDir, mock.importReq.SavePath)
 	require.NotEmpty(t, mock.importReq.TorrentBytes)
+	require.True(t, mock.importReq.DataComplete, "every torrent file is hardlinked with the expected size")
 
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep1))
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep2))
+}
+
+// TestImportSeasonPack_ReportsPartialPackData guards the client hash-check
+// decision: a missing torrent file must never let a client skip its check.
+func TestImportSeasonPack_ReportsPartialPackData(t *testing.T) {
+	resetProcessorGlobals()
+
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	importDir := filepath.Join(tempDir, "import")
+	require.NoError(t, os.MkdirAll(sourceDir, 0o755))
+	require.NoError(t, os.MkdirAll(importDir, 0o755))
+
+	releaseName := "PartialImport.S01.1080p.WEB-DL.H.264-RlsGrp"
+	torrentBytes, err := torrents.TorrentFromRls(releaseName, 2)
+	require.NoError(t, err)
+
+	ep1 := "PartialImport.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"
+	writeEpisode(t, filepath.Join(sourceDir, ep1))
+
+	mock := &mockTorrentClient{
+		torrents: []torrentclient.Torrent{
+			{Name: "PartialImport.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
+		},
+		filesByHash: map[string][]torrentclient.File{
+			"ep1": {{Name: ep1, Size: 1}},
+		},
+		importRoot: importDir,
+	}
+
+	p := newImportProcessor()
+	p.req = &request{
+		Name:       releaseName,
+		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
+		Client:     mock,
+		ClientName: "default",
+	}
+
+	statusCode, err := p.importSeasonPack(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
+	require.True(t, mock.importCalled)
+	require.False(t, mock.importReq.DataComplete)
+}
+
+// TestImportSeasonPack_ClientImportIgnoresCallerCancel guards the production
+// failure where autobrr's request timeout cancelled a started client import and
+// left the torrent stopped.
+func TestImportSeasonPack_ClientImportIgnoresCallerCancel(t *testing.T) {
+	resetProcessorGlobals()
+
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	importDir := filepath.Join(tempDir, "import")
+	require.NoError(t, os.MkdirAll(sourceDir, 0o755))
+	require.NoError(t, os.MkdirAll(importDir, 0o755))
+
+	releaseName := "CancelImport.S01.1080p.WEB-DL.H.264-RlsGrp"
+	torrentBytes, err := torrents.TorrentFromRls(releaseName, 1)
+	require.NoError(t, err)
+
+	ep1 := "CancelImport.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"
+	writeEpisode(t, filepath.Join(sourceDir, ep1))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	mock := &mockTorrentClient{
+		torrents: []torrentclient.Torrent{
+			{Name: "CancelImport.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
+		},
+		filesByHash: map[string][]torrentclient.File{
+			"ep1": {{Name: ep1, Size: 1}},
+		},
+		importRoot:          importDir,
+		onImportDestination: cancel,
+	}
+
+	p := newImportProcessor()
+	p.req = &request{
+		Name:       releaseName,
+		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
+		Client:     mock,
+		ClientName: "default",
+	}
+
+	_, _ = p.importSeasonPack(ctx)
+	require.True(t, mock.importCalled)
+	require.NoError(t, mock.importCtxErr, "a caller disconnect must not cancel the client import")
 }
 
 func TestImportSeasonPack_RejectsArchivePackWithSampleVideos(t *testing.T) {

@@ -102,7 +102,7 @@ func TestDelugeImport_ImportsAgainstDaemon(t *testing.T) {
 	t.Run("complete import, paths, and label", func(t *testing.T) {
 		packName := fmt.Sprintf("IntegrationDeluge%s.S01.1080p.WEB-DL.H.264-RlsGrp", strings.TrimPrefix(clientType, "deluge-"))
 		_, torrentBytes, hashes := buildCompletePack(t, importDir, packName, 3)
-		req := ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}
+		req := ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir, DataComplete: true}
 		importAndRegisterCleanup(t, c, raw, req)
 
 		status := requireDelugeStarted(t, c, hashes.Legacy)

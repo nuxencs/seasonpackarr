@@ -94,7 +94,6 @@ func newTestDelugeClient(stub *stubDelugeAPI, policy domain.ImportPolicy) *delug
 	return &delugeClient{
 		c:            stub,
 		policy:       policy,
-		checkTimeout: 100 * time.Millisecond,
 		pollInterval: time.Millisecond,
 	}
 }
@@ -269,12 +268,16 @@ func TestDelugeImportDestination(t *testing.T) {
 	require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
 }
 
-func TestDelugeImport_ResumesThenWaitsForCheck(t *testing.T) {
+// TestDelugeImport_ResumesWithoutWaitingForCheck is the regression guard for
+// the autobrr timeout: libtorrent's check can take minutes, so a checking
+// torrent counts as started once the resume takes effect.
+func TestDelugeImport_ResumesWithoutWaitingForCheck(t *testing.T) {
 	t.Parallel()
 
 	stub := &stubDelugeAPI{
 		addedHash: "returned-hash",
 		statuses: []*deluge.TorrentStatus{
+			{State: string(deluge.StatePaused)},
 			{State: string(deluge.StateChecking)},
 			{State: string(deluge.StateSeeding)},
 		},
@@ -293,7 +296,6 @@ func TestDelugeImport_ResumesThenWaitsForCheck(t *testing.T) {
 		ImportStageConfig,
 		ImportStageAdd,
 		ImportStageResume,
-		ImportStageRecheck,
 	}, importStageNames(report))
 	require.Equal(t, "legacy-hash.torrent", stub.addedName)
 	require.Equal(t, base64.StdEncoding.EncodeToString(torrentBytes), stub.addedContent)

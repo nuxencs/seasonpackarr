@@ -1,16 +1,17 @@
 # Autobrr Webhook Timeout Audit
 
 This note records the autobrr behavior that affects the seasonpackarr
-`/api/parse` action.
+`/api/import` action. (`/api/import` was called `/api/parse` when this audit
+was first written.)
 
 ## Inspected Revisions
 
 - Latest autobrr release on 2026-08-09: [v1.83.0](https://github.com/autobrr/autobrr/releases/tag/v1.83.0), commit [`3dd1ac20b39542497fa6f2db0bea7e037edc9dfc`](https://github.com/autobrr/autobrr/tree/3dd1ac20b39542497fa6f2db0bea7e037edc9dfc).
 - Autobrr `develop` head on 2026-08-09: commit [`82c8c5096bd432aa85a9cca0b4ea91f7e692511e`](https://github.com/autobrr/autobrr/tree/82c8c5096bd432aa85a9cca0b4ea91f7e692511e).
-- Local clone: `/Users/nuxen/dev/oss/autobrr`.
+- Rechecked on 2026-10-07 at autobrr [v1.88.0](https://github.com/autobrr/autobrr/releases/tag/v1.88.0): the Webhook action client still sets `Timeout: time.Second * 120` in `internal/action/service.go`.
 
-The relevant action timeout, request, and result code is the same in both
-revisions.
+The relevant action timeout, request, and result code is the same in all
+inspected revisions.
 
 ## Exact Timeout
 
@@ -67,22 +68,25 @@ and rejects the filter on a mismatch. Source: [v1.83.0
 
 ## Seasonpackarr Design Consequence
 
-Moving `/api/parse` work to a goroutine and returning early would make the
-Webhook action finish quickly, but autobrr would record the action as approved
-before the import result exists. A later hardlink or torrent-client failure
-could not change that action record. A `202`, `400`, or `500` early response
-would all have the same approved result because the action ignores HTTP status
-codes.
+Production failure on 2026-10-07: a partial 1080p pack needed about 2 minutes
+50 seconds for qBittorrent's recheck. autobrr v1.88.0 closed the request at 120
+seconds (`Client.Timeout exceeded while awaiting headers`), the cancelled
+request context aborted the recheck wait, and qBittorrent left the torrent
+stopped after its check.
 
-Keeping `/api/parse` synchronous preserves one useful guarantee: when autobrr
-records approval, seasonpackarr has completed the request without a transport
-error and before the 120-second limit. It still does not give autobrr a truthful
-application-level failure result. If seasonpackarr returns `4xx` or `5xx`
-within the timeout, autobrr records approval.
+Moving the import to an untracked goroutine and returning early is still
+rejected: autobrr would record approval before the import result exists.
 
-Conclusion: do not move the import to an untracked goroutine only to avoid the
-timeout. That changes the meaning from "import request completed" to "import
-request was accepted" while autobrr still labels the result as approved. A
-truthful asynchronous design needs a durable job and later status check. A
-truthful synchronous design needs autobrr Webhook actions to validate a
-configured response status, similar to External Webhook filters.
+Instead, `/api/import` stays synchronous but no longer waits for the client's
+data check. Every supported client can check the data and start the torrent by
+itself after the add, so the request finishes in seconds and a persisted job
+queue is not necessary. The torrent-client import also runs with a context that
+a caller disconnect cannot cancel. See
+[qbittorrent-import-flow.md](../design-docs/qbittorrent-import-flow.md).
+
+When autobrr records approval, seasonpackarr has hardlinked the episodes and
+the client has accepted the pack. It does not mean that the client check has
+finished. The action still ignores HTTP status codes, so a `4xx` or `5xx` within
+the timeout is also recorded as approval. A truthful application-level failure
+result still needs autobrr Webhook actions to validate a configured response
+status, similar to External Webhook filters.
