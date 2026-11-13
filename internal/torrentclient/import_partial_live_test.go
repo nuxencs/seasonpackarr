@@ -129,7 +129,7 @@ func TestQbitImportPartialLive(t *testing.T) {
 	}
 
 	_, torrentBytes, hashes := buildPartialPack(t, importDir, "AdapterPartialQbit.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
-	if err := c.Import(ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
+	if _, err := c.Import(ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
 		t.Fatalf("Import: %v", err)
 	}
 
@@ -180,7 +180,7 @@ func TestTransmissionImportPartialLive(t *testing.T) {
 	}
 
 	packName, torrentBytes, hashes := buildPartialPack(t, importDir, "AdapterPartialTr.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
-	if err := c.Import(ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
+	if _, err := c.Import(ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
 		t.Fatalf("Import: %v", err)
 	}
 

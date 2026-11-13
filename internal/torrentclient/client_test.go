@@ -9,6 +9,14 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 )
 
+func importStageNames(report ImportReport) []ImportStage {
+	stages := make([]ImportStage, len(report.Stages))
+	for index, stage := range report.Stages {
+		stages[index] = stage.Stage
+	}
+	return stages
+}
+
 func TestBuildTransmissionURL(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

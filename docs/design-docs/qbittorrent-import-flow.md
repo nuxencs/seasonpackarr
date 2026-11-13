@@ -38,9 +38,12 @@ flowchart TD
     N --> M
 ```
 
-Any step that fails returns a stage-tagged `*ImportError` (`config` / `add` /
-`find` / `recheck` / `resume`) which the processor maps to a status code
-(459–463) without ever seeing a qBittorrent type.
+Every return includes a neutral `ImportReport` with attempted stage durations.
+Any step that fails also returns a stage-tagged `*ImportError` (`config` /
+`add` / `find` / `recheck` / `resume`) which the processor maps to a status
+code (459–463) without ever seeing a qBittorrent type. The processor logs the
+report, so an operator can distinguish add latency from torrent discovery,
+recheck, and resume latency.
 
 Category-only policy sends the category without `savepath` or `autoTMM`, so
 qBittorrent keeps its own path-selection and automatic-management behavior.
@@ -75,7 +78,7 @@ sequenceDiagram
     opt not already active
         A->>Q: Resume(hash)
     end
-    A-->>P: nil (imported and started)
+    A-->>P: ImportReport (imported and started)
 ```
 
 The single difference between the two runs is whether the added torrent lands in

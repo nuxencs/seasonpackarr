@@ -260,15 +260,20 @@ func (d *delugeClient) ImportDestination() (ImportDestination, error) {
 
 // Import adds the pack stopped, applies its optional label, then resumes it.
 // Deluge/libtorrent performs its normal initial data check before it transfers
-// pieces. The adapter waits until the torrent is no longer paused or checking.
-func (d *delugeClient) Import(req ImportRequest) error {
+// pieces. The adapter waits until the torrent is no longer paused or checking
+// and returns the duration of each client operation.
+func (d *delugeClient) Import(req ImportRequest) (ImportReport, error) {
+	var report ImportReport
+	started := time.Now()
 	if !req.HasV1 || strings.TrimSpace(req.LegacyHash) == "" {
-		return importErr(ImportStageConfig, errors.New("deluge requires a v1 or hybrid torrent"))
+		report.record(ImportStageConfig, started)
+		return report, importErr(ImportStageConfig, errors.New("deluge requires a v1 or hybrid torrent"))
 	}
 
 	savePath := strings.TrimSpace(req.SavePath)
 	if savePath == "" {
-		return importErr(ImportStageConfig, errors.New("resolved deluge save path is empty"))
+		report.record(ImportStageConfig, started)
+		return report, importErr(ImportStageConfig, errors.New("resolved deluge save path is empty"))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), d.checkTimeout)
@@ -280,35 +285,47 @@ func (d *delugeClient) Import(req ImportRequest) error {
 		AddPaused:        &paused,
 	}
 	content := base64.StdEncoding.EncodeToString(req.TorrentBytes)
+	report.record(ImportStageConfig, started)
 
+	started = time.Now()
 	d.mu.Lock()
 	addedHash, err := d.c.AddTorrentFile(ctx, req.LegacyHash+".torrent", content, options)
 	d.mu.Unlock()
 	if isDelugeAlreadyAdded(err) {
-		return nil
+		report.record(ImportStageAdd, started)
+		return report, nil
 	}
 	if err != nil {
-		return importErr(ImportStageAdd, errors.Wrap(err, "failed to add torrent to deluge"))
+		report.record(ImportStageAdd, started)
+		return report, importErr(ImportStageAdd, errors.Wrap(err, "failed to add torrent to deluge"))
 	}
 	if strings.TrimSpace(addedHash) == "" {
-		return nil
+		report.record(ImportStageAdd, started)
+		return report, nil
 	}
 	if err := d.applyLabel(ctx, addedHash); err != nil {
-		return importErr(ImportStageAdd, err)
+		report.record(ImportStageAdd, started)
+		return report, importErr(ImportStageAdd, err)
 	}
+	report.record(ImportStageAdd, started)
 
+	started = time.Now()
 	d.mu.Lock()
 	err = d.c.ResumeTorrents(ctx, addedHash)
 	d.mu.Unlock()
+	report.record(ImportStageResume, started)
 	if err != nil {
-		return importErr(ImportStageResume, errors.Wrap(err, "failed to resume torrent in deluge"))
+		return report, importErr(ImportStageResume, errors.Wrap(err, "failed to resume torrent in deluge"))
 	}
 
+	started = time.Now()
 	if err := d.waitForStarted(ctx, addedHash); err != nil {
-		return importErr(ImportStageRecheck, err)
+		report.record(ImportStageRecheck, started)
+		return report, importErr(ImportStageRecheck, err)
 	}
+	report.record(ImportStageRecheck, started)
 
-	return nil
+	return report, nil
 }
 
 func (d *delugeClient) applyLabel(ctx context.Context, hash string) error {

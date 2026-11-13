@@ -34,6 +34,29 @@ Current comparison logic checks:
 - request candidate file details once through the torrent-client interface
 - keep client-specific batching and concurrency inside each adapter
 
+## Match Diagnostics
+
+Exact matching returns successful links and one diagnostic for every unmatched
+torrent target. The indexed success path remains the source of truth. The
+diagnostic pass runs only for unmatched targets and must not change selection.
+
+Diagnostics use these classifications:
+
+- `source_episode_not_found`: no parsed client source has the same season and
+  episode identity
+- `compatibility_mismatch`: the closest same-episode source differs by size,
+  container, resolution, or release group
+- `duplicate_torrent_target`: the torrent contains another target with the same
+  exact compatibility key and only the first target receives a source
+
+Compatibility diagnostics report each differing field with `want` and `got`
+values. `want` is the announced torrent target requirement. `got` is the value
+from the closest same-episode client source.
+
+Log one summary per unmatched target. Do not log every failed source-target
+comparison. The full comparison matrix produces noisy quadratic output and can
+undo the indexed planner's performance benefit.
+
 ## Open Questions
 
 - whether additional sample/extension filtering is needed beyond current checks

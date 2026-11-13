@@ -8,8 +8,70 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 
+	"github.com/autobrr/rls"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestCheckCandidatesPreservesOriginalFuzzyMismatchValues(t *testing.T) {
+	t.Parallel()
+
+	t.Run("source", func(t *testing.T) {
+		t.Parallel()
+
+		result := CheckCandidates(
+			rls.Release{Type: rls.Series, Source: "WEB-DL"},
+			rls.Release{Type: rls.Episode, Source: "BluRay"},
+			domain.FuzzyMatching{SimplifyWebCompare: true},
+		)
+
+		require.Equal(t, domain.StatusSourceMismatch, result.StatusCode)
+		require.Equal(t, "WEB-DL", result.RejectValueA)
+		require.Equal(t, "BluRay", result.RejectValueB)
+	})
+
+	t.Run("HDR", func(t *testing.T) {
+		t.Parallel()
+
+		request := rls.Release{Type: rls.Series, HDR: []string{"HDR10"}}
+		client := rls.Release{Type: rls.Episode, HDR: []string{"DV"}}
+		result := CheckCandidates(request, client, domain.FuzzyMatching{SimplifyHdrCompare: true})
+
+		require.Equal(t, domain.StatusHdrMismatch, result.StatusCode)
+		require.Equal(t, []string{"HDR10"}, result.RejectValueA)
+		require.Equal(t, []string{"DV"}, result.RejectValueB)
+		require.Equal(t, []string{"HDR10"}, request.HDR)
+		require.Equal(t, []string{"DV"}, client.HDR)
+	})
+}
+
+func TestCheckCandidatesStillAcceptsNormalizedFuzzyValues(t *testing.T) {
+	t.Parallel()
+
+	t.Run("source", func(t *testing.T) {
+		t.Parallel()
+
+		result := CheckCandidates(
+			rls.Release{Type: rls.Series, Source: "WEB-DL"},
+			rls.Release{Type: rls.Episode, Episode: 1, Source: "WEB"},
+			domain.FuzzyMatching{SimplifyWebCompare: true},
+		)
+
+		require.Equal(t, domain.StatusSuccessfulMatch, result.StatusCode)
+	})
+
+	t.Run("HDR", func(t *testing.T) {
+		t.Parallel()
+
+		result := CheckCandidates(
+			rls.Release{Type: rls.Series, HDR: []string{"HDR10"}},
+			rls.Release{Type: rls.Episode, Episode: 1, HDR: []string{"HDR10+"}},
+			domain.FuzzyMatching{SimplifyHdrCompare: true},
+		)
+
+		require.Equal(t, domain.StatusSuccessfulMatch, result.StatusCode)
+	})
+}
 
 func Test_MatchEpToSeasonPackEp(t *testing.T) {
 	type args struct {

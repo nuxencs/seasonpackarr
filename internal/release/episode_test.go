@@ -24,11 +24,11 @@ func TestEpisodeMatcherChecksEveryCompatibilityField(t *testing.T) {
 		requireEpisodeFile(t, "/client/Show.S01E01.1080p.WEB-DL-GROUP.mkv", 100),
 	}
 
-	matches := NewEpisodeMatcher([]EpisodeFile{target}).Match(sources)
+	result := NewEpisodeMatcher([]EpisodeFile{target}).Match(sources)
 	require.Equal(t, []EpisodeMatch{{
 		ClientPath:  "/client/Show.S01E01.1080p.WEB-DL-GROUP.mkv",
 		TorrentPath: "Show.S01/Show.S01E01.1080p.WEB-DL-GROUP.mkv",
-	}}, matches)
+	}}, result.Matches)
 }
 
 func TestEpisodeMatcherPreservesTargetOrderAndDeduplicatesSources(t *testing.T) {
@@ -44,7 +44,7 @@ func TestEpisodeMatcherPreservesTargetOrderAndDeduplicatesSources(t *testing.T) 
 		requireEpisodeFile(t, "/second/Show.S01E01.1080p.WEB-DL-GROUP.mkv", 100),
 	}
 
-	matches := NewEpisodeMatcher(targets).Match(sources)
+	result := NewEpisodeMatcher(targets).Match(sources)
 	require.Equal(t, []EpisodeMatch{
 		{
 			ClientPath:  "/first/Show.S01E01.1080p.WEB-DL-GROUP.mkv",
@@ -54,7 +54,7 @@ func TestEpisodeMatcherPreservesTargetOrderAndDeduplicatesSources(t *testing.T) 
 			ClientPath:  "/client/Show.S01E02.1080p.WEB-DL-GROUP.mkv",
 			TorrentPath: "Show.S01/Show.S01E02.1080p.WEB-DL-GROUP.mkv",
 		},
-	}, matches)
+	}, result.Matches)
 }
 
 func TestEpisodeMatcherKeepsFirstDuplicateTarget(t *testing.T) {
@@ -69,11 +69,70 @@ func TestEpisodeMatcherKeepsFirstDuplicateTarget(t *testing.T) {
 		requireEpisodeFile(t, "/client-b/Show.S01E01.1080p.WEB-DL-GROUP.mkv", 100),
 	}
 
-	matches := NewEpisodeMatcher(targets).Match(sources)
+	result := NewEpisodeMatcher(targets).Match(sources)
 	require.Equal(t, []EpisodeMatch{{
 		ClientPath:  "/client-a/Show.S01E01.1080p.WEB-DL-GROUP.mkv",
 		TorrentPath: "first/Show.S01E01.1080p.WEB-DL-GROUP.mkv",
-	}}, matches)
+	}}, result.Matches)
+	require.Equal(t, []EpisodeUnmatched{{
+		TorrentPath: "second/Show.S01E01.1080p.WEB-DL-GROUP.mkv",
+		Reason:      EpisodeUnmatchedDuplicateTarget,
+	}}, result.Unmatched)
+}
+
+func TestEpisodeMatcherReportsTargetWithoutSourceEpisode(t *testing.T) {
+	t.Parallel()
+
+	targets := []EpisodeFile{
+		requireEpisodeFile(t, "Show.S01/Show.S01E01.1080p.WEB-DL-GROUP.mkv", 100),
+		requireEpisodeFile(t, "Show.S01/Show.S01E02.1080p.WEB-DL-GROUP.mkv", 200),
+	}
+	sources := []EpisodeFile{
+		requireEpisodeFile(t, "/client/Show.S01E01.1080p.WEB-DL-GROUP.mkv", 100),
+	}
+
+	result := NewEpisodeMatcher(targets).Match(sources)
+	require.Equal(t, []EpisodeUnmatched{{
+		TorrentPath: "Show.S01/Show.S01E02.1080p.WEB-DL-GROUP.mkv",
+		Reason:      EpisodeUnmatchedSourceMissing,
+	}}, result.Unmatched)
+}
+
+func TestEpisodeMatcherReportsClosestCompatibilityMismatch(t *testing.T) {
+	t.Parallel()
+
+	target := requireEpisodeFile(t, "Show.S01/Show.S01E05.1080p.WEB-DL-GROUP.mkv", 100)
+	sources := []EpisodeFile{
+		requireEpisodeFile(t, "/client/Show.S01E05.1080p.WEB-DL-GROUP.mp4", 101),
+		requireEpisodeFile(t, "/client/Show.S01E05.1080p.WEB-DL-OTHER.mkv", 100),
+	}
+
+	result := NewEpisodeMatcher([]EpisodeFile{target}).Match(sources)
+	require.Equal(t, []EpisodeUnmatched{{
+		TorrentPath:       "Show.S01/Show.S01E05.1080p.WEB-DL-GROUP.mkv",
+		ClosestClientPath: "/client/Show.S01E05.1080p.WEB-DL-OTHER.mkv",
+		Reason:            EpisodeUnmatchedCompatibilityMismatch,
+		Mismatches: []EpisodeMismatch{{
+			Field: EpisodeMismatchReleaseGroup,
+			Want:  "group",
+			Got:   "other",
+		}},
+	}}, result.Unmatched)
+}
+
+func TestEpisodeMatcherReportsWantAndGotForEveryCompatibilityMismatch(t *testing.T) {
+	t.Parallel()
+
+	target := requireEpisodeFile(t, "Show.S01/Show.S01E05.1080p.WEB-DL-GROUP.mkv", 100)
+	source := requireEpisodeFile(t, "/client/Show.S01E05.2160p.WEB-DL-OTHER.mp4", 101)
+
+	result := NewEpisodeMatcher([]EpisodeFile{target}).Match([]EpisodeFile{source})
+	require.Equal(t, []EpisodeMismatch{
+		{Field: EpisodeMismatchSize, Want: int64(100), Got: int64(101)},
+		{Field: EpisodeMismatchContainer, Want: "mkv", Got: "mp4"},
+		{Field: EpisodeMismatchResolution, Want: "1080p", Got: "2160p"},
+		{Field: EpisodeMismatchReleaseGroup, Want: "group", Got: "other"},
+	}, result.Unmatched[0].Mismatches)
 }
 
 func BenchmarkEpisodeMatching(b *testing.B) {

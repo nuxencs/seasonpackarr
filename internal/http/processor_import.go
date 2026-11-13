@@ -5,6 +5,7 @@ package http
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/files"
@@ -17,7 +18,18 @@ import (
 
 // parseTorrent is the /api/parse path. It reuses an accepted plan or rebuilds it
 // on a cache miss, hardlinks the planned episodes, then imports the pack.
-func (p *processor) parseTorrent() (domain.StatusCode, error) {
+func (p *processor) parseTorrent() (statusCode domain.StatusCode, err error) {
+	totalStarted := time.Now()
+	defer func() {
+		event := p.log.Info().
+			Bool("successful", err == nil).
+			Int("status_code", int(statusCode)).
+			Int64("total_duration_ms", time.Since(totalStarted).Milliseconds())
+		if err != nil {
+			event = event.Err(err)
+		}
+		event.Msg("season pack import completed")
+	}()
 	clientName := p.getClientName()
 	snapshot := p.cfg.Snapshot()
 
@@ -48,13 +60,22 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 		return domain.StatusParseTorrentInfoError, fmt.Errorf("%s: %w", domain.StatusParseTorrentInfoError, err)
 	}
 
+	planStarted := time.Now()
+	planSource := "cache"
 	plan, ok := p.loadImportPlan(clientName, *clientCfg, snapshot.FuzzyMatching, hashes)
 	if !ok {
-		var statusCode domain.StatusCode
-		plan, statusCode, err = p.buildImportPlan(clientName, clientCfg, snapshot)
-		if err != nil {
-			return statusCode, err
-		}
+		planSource = "rebuilt"
+		var planStatusCode domain.StatusCode
+		plan, planStatusCode, err = p.buildImportPlan(clientName, clientCfg, snapshot)
+		statusCode = planStatusCode
+	}
+	p.log.Info().
+		Str("plan_source", planSource).
+		Bool("successful", err == nil).
+		Int64("duration_ms", time.Since(planStarted).Milliseconds()).
+		Msg("import plan resolved")
+	if err != nil {
+		return statusCode, err
 	}
 
 	if snapshot.SmartMode {
@@ -64,14 +85,22 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 		}
 	}
 
+	destinationStarted := time.Now()
 	importDestination, err := p.req.Client.ImportDestination()
+	destinationEvent := p.log.Info().
+		Bool("successful", err == nil).
+		Int64("duration_ms", time.Since(destinationStarted).Milliseconds())
 	if err != nil {
+		destinationEvent.Err(err).Msg("import destination resolved")
 		statusCode := torrentclient.ImportStatusCode(err)
 		return statusCode, fmt.Errorf("%s: %w", statusCode, err)
 	}
 	importRoot := importDestination.SavePath()
-	p.log.Debug().Msgf("resolved import root: %s", importRoot)
+	destinationEvent.
+		Str("import_root", importRoot).
+		Msg("import destination resolved")
 
+	hardlinkStarted := time.Now()
 	linkedCount := 0
 	for _, link := range plan.links {
 		targetEpPath := importDestination.TargetPath(plan.packName, link.torrentEpPath)
@@ -83,7 +112,12 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 		linkedCount++
 	}
 
-	p.log.Info().Msgf("hardlinked %d/%d episodes from pack", linkedCount, plan.totalEps)
+	p.log.Info().
+		Int("linked_episodes", linkedCount).
+		Int("planned_links", len(plan.links)).
+		Int("total_episodes", plan.totalEps).
+		Int64("duration_ms", time.Since(hardlinkStarted).Milliseconds()).
+		Msg("hardlink stage completed")
 	if linkedCount == 0 {
 		return domain.StatusFailedHardlink, domain.StatusFailedHardlink.Error()
 	}
@@ -94,13 +128,25 @@ func (p *processor) parseTorrent() (domain.StatusCode, error) {
 		}
 	}
 
-	if err := p.req.Client.Import(torrentclient.ImportRequest{
+	clientImportStarted := time.Now()
+	importReport, err := p.req.Client.Import(torrentclient.ImportRequest{
 		TorrentBytes: plan.torrentBytes,
 		SavePath:     importRoot,
 		LegacyHash:   plan.hashes.Legacy,
 		V2Hash:       plan.hashes.V2,
 		HasV1:        plan.hashes.HasV1,
-	}); err != nil {
+	})
+	for _, stage := range importReport.Stages {
+		p.log.Info().
+			Str("stage", stage.Stage.String()).
+			Int64("duration_ms", stage.Duration.Milliseconds()).
+			Msg("torrent client import stage finished")
+	}
+	p.log.Info().
+		Bool("successful", err == nil).
+		Int64("duration_ms", time.Since(clientImportStarted).Milliseconds()).
+		Msg("torrent client import completed")
+	if err != nil {
 		statusCode := torrentclient.ImportStatusCode(err)
 		return statusCode, fmt.Errorf("%s: %w", statusCode, err)
 	}

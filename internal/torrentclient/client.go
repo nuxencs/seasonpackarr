@@ -105,6 +105,39 @@ const (
 	ImportStageResume                     // resuming the torrent
 )
 
+func (s ImportStage) String() string {
+	switch s {
+	case ImportStageConfig:
+		return "config"
+	case ImportStageAdd:
+		return "add"
+	case ImportStageFind:
+		return "find"
+	case ImportStageRecheck:
+		return "recheck"
+	case ImportStageResume:
+		return "resume"
+	default:
+		return "unknown"
+	}
+}
+
+// ImportStageReport records one successful or failed client-import stage.
+type ImportStageReport struct {
+	Stage    ImportStage
+	Duration time.Duration
+}
+
+// ImportReport describes the client work attempted before Import returned.
+// Stages stay in execution order.
+type ImportReport struct {
+	Stages []ImportStageReport
+}
+
+func (r *ImportReport) record(stage ImportStage, started time.Time) {
+	r.Stages = append(r.Stages, ImportStageReport{Stage: stage, Duration: time.Since(started)})
+}
+
 // ImportError tags an import failure with the stage it happened in.
 type ImportError struct {
 	Stage ImportStage
@@ -151,14 +184,15 @@ func ImportStatusCode(err error) domain.StatusCode {
 // ensures its already-present hardlinked data is accounted for (skip-check +
 // conditional recheck on qBittorrent, forced verify on Transmission, Deluge's
 // normal initial check) and starts it without leaving the import paused.
-// Import failures are returned as *ImportError.
+// Import returns neutral stage timings in execution order. Import failures are
+// returned as *ImportError together with the attempted stage timings.
 type TorrentClient interface {
 	GetTorrents() ([]Torrent, error)
 	// GetFiles returns exactly one result per input hash in input order. Each
 	// adapter owns its safe batching or concurrency strategy.
 	GetFiles(hashes []string) []FileResult
 	ImportDestination() (ImportDestination, error)
-	Import(req ImportRequest) error
+	Import(req ImportRequest) (ImportReport, error)
 }
 
 func fileResultsWithError(hashes []string, err error) []FileResult {

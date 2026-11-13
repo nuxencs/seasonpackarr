@@ -122,7 +122,7 @@ func TestDelugeImportAppliesLowercaseLabel(t *testing.T) {
 	})
 	client.label = func(context.Context) (delugeLabelAPI, error) { return plugin, nil }
 
-	err := client.Import(ImportRequest{
+	_, err := client.Import(ImportRequest{
 		TorrentBytes: []byte("torrent bytes"),
 		SavePath:     "/downloads/tv",
 		LegacyHash:   "legacy-hash",
@@ -282,13 +282,19 @@ func TestDelugeImportResumesThenWaitsForCheck(t *testing.T) {
 	client := newTestDelugeClient(stub, domain.ImportPolicy{SavePath: "/downloads/tv"})
 	torrentBytes := []byte("torrent bytes")
 
-	err := client.Import(ImportRequest{
+	report, err := client.Import(ImportRequest{
 		TorrentBytes: torrentBytes,
 		SavePath:     "/downloads/tv",
 		LegacyHash:   "legacy-hash",
 		HasV1:        true,
 	})
 	require.NoError(t, err)
+	require.Equal(t, []ImportStage{
+		ImportStageConfig,
+		ImportStageAdd,
+		ImportStageResume,
+		ImportStageRecheck,
+	}, importStageNames(report))
 	require.Equal(t, "legacy-hash.torrent", stub.addedName)
 	require.Equal(t, base64.StdEncoding.EncodeToString(torrentBytes), stub.addedContent)
 	require.NotNil(t, stub.addedOptions)
@@ -302,7 +308,7 @@ func TestDelugeImportRejectsPureV2Torrent(t *testing.T) {
 	t.Parallel()
 
 	client := newTestDelugeClient(&stubDelugeAPI{}, domain.ImportPolicy{SavePath: "/downloads/tv"})
-	err := client.Import(ImportRequest{SavePath: "/downloads/tv", V2Hash: "v2-hash"})
+	_, err := client.Import(ImportRequest{SavePath: "/downloads/tv", V2Hash: "v2-hash"})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "v1 or hybrid")
 	require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
@@ -320,7 +326,7 @@ func TestDelugeImportDoesNotMutateExistingV2Torrent(t *testing.T) {
 	}
 	client := newTestDelugeClient(stub, domain.ImportPolicy{SavePath: "/downloads/tv"})
 
-	err := client.Import(ImportRequest{
+	_, err := client.Import(ImportRequest{
 		TorrentBytes: []byte("torrent bytes"),
 		SavePath:     "/downloads/tv",
 		LegacyHash:   "legacy-hash",
@@ -338,7 +344,7 @@ func TestDelugeImportDoesNotMutateExistingV1Torrent(t *testing.T) {
 	}
 	client := newTestDelugeClient(stub, domain.ImportPolicy{SavePath: "/downloads/tv"})
 
-	err := client.Import(ImportRequest{
+	_, err := client.Import(ImportRequest{
 		TorrentBytes: []byte("torrent bytes"),
 		SavePath:     "/downloads/tv",
 		LegacyHash:   "legacy-hash",

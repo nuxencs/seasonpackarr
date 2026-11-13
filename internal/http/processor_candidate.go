@@ -98,9 +98,13 @@ func (p *processor) findCandidates(clientName string, clientCfg *domain.Client, 
 		case domain.StatusSuccessfulMatch:
 			candidates = append(candidates, filteredEntry)
 		default:
-			p.log.Info().Msgf("%s: request(%s => %v), client(%s => %v)",
-				compareInfo.StatusCode, requestRls.String(), compareInfo.RejectValueA,
-				filteredEntry.release.String(), compareInfo.RejectValueB)
+			p.log.Info().
+				Str("reason", "compatibility_mismatch").
+				Str("field", candidateMismatchField(compareInfo.StatusCode)).
+				Interface("want", compareInfo.RejectValueA).
+				Interface("got", compareInfo.RejectValueB).
+				Str("client_release", filteredEntry.release.String()).
+				Msg("client release is not compatible")
 		}
 	}
 
@@ -109,6 +113,29 @@ func (p *processor) findCandidates(clientName string, clientCfg *domain.Client, 
 	}
 
 	return candidates, domain.StatusSuccessfulMatch, nil
+}
+
+func candidateMismatchField(statusCode domain.StatusCode) string {
+	switch statusCode {
+	case domain.StatusResolutionMismatch:
+		return "resolution"
+	case domain.StatusSourceMismatch:
+		return "source"
+	case domain.StatusRlsGrpMismatch:
+		return "release_group"
+	case domain.StatusCutMismatch:
+		return "cut"
+	case domain.StatusEditionMismatch:
+		return "edition"
+	case domain.StatusRepackStatusMismatch:
+		return "repack_status"
+	case domain.StatusHdrMismatch:
+		return "hdr"
+	case domain.StatusStreamingServiceMismatch:
+		return "streaming_service"
+	default:
+		return "unknown"
+	}
 }
 
 func (p *processor) getClient(client *domain.Client, clientName string) error {

@@ -29,6 +29,7 @@ type importPlan struct {
 	hashes       torrents.Hashes
 	packName     string
 	links        []plannedLink
+	unmatched    []release.EpisodeUnmatched
 	totalEps     int
 }
 
@@ -67,13 +68,15 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 	p.log.Info().Msgf("using %s client", clientName)
 
 	plan, statusCode, err := p.buildImportPlan(clientName, clientCfg, snapshot)
+	coverage := float32(0)
+	if plan.totalEps > 0 {
+		coverage = p.logImportPlan(plan, snapshot)
+	}
 	if err != nil {
 		return statusCode, err
 	}
 
 	if snapshot.SmartMode {
-		coverage := release.PercentOfTotalEpisodes(plan.totalEps, len(plan.links))
-		p.log.Info().Msgf("found %d/%d (%.2f%%) reusable episodes in announced torrent", len(plan.links), plan.totalEps, coverage*100)
 		if coverage < snapshot.SmartModeThreshold {
 			return domain.StatusBelowThreshold, domain.StatusBelowThreshold.Error()
 		}
@@ -82,6 +85,41 @@ func (p *processor) processSeasonPack() (domain.StatusCode, error) {
 	p.storeImportPlan(clientName, *clientCfg, snapshot.FuzzyMatching, plan)
 
 	return domain.StatusSuccessfulMatch, nil
+}
+
+func (p *processor) logImportPlan(plan importPlan, cfg domain.Config) float32 {
+	for _, unmatched := range plan.unmatched {
+		event := p.log.Info().
+			Str("torrent_path", unmatched.TorrentPath).
+			Str("reason", string(unmatched.Reason))
+		if unmatched.ClosestClientPath != "" {
+			event = event.Str("closest_client_path", unmatched.ClosestClientPath)
+		}
+		if len(unmatched.Mismatches) > 0 {
+			mismatches := make([]map[string]any, len(unmatched.Mismatches))
+			for index, mismatch := range unmatched.Mismatches {
+				mismatches[index] = map[string]any{
+					"field": string(mismatch.Field),
+					"want":  mismatch.Want,
+					"got":   mismatch.Got,
+				}
+			}
+			event = event.Interface("mismatches", mismatches)
+		}
+		event.Msg("torrent episode is not reusable")
+	}
+
+	coverage := release.PercentOfTotalEpisodes(plan.totalEps, len(plan.links))
+	summary := p.log.Info().
+		Int("reusable_episodes", len(plan.links)).
+		Int("total_episodes", plan.totalEps).
+		Int("unmatched_episodes", len(plan.unmatched)).
+		Float32("coverage_percent", coverage*100)
+	if cfg.SmartMode {
+		summary = summary.Float32("threshold_percent", cfg.SmartModeThreshold*100)
+	}
+	summary.Msg("season pack import plan built")
+	return coverage
 }
 
 func (p *processor) buildImportPlan(clientName string, clientCfg *domain.Client, cfg domain.Config) (importPlan, domain.StatusCode, error) {
@@ -124,26 +162,28 @@ func (p *processor) buildImportPlan(clientName string, clientCfg *domain.Client,
 	}
 
 	matcher := release.NewEpisodeMatcher(eligibleEps)
-	matches := matcher.Match(p.getEpisodeFiles(candidates))
-	if len(matches) == 0 {
-		return importPlan{}, domain.StatusFailedMatchToTorrentEps, domain.StatusFailedMatchToTorrentEps.Error()
-	}
+	matchResult := matcher.Match(p.getEpisodeFiles(candidates))
 
-	links := make([]plannedLink, 0, len(matches))
-	for _, match := range matches {
+	links := make([]plannedLink, 0, len(matchResult.Matches))
+	for _, match := range matchResult.Matches {
 		links = append(links, plannedLink{
 			clientEpPath:  match.ClientPath,
 			torrentEpPath: match.TorrentPath,
 		})
 	}
 
-	return importPlan{
+	plan := importPlan{
 		torrentBytes: torrentBytes,
 		hashes:       hashes,
 		packName:     torrentInfo.BestName(),
 		links:        links,
+		unmatched:    matchResult.Unmatched,
 		totalEps:     len(eligibleEps),
-	}, domain.StatusSuccessfulMatch, nil
+	}
+	if len(matchResult.Matches) == 0 {
+		return plan, domain.StatusFailedMatchToTorrentEps, domain.StatusFailedMatchToTorrentEps.Error()
+	}
+	return plan, domain.StatusSuccessfulMatch, nil
 }
 
 func (p *processor) getEpisodeFiles(candidates []entry) []release.EpisodeFile {

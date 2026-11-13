@@ -21,7 +21,9 @@ Describe the normal path from webhook hit to hardlink creation and client import
 13. The torrent is added to the client, checked so the present files are recognised, and not left paused. See
     [qbittorrent-import-flow.md](qbittorrent-import-flow.md) for the complete-vs-partial
     client import flow with diagrams.
-14. Logs and notifications communicate outcome.
+14. Pack logs explain unmatched torrent targets. Parse logs report plan reuse,
+    hardlink work, client-import stage durations, and total duration.
+    Notifications communicate the final outcome.
 
 ## Failure Classes
 
@@ -35,4 +37,4 @@ Describe the normal path from webhook hit to hardlink creation and client import
 
 ## Verification Notes
 
-Verified against code on 2026-08-09. The lifecycle is implementation-backed, not aspirational.
+Verified against code on 2026-08-12. The lifecycle is implementation-backed, not aspirational.

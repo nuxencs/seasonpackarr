@@ -94,8 +94,14 @@ func TestTransmissionImportVerifiesThenStarts(t *testing.T) {
 	}
 	tc := newTestTransmissionClient(stub, domain.ImportPolicy{SavePath: "/data/tv", Tags: []string{"seasonpackarr"}})
 
-	err := tc.Import(ImportRequest{TorrentBytes: []byte("torrent"), LegacyHash: hash, HasV1: true, SavePath: "/data/tv"})
+	report, err := tc.Import(ImportRequest{TorrentBytes: []byte("torrent"), LegacyHash: hash, HasV1: true, SavePath: "/data/tv"})
 	require.NoError(t, err)
+	require.Equal(t, []ImportStage{
+		ImportStageConfig,
+		ImportStageAdd,
+		ImportStageRecheck,
+		ImportStageResume,
+	}, importStageNames(report))
 
 	require.True(t, stub.addCalled)
 	require.NotNil(t, stub.addPayload.MetaInfo)
@@ -118,7 +124,7 @@ func TestTransmissionImportFailsOnError(t *testing.T) {
 	}
 	tc := newTestTransmissionClient(stub, domain.ImportPolicy{SavePath: "/data/tv"})
 
-	err := tc.Import(ImportRequest{TorrentBytes: []byte("t"), LegacyHash: "h", HasV1: true, SavePath: "/data/tv"})
+	_, err := tc.Import(ImportRequest{TorrentBytes: []byte("t"), LegacyHash: "h", HasV1: true, SavePath: "/data/tv"})
 	require.Error(t, err)
 	require.Equal(t, domain.StatusRecheckTorrentError, ImportStatusCode(err))
 	require.Empty(t, stub.startCalls)

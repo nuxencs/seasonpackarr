@@ -201,7 +201,7 @@ func TestQbitImportLive(t *testing.T) {
 	packName, torrentBytes, hashes := buildLivePack(t, importDir, "LiveQbit.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
 	t.Logf("importing pack %q hash=%s", packName, hashes.Legacy)
 
-	if err := c.Import(ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
+	if _, err := c.Import(ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
 		t.Fatalf("qbit Import: %v", err)
 	}
 	requireQbitStarted(t, c, hashes.Legacy)
@@ -310,7 +310,7 @@ func TestTransmissionImportLive(t *testing.T) {
 	packName, torrentBytes, hashes := buildLivePack(t, importDir, "LiveTransmission.S01.1080p.WEB-DL.H.264-RlsGrp", 3)
 	t.Logf("importing pack %q hash=%s", packName, hashes.Legacy)
 
-	if err := c.Import(ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
+	if _, err := c.Import(ImportRequest{TorrentBytes: torrentBytes, LegacyHash: hashes.Legacy, V2Hash: hashes.V2, HasV1: hashes.HasV1, SavePath: importDir}); err != nil {
 		t.Fatalf("transmission Import: %v", err)
 	}
 	requireTransmissionStarted(t, c, hashes.Legacy)

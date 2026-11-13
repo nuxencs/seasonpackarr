@@ -234,16 +234,21 @@ func (q *qbitClient) resolveCategorySavePath(categoryName string, categories map
 // Import adds the parsed season pack back to qBittorrent with the hash check
 // skipped (the matched episodes are already hardlinked into place), rechecks it
 // if qBittorrent reports missing files, then resumes it unless the client is
-// configured to leave it paused.
-func (q *qbitClient) Import(req ImportRequest) error {
+// configured to leave it paused. The returned report identifies how long each
+// client operation took.
+func (q *qbitClient) Import(req ImportRequest) (ImportReport, error) {
+	var report ImportReport
+	started := time.Now()
 	opts, err := q.buildTorrentAddOptions()
 	if err != nil {
-		return err
+		report.record(ImportStageConfig, started)
+		return report, err
 	}
 
 	resolvedSavePath := strings.TrimSpace(req.SavePath)
 	if resolvedSavePath == "" {
-		return importErr(ImportStageConfig, errors.New("resolved qbittorrent save path is empty"))
+		report.record(ImportStageConfig, started)
+		return report, importErr(ImportStageConfig, errors.New("resolved qbittorrent save path is empty"))
 	}
 
 	// Category-only policy leaves path selection and Auto TMM to qBittorrent.
@@ -253,44 +258,58 @@ func (q *qbitClient) Import(req ImportRequest) error {
 		opts.SavePath = resolvedSavePath
 	}
 
-	if _, err := q.c.AddTorrentFromMemory(req.TorrentBytes, opts.Prepare()); err != nil {
-		return importErr(ImportStageAdd, errors.Wrap(err, "failed to add torrent to qbittorrent"))
-	}
-
 	lookupHash := req.LegacyHash
 	if !req.HasV1 {
 		lookupHash = req.V2Hash
 	}
 	if strings.TrimSpace(lookupHash) == "" {
-		return importErr(ImportStageConfig, errors.New("resolved qbittorrent info hash is empty"))
+		report.record(ImportStageConfig, started)
+		return report, importErr(ImportStageConfig, errors.New("resolved qbittorrent info hash is empty"))
 	}
 
+	report.record(ImportStageConfig, started)
+
+	started = time.Now()
+	if _, err := q.c.AddTorrentFromMemory(req.TorrentBytes, opts.Prepare()); err != nil {
+		report.record(ImportStageAdd, started)
+		return report, importErr(ImportStageAdd, errors.Wrap(err, "failed to add torrent to qbittorrent"))
+	}
+	report.record(ImportStageAdd, started)
+
+	started = time.Now()
 	added, err := q.waitForTorrent(lookupHash)
+	report.record(ImportStageFind, started)
 	if err != nil {
-		return importErr(ImportStageFind, err)
+		return report, importErr(ImportStageFind, err)
 	}
 
 	if added.State == qbittorrent.TorrentStateMissingFiles {
+		started = time.Now()
 		if err := q.c.Recheck([]string{added.Hash}); err != nil {
-			return importErr(ImportStageRecheck, errors.Wrap(err, "failed to recheck torrent"))
+			report.record(ImportStageRecheck, started)
+			return report, importErr(ImportStageRecheck, errors.Wrap(err, "failed to recheck torrent"))
 		}
 
 		added, err = q.waitForRecheck(added.Hash)
+		report.record(ImportStageRecheck, started)
 		if err != nil {
-			return importErr(ImportStageRecheck, err)
+			return report, importErr(ImportStageRecheck, err)
 		}
 	}
 
 	// a correctly imported torrent always starts once its data is accounted for
 	if isActiveTorrentState(added.State) {
-		return nil
+		return report, nil
 	}
 
+	started = time.Now()
 	if err := q.c.Resume([]string{added.Hash}); err != nil {
-		return importErr(ImportStageResume, errors.Wrap(err, "failed to resume torrent"))
+		report.record(ImportStageResume, started)
+		return report, importErr(ImportStageResume, errors.Wrap(err, "failed to resume torrent"))
 	}
+	report.record(ImportStageResume, started)
 
-	return nil
+	return report, nil
 }
 
 // buildTorrentAddOptions maps the client's import policy onto qBittorrent add

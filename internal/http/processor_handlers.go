@@ -21,10 +21,10 @@ func (p *processor) CandidateSeasonPackHandler(c *gin.Context) {
 
 	statusCode, err := p.candidateSeasonPack()
 	if err != nil {
-		if statusCode.Code() >= http.StatusBadRequest {
-			p.log.Error().Err(err).Msg("error checking season pack candidate")
-		} else {
+		if isExpectedGateRejection(statusCode) {
 			p.log.Info().Err(err).Msg("season pack candidate rejected")
+		} else {
+			p.log.Error().Err(err).Msg("error checking season pack candidate")
 		}
 		abortWithError(c, statusCode, err)
 		return
@@ -44,7 +44,11 @@ func (p *processor) ProcessSeasonPackHandler(c *gin.Context) {
 	statusCode, err := p.processSeasonPack()
 	if err != nil {
 		p.sendNotification(statusCode, "Pack", err)
-		p.log.Error().Err(err).Msg("error processing season pack")
+		if isExpectedGateRejection(statusCode) {
+			p.log.Info().Err(err).Msg("season pack rejected")
+		} else {
+			p.log.Error().Err(err).Msg("error processing season pack")
+		}
 		abortWithError(c, statusCode, err)
 		return
 	}
@@ -52,6 +56,10 @@ func (p *processor) ProcessSeasonPackHandler(c *gin.Context) {
 	p.sendNotification(statusCode, "Pack", nil)
 	p.log.Info().Msg("successfully matched season pack to episodes in client")
 	c.String(statusCode.Code(), statusCode.String())
+}
+
+func isExpectedGateRejection(statusCode domain.StatusCode) bool {
+	return statusCode.Code() < http.StatusBadRequest || statusCode == domain.StatusFailedMatchToTorrentEps
 }
 
 func (p *processor) ParseTorrentHandler(c *gin.Context) {
