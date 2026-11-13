@@ -6,7 +6,7 @@ WORKDIR /src
 ENV SERVICE=seasonpackarr
 ARG VERSION=dev \
     REVISION=dev \
-    BUILDTIME \
+    BUILDTIME
 
 COPY go.mod go.sum ./
 RUN go mod download
