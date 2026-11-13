@@ -46,6 +46,10 @@ _Avoid_: Backfill
 **Announce**:
 A release that autobrr sends to seasonpackarr from a tracker announce.
 
+**Filter**:
+The autobrr filter that sends announces for one client to the candidate check, the match, and the import.
+_Avoid_: autobrr config, filter config
+
 **RSS monitoring**:
 The periodic read of Prowlarr RSS feeds for new season packs.
 _Avoid_: RSS backfill

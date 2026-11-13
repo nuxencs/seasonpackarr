@@ -76,15 +76,9 @@ func (o *connectionOptions) resolve(cmd *cobra.Command, allClients bool) (*apiCl
 		}
 		baseURL = "http://" + net.JoinHostPort(host, strconv.Itoa(portNumber))
 	}
-	u, err := url.Parse(baseURL)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
-		return nil, "", fmt.Errorf("service URL must be an HTTP or HTTPS base URL without credentials, query parameters, or a fragment")
-	}
-	if value := u.Port(); value != "" {
-		port, err := strconv.Atoi(value)
-		if err != nil || port < 1 || port > 65535 {
-			return nil, "", fmt.Errorf("service URL port must be from 1 to 65535")
-		}
+	baseURL, err = parseBaseURL("service URL", baseURL)
+	if err != nil {
+		return nil, "", err
 	}
 	client := os.Getenv("SEASONPACKARR__CLIENT")
 	if cmd.Flags().Changed("client") {
@@ -100,5 +94,22 @@ func (o *connectionOptions) resolve(cmd *cobra.Command, allClients bool) (*apiCl
 			return nil, "", fmt.Errorf("select a client with --client; configured clients: %s", strings.Join(settings.Clients, ", "))
 		}
 	}
-	return &apiClient{baseURL: strings.TrimRight(u.String(), "/"), token: token}, client, nil
+	return &apiClient{baseURL: baseURL, token: token}, client, nil
+}
+
+// parseBaseURL checks that raw is an HTTP or HTTPS base URL with a host and an
+// optional path, and returns it without a trailing slash. name names the input
+// in errors.
+func parseBaseURL(name, raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return "", fmt.Errorf("%s must be an HTTP or HTTPS base URL without credentials, query parameters, or a fragment", name)
+	}
+	if value := u.Port(); value != "" {
+		port, err := strconv.Atoi(value)
+		if err != nil || port < 1 || port > 65535 {
+			return "", fmt.Errorf("%s port must be from 1 to 65535", name)
+		}
+	}
+	return strings.TrimRight(u.String(), "/"), nil
 }

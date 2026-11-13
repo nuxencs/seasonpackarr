@@ -5,9 +5,16 @@ package config
 
 import (
 	"bytes"
+	"encoding/json/v2"
+	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
+	"regexp"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +26,7 @@ import (
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -46,6 +54,96 @@ logLevel: "INFO"
 	require.Equal(t, "", snapshot.APIToken)
 	require.Equal(t, []string{"MATCH", "ERROR"}, snapshot.Notifications.NotificationLevel)
 	require.Equal(t, "", snapshot.Notifications.Discord)
+}
+
+func TestLoadSnapshot_RejectsUnknownKeys(t *testing.T) {
+	configFile := writeTestConfig(t, `
+host: "127.0.0.1"
+logLevl: "INFO"
+fuzzyMatching:
+  skipRepackCompar: true
+clients:
+  default:
+    type: qbittorrent
+    hots: qbit
+    import:
+      category: tv-hd
+      savepath: "/data"
+      tag: [seasonpackarr]
+`)
+	cfg := &AppConfig{configFile: configFile, version: "test"}
+	_, err := cfg.loadSnapshot()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown config keys: clients.default.hots, clients.default.import.tag, fuzzyMatching.skipRepackCompar, logLevl")
+	assert.Contains(t, err.Error(), configFile)
+}
+
+// TestLoadSnapshot_IgnoresUnknownClientEnvironmentVariables keeps the promise
+// of the startup warning: an unknown client variable must not add a client,
+// because an empty client fails validation and stops startup.
+func TestLoadSnapshot_IgnoresUnknownClientEnvironmentVariables(t *testing.T) {
+	configFile := writeTestConfig(t, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: tv-hd
+`)
+	t.Setenv("SEASONPACKARR__CLIENTS_GHOST_IMPORT_SAVEPATH", "/data")
+	t.Setenv("SEASONPACKARR__CLIENTS__HOST", "qbit")
+	require.Equal(t, []string{"SEASONPACKARR__CLIENTS_GHOST_IMPORT_SAVEPATH", "SEASONPACKARR__CLIENTS__HOST"},
+		UnknownEnvironmentVariables(os.Environ()))
+
+	cfg := &AppConfig{configFile: configFile, version: "test"}
+	snapshot, err := cfg.loadSnapshot()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"default"}, slices.Sorted(maps.Keys(snapshot.Clients)))
+}
+
+func TestLoadSnapshot_RejectsInternalFieldsAsKeys(t *testing.T) {
+	configFile := writeTestConfig(t, "clients: {}\nversion: v9\nconfigPath: /tmp\ndisableConfigFile: true\n")
+	cfg := &AppConfig{configFile: configFile, version: "test"}
+	_, err := cfg.loadSnapshot()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unknown config keys: configPath, disableConfigFile, version")
+}
+
+func TestLoadSnapshot_KeepsCaseInsensitiveKeyMatching(t *testing.T) {
+	configFile := writeTestConfig(t, `
+LogLevel: "INFO"
+clients:
+  default:
+    TYPE: qbittorrent
+    Import:
+      Category: tv-hd
+`)
+	cfg := &AppConfig{configFile: configFile, version: "test"}
+	snapshot, err := cfg.loadSnapshot()
+	require.NoError(t, err)
+	assert.Equal(t, "INFO", snapshot.LogLevel)
+	assert.Equal(t, "test", snapshot.Version)
+	require.Contains(t, snapshot.Clients, "default")
+	assert.Equal(t, "qbittorrent", snapshot.Clients["default"].Type)
+	assert.Equal(t, "tv-hd", snapshot.Clients["default"].Import.Category)
+}
+
+func TestLoadSnapshot_KeepsMigrationErrorsForRemovedKeys(t *testing.T) {
+	tests := []struct {
+		name, content, want string
+	}{
+		{name: "parseTorrentFile", content: "clients: {}\nparseTorrentFile: false\n", want: "parseTorrentFile was removed"},
+		{name: "metadata", content: "clients: {}\nmetadata:\n  tvdbAPIKey: key\n", want: "metadata was removed"},
+		{name: "preImportPath", content: "clients:\n  default:\n    preImportPath: /data\n", want: "clients.default.preImportPath was removed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &AppConfig{configFile: writeTestConfig(t, tt.content), version: "test"}
+			_, err := cfg.loadSnapshot()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
+			assert.NotContains(t, err.Error(), "unknown config keys")
+		})
+	}
 }
 
 func loadTestKoanf(t *testing.T, content string) *koanf.Koanf {
@@ -219,6 +317,32 @@ logLevel: TRACE
 	require.Contains(t, err.Error(), "qBittorrent only")
 	require.Equal(t, before, cfg.Snapshot())
 	require.Equal(t, zerolog.WarnLevel, zerolog.GlobalLevel())
+}
+
+func TestReload_RejectsUnknownKeyAndKeepsLastSnapshot(t *testing.T) {
+	cfg, configFile := newTestAppConfig(t, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: tv-hd
+logLevel: INFO
+`)
+	before := cfg.Snapshot()
+
+	writeConfigFile(t, configFile, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: tv-other
+logLevel: TRACE
+smartMod: true
+`)
+	_, err := cfg.reload()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown config keys: smartMod")
+	assert.Equal(t, before, cfg.Snapshot())
 }
 
 func TestReload_ReappliesEnvironmentOverrides(t *testing.T) {
@@ -701,4 +825,172 @@ func TestValidateClientConfig(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "doesn't exist")
 	})
+}
+
+// TestUnknownConfigKeys_YAMLTagsMatchFieldNames: the check matches keys against
+// the yaml tags and the real decode against the field names, so both must be
+// equal without case.
+func TestUnknownConfigKeys_YAMLTagsMatchFieldNames(t *testing.T) {
+	var check func(typ reflect.Type)
+	check = func(typ reflect.Type) {
+		for field := range typ.Fields() {
+			tag := field.Tag.Get("yaml")
+			if tag == "" || tag == "-" {
+				continue
+			}
+			assert.True(t, strings.EqualFold(tag, field.Name), "%s.%s has yaml tag %q", typ.Name(), field.Name, tag)
+			fieldType := field.Type
+			for fieldType.Kind() == reflect.Pointer || fieldType.Kind() == reflect.Map || fieldType.Kind() == reflect.Slice {
+				fieldType = fieldType.Elem()
+			}
+			if fieldType.Kind() == reflect.Struct {
+				check(fieldType)
+			}
+		}
+	}
+	check(reflect.TypeFor[domain.Config]())
+}
+
+func TestUnknownEnvironmentVariables(t *testing.T) {
+	environ := []string{
+		"HOME=/home/user",
+		"SEASONPACKARR_TEST_E2E_API_TOKEN=token",
+		"SEASONPACKARR__LOG_LEVEL=INFO",
+		"SEASONPACKARR__LOG_LEVL=INFO",
+		"SEASONPACKARR__URL=http://seasonpackarr:42069",
+		"SEASONPACKARR__CLIENT=default",
+		"SEASONPACKARR__AUTOBRR_URL=http://autobrr:7474",
+		"SEASONPACKARR__AUTOBRR_API_KEY=key",
+		"SEASONPACKARR__DISABLE_CONFIG_FILE=true",
+		"SEASONPACKARR__CLIENTS_DEFAULT_HOST=qbit",
+		"SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_SAVE_PATH=/data",
+		"SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_SAVEPATH=/data",
+		"SEASONPACKARR__CLIENTS_DEFAULT=",
+		"SEASONPACKARR__SEARCH_API_KEY=",
+		"SEASONPACKARR__SMART_MODE_TRESHOLD=0.5",
+		// The removed variables stop startup with a migration error, so they are not ignored.
+		"SEASONPACKARR__PARSE_TORRENT_FILE=false",
+		"SEASONPACKARR__METADATA_TVDB_API_KEY=key",
+		"SEASONPACKARR__METADATA_TVDB_PIN=pin",
+		"SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH=",
+	}
+	require.Equal(t, []string{
+		"SEASONPACKARR__CLIENTS_DEFAULT",
+		"SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_SAVEPATH",
+		"SEASONPACKARR__LOG_LEVL",
+		"SEASONPACKARR__SMART_MODE_TRESHOLD",
+	}, UnknownEnvironmentVariables(environ))
+}
+
+// TestUnknownEnvironmentVariables_AllowsComposeExample keeps the example Compose
+// file and the variables that applyEnvironment reads in sync.
+func TestUnknownEnvironmentVariables_AllowsComposeExample(t *testing.T) {
+	compose, err := os.ReadFile("../../docker-compose.yml")
+	require.NoError(t, err)
+	names := regexp.MustCompile(`SEASONPACKARR__[A-Z0-9_]+`).FindAllString(string(compose), -1)
+	require.NotEmpty(t, names)
+	environ := make([]string, 0, len(names))
+	for _, name := range names {
+		environ = append(environ, name+"=value")
+	}
+	require.Empty(t, UnknownEnvironmentVariables(environ))
+}
+
+// TestFindConfigFile_ImageWorkingDirectoryIsConfigVolume keeps docker exec
+// working without --config: the image starts in the config volume, and
+// discovery checks ./config.yaml first.
+func TestFindConfigFile_ImageWorkingDirectoryIsConfigVolume(t *testing.T) {
+	t.Run("discovery checks the working directory first", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		homeConfig := filepath.Join(home, ".config", "seasonpackarr", "config.yaml")
+		require.NoError(t, os.MkdirAll(filepath.Dir(homeConfig), 0o755))
+		writeConfigFile(t, homeConfig, "clients: {}\n")
+		workingDir := t.TempDir()
+		writeConfigFile(t, filepath.Join(workingDir, "config.yaml"), "clients: {}\n")
+		t.Chdir(workingDir)
+
+		configFile, err := findConfigFile()
+		require.NoError(t, err)
+		assert.Equal(t, "./config.yaml", configFile)
+	})
+	for _, dockerfile := range []string{"Dockerfile", "ci.Dockerfile"} {
+		t.Run(dockerfile, func(t *testing.T) {
+			contents, err := os.ReadFile(filepath.Join("../..", dockerfile))
+			require.NoError(t, err)
+			workdirs := regexp.MustCompile(`(?m)^WORKDIR\s+(\S+)`).FindAllStringSubmatch(string(contents), -1)
+			require.NotEmpty(t, workdirs)
+			assert.Equal(t, "/config", workdirs[len(workdirs)-1][1], "WORKDIR of the runner stage")
+			assert.Regexp(t, `(?m)^VOLUME /config$`, string(contents))
+		})
+	}
+}
+
+func TestUnknownConfigKeys_AcceptsConfigExamples(t *testing.T) {
+	templateDir := t.TempDir()
+	require.NoError(t, (&AppConfig{}).writeConfig(templateDir, "config.yaml"))
+
+	for name, configFile := range map[string]string{
+		"config template": filepath.Join(templateDir, "config.yaml"),
+		"config.yaml":     "../../config.yaml",
+	} {
+		t.Run(name, func(t *testing.T) {
+			k := koanf.New(".")
+			require.NoError(t, k.Load(file.Provider(configFile), yaml.Parser()))
+			require.NotEmpty(t, k.Keys())
+			unknown, err := unknownConfigKeys(k)
+			require.NoError(t, err)
+			assert.Empty(t, unknown)
+		})
+	}
+}
+
+// fakeProvider loads a nested map into koanf.
+type fakeProvider map[string]any
+
+func (f fakeProvider) ReadBytes() ([]byte, error)    { return nil, errors.New("not supported") }
+func (f fakeProvider) Read() (map[string]any, error) { return f, nil }
+
+func TestUnknownConfigKeys_AcceptsSchemaKeys(t *testing.T) {
+	contents, err := os.ReadFile("../../schemas/config-schema.json")
+	require.NoError(t, err)
+	var schema map[string]any
+	require.NoError(t, json.Unmarshal(contents, &schema))
+	defs, _ := schema["$defs"].(map[string]any)
+
+	// keys turns a schema object into a map with each property it allows, and
+	// one example entry for each pattern property.
+	var keys func(node map[string]any) map[string]any
+	keys = func(node map[string]any) map[string]any {
+		if ref, ok := node["$ref"].(string); ok {
+			def, ok := defs[strings.TrimPrefix(ref, "#/$defs/")].(map[string]any)
+			require.True(t, ok, "unresolved $ref %q", ref)
+			return keys(def)
+		}
+		props, _ := node["properties"].(map[string]any)
+		patterns, _ := node["patternProperties"].(map[string]any)
+		if len(props) == 0 && len(patterns) == 0 {
+			return nil
+		}
+		out := map[string]any{}
+		for name, child := range props {
+			if sub := keys(child.(map[string]any)); sub != nil {
+				out[name] = sub
+			} else {
+				out[name] = nil
+			}
+		}
+		for _, child := range patterns {
+			out["example"] = keys(child.(map[string]any))
+		}
+		return out
+	}
+
+	all := keys(schema)
+	require.Contains(t, all, "clients")
+	k := koanf.New(".")
+	require.NoError(t, k.Load(fakeProvider(all), nil))
+	unknown, err := unknownConfigKeys(k)
+	require.NoError(t, err)
+	require.Empty(t, unknown)
 }

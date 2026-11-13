@@ -5,7 +5,7 @@ v1.0.0. For a new installation, start with the [README](../README.md).
 
 The upgrade changes 2 things: your seasonpackarr configuration and your
 seasonpackarr filter in autobrr. Plan a short maintenance window, and keep the
-autobrr filter disabled until you complete step 5.
+autobrr filter disabled until step 6.
 
 ## What changes in v1.0.0
 
@@ -30,6 +30,10 @@ autobrr filter disabled until you complete step 5.
   - An accepted season pack sends 2 `MATCH` notifications: one from the match
     and one from the import.
   - The notification action label is `Match` or `Import`. It was `Pack` before.
+- **Unknown config keys stop startup.** v0.16.0 ignored a key that it did not
+  know. v1.0.0 names each unknown key in `config.yaml` and does not start. An
+  unknown `SEASONPACKARR__` environment variable logs a warning. See
+  [remove unknown keys](#remove-unknown-keys).
 - **seasonpackarr creates a database.** v1.0.0 creates `seasonpackarr.db` at
   startup, also when you do not use Prowlarr. You do not install or configure a
   database. See [application data](INSTALL.md#application-data).
@@ -77,6 +81,21 @@ Remove these settings from `config.yaml`, also when they are empty:
 seasonpackarr does not start while one of these settings is present. If you use
 Docker Compose or environment variables, also do the
 [environment variable changes](#docker-compose-and-environment-variables).
+
+### Remove unknown keys
+
+v1.0.0 checks each key in `config.yaml`. A key that v1.0.0 does not know stops
+startup. v0.16.0 ignored such keys, so your file can contain old typos or keys
+that never had an effect.
+
+1. Open your `config.yaml` in an editor with
+   [JSON schema](../schemas/config-schema.json) support, or compare it with the
+   keys in the schema. The [example config](../config.yaml) shows some valid
+   keys only as comments, for example `logPath` and `smartMode`.
+2. Remove or rename each key that is not in the schema.
+
+If you miss a key, the startup error names it. See
+[unknown keys](CONFIGURATION.md#unknown-keys).
 
 ### Add an import section for qBittorrent
 
@@ -207,131 +226,7 @@ path, and content layout are qBittorrent-only settings.
 If you use Compose, run `docker compose config` and check the resolved
 environment variables and volume paths.
 
-## 3. Update the autobrr filter
-
-The screenshots use autobrr 1.83.0. Other versions can look slightly different,
-but the field names and values are the same. For the full filter setup, see the
-[autobrr guide](AUTOBRR.md).
-
-In each example:
-
-- replace `seasonpackarr:42069` with the host and port that autobrr uses to reach
-  seasonpackarr
-- replace `your-api-token` with your seasonpackarr API token
-- replace `default` with your seasonpackarr client name, if it is different
-
-If API authentication is off (empty `apiToken`), leave the header empty and omit
-`?apikey=...` from the action endpoint.
-
-### Change the old `/api/pack` entry into the match
-
-Your filter has one External entry for `/api/pack`. Open the filter's
-**External** tab and do one of these:
-
-- **Edit the entry.** Change the fields to the values below. The entry then
-  stays above the candidate check that you add next, so you must
-  [reorder the entries](#put-the-candidate-check-first).
-- **Delete the entry and add it again** after the candidate check. Select
-  **Add new** and choose **Webhook**.
-
-| Field | Value |
-| --- | --- |
-| Name | `2. Match` |
-| On Error | `Reject` |
-| Endpoint | `http://seasonpackarr:42069/api/match` |
-| HTTP method | `POST` |
-| HTTP Request Headers | `X-API-Token=your-api-token` |
-| Expected HTTP status code | `250` |
-
-**Data (JSON)** must now include the `torrent` field:
-
-```json
-{
-  "name": "{{ .TorrentName }}",
-  "torrent": "{{ .TorrentDataRawBytes | js }}",
-  "clientname": "default"
-}
-```
-
-Enable the entry. autobrr downloads the torrent file for this check only after
-the candidate check passes.
-
-![autobrr External tab with the match webhook](assets/v1-upgrade-autobrr-match.jpg)
-
-### Add the candidate check
-
-In the **External** tab, select **Add new** and choose **Webhook**. Enter:
-
-| Field | Value |
-| --- | --- |
-| Name | `1. Candidate check` |
-| On Error | `Reject` |
-| Endpoint | `http://seasonpackarr:42069/api/candidate` |
-| HTTP method | `POST` |
-| HTTP Request Headers | `X-API-Token=your-api-token` |
-| Expected HTTP status code | `250` |
-
-Use this in **Data (JSON)**:
-
-```json
-{
-  "name": "{{ .TorrentName }}",
-  "clientname": "default"
-}
-```
-
-Enable the entry.
-
-![autobrr External tab with the candidate webhook](assets/v1-upgrade-autobrr-candidate.jpg)
-
-### Put the candidate check first
-
-autobrr runs the External entries from top to bottom. The order must be:
-
-1. `1. Candidate check`
-2. `2. Match`
-
-autobrr shows the reorder arrows only when the filter has more than one External
-entry. Use the arrows if necessary. Save the filter, reload the page, and make
-sure that the candidate check is still first.
-
-### Replace the old actions with the import action
-
-Open the filter's **Actions** tab.
-
-1. Delete the old qBittorrent or Transmission action. seasonpackarr now adds the
-   torrent itself. If the old action stays, the torrent can be added twice.
-2. If the filter has a Webhook action for `/api/parse`, change its endpoint to
-   `/api/import`. Otherwise, select **Add new** and set **Action type** to
-   `Webhook`.
-3. Make sure that this Webhook is the only action that adds or sends the
-   torrent.
-
-| Field | Value |
-| --- | --- |
-| Action type | `Webhook` |
-| Name | `Import with seasonpackarr` |
-| Endpoint with API authentication | `http://seasonpackarr:42069/api/import?apikey=your-api-token` |
-| Endpoint without API authentication | `http://seasonpackarr:42069/api/import` |
-
-Use this in **Payload (JSON)**:
-
-```json
-{
-  "name": "{{ .TorrentName }}",
-  "torrent": "{{ .TorrentDataRawBytes | js }}",
-  "clientname": "default"
-}
-```
-
-The autobrr Webhook action has no request-header field. With API
-authentication, put the token in the endpoint as shown above.
-
-![autobrr Actions tab with the import webhook](assets/v1-upgrade-autobrr-action.jpg)
-
-Save the filter, but keep it disabled until v1.0.0 runs.
-
-## 4. Update scripts that use the CLI
+## 3. Update scripts that use the CLI
 
 Skip this step if you do not run seasonpackarr commands yourself.
 
@@ -375,13 +270,17 @@ Changes for scripts:
 For all commands, including the new `search` command, see the
 [CLI guide](CLI.md).
 
-## 5. Start v1.0.0 and check the setup
+## 4. Start v1.0.0
 
 1. Install the v1.0.0 binary, or set the image tag to `v1.0.0` and pull it.
 2. Start seasonpackarr. Keep the autobrr filter disabled.
 3. Read the seasonpackarr log:
    - If it reports a deprecated setting or environment variable, remove it and
      start again.
+   - If it reports unknown config keys, remove or rename each key that it names
+     and start again.
+   - If it warns about an unknown environment variable, remove or rename the
+     variable. seasonpackarr ignores it.
    - If it reports a missing `savePath` or `downloadPath`, fix the path and
      start again.
    - If it reports a database error, check the permissions, the volume mount,
@@ -398,9 +297,187 @@ For all commands, including the new `search` command, see the
    ```
 
    Do not use `import` as a test. It creates hardlinks and adds the torrent.
-6. Reload the autobrr filter and make sure that the candidate check is first.
-7. Enable the filter.
-8. Watch the first accepted season pack. Make sure that:
+
+## 5. Update the autobrr filter
+
+Update your existing filter with `seasonpackarr setup filter` and
+`--filter-id`. The command replaces the External entries and all actions of the
+filter with the v1.0.0 values. It keeps all other settings, such as the
+indexers, the resolutions, the priority, and the enabled state. The filter
+stays disabled, because you disabled it in step 1. Do this step after v1.0.0 starts, because autobrr then sends a
+candidate check to seasonpackarr.
+
+1. Find the ID of your filter in the URL of the filter in autobrr, for example
+   `/filters/12`.
+2. Run the command with the v1.0.0 binary. Replace `12` with the filter ID,
+   `default` with the client of the filter, and the URLs and the key with your
+   values:
+
+   ```sh
+   export SEASONPACKARR__AUTOBRR_URL="http://autobrr:7474"
+   export SEASONPACKARR__AUTOBRR_API_KEY="your-autobrr-api-key"
+   seasonpackarr setup filter --webhook-url http://seasonpackarr:42069 --client default --filter-id 12
+   ```
+
+   In Docker, run it in the seasonpackarr container:
+
+   ```sh
+   docker exec -e SEASONPACKARR__AUTOBRR_URL -e SEASONPACKARR__AUTOBRR_API_KEY seasonpackarr \
+     seasonpackarr setup filter --webhook-url http://seasonpackarr:42069 --client default --filter-id 12
+   ```
+
+   For the inputs, see
+   [Set up the filter with the command](AUTOBRR.md#set-up-the-filter-with-the-command).
+3. Read the output:
+   - The command prints each action that it removes, for example the old
+     qBittorrent action and the `/api/parse` Webhook action. seasonpackarr now
+     adds the torrent itself, so the filter has only the import action.
+   - The candidate check through autobrr must pass. If it fails, the command
+     names the cause and exits with `1`. Fix the cause and run the command
+     again. autobrr versions earlier than v1.88.0 cannot run the check, so the
+     command prints a warning and skips it.
+   - The command prints a warning for each other filter that still calls
+     seasonpackarr, for example a second v0.16.0 filter:
+
+     ```text
+     Warning: filter 7 (TV packs) calls seasonpackarr at /api/pack; update it with --filter-id 7 --client <client>
+     ```
+
+     The command never changes these filters. Update each one with its ID and
+     the client of that filter, or delete it in autobrr. A filter that you
+     already updated also gets a warning, because it calls seasonpackarr too.
+
+### Update the filter by hand
+
+If you cannot run the command, change the filter in autobrr. The screenshots
+use autobrr 1.83.0. Other versions can look slightly different, but the field
+names and values are the same. For the full filter setup, see
+[Set up the filter by hand](AUTOBRR.md#set-up-the-filter-by-hand).
+
+In each example:
+
+- replace `seasonpackarr:42069` with the host and port that autobrr uses to reach
+  seasonpackarr
+- replace `your-api-token` with your seasonpackarr API token
+- replace `default` with your seasonpackarr client name, if it is different
+
+If API authentication is off (empty `apiToken`), leave the header empty and omit
+`?apikey=...` from the action endpoint.
+
+#### Change the old `/api/pack` entry into the match
+
+Your filter has one External entry for `/api/pack`. Open the filter's
+**External** tab and do one of these:
+
+- **Edit the entry.** Change the fields to the values below. The entry then
+  stays above the candidate check that you add next, so you must
+  [reorder the entries](#put-the-candidate-check-first).
+- **Delete the entry and add it again** after the candidate check. Select
+  **Add new** and choose **Webhook**.
+
+| Field | Value |
+| --- | --- |
+| Name | `2. Match` |
+| On Error | `Reject` |
+| Endpoint | `http://seasonpackarr:42069/api/match` |
+| HTTP method | `POST` |
+| HTTP Request Headers | `X-API-Token=your-api-token` |
+| Expected HTTP status code | `250` |
+
+**Data (JSON)** must now include the `torrent` field:
+
+```json
+{
+  "name": "{{ .TorrentName }}",
+  "torrent": "{{ .TorrentDataRawBytes | js }}",
+  "clientname": "default"
+}
+```
+
+Enable the entry. autobrr downloads the torrent file for this check only after
+the candidate check passes.
+
+![autobrr External tab with the match webhook](assets/v1-upgrade-autobrr-match.jpg)
+
+#### Add the candidate check
+
+In the **External** tab, select **Add new** and choose **Webhook**. Enter:
+
+| Field | Value |
+| --- | --- |
+| Name | `1. Candidate check` |
+| On Error | `Reject` |
+| Endpoint | `http://seasonpackarr:42069/api/candidate` |
+| HTTP method | `POST` |
+| HTTP Request Headers | `X-API-Token=your-api-token` |
+| Expected HTTP status code | `250` |
+
+Use this in **Data (JSON)**:
+
+```json
+{
+  "name": "{{ .TorrentName }}",
+  "clientname": "default"
+}
+```
+
+Enable the entry.
+
+![autobrr External tab with the candidate webhook](assets/v1-upgrade-autobrr-candidate.jpg)
+
+#### Put the candidate check first
+
+autobrr runs the External entries from top to bottom. The order must be:
+
+1. `1. Candidate check`
+2. `2. Match`
+
+autobrr shows the reorder arrows only when the filter has more than one External
+entry. Use the arrows if necessary. Save the filter, reload the page, and make
+sure that the candidate check is still first.
+
+#### Replace the old actions with the import action
+
+Open the filter's **Actions** tab.
+
+1. Delete the old qBittorrent or Transmission action. seasonpackarr now adds the
+   torrent itself. If the old action stays, the torrent can be added twice.
+2. If the filter has a Webhook action for `/api/parse`, change its endpoint to
+   `/api/import`. Otherwise, select **Add new** and set **Action type** to
+   `Webhook`.
+3. Make sure that this Webhook is the only action that adds or sends the
+   torrent.
+
+| Field | Value |
+| --- | --- |
+| Action type | `Webhook` |
+| Name | `Import with seasonpackarr` |
+| Endpoint with API authentication | `http://seasonpackarr:42069/api/import?apikey=your-api-token` |
+| Endpoint without API authentication | `http://seasonpackarr:42069/api/import` |
+
+Use this in **Payload (JSON)**:
+
+```json
+{
+  "name": "{{ .TorrentName }}",
+  "torrent": "{{ .TorrentDataRawBytes | js }}",
+  "clientname": "default"
+}
+```
+
+The autobrr Webhook action has no request-header field. With API
+authentication, put the token in the endpoint as shown above.
+
+![autobrr Actions tab with the import webhook](assets/v1-upgrade-autobrr-action.jpg)
+
+Save the filter, but keep it disabled.
+
+## 6. Enable the filter and check the first import
+
+1. If you updated the filter by hand, reload it in autobrr and make sure that
+   the candidate check is first.
+2. Enable the filter.
+3. Watch the first accepted season pack. Make sure that:
    - autobrr runs the candidate check first and the match second
    - the client gets only one torrent
    - existing episodes appear as hardlinks in the season pack folder

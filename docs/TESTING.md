@@ -35,7 +35,6 @@ so the glossary does not define them.
   serves the fake Torznab feed. `scenarios_test.go` holds the scenarios and the
   `client` interface. `<client>_test.go` implements that interface for one
   client and runs the scenarios. `search_test.go` holds the search tests.
-  `testdata/filter.json` is the autobrr filter.
 
 ## Names
 
@@ -170,9 +169,9 @@ why the search test drives a real Prowlarr.
     autobrr stores no release row for a rejected announce, so the test reads
     autobrr's log through `GET /api/logs/files/autobrr.log`
     (`AUTOBRR__LOG_PATH` in `compose.autobrr.yaml`). The log must show that the
-    filter rejected the release, and that the `candidate` webhook got status
-    `200` for the same trace ID. The client must not have the pack, and the
-    files below `/data` must not change.
+    filter rejected the release, and that the `1. Candidate check` External
+    entry got status `200` for the same trace ID. The client must not have the
+    pack, and the files below `/data` must not change.
 - `candidate rejection` runs last. seasonpackarr caches the client inventory for
   30 seconds and only an import refreshes it, so a scenario after a rejection
   would get an inventory without its own episodes. For the same reason, the
@@ -192,15 +191,24 @@ why the search test drives a real Prowlarr.
   on the port of `SEASONPACKARR_TEST_E2E_TORRENT_URL`. autobrr keeps only the
   path of the announced URL and joins it to the indexer `base_url`, which the
   driver sets to that URL.
-- `testdata/filter.json` holds the filter of [AUTOBRR.md](AUTOBRR.md): the
-  candidate and match external webhooks with `POST`, the `X-API-Token` header,
-  expected status `250`, and the `Data (JSON)` templates, plus the Webhook
-  action to `/api/import?apikey=` with the `Payload (JSON)`. The driver fills in
-  `${SEASONPACKARR_URL}`, `${API_TOKEN}`, and `${CLIENT_NAME}`. autobrr runs
-  the external entry with the highest `index` first. `POST /api/filters`
-  stores only the base filter, so the driver then updates the stored filter
-  with its indexer, external webhooks, and action. AUTOBRR.md stays hand-written,
-  so a change to one of the two files needs the same change in the other.
+- The driver creates each client's filter with the real `seasonpackarr setup
+  filter` command, so the tests prove the filter that users get. Once for each
+  test process, `requireAutobrr` builds the binary in the test container. The
+  driver runs the command without a config file, with `--webhook-url
+  http://seasonpackarr:42069`, `--client`, `--api`, the autobrr URL, the API
+  key, and `--json`, and reads the filter ID from the output. The new filter is
+  disabled and has no indexers, so the driver then links the test indexer and
+  enables the filter, as a user does, and reads the filter back to check both.
+  The driver then runs the command again with `--filter-id`. It checks that the
+  update removed the import action of the create, and that autobrr kept the
+  indexer and the enabled state and stores one action and two External
+  entries. After the create and after the update, the result must show that
+  the verification passed, so autobrr reached seasonpackarr with the candidate
+  check. The verification fills the inventory cache, so the driver waits until
+  the cache expires before the scenarios add their episodes. The announce
+  scenarios run against the updated filter.
+  `TestSetupFilterCommand_MatchesAutobrrGuide` compares the filter definition
+  in `internal/autobrr/filter.go` with AUTOBRR.md.
 - `packName` makes a unique release name with a letters-only title, so reruns
   do not share releases and both release parsers see the plain title.
 - The client already holds the present episodes as real single-episode

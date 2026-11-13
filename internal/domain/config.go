@@ -68,9 +68,11 @@ type Search struct {
 }
 
 type Config struct {
-	Version            string
-	ConfigPath         string
-	DisableConfigFile  bool
+	// The runtime sets these fields. The "-" tags keep config.yaml from setting
+	// them, so the config load rejects them as unknown keys.
+	Version            string             `yaml:"-" koanf:"-"`
+	ConfigPath         string             `yaml:"-" koanf:"-"`
+	DisableConfigFile  bool               `yaml:"-" koanf:"-"`
 	Host               string             `yaml:"host"`
 	Port               int                `yaml:"port"`
 	Clients            map[string]*Client `yaml:"clients"`

@@ -2,7 +2,9 @@
 # entry. autobrr gets the announces. ADR-0002 explains the real autobrr.
 services:
   # The test driver sets autobrr up over its REST API: user, API key, indexer,
-  # IRC network, and filter. Bump the tag and the digest together, by hand.
+  # and IRC network. seasonpackarr setup filter creates the filter, and the
+  # driver links the indexer and enables it. Bump the tag and the digest
+  # together, by hand.
   # autobrr calls the external webhooks with a fixed 120 second client timeout
   # (internal/filter/service.go in v1.88.0), which no setting changes. A match on
   # a cold inventory in these tests reads a few torrents and takes milliseconds.

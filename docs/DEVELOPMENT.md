@@ -52,7 +52,7 @@ Update these together, in the same pull request:
 
 - **Config:** `config.yaml`, `schemas/config-schema.json`, `internal/config/`, and [CONFIGURATION.md](CONFIGURATION.md).
 - **API:** the handlers in `internal/http/`, the status codes in `internal/domain/`, the CLI tests in `internal/http/cli_test.go`, and [API.md](API.md).
-- **autobrr filter:** [AUTOBRR.md](AUTOBRR.md) and `test/e2e/testdata/filter.json`. The end-to-end tests use the JSON file. AUTOBRR.md is hand-written.
+- **autobrr filter:** the filter definition in `internal/autobrr/filter.go` and [AUTOBRR.md](AUTOBRR.md). `seasonpackarr setup filter` writes the definition, and the manual path in AUTOBRR.md describes the same filter. `TestSetupFilterCommand_MatchesAutobrrGuide` compares the `--dry-run` payload with the guide and fails when they differ. The end-to-end tests create their filters with the command.
 - **Domain terms:** [GLOSSARY.md](../GLOSSARY.md). Use its terms in code, docs, and logs.
 
 Track known gaps and follow-up work as GitHub issues, not in files.

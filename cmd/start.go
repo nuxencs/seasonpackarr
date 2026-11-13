@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -50,6 +51,9 @@ func newStartCommand() *cobra.Command {
 			log.Info().Msgf("Commit: %s", buildinfo.Commit)
 			log.Info().Msgf("Build date: %s", buildinfo.Date)
 			log.Info().Msgf("Log-level: %s", snapshot.LogLevel)
+			for _, name := range config.UnknownEnvironmentVariables(os.Environ()) {
+				log.Warn().Str("variable", name).Msg("unknown environment variable; seasonpackarr ignores it - remove or rename it (see the configuration guide)")
+			}
 
 			// init dynamic config
 			if _, err := cfg.DynamicReload(log); err != nil {
