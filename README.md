@@ -194,6 +194,9 @@ back into it, see [Import Policy](#import-policy).
 
 #### qBittorrent
 
+seasonpackarr supports qBittorrent 4.3.9 to 5.2.4. The integration tests check 4.3.9, 4.5.5, 4.6.7, 5.0.5, 5.1.4 and
+5.2.4.
+
 For qBittorrent clients, you can authenticate with the traditional `username` and `password` fields, or with `apiKey`
 when using qBittorrent 5.2.0 or newer. If `apiKey` is set, seasonpackarr uses qBittorrent API key authentication for
 that client instead of username/password login.
@@ -204,11 +207,15 @@ qui keeps the qBittorrent session and handles authentication for proxied clients
 
 #### Transmission
 
+seasonpackarr supports Transmission 4.0.6 to 4.1.3. The integration tests check 4.0.6 and 4.1.3.
+
 For Transmission clients, set `type: "transmission"` and provide `username` and `password` for the Transmission RPC
 interface (no `apiKey` field). Transmission listens on port `9091` by default, so set `port: 9091` (seasonpackarr does
 not assume a port if it is left unset).
 
 #### Deluge
+
+seasonpackarr supports Deluge 1.3.15, and 2.0.3 to 2.2.0. The integration tests check 1.3.15, 2.0.3 and 2.2.0.
 
 Deluge support uses the native daemon RPC interface through
 [`autobrr/go-deluge`](https://github.com/autobrr/go-deluge). Set `type: "deluge-v1"` for Deluge 1.3 or

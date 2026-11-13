@@ -1,0 +1,23 @@
+# qBittorrent overlay. hotio images read /config/config/qBittorrent.conf.
+services:
+  qbit:
+    # The client under test starts like the seeder, with its own image and
+    # config volume.
+    extends:
+      file: compose.yaml
+      service: seeder
+    image: ${QBIT_IMAGE:?run.sh sets QBIT_IMAGE from the entry}
+    volumes:
+      - qbit-config:/config
+
+  test:
+    depends_on:
+      qbit:
+        condition: service_healthy
+    environment:
+      SEASONPACKARR_TEST_QBIT_HOST: http://qbit:8080
+      SEASONPACKARR_TEST_QBIT_USER: admin
+      SEASONPACKARR_TEST_QBIT_PASS: integration
+
+volumes:
+  qbit-config:
