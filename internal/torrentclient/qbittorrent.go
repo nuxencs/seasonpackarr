@@ -80,8 +80,8 @@ func newQbitClient(ctx context.Context, client *domain.Client) (*qbitClient, err
 
 // qbitAddressRedactor returns a function that hides what follows the host in
 // each URL of the client address: the path, which is the key of a qui proxy
-// address, the user info, and the query. The request path stays for diagnosis.
-// It returns nil when the address has no such part.
+// address, the user info, and the query. The request path stays for diagnosis,
+// without its query. It returns nil when the address has no such part.
 func qbitAddressRedactor(host string) func(string) string {
 	u, err := url.Parse(host)
 	if err != nil || (strings.Trim(u.Path, "/") == "" && u.User == nil && u.RawQuery == "" && u.Fragment == "") {
@@ -94,6 +94,9 @@ func qbitAddressRedactor(host string) func(string) string {
 	return func(text string) string {
 		return address.ReplaceAllStringFunc(text, func(found string) string {
 			if _, request, ok := strings.Cut(found, "/api/v2/"); ok {
+				if end := strings.IndexAny(request, "?#"); end >= 0 {
+					request = request[:end]
+				}
 				return base + "/[redacted]/api/v2/" + request
 			}
 			return base + "/[redacted]"

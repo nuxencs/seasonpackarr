@@ -643,6 +643,18 @@ func TestQbitAddressRedactor(t *testing.T) {
 			want: `get: https://qbit.example:8080/[redacted]/api/v2/app: Get "https://qbit.example:8080/[redacted]/api/v2/app": EOF`,
 		},
 		{
+			name: "request query and fragment",
+			host: "http://localhost:7476/proxy/SECRET-KEY",
+			text: `get http://localhost:7476/proxy/SECRET-KEY/api/v2/torrents/info?token=SECRET-QUERY#SECRET-PART failed`,
+			want: `get http://localhost:7476/[redacted]/api/v2/torrents/info failed`,
+		},
+		{
+			name: "address with only a query",
+			host: "http://localhost:8080?token=SECRET-QUERY",
+			text: `get http://localhost:8080/api/v2/app?token=SECRET-QUERY failed`,
+			want: `get http://localhost:8080/[redacted]/api/v2/app failed`,
+		},
+		{
 			name: "address without a request path",
 			host: "http://localhost:7476/proxy/SECRET-KEY",
 			text: `dial http://localhost:7476/proxy/SECRET-KEY failed`,
