@@ -6,6 +6,7 @@ package inventory
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -201,5 +202,5 @@ func TestCleanUp_ClosesDroppedAdaptersThatRequestsStillUse(t *testing.T) {
 	assert.Equal(t, 1, failing.closeCount(), "a close error does not stop the other closes")
 
 	assert.Same(t, closing, handles["b"].Adapter(), "a request keeps its adapter")
-	assert.Len(t, readInventory(t, handles["b"]).SameTitle(rls.ParseString(cleanUpTorrentName)), 1, "a request that holds a closed adapter still reads")
+	assert.Len(t, slices.Collect(readInventory(t, handles["b"]).SameTitle(new(rls.ParseString(cleanUpTorrentName)))), 1, "a request that holds a closed adapter still reads")
 }

@@ -6,6 +6,7 @@ package inventory
 import (
 	"context"
 	"errors"
+	"iter"
 	"slices"
 	"sync"
 	"testing"
@@ -43,9 +44,9 @@ func TestStore_ReusesConnectionOfUnchangedConfig(t *testing.T) {
 	assert.Equal(t, 2, connector.connectCount(), "a changed config connects again")
 }
 
-func torrentNames(entries []Entry) []string {
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
+func torrentNames(entries iter.Seq[Entry]) []string {
+	var names []string
+	for e := range entries {
 		names = append(names, e.Torrent.Name)
 	}
 	return names
@@ -60,12 +61,12 @@ func TestInventory_SameTitleReturnsEntriesOfTheReleaseTitle(t *testing.T) {
 	store := newTestStore(&fakeConnector{adapter: adapter})
 	inv := readInventory(t, newTestClient(t, store, "default", &domain.Client{}, domain.FuzzyMatching{}))
 
-	same := inv.SameTitle(rls.ParseString("Series.S01.1080p.WEB-DL-GRP"))
+	same := inv.SameTitle(new(rls.ParseString("Series.S01.1080p.WEB-DL-GRP")))
 	assert.ElementsMatch(t, []string{"Series.S01E01.1080p.WEB-DL-GRP", "Series.S01E02.2160p.WEB-DL-OTHER"}, torrentNames(same))
-	for _, e := range same {
+	for e := range same {
 		assert.Equal(t, "Series", e.Release.Title, "an entry holds the parsed release of its torrent")
 	}
-	assert.Empty(t, inv.SameTitle(rls.ParseString("Missing.S01.1080p.WEB-DL-GRP")))
+	assert.Empty(t, slices.Collect(inv.SameTitle(new(rls.ParseString("Missing.S01.1080p.WEB-DL-GRP")))))
 }
 
 func TestInventory_CallerCannotChangeIt(t *testing.T) {
@@ -74,15 +75,16 @@ func TestInventory_CallerCannotChangeIt(t *testing.T) {
 	client := newTestClient(t, store, "default", &domain.Client{}, domain.FuzzyMatching{})
 	request := rls.ParseString("Series.S01.1080p.WEB-DL-GRP")
 
-	same := readInventory(t, client).SameTitle(request)
-	require.Len(t, same, 1)
-	same[0] = Entry{}
-	_ = append(same[:0], Entry{})
+	for e := range readInventory(t, client).SameTitle(&request) {
+		e.Torrent.Name = ""
+	}
 	for group := range readInventory(t, client).TitleGroups() {
-		group[0] = Entry{}
+		for e := range group {
+			e.Torrent.Name = ""
+		}
 	}
 
-	again := readInventory(t, client).SameTitle(request)
+	again := slices.Collect(readInventory(t, client).SameTitle(&request))
 	require.Len(t, again, 1)
 	assert.Equal(t, "Series.S01E01.1080p.WEB-DL-GRP", again[0].Torrent.Name)
 	assert.Equal(t, 1, adapter.readCount(), "the reads after the first come from the stored inventory")
@@ -236,7 +238,7 @@ func TestInventory_DiscardDuringReadStoresNoResult(t *testing.T) {
 
 				inv := <-overlapped
 				require.NotNil(t, inv)
-				assert.Len(t, inv.SameTitle(rls.ParseString(name)), 1, "the caller gets the result of its read")
+				assert.Len(t, slices.Collect(inv.SameTitle(new(rls.ParseString(name)))), 1, "the caller gets the result of its read")
 				waited := <-waiter
 				assert.NotSame(t, inv, waited, "a caller that waited gets no inventory from before the discard")
 				assert.Equal(t, 2, adapter.readCount(), "the caller that waited read again")
@@ -329,7 +331,7 @@ func TestInventory_NameThatRepeatsInOneScanIsParsedOnce(t *testing.T) {
 	adapter := &fakeAdapter{torrents: []torrentclient.Torrent{{Name: name, Hash: "a"}, {Name: name, Hash: "b"}}}
 	store := newTestStore(&fakeConnector{adapter: adapter})
 
-	crossSeeds := readInventory(t, newTestClient(t, store, "default", &domain.Client{}, domain.FuzzyMatching{})).SameTitle(rls.ParseString(name))
+	crossSeeds := slices.Collect(readInventory(t, newTestClient(t, store, "default", &domain.Client{}, domain.FuzzyMatching{})).SameTitle(new(rls.ParseString(name))))
 	require.Len(t, crossSeeds, 2)
 	assert.Same(t, crossSeeds[0].Release, crossSeeds[1].Release)
 }

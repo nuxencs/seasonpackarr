@@ -300,24 +300,34 @@ type Entry struct {
 }
 
 // Inventory is a read-only view of the torrents of one client read, grouped
-// by title. Its methods return copies, so one caller cannot change what
-// another sees.
+// by title. Its methods yield copies of the entries and no slice, so one
+// caller cannot change what another sees, and a lookup copies no group.
 type Inventory struct {
 	fuzzy  domain.FuzzyMatching
 	titles map[string][]Entry
 }
 
-// SameTitle returns the entries with the title of release under the fuzzy
+// SameTitle yields the entries with the title of release under the fuzzy
 // matching settings of the read.
-func (inv *Inventory) SameTitle(release rls.Release) []Entry {
-	return slices.Clone(inv.titles[format.ComparableTitle(release, inv.fuzzy)])
+func (inv *Inventory) SameTitle(release *rls.Release) iter.Seq[Entry] {
+	// The lookup is inside the iterator, so SameTitle stays small enough to
+	// inline and a range over it allocates nothing. A pointer, because a
+	// release is large and the iterator would copy it again.
+	return func(yield func(Entry) bool) {
+		for _, e := range inv.titles[format.ComparableTitle(*release, inv.fuzzy)] {
+			if !yield(e) {
+				return
+			}
+		}
+	}
 }
 
-// TitleGroups yields the entries of each title, in no fixed order.
-func (inv *Inventory) TitleGroups() iter.Seq[[]Entry] {
-	return func(yield func([]Entry) bool) {
+// TitleGroups yields the entries of each title, in no fixed order. A caller
+// can range over one group more than once.
+func (inv *Inventory) TitleGroups() iter.Seq[iter.Seq[Entry]] {
+	return func(yield func(iter.Seq[Entry]) bool) {
 		for _, group := range inv.titles {
-			if !yield(slices.Clone(group)) {
+			if !yield(slices.Values(group)) {
 				return
 			}
 		}

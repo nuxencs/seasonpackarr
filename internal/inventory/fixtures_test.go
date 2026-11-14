@@ -94,7 +94,7 @@ func readInventory(t *testing.T, client *Client) *Inventory {
 // releaseOf returns the parsed release of the torrent name in inv.
 func releaseOf(t *testing.T, inv *Inventory, name string) *rls.Release {
 	t.Helper()
-	for _, e := range inv.SameTitle(rls.ParseString(name)) {
+	for e := range inv.SameTitle(new(rls.ParseString(name))) {
 		if e.Torrent.Name == name {
 			return e.Release
 		}

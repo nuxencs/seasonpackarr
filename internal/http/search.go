@@ -219,12 +219,12 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 			// Inventory buckets already apply the title, season, and year rules.
 			// Collect packs once so episode-only seasons do not need pairwise scans.
 			var packs []*rls.Release
-			for _, entry := range entries {
+			for entry := range entries {
 				if entry.Release.Type.Is(rls.Series) && entry.Release.Episode == 0 {
 					packs = append(packs, entry.Release)
 				}
 			}
-			for _, entry := range entries {
+			for entry := range entries {
 				report.ScannedTorrents++
 				parsed := entry.Release
 				// Date-based and ambiguous releases need metadata that this feature does

@@ -59,13 +59,8 @@ func (p *processor) findCandidates(ctx context.Context, clientName string, cfg d
 	}
 
 	requestRls := rls.ParseString(p.req.Name)
-	filteredEntries := clientInventory.SameTitle(requestRls)
-	if len(filteredEntries) == 0 {
-		return nil, domain.StatusNoMatches, domain.StatusNoMatches.Error()
-	}
-
-	candidates := make([]inventory.Entry, 0, len(filteredEntries))
-	for _, filteredEntry := range filteredEntries {
+	var candidates []inventory.Entry
+	for filteredEntry := range clientInventory.SameTitle(&requestRls) {
 		compareInfo := release.CheckCandidates(requestRls, *filteredEntry.Release, cfg.FuzzyMatching)
 		switch compareInfo.StatusCode {
 		case domain.StatusAlreadyInClient, domain.StatusNotASeasonPack:

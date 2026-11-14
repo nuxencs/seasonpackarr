@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -26,9 +27,9 @@ import (
 const inventoryBenchmarkClientName = "benchmark"
 
 var (
-	inventorySink      *Inventory
-	inventoryBucketLen int
-	inventorySizes     = []int{1_000, 5_000, 10_000, 50_000}
+	inventorySink        *Inventory
+	inventoryReleaseSink *rls.Release
+	inventorySizes       = []int{1_000, 5_000, 10_000, 50_000}
 )
 
 func BenchmarkInventoryColdBuild(b *testing.B) {
@@ -147,11 +148,14 @@ func BenchmarkInventoryTitleLookup(b *testing.B) {
 			inv, err := client.Inventory(b.Context())
 			require.NoError(b, err)
 			release := rls.ParseString(torrents[0].Name)
-			require.NotEmpty(b, inv.SameTitle(release), "inventory has no title group")
+			require.NotEmpty(b, slices.Collect(inv.SameTitle(&release)), "inventory has no title group")
 			b.ReportAllocs()
 
 			for b.Loop() {
-				inventoryBucketLen = len(inv.SameTitle(release))
+				// Read each entry of the group, as the candidate check does.
+				for e := range inv.SameTitle(&release) {
+					inventoryReleaseSink = e.Release
+				}
 			}
 		})
 	}
