@@ -1085,13 +1085,24 @@ func TestFindConfigFile_ImageWorkingDirectoryIsConfigVolume(t *testing.T) {
 	}
 }
 
+func TestWriteConfig_WritesRepositoryConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, (&AppConfig{}).writeConfig(dir, "config.yaml"))
+
+	want, err := os.ReadFile("../../config.yaml")
+	require.NoError(t, err)
+	got, err := os.ReadFile(filepath.Join(dir, "config.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, string(want), string(got))
+}
+
 func TestUnknownConfigKeys_AcceptsConfigExamples(t *testing.T) {
-	templateDir := t.TempDir()
-	require.NoError(t, (&AppConfig{}).writeConfig(templateDir, "config.yaml"))
+	generatedDir := t.TempDir()
+	require.NoError(t, (&AppConfig{}).writeConfig(generatedDir, "config.yaml"))
 
 	for name, configFile := range map[string]string{
-		"config template": filepath.Join(templateDir, "config.yaml"),
-		"config.yaml":     "../../config.yaml",
+		"generated config": filepath.Join(generatedDir, "config.yaml"),
+		"config.yaml":      "../../config.yaml",
 	} {
 		t.Run(name, func(t *testing.T) {
 			k := koanf.New(".")

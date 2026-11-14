@@ -50,7 +50,7 @@ go run . import "<file.torrent>" --config <dir> --client "<name>"
 
 Update these together, in the same pull request:
 
-- **Config:** `config.yaml`, `schemas/config-schema.json`, `internal/config/`, and [CONFIGURATION.md](CONFIGURATION.md).
+- **Config:** `config.yaml`, `schemas/config-schema.json`, `internal/config/`, and [CONFIGURATION.md](CONFIGURATION.md). The first start writes `defaultConfigFile` from `internal/config/config.go`. It must equal `config.yaml` byte for byte, and `TestWriteConfig_WritesRepositoryConfigFile` fails when they differ.
 - **API:** the handlers in `internal/http/`, the status codes in `internal/domain/`, the CLI tests in `internal/http/cli_test.go`, and [API.md](API.md).
 - **autobrr filter:** the filter definition in `internal/autobrr/filter.go` and [AUTOBRR.md](AUTOBRR.md). `seasonpackarr setup filter` writes the definition, and the manual path in AUTOBRR.md describes the same filter. `TestSetupFilterCommand_MatchesAutobrrGuide` compares the `--dry-run` payload with the guide and fails when they differ. The end-to-end tests create their filters with the command.
 - **Domain terms:** [GLOSSARY.md](../GLOSSARY.md). Use its terms in code, docs, and logs.

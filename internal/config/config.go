@@ -18,7 +18,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"text/template"
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
@@ -32,7 +31,8 @@ import (
 	"github.com/knadh/koanf/v2"
 )
 
-var configTemplate = `# yaml-language-server: $schema=https://raw.githubusercontent.com/nuxencs/seasonpackarr/develop/schemas/config-schema.json
+// defaultConfigFile is the file that the first start writes. It must equal config.yaml at the repository root (TestWriteConfig_WritesRepositoryConfigFile).
+const defaultConfigFile = `# yaml-language-server: $schema=https://raw.githubusercontent.com/nuxencs/seasonpackarr/develop/schemas/config-schema.json
 # config.yaml
 
 # Hostname / IP
@@ -40,7 +40,7 @@ var configTemplate = `# yaml-language-server: $schema=https://raw.githubusercont
 #
 # Default: "0.0.0.0"
 #
-host: "{{ .host }}"
+host: "0.0.0.0"
 
 # Port
 #
@@ -364,27 +364,6 @@ func (c *AppConfig) writeConfig(configPath string, configFile string) error {
 
 	// check if config exists, if not create it
 	if _, err := os.Stat(cfgPath); errors.Is(err, fs.ErrNotExist) {
-		// set default host
-		host := "0.0.0.0"
-
-		if _, err := os.Stat("/.dockerenv"); err == nil {
-			// docker creates a .dockerenv file at the root
-			// of the directory tree inside the container.
-			// if this file exists then the viewer is running
-			// from inside a docker container so return true
-			host = "0.0.0.0"
-		} else if _, err := os.Stat("/dev/.lxc-boot-id"); err == nil {
-			// lxc creates this file containing the uuid
-			// of the container in every boot.
-			// if this file exists then the viewer is running
-			// from inside a lxc container so return true
-			host = "0.0.0.0"
-		} else if b, err := os.ReadFile("/proc/1/cgroup"); err == nil {
-			if strings.Contains(string(b), "/docker") || strings.Contains(string(b), "/lxc") {
-				host = "0.0.0.0"
-			}
-		}
-
 		f, err := os.Create(cfgPath)
 		if err != nil { // perm 0666
 			// handle failed create
@@ -397,22 +376,7 @@ func (c *AppConfig) writeConfig(configPath string, configFile string) error {
 			}
 		}()
 
-		// setup text template to inject variables into
-		tmpl, err := template.New("config").Parse(configTemplate)
-		if err != nil {
-			return fmt.Errorf("could not create config template: %w", err)
-		}
-
-		tmplVars := map[string]string{
-			"host": host,
-		}
-
-		var buffer bytes.Buffer
-		if err = tmpl.Execute(&buffer, &tmplVars); err != nil {
-			return fmt.Errorf("could not write template output: %w", err)
-		}
-
-		if _, err = f.WriteString(buffer.String()); err != nil {
+		if _, err = f.WriteString(defaultConfigFile); err != nil {
 			log.Printf("error writing contents to file: %v %q", configPath, err)
 			return err
 		}
