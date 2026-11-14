@@ -23,10 +23,12 @@ const (
 	envQbitPass = "SEASONPACKARR_TEST_QBIT_PASS"
 	// qbitClientName is the client name in test/harness/seasonpackarr/config.yaml.
 	qbitClientName = "qbit"
+	// qbitOutsideTag is in inventory.excludeTags of the qbit client in test/harness/seasonpackarr/config.yaml.
+	qbitOutsideTag = "e2e-outside-inventory"
 )
 
-// TestQbitE2E_Scenarios runs the partial-pack, complete-pack, and
-// candidate-rejection scenarios against qBittorrent.
+// TestQbitE2E_Scenarios runs the partial-pack, complete-pack, inventory-scope,
+// and candidate-rejection scenarios against qBittorrent.
 func TestQbitE2E_Scenarios(t *testing.T) {
 	daemontest.RequireSettings(t, envQbitHost)
 	runScenarios(t, newQbit(t))
@@ -64,6 +66,10 @@ func (q *qbit) add(ctx context.Context, torrent []byte, dir string) error {
 	options := (&qbittorrent.TorrentAddOptions{SavePath: dir}).Prepare()
 	_, err := q.api.AddTorrentFromMemoryCtx(ctx, torrent, options)
 	return err
+}
+
+func (q *qbit) excludeFromInventory(ctx context.Context, hash string) error {
+	return q.api.AddTagsCtx(ctx, []string{hash}, qbitOutsideTag)
 }
 
 func (q *qbit) remove(ctx context.Context, hash string) error {

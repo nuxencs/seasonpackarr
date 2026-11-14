@@ -261,10 +261,10 @@ Before you set a scope, make sure that you accept these effects:
   Include both. A new pack stays in the import category until Sonarr moves it. If the scope drops a torrent with the
   import category and import tags, a second announce of the same pack does not find it. seasonpackarr logs a warning
   at startup and after a config reload when the scope drops such a torrent. The warning compares exact names, so it
-  also warns for an import category such as `tv/new` with `includeCategories: [tv]`. That scope is correct only when
-  subcategories are on in qBittorrent.
-- **Subcategories:** qBittorrent adds subcategories to an include category only for names with `/`, and only when
-  subcategories are on in qBittorrent. A name such as `tv-hd-completed.cross-seed` is a separate category, so list it
+  also warns for an import category such as `tv/new` with `includeCategories: [tv]`. That scope is correct on
+  qBittorrent 5.2 and newer, and on older versions when subcategories are on.
+- **Subcategories:** qBittorrent adds subcategories to an include category only for names with `/`. qBittorrent 5.2
+  and newer always do this. Older versions do it only when subcategories are on in qBittorrent. A name such as `tv-hd-completed.cross-seed` is a separate category, so list it
   explicitly. Excludes match the exact name only: `excludeCategories: [movies]` does not exclude `movies/4k`.
 - **qBittorrent and qui only:** startup fails when a Transmission or Deluge client sets a scope. An empty entry in one
   of the lists also stops startup.

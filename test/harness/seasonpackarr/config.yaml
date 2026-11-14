@@ -18,6 +18,10 @@ clients:
       # The shared /data volume, at the same path as in the clients (ADR-0001).
       savePath: "/data/import"
       tags: [ "seasonpackarr" ]
+    # The inventory scope scenario tags one episode with it, so the import must not reuse that episode.
+    # qbitOutsideTag in test/e2e/qbittorrent_test.go has the same value.
+    inventory:
+      excludeTags: [ "e2e-outside-inventory" ]
   transmission:
     type: "transmission"
     host: "transmission"

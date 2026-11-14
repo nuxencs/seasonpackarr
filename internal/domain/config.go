@@ -90,7 +90,7 @@ func (s InventoryScope) ExcludesTag(tag string) bool {
 
 // Selects reports whether a torrent with the category and tags is surely in
 // the scope. It matches exact names. qBittorrent can also read the "/"
-// subcategories of an include category, but only when subcategories are on.
+// subcategories of an include category: always from 5.2, before only when subcategories are on.
 func (s InventoryScope) Selects(category string, tags []string) bool {
 	if s.ExcludesCategory(category) || slices.ContainsFunc(tags, s.ExcludesTag) {
 		return false
