@@ -5,6 +5,7 @@ package release
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/autobrr/rls"
@@ -45,8 +46,9 @@ func ParseEpisodeFile(path string, size int64) (EpisodeFile, bool) {
 		return EpisodeFile{}, false
 	}
 
+	// rls reads ".sample" as a tag in Other but still reads a "-sample" suffix as the group.
 	group := rls.MustNormalize(parsed.Group)
-	if group == "sample" {
+	if group == "sample" || slices.ContainsFunc(parsed.Other, isSampleTag) {
 		return EpisodeFile{}, false
 	}
 
@@ -61,6 +63,10 @@ func ParseEpisodeFile(path string, size int64) (EpisodeFile, bool) {
 			group:      group,
 		},
 	}, true
+}
+
+func isSampleTag(tag string) bool {
+	return strings.EqualFold(tag, "sample")
 }
 
 // Path returns the original path supplied to ParseEpisodeFile.
