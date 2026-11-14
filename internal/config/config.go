@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -148,6 +149,22 @@ clients:
       # Optional
       #
       # contentLayout: "subfolder"
+
+    # Inventory Scope (qBittorrent only)
+    # Limits the torrents that seasonpackarr reads from the client for the candidate check, the match, and discovery.
+    # With includes, only torrents with an include category or an include tag are read. Without includes, every torrent is read.
+    # Torrents with an exclude category or an exclude tag are then dropped. An exclude always wins.
+    # Includes make the read from the client smaller. Excludes only drop torrents after the read.
+    # Keep every category and tag where season packs end up, for example the import category.
+    # Episodes outside the scope are not reused. See the configuration guide before you set a scope.
+    #
+    # Optional
+    #
+    inventory:
+      includeCategories: []
+      includeTags: []
+      excludeCategories: []
+      excludeTags: []
 
   # Below you can find an example on how to define a second qBittorrent client
   # If you want to define even more clients just copy this segment and adjust the values accordingly
@@ -555,6 +572,18 @@ func validateClientConfig(clientName string, client *domain.Client) error {
 		return fmt.Errorf("type for client %q is invalid: %q - must be \"qbittorrent\", \"transmission\", \"deluge\", \"deluge-v1\" or \"deluge-v2\"", clientName, client.Type)
 	}
 
+	// go-qbittorrent drops an empty filter value, which would read every torrent,
+	// and qBittorrent compares exact names, so " tv" would match no torrent.
+	scope := client.Inventory
+	for _, value := range slices.Concat(scope.IncludeCategories, scope.IncludeTags, scope.ExcludeCategories, scope.ExcludeTags) {
+		if value == "" || strings.TrimSpace(value) != value {
+			return fmt.Errorf("client %q has the inventory list entry %q, which is empty or starts or ends with a space", clientName, value)
+		}
+	}
+	if client.Type != "" && client.Type != "qbittorrent" && client.Inventory.IsSet() {
+		return fmt.Errorf("client %q (%s) must not set inventory - the inventory scope is qBittorrent only", clientName, client.Type)
+	}
+
 	imp := client.Import
 	switch client.Type {
 	case "", "qbittorrent":
@@ -601,6 +630,34 @@ func validateClientConfig(clientName string, client *domain.Client) error {
 	}
 
 	return nil
+}
+
+// LogInventoryScopeWarnings warns about each client whose inventory scope does
+// not select a torrent with the import category and import tags. A new pack
+// stays in the import category until the arr moves it, so a second announce of
+// the same pack does not find it and seasonpackarr imports a duplicate. It is
+// only a warning, because a scope of the arr's completed categories can be correct.
+func LogInventoryScopeWarnings(log logger.Logger, cfg domain.Config) {
+	for _, name := range slices.Sorted(maps.Keys(cfg.Clients)) {
+		client := cfg.Clients[name]
+		if client == nil || !client.Inventory.IsSet() {
+			continue
+		}
+		// The add trims the category and the tags and drops blank tags, so compare what it sends.
+		imp := client.Import
+		category := strings.TrimSpace(imp.Category)
+		tags := make([]string, 0, len(imp.Tags))
+		for _, tag := range imp.Tags {
+			if tag = strings.TrimSpace(tag); tag != "" {
+				tags = append(tags, tag)
+			}
+		}
+		if client.Inventory.Selects(category, tags) {
+			continue
+		}
+		log.Warn().Str("clientname", name).Str("import_category", imp.Category).Strs("import_tags", imp.Tags).
+			Msg("inventory scope does not select new packs, which have the import category and import tags; a second announce of a pack that is still in the import category is not found (see the configuration guide)")
+	}
 }
 
 func validDelugeLabel(label string) bool {
@@ -713,14 +770,25 @@ var clientEnvSettings = map[string]func(client *domain.Client, value string){
 	"IMPORT_CATEGORY":       func(c *domain.Client, v string) { c.Import.Category = v },
 	"IMPORT_DOWNLOAD_PATH":  func(c *domain.Client, v string) { c.Import.DownloadPath = v },
 	"IMPORT_CONTENT_LAYOUT": func(c *domain.Client, v string) { c.Import.ContentLayout = strings.ToLower(v) },
-	"IMPORT_TAGS": func(c *domain.Client, v string) {
-		c.Import.Tags = c.Import.Tags[:0]
-		for tag := range strings.SplitSeq(v, ",") {
-			if tag = strings.TrimSpace(tag); tag != "" {
-				c.Import.Tags = append(c.Import.Tags, tag)
-			}
-		}
+	"IMPORT_TAGS":           func(c *domain.Client, v string) { c.Import.Tags = splitList(c.Import.Tags[:0], v) },
+	"INVENTORY_INCLUDE_CATEGORIES": func(c *domain.Client, v string) {
+		c.Inventory.IncludeCategories = splitList(c.Inventory.IncludeCategories[:0], v)
 	},
+	"INVENTORY_INCLUDE_TAGS": func(c *domain.Client, v string) { c.Inventory.IncludeTags = splitList(c.Inventory.IncludeTags[:0], v) },
+	"INVENTORY_EXCLUDE_CATEGORIES": func(c *domain.Client, v string) {
+		c.Inventory.ExcludeCategories = splitList(c.Inventory.ExcludeCategories[:0], v)
+	},
+	"INVENTORY_EXCLUDE_TAGS": func(c *domain.Client, v string) { c.Inventory.ExcludeTags = splitList(c.Inventory.ExcludeTags[:0], v) },
+}
+
+// splitList appends the non-empty, trimmed comma-separated values of v to dst.
+func splitList(dst []string, v string) []string {
+	for value := range strings.SplitSeq(v, ",") {
+		if value = strings.TrimSpace(value); value != "" {
+			dst = append(dst, value)
+		}
+	}
+	return dst
 }
 
 // cliEnvVariables are read by CLI commands in cmd, not by the service config.
@@ -761,6 +829,25 @@ func applyEnvironment(cfg *domain.Config) {
 		}
 		set(cfg.Clients[clientName], value)
 	}
+}
+
+// validateInventoryEnvironment rejects an inventory list variable whose value
+// has no entries, such as " " or ",". It would replace the scope of config.yaml
+// with an empty list, and an empty list reads every torrent.
+func validateInventoryEnvironment(environ []string) error {
+	for _, env := range environ {
+		key, value, _ := strings.Cut(env, "=")
+		name, ok := strings.CutPrefix(key, envPrefix)
+		if !ok || value == "" {
+			continue
+		}
+		clientName, setting, ok := cutClientEnvVariable(name)
+		if _, known := clientEnvSettings[setting]; ok && clientName != "" && known &&
+			strings.HasPrefix(setting, "INVENTORY_") && len(splitList(nil, value)) == 0 {
+			return fmt.Errorf("environment variable %s has no entries; set at least one value or remove the variable", key)
+		}
+	}
+	return nil
 }
 
 // UnknownEnvironmentVariables returns the sorted SEASONPACKARR__ variables in
@@ -850,6 +937,9 @@ func (c *AppConfig) loadSnapshot() (*domain.Config, error) {
 			c.configFile, strings.Join(unknown, ", "))
 	}
 
+	if err := validateInventoryEnvironment(os.Environ()); err != nil {
+		return nil, err
+	}
 	applyEnvironment(&cfg)
 	if err := validateConfig(cfg); err != nil {
 		return nil, fmt.Errorf("validating config file %s: %w", c.configFile, err)
@@ -923,6 +1013,7 @@ func cloneConfig(cfg domain.Config) domain.Config {
 		}
 		clientClone := *client
 		clientClone.Import.Tags = slices.Clone(client.Import.Tags)
+		clientClone.Inventory = client.Inventory.Clone()
 		clone.Clients[name] = &clientClone
 	}
 	clone.Notifications.NotificationLevel = slices.Clone(cfg.Notifications.NotificationLevel)
@@ -1047,6 +1138,7 @@ func (c *AppConfig) DynamicReload(log logger.Logger) (<-chan struct{}, error) {
 		}
 
 		log.SetLogLevel(snapshot.LogLevel)
+		LogInventoryScopeWarnings(log, *snapshot)
 		select {
 		case reloaded <- struct{}{}:
 		default:

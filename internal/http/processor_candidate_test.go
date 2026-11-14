@@ -14,6 +14,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
+	"github.com/autobrr/rls"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -138,21 +139,36 @@ func TestClientConfigsEqual_CoversEveryField(t *testing.T) {
 			DownloadPath:  "/download",
 			ContentLayout: "subfolder",
 		},
+		Inventory: domain.InventoryScope{
+			IncludeCategories: []string{"tv", "tv.cross-seed"},
+			IncludeTags:       []string{"keep"},
+			ExcludeCategories: []string{"tv-4k"},
+			ExcludeTags:       []string{"noreuse"},
+		},
 	}
 	require.True(t, clientConfigsEqual(base, cloneClientConfig(base)))
 
 	tests := map[string]func(*domain.Client){
-		"type":           func(client *domain.Client) { client.Type = "transmission" },
-		"host":           func(client *domain.Client) { client.Host = "other" },
-		"port":           func(client *domain.Client) { client.Port++ },
-		"username":       func(client *domain.Client) { client.Username = "other" },
-		"password":       func(client *domain.Client) { client.Password = "other" },
-		"api key":        func(client *domain.Client) { client.APIKey = "other" },
-		"save path":      func(client *domain.Client) { client.Import.SavePath = "/other" },
-		"tags":           func(client *domain.Client) { client.Import.Tags[0] = "other" },
-		"category":       func(client *domain.Client) { client.Import.Category = "other" },
-		"download path":  func(client *domain.Client) { client.Import.DownloadPath = "/other" },
-		"content layout": func(client *domain.Client) { client.Import.ContentLayout = "original" },
+		"type":               func(client *domain.Client) { client.Type = "transmission" },
+		"host":               func(client *domain.Client) { client.Host = "other" },
+		"port":               func(client *domain.Client) { client.Port++ },
+		"username":           func(client *domain.Client) { client.Username = "other" },
+		"password":           func(client *domain.Client) { client.Password = "other" },
+		"api key":            func(client *domain.Client) { client.APIKey = "other" },
+		"save path":          func(client *domain.Client) { client.Import.SavePath = "/other" },
+		"tags":               func(client *domain.Client) { client.Import.Tags[0] = "other" },
+		"category":           func(client *domain.Client) { client.Import.Category = "other" },
+		"download path":      func(client *domain.Client) { client.Import.DownloadPath = "/other" },
+		"content layout":     func(client *domain.Client) { client.Import.ContentLayout = "original" },
+		"include categories": func(client *domain.Client) { client.Inventory.IncludeCategories[1] = "other" },
+		"include tags": func(client *domain.Client) {
+			client.Inventory.IncludeTags = append(client.Inventory.IncludeTags, "other")
+		},
+		"exclude categories": func(client *domain.Client) { client.Inventory.ExcludeCategories[0] = "other" },
+		"exclude tags":       func(client *domain.Client) { client.Inventory.ExcludeTags = nil },
+		"inventory scope removed": func(client *domain.Client) {
+			client.Inventory = domain.InventoryScope{}
+		},
 	}
 	for name, mutate := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -167,6 +183,12 @@ func TestClientConfigsEqual_CoversEveryField(t *testing.T) {
 	emptyTags := cloneClientConfig(base)
 	emptyTags.Import.Tags = []string{}
 	require.True(t, clientConfigsEqual(withoutTags, emptyTags), "nil and empty tags have the same policy")
+
+	withoutScope := cloneClientConfig(base)
+	withoutScope.Inventory = domain.InventoryScope{}
+	emptyScope := cloneClientConfig(base)
+	emptyScope.Inventory = domain.InventoryScope{IncludeCategories: []string{}, IncludeTags: []string{}, ExcludeCategories: []string{}, ExcludeTags: []string{}}
+	require.True(t, clientConfigsEqual(withoutScope, emptyScope), "nil and empty lists are the same scope")
 
 	allocations := testing.AllocsPerRun(1000, func() {
 		clientConfigsEqualSink = clientConfigsEqual(base, base)
@@ -260,11 +282,61 @@ func TestInventory_ReusesParsedReleasesAfterImportInvalidation(t *testing.T) {
 
 func requireParsedRelease(t *testing.T, client domain.Client, torrentName string) cachedRelease {
 	t.Helper()
-	names, ok := parsedReleaseMap.Load(importEndpoint(client))
+	names, ok := parsedReleaseMap.Load(parsedNamesKeyFor(client))
 	require.True(t, ok, "parsed names missing")
 	parsed, ok := names.releases[torrentName]
 	require.True(t, ok, "parsed release missing")
 	return parsed
+}
+
+// TestInventory_KeepsParsedNamesOfEachScopeOnOneEndpoint: two clients of one
+// qBittorrent with different inventory scopes must not drop each other's parsed names.
+func TestInventory_KeepsParsedNamesOfEachScopeOnOneEndpoint(t *testing.T) {
+	resetProcessorGlobals()
+	const (
+		hdName     = "Series.S01E01.1080p.WEB-DL-GRP"
+		uhdName    = "Series.S01E01.2160p.WEB-DL-GRP"
+		sharedName = "Other.S01E01.1080p.WEB-DL-GRP"
+	)
+	hd := &domain.Client{
+		Type: "qbittorrent", Host: "qbittorrent",
+		Import:    domain.ImportPolicy{Category: "tv-hd"},
+		Inventory: domain.InventoryScope{IncludeCategories: []string{"tv-hd", "cross-seed"}},
+	}
+	uhd := cloneClientConfig(*hd)
+	uhd.Import.Category = "tv-uhd"
+	uhd.Inventory.IncludeCategories = []string{"tv-uhd", "cross-seed"}
+	hdProcessor := newTestProcessor(&fakeTorrentClient{torrents: []torrentclient.Torrent{{Name: hdName}, {Name: sharedName}}})
+	uhdProcessor := newTestProcessor(&fakeTorrentClient{torrents: []torrentclient.Torrent{{Name: uhdName}, {Name: sharedName}}})
+
+	hdEntries, err := hdProcessor.getAllTorrents(t.Context(), "sonarr-hd", hd, domain.FuzzyMatching{})
+	require.NoError(t, err)
+	uhdEntries, err := uhdProcessor.getAllTorrents(t.Context(), "sonarr-uhd", &uhd, domain.FuzzyMatching{})
+	require.NoError(t, err)
+	assert.Same(t, inventoryRelease(t, hdEntries, sharedName), inventoryRelease(t, uhdEntries, sharedName),
+		"a name in both scopes is parsed once")
+
+	cached, ok := entryMap.Load("sonarr-hd")
+	require.True(t, ok)
+	cached.expiresAt = time.Time{}
+	refreshed, err := hdProcessor.getAllTorrents(t.Context(), "sonarr-hd", hd, domain.FuzzyMatching{})
+	require.NoError(t, err)
+	assert.Same(t, inventoryRelease(t, hdEntries, hdName), inventoryRelease(t, refreshed, hdName),
+		"the scan of another scope keeps the parsed names of this scope")
+}
+
+// inventoryRelease returns the parsed release of the torrent name in entries.
+func inventoryRelease(t *testing.T, entries map[string][]entry, name string) *rls.Release {
+	t.Helper()
+	for _, bucket := range entries {
+		for _, e := range bucket {
+			if e.torrent.Name == name {
+				return e.release
+			}
+		}
+	}
+	require.Failf(t, "torrent missing from the inventory", "%s", name)
+	return nil
 }
 
 func TestInventory_InvalidationDuringScanCannotRestoreStaleCache(t *testing.T) {
@@ -287,6 +359,8 @@ func TestInventory_InvalidationDuringScanCannotRestoreStaleCache(t *testing.T) {
 	require.NoError(t, <-done)
 	_, cached := entryMap.Load("default")
 	require.False(t, cached, "an import invalidated the in-flight inventory")
+	_, parsed := parsedReleaseMap.Load(parsedNamesKeyFor(domain.Client{}))
+	assert.True(t, parsed, "an import keeps the parsed names of the scan, because they stay valid")
 }
 
 func TestInventoryWarmer_WarmsEveryClientAndSharesParsedNames(t *testing.T) {

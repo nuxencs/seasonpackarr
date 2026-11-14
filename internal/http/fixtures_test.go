@@ -334,7 +334,7 @@ func storeTestClient(name string, cfg *domain.Client, client torrentclient.Torre
 func resetProcessorGlobals() {
 	clientMap = xsync.NewMapOf[string, cachedTorrentClient]()
 	entryMap = xsync.NewMapOf[string, *entryCache]()
-	parsedReleaseMap = xsync.NewMapOf[importClientKey, parsedReleases]()
+	parsedReleaseMap = xsync.NewMapOf[parsedNamesKey, parsedReleases]()
 	planMap = xsync.NewMapOf[importPlanCacheKey, cachedImportPlan]()
 }
 

@@ -36,7 +36,7 @@ func watchConfigReloads(ctx context.Context, log logger.Logger, cfg config.Provi
 
 // pruneClientCaches drops the connection and inventory of each client that cfg
 // no longer has or configures differently, and the parsed names of endpoints
-// that no client uses. Without it, each removed client or changed host keeps a
+// and inventory scopes that no client uses. Without it, each removed client or changed host keeps a
 // full inventory in memory until a restart. It returns the dropped client names.
 func pruneClientCaches(cfg domain.Config) ([]string, error) {
 	current := func(name string, client domain.Client) bool {
@@ -75,13 +75,15 @@ func pruneClientCaches(cfg domain.Config) ([]string, error) {
 	})
 	slices.Sort(dropped)
 
-	endpoints := make(map[importClientKey]bool, len(cfg.Clients))
+	// Count the clean-up before the deletes, so a scan that stores its names after this point sees it.
+	parsedNamesGeneration.Add(1)
+	scopes := make(map[parsedNamesKey]bool, len(cfg.Clients))
 	for _, client := range cfg.Clients {
-		endpoints[importEndpoint(*client)] = true
+		scopes[parsedNamesKeyFor(*client)] = true
 	}
-	parsedReleaseMap.Range(func(endpoint importClientKey, _ parsedReleases) bool {
-		if !endpoints[endpoint] {
-			parsedReleaseMap.Delete(endpoint)
+	parsedReleaseMap.Range(func(key parsedNamesKey, _ parsedReleases) bool {
+		if !scopes[key] {
+			parsedReleaseMap.Delete(key)
 		}
 		return true
 	})

@@ -4,11 +4,13 @@
 package torrentclient
 
 import (
+	"context"
 	stderrors "errors"
 	"maps"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 
+	"github.com/Masterminds/semver"
 	"github.com/autobrr/go-qbittorrent"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,6 +39,17 @@ type fakeQbitAPI struct {
 	lookupIdx int
 	lookups   [][]string
 
+	// inventory answers reads without hashes, filtered as qBittorrent does.
+	inventoryMu         sync.Mutex
+	inventory           []qbittorrent.Torrent
+	inventoryReads      []qbittorrent.TorrentFilterOptions
+	inventoryDelay      time.Duration
+	inventoryErr        map[string]error
+	activeInventoryRead int
+	maxInventoryReads   int
+	// apiVersion is the WebAPI version. Empty means a current version. Before 2.8.4, reads ignore the tag filter.
+	apiVersion string
+
 	recheckCalls [][]string
 	stopCalls    [][]string
 	resumeCalls  [][]string
@@ -49,7 +63,26 @@ type fakeQbitAPI struct {
 }
 
 func (f *fakeQbitAPI) GetTorrents(o qbittorrent.TorrentFilterOptions) ([]qbittorrent.Torrent, error) {
-	if len(o.Hashes) == 0 || len(f.lookupSeq) == 0 {
+	if len(o.Hashes) == 0 {
+		f.inventoryMu.Lock()
+		if err := f.inventoryErr[o.Category]; err != nil {
+			f.inventoryMu.Unlock()
+			return nil, err
+		}
+		f.inventoryReads = append(f.inventoryReads, o)
+		f.activeInventoryRead++
+		f.maxInventoryReads = max(f.maxInventoryReads, f.activeInventoryRead)
+		f.inventoryMu.Unlock()
+		time.Sleep(f.inventoryDelay)
+		f.inventoryMu.Lock()
+		f.activeInventoryRead--
+		f.inventoryMu.Unlock()
+		if !f.supportsTagFilter() {
+			o.Tag = ""
+		}
+		return slices.DeleteFunc(slices.Clone(f.inventory), func(t qbittorrent.Torrent) bool { return !qbitFilterMatches(o, t) }), nil
+	}
+	if len(f.lookupSeq) == 0 {
 		return nil, nil
 	}
 	f.lookups = append(f.lookups, append([]string(nil), o.Hashes...))
@@ -58,7 +91,29 @@ func (f *fakeQbitAPI) GetTorrents(o qbittorrent.TorrentFilterOptions) ([]qbittor
 		idx = len(f.lookupSeq) - 1
 	}
 	f.lookupIdx++
+	if !qbitFilterMatches(o, f.lookupSeq[idx]) {
+		return nil, nil
+	}
 	return []qbittorrent.Torrent{f.lookupSeq[idx]}, nil
+}
+
+func (f *fakeQbitAPI) supportsTagFilter() bool {
+	return f.apiVersion == "" || !semver.MustParse(f.apiVersion).LessThan(semver.MustParse("2.8.4"))
+}
+
+func (f *fakeQbitAPI) RequiresMinVersion(minVersion *semver.Version) (bool, error) {
+	if f.apiVersion != "" && semver.MustParse(f.apiVersion).LessThan(minVersion) {
+		return false, qbittorrent.ErrUnsupportedVersion
+	}
+	return true, nil
+}
+
+// qbitFilterMatches applies the category and tag filters of torrents/info: both must match when both are set.
+func qbitFilterMatches(o qbittorrent.TorrentFilterOptions, t qbittorrent.Torrent) bool {
+	if o.Category != "" && o.Category != t.Category {
+		return false
+	}
+	return o.Tag == "" || slices.ContainsFunc(strings.Split(t.Tags, ","), func(tag string) bool { return strings.TrimSpace(tag) == o.Tag })
 }
 
 func (f *fakeQbitAPI) GetFilesInformation(hash string) (*qbittorrent.TorrentFiles, error) {
@@ -576,6 +631,173 @@ func TestQbitImport_RejectsMissingHashBeforeAdd(t *testing.T) {
 	require.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
 	require.Equal(t, []ImportStage{ImportStageConfig}, importStageNames(report))
 	require.Empty(t, api.addBytes)
+}
+
+func TestQbitGetTorrents_ReadsEveryTorrentWithoutScope(t *testing.T) {
+	api := &fakeQbitAPI{inventory: []qbittorrent.Torrent{
+		{Hash: "a", Name: "Show.S01E01", SavePath: "/tv", Category: "tv"},
+		{Hash: "b", Name: "Movie", SavePath: "/movies", Category: "movies"},
+	}}
+	q := newTestQbitClient(api, domain.ImportPolicy{Category: "tv"})
+
+	torrents, err := q.GetTorrents(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, []Torrent{
+		{Hash: "a", Name: "Show.S01E01", SavePath: "/tv"},
+		{Hash: "b", Name: "Movie", SavePath: "/movies"},
+	}, torrents)
+	assert.Equal(t, []qbittorrent.TorrentFilterOptions{{}}, api.inventoryReads, "an empty scope sends one unfiltered read")
+}
+
+func TestQbitGetTorrents_MergesScopedReadsByHash(t *testing.T) {
+	api := &fakeQbitAPI{inventory: []qbittorrent.Torrent{
+		{Hash: "a", Name: "Show.S01E01", SavePath: "/tv", Category: "tv", Tags: "keep, other"},
+		{Hash: "b", Name: "Show.S01E02", SavePath: "/tv", Category: "tv.cross-seed"},
+		{Hash: "c", Name: "Movie", SavePath: "/movies", Category: "movies"},
+		{Hash: "d", Name: "Show.S02E01", SavePath: "/movies", Category: "movies", Tags: "keep"},
+	}}
+	q := newTestQbitClient(api, domain.ImportPolicy{Category: "tv"})
+	q.scope = domain.InventoryScope{IncludeCategories: []string{"tv", "tv.cross-seed"}, IncludeTags: []string{"keep"}}
+
+	torrents, err := q.GetTorrents(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, []Torrent{
+		{Hash: "a", Name: "Show.S01E01", SavePath: "/tv"},
+		{Hash: "b", Name: "Show.S01E02", SavePath: "/tv"},
+		{Hash: "d", Name: "Show.S02E01", SavePath: "/movies"},
+	}, torrents, "a torrent in two results shows once, and torrents outside the scope are not read")
+	assert.ElementsMatch(t, []qbittorrent.TorrentFilterOptions{
+		{Category: "tv"},
+		{Category: "tv.cross-seed"},
+		{Tag: "keep"},
+	}, api.inventoryReads, "one server-side read for each include value")
+}
+
+// TestQbitGetTorrents_AppliesTagScopeBeforeQbit44: qBittorrent 4.3 ignores the
+// tag filter of torrents/info and returns every torrent.
+func TestQbitGetTorrents_AppliesTagScopeBeforeQbit44(t *testing.T) {
+	api := &fakeQbitAPI{apiVersion: "2.8.2", inventory: []qbittorrent.Torrent{
+		{Hash: "a", Name: "Show.S01E01", SavePath: "/tv", Category: "tv", Tags: "keep, other"},
+		{Hash: "b", Name: "Movie", SavePath: "/movies", Category: "movies"},
+		{Hash: "c", Name: "Show.S02E01", SavePath: "/movies", Category: "movies", Tags: "other, keep"},
+		{Hash: "e", Name: "Show.S03E01", SavePath: "/tv", Category: "tv", Tags: "noreuse"},
+	}}
+	q := newTestQbitClient(api, domain.ImportPolicy{Category: "tv"})
+	q.scope = domain.InventoryScope{IncludeCategories: []string{"tv"}, IncludeTags: []string{"keep"}, ExcludeTags: []string{"noreuse"}}
+
+	torrents, err := q.GetTorrents(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, []Torrent{
+		{Hash: "a", Name: "Show.S01E01", SavePath: "/tv"},
+		{Hash: "c", Name: "Show.S02E01", SavePath: "/movies"},
+	}, torrents)
+	assert.ElementsMatch(t, []qbittorrent.TorrentFilterOptions{{Category: "tv"}, {}}, api.inventoryReads,
+		"categories stay on the server, which includes subcategories, and one unfiltered read supplies the tags")
+}
+
+func TestQbitGetTorrents_DropsExcludesAfterIncludeReads(t *testing.T) {
+	api := &fakeQbitAPI{inventory: []qbittorrent.Torrent{
+		{Hash: "a", Name: "Show.S01E01", SavePath: "/tv", Category: "tv-hd", Tags: "tv"},
+		{Hash: "b", Name: "Show.S01E01.2160p", SavePath: "/tv", Category: "tv-4k", Tags: "tv"},
+		{Hash: "c", Name: "Show.S01E02", SavePath: "/tv", Category: "tv-hd", Tags: "tv, noreuse"},
+		{Hash: "d", Name: "Movie", SavePath: "/movies", Category: "movies"},
+	}}
+	q := newTestQbitClient(api, domain.ImportPolicy{Category: "tv-hd"})
+	q.scope = domain.InventoryScope{IncludeTags: []string{"tv"}, ExcludeCategories: []string{"tv-4k"}, ExcludeTags: []string{"noreuse"}}
+
+	torrents, err := q.GetTorrents(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, []Torrent{{Hash: "a", Name: "Show.S01E01", SavePath: "/tv"}}, torrents, "an exclude wins over an include")
+	assert.Equal(t, []qbittorrent.TorrentFilterOptions{{Tag: "tv"}}, api.inventoryReads, "excludes send no read")
+}
+
+func TestQbitGetTorrents_ExcludeOnlyReadsEveryTorrent(t *testing.T) {
+	api := &fakeQbitAPI{inventory: []qbittorrent.Torrent{
+		{Hash: "a", Name: "Show.S01E01", SavePath: "/tv", Category: "tv"},
+		{Hash: "b", Name: "Movie", SavePath: "/movies", Category: "movies"},
+		{Hash: "c", Name: "Movie.2", SavePath: "/movies", Tags: "noreuse"},
+		{Hash: "d", Name: "Show.S02E01", SavePath: "/tv"},
+		{Hash: "e", Name: "Movie.3", SavePath: "/movies", Category: "movies/4k"},
+	}}
+	q := newTestQbitClient(api, domain.ImportPolicy{Category: "tv"})
+	q.scope = domain.InventoryScope{ExcludeCategories: []string{"movies"}, ExcludeTags: []string{"noreuse"}}
+
+	torrents, err := q.GetTorrents(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, []Torrent{
+		{Hash: "a", Name: "Show.S01E01", SavePath: "/tv"},
+		{Hash: "d", Name: "Show.S02E01", SavePath: "/tv"},
+		{Hash: "e", Name: "Movie.3", SavePath: "/movies"},
+	}, torrents, "torrents without a category stay, and an exclude matches the exact category name only")
+	assert.Equal(t, []qbittorrent.TorrentFilterOptions{{}}, api.inventoryReads)
+}
+
+func TestQbitGetTorrents_SendsBoundedParallelIncludeReads(t *testing.T) {
+	categories := []string{"one", "two", "three", "four", "five", "six"}
+	api := &fakeQbitAPI{inventoryDelay: 10 * time.Millisecond}
+	for _, category := range categories {
+		api.inventory = append(api.inventory, qbittorrent.Torrent{Hash: category, Name: category, Category: category, Tags: "shared"})
+	}
+	// The tag read returns all torrents again, so the merge must drop them.
+	api.inventory[0].Tags = "first"
+	q := newTestQbitClient(api, domain.ImportPolicy{Category: "one"})
+	q.scope = domain.InventoryScope{IncludeTags: []string{"shared"}, IncludeCategories: categories}
+
+	torrents, err := q.GetTorrents(t.Context())
+
+	require.NoError(t, err)
+	var hashes []string
+	for _, torrent := range torrents {
+		hashes = append(hashes, torrent.Hash)
+	}
+	assert.Equal(t, categories, hashes, "the results merge in the order of the reads")
+	assert.Len(t, api.inventoryReads, len(categories)+1)
+	assert.Greater(t, api.maxInventoryReads, 1, "the reads run in parallel")
+	assert.LessOrEqual(t, api.maxInventoryReads, qbitInventoryReadWorkers)
+}
+
+// TestQbitGetTorrents_ReportsFailedReadNotCancellation: a failed read stops
+// the queued reads, and the error names the failure, not the cancellation of
+// a read that comes before it in the filter order.
+func TestQbitGetTorrents_ReportsFailedReadNotCancellation(t *testing.T) {
+	categories := []string{"one", "two", "three", "four", "five", "six"}
+	api := &fakeQbitAPI{inventoryErr: map[string]error{"one": stderrors.New("boom")}}
+	q := newTestQbitClient(api, domain.ImportPolicy{Category: "one"})
+	q.scope = domain.InventoryScope{IncludeCategories: categories}
+	q.inventoryReadWorkers = 1
+
+	_, err := q.GetTorrents(t.Context())
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "boom")
+	assert.NotErrorIs(t, err, context.Canceled)
+	assert.Empty(t, api.inventoryReads, "the reads after the failure do not run")
+}
+
+func TestQbitImport_FindsAddedTorrentOutsideScope(t *testing.T) {
+	const hash = "1111111111111111111111111111111111111111"
+	api := &fakeQbitAPI{lookupSeq: []qbittorrent.Torrent{
+		{Hash: hash, Category: "tv-import", State: qbittorrent.TorrentStatePausedDl},
+	}}
+	q := newTestQbitClient(api, domain.ImportPolicy{Category: "tv-import"})
+	q.scope = domain.InventoryScope{IncludeCategories: []string{"tv-completed"}, IncludeTags: []string{"keep"}}
+
+	_, err := q.Import(t.Context(), ImportRequest{
+		TorrentBytes: []byte("torrent"),
+		SavePath:     "/data/tv-import",
+		LegacyHash:   hash,
+		HasV1:        true,
+		DataComplete: true,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, [][]string{{hash}}, api.resumeCalls)
+	assert.Empty(t, api.inventoryReads)
 }
 
 // TestQbitGetTorrents_ErrorOmitsHostPath: go-qbittorrent puts the request URL

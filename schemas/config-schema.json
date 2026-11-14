@@ -119,6 +119,9 @@
         },
         "import": {
           "$ref": "#/$defs/import"
+        },
+        "inventory": {
+          "$ref": "#/$defs/inventory"
         }
       },
       "required": [
@@ -138,6 +141,22 @@
           },
           "then": {
             "properties": {
+              "inventory": {
+                "properties": {
+                  "includeCategories": {
+                    "maxItems": 0
+                  },
+                  "includeTags": {
+                    "maxItems": 0
+                  },
+                  "excludeCategories": {
+                    "maxItems": 0
+                  },
+                  "excludeTags": {
+                    "maxItems": 0
+                  }
+                }
+              },
               "import": {
                 "allOf": [
                   {
@@ -176,6 +195,22 @@
             "properties": {
               "apiKey": {
                 "maxLength": 0
+              },
+              "inventory": {
+                "properties": {
+                  "includeCategories": {
+                    "maxItems": 0
+                  },
+                  "includeTags": {
+                    "maxItems": 0
+                  },
+                  "excludeCategories": {
+                    "maxItems": 0
+                  },
+                  "excludeTags": {
+                    "maxItems": 0
+                  }
+                }
               },
               "import": {
                 "allOf": [
@@ -297,6 +332,49 @@
             "nosubfolder",
             "original"
           ]
+        }
+      }
+    },
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "qBittorrent only. With includes, seasonpackarr reads only the torrents with an include category or an include tag. It then drops the torrents with an exclude category or an exclude tag. An exclude always wins. Empty lists read every torrent.",
+      "properties": {
+        "includeCategories": {
+          "type": "array",
+          "default": [],
+          "description": "Categories to read. qBittorrent filters them, so they make the read smaller.",
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          }
+        },
+        "includeTags": {
+          "type": "array",
+          "default": [],
+          "description": "Tags to read. qBittorrent 4.4 or newer filters them.",
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          }
+        },
+        "excludeCategories": {
+          "type": "array",
+          "default": [],
+          "description": "Categories to drop after the read. Exact names only.",
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          }
+        },
+        "excludeTags": {
+          "type": "array",
+          "default": [],
+          "description": "Tags to drop after the read. Exact names only.",
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          }
         }
       }
     },

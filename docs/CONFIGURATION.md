@@ -62,6 +62,7 @@ client name that autobrr and the command line use. Each name must be unique.
 | `username`, `password` | Client credentials. |
 | `apiKey` | qBittorrent only. See [qBittorrent](#qbittorrent). |
 | `import` | How seasonpackarr adds season packs to this client. See [Import policy](#import-policy). |
+| `inventory` | qBittorrent only. Limits the torrents that seasonpackarr reads from this client. See [Inventory scope](#inventory-scope). |
 
 ### qBittorrent
 
@@ -185,6 +186,88 @@ each entry, and use the entry name as `clientname` in that filter. See [Multiple
 
 Both entries see the same qBittorrent torrent list. qBittorrent stores a torrent only once, so it cannot add the same
 torrent to both categories.
+
+## Inventory scope
+
+The inventory is the list of torrents that seasonpackarr reads from a client. The candidate check, the match, and
+Prowlarr discovery use it. Without a scope, seasonpackarr reads every torrent in the client. On a client with many
+torrents that seasonpackarr never reuses, such as movies, this read is a large part of each candidate check. A scope
+limits the inventory to the torrents that seasonpackarr can reuse.
+
+```yaml
+clients:
+  default:
+    import:
+      category: "tv-hd"
+    inventory:
+      includeCategories: [ "tv-hd", "tv-hd-completed", "tv-hd-completed.cross-seed" ]
+      includeTags: []
+      excludeCategories: []
+      excludeTags: [ "noreuse" ]
+```
+
+| Setting | Meaning |
+| --- | --- |
+| `includeCategories`, `includeTags` | Read only the torrents with one of these categories or one of these tags. When both lists are empty, seasonpackarr reads every torrent. |
+| `excludeCategories`, `excludeTags` | Drop the torrents with one of these categories or one of these tags. An exclude always wins over an include. |
+
+When all four lists are empty, or the `inventory` block is missing, the scope is every torrent. Names must match
+exactly.
+
+The scope applies to the candidate check, the match, the checks of the import, and Prowlarr RSS and search. The import
+itself ignores the scope: seasonpackarr adds the season pack with the [import policy](#import-policy), and it finds the
+added torrent even when its category is outside the scope.
+
+### Includes or excludes
+
+qBittorrent can filter its torrent list by category and by tag, but it has no filter that excludes a value. So the two
+kinds of lists have different costs:
+
+- **Includes make the read smaller.** seasonpackarr sends one request for each include value, up to four at the same
+  time, and merges the results. A torrent that is in more than one result counts once.
+- **Excludes do not make the read smaller.** seasonpackarr removes the excluded torrents after the read. With excludes
+  only, it reads every torrent, as it does without a scope.
+
+Use includes for speed, and excludes for convenience, for example to remove one movie category without a list of all
+TV categories. You can use both: the excludes then remove torrents from the include results.
+
+A benchmark with a client like the one in [issue #326](https://github.com/nuxencs/seasonpackarr/issues/326) (5341
+torrents, about 11 MB of JSON for the full list) gave these read times on a local test server. A remote client adds
+its own delay to each request, so real times are longer.
+
+| Scope | Torrents | Data | Time |
+| --- | --- | --- | --- |
+| None | 5341 | 11.0 MB | 28 ms |
+| `excludeCategories: [movies]` | 3691 | 11.0 MB | 28 ms |
+| The same torrents through four `includeCategories` | 3691 | 7.7 MB | 13 ms |
+| Two `includeCategories` | 1204 | 2.5 MB | 5 ms |
+
+qBittorrent 4.3 cannot filter by tag. When the scope has `includeTags` and the client is qBittorrent 4.3, seasonpackarr
+also reads every torrent and finds the tags itself. The result is the same, but the read is not smaller.
+
+### Effects of a scope
+
+Before you set a scope, make sure that you accept these effects:
+
+- **Fewer reusable episodes:** seasonpackarr does not reuse episodes of torrents outside the scope. More data downloads.
+  A scope cannot cause a false match, because it only removes torrents from the inventory.
+- **Packs outside the scope are not found:** the "release already in client" check (status `210`) and the Prowlarr
+  coverage see only the scope. When a season pack is in a category outside the scope, seasonpackarr makes hardlinks
+  for it again. The client then rejects the add (same info hash) or imports a duplicate (different info hash). Keep
+  every category and tag where season packs end up in the scope. Excludes are safer here: a new category is in the
+  scope until you exclude it.
+- **The import category alone is not always enough:** Sonarr can move finished torrents to another category, for
+  example `tv-hd-completed`. Then the import category holds only new packs, and the completed category holds the rest.
+  Include both. A new pack stays in the import category until Sonarr moves it. If the scope drops a torrent with the
+  import category and import tags, a second announce of the same pack does not find it. seasonpackarr logs a warning
+  at startup and after a config reload when the scope drops such a torrent. The warning compares exact names, so it
+  also warns for an import category such as `tv/new` with `includeCategories: [tv]`. That scope is correct on
+  qBittorrent 5.2 and newer, and on older versions when subcategories are on.
+- **Subcategories:** qBittorrent adds subcategories to an include category only for names with `/`. qBittorrent 5.2
+  and newer always do this. Older versions do it only when subcategories are on in qBittorrent. A name such as `tv-hd-completed.cross-seed` is a separate category, so list it
+  explicitly. Excludes match the exact name only: `excludeCategories: [movies]` does not exclude `movies/4k`.
+- **qBittorrent and qui only:** startup fails when a Transmission or Deluge client sets a scope. An entry that is
+  empty or starts or ends with a space also stops startup, because qBittorrent compares exact names.
 
 ## Smart mode
 
@@ -313,8 +396,11 @@ Most settings have an environment variable with the `SEASONPACKARR__` prefix. En
   commas, because a URL can hold commas, for example Telegram `chats=a,b`.
 - Clients: `SEASONPACKARR__CLIENTS_<NAME>_<SETTING>`. `<NAME>` is the client name in upper case. The client name
   becomes lower case. `<SETTING>` is `TYPE`, `HOST`, `PORT`, `USERNAME`, `PASSWORD`, `APIKEY`, `IMPORT_SAVE_PATH`,
-  `IMPORT_CATEGORY`, `IMPORT_DOWNLOAD_PATH`, `IMPORT_CONTENT_LAYOUT`, or `IMPORT_TAGS` (comma-separated). In these
-  variables, a client name cannot contain an underscore.
+  `IMPORT_CATEGORY`, `IMPORT_DOWNLOAD_PATH`, `IMPORT_CONTENT_LAYOUT`, `IMPORT_TAGS` (comma-separated),
+  `INVENTORY_INCLUDE_CATEGORIES`, `INVENTORY_INCLUDE_TAGS`, `INVENTORY_EXCLUDE_CATEGORIES`, or
+  `INVENTORY_EXCLUDE_TAGS` (all four comma-separated). In these variables, a client name cannot contain an underscore.
+  An `INVENTORY_` variable with no entries, such as `" "` or `","`, stops startup, because it would replace the scope
+  of `config.yaml` with every torrent. Without the variable, the scope of `config.yaml` applies.
 - Prowlarr: see [Prowlarr discovery](PROWLARR.md).
 
 At startup, seasonpackarr logs a warning for each `SEASONPACKARR__` variable that it does not know, for example
@@ -338,7 +424,7 @@ last valid config.
 
 These settings apply without a restart:
 
-- torrent client connections and import policies
+- torrent client connections, import policies, and inventory scopes
 - API token
 - smart mode and fuzzy matching
 - notification destinations and notification levels
@@ -351,8 +437,8 @@ These settings need a restart:
 - `logPath`, `logMaxSize`, and `logMaxBackups`
 - `SEASONPACKARR__DISABLE_CONFIG_FILE`
 
-When a reload removes a client or changes its connection or import settings, seasonpackarr drops the cached connection
-and torrent list of that client. The next request connects again.
+When a reload removes a client or changes its connection, import, or inventory settings, seasonpackarr drops the
+cached connection and inventory of that client. The next request connects again.
 
 When you remove an optional setting, it returns to its default. A running search or RSS run keeps the config it started
 with. A changed RSS interval sets the time of the next automatic run.

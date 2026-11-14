@@ -171,6 +171,12 @@ why the search test drives a real Prowlarr.
     as hardlinks, downloads only the missing episode from the seeder, and seeds.
   - `complete pack`: the client has every episode, and no seeder has the pack.
     The pack seeds with 0 downloaded bytes, and every episode is a hardlink.
+  - `inventory scope`: only for a client that implements `inventoryScoper`,
+    because its entry in the harness config has an inventory scope. Today that
+    is qBittorrent, with `inventory.excludeTags`. The client has all three
+    episodes, but the third has the excluded tag. The pack reuses the first two
+    as hardlinks and downloads only the third from the seeder, as in the
+    `partial pack`. Without the scope, the pack would be complete.
   - `candidate rejection`: the client has one episode in another resolution.
     autobrr stores no release row for a rejected announce, so the test reads
     autobrr's log through `GET /api/logs/files/autobrr.log`

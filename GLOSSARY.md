@@ -37,6 +37,14 @@ _Avoid_: Match percentage
 **Smart mode**:
 The setting that rejects a season pack when its coverage is below a threshold.
 
+**Inventory**:
+The torrents that seasonpackarr reads from a client for the candidate check, the match, and discovery.
+_Avoid_: Torrent list, client torrents
+
+**Inventory scope**:
+The client setting that limits the inventory: include categories and tags select torrents, and exclude categories and tags drop them. An empty scope is every torrent.
+_Avoid_: Inventory filter
+
 ### Discovery
 
 **Discovery**:

@@ -4,6 +4,7 @@
 package torrentclient
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -17,10 +18,15 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/errtrace"
 
+	"github.com/Masterminds/semver"
 	"github.com/autobrr/go-qbittorrent"
 )
 
-const qbitFileReadWorkers = 4
+const (
+	qbitFileReadWorkers = 4
+	// qbitInventoryReadWorkers limits the parallel torrents/info reads of a scope with several include values.
+	qbitInventoryReadWorkers = 4
+)
 
 // qbitAPI is the subset of *qbittorrent.Client the adapter uses. It exists so
 // the import machinery can be unit-tested against a fake without a live client.
@@ -34,11 +40,20 @@ type qbitAPI interface {
 	Recheck(hashes []string) error
 	Stop(hashes []string) error
 	Resume(hashes []string) error
+	RequiresMinVersion(minVersion *semver.Version) (bool, error)
 }
+
+// qbitTagFilterVersion is the WebAPI version of qBittorrent 4.4.0. Older
+// versions ignore the tag filter of torrents/info and return every torrent.
+var qbitTagFilterVersion = semver.MustParse("2.8.4")
 
 type qbitClient struct {
 	c      qbitAPI
 	policy domain.ImportPolicy
+	// scope limits GetTorrents only. The lookup of the added torrent ignores it.
+	scope domain.InventoryScope
+	// inventoryReadWorkers overrides qbitInventoryReadWorkers, so benchmarks can compare serial reads.
+	inventoryReadWorkers int
 
 	// timeouts are fields so tests can shrink them to milliseconds.
 	findTimeout  time.Duration
@@ -73,6 +88,7 @@ func newQbitClient(ctx context.Context, client *domain.Client) (*qbitClient, err
 	return &qbitClient{
 		c:            api,
 		policy:       client.Import,
+		scope:        client.Inventory,
 		findTimeout:  15 * time.Second,
 		pollInterval: 250 * time.Millisecond,
 	}, nil
@@ -162,28 +178,154 @@ func (s safeQbitAPI) Stop(hashes []string) error { return s.safe(s.api.Stop(hash
 
 func (s safeQbitAPI) Resume(hashes []string) error { return s.safe(s.api.Resume(hashes)) }
 
+func (s safeQbitAPI) RequiresMinVersion(minVersion *semver.Version) (bool, error) {
+	ok, err := s.api.RequiresMinVersion(minVersion)
+	return ok, s.safe(err)
+}
+
+// GetTorrents reads the inventory. qBittorrent filters the includes, and the
+// adapter drops the excludes after the read, because torrents/info has no
+// exclude filter. torrents/info takes one category and one tag, and both
+// together must match, so each include value is one read. The reads run in
+// parallel and merge by hash in a fixed order.
 func (q *qbitClient) GetTorrents(ctx context.Context) ([]Torrent, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	if !q.scope.IsSet() {
+		return q.readInventory(ctx, []qbittorrent.TorrentFilterOptions{{}})
 	}
-	ts, err := q.c.GetTorrents(qbittorrent.TorrentFilterOptions{})
+
+	filters := make([]qbittorrent.TorrentFilterOptions, 0, len(q.scope.IncludeCategories)+len(q.scope.IncludeTags))
+	for _, category := range q.scope.IncludeCategories {
+		filters = append(filters, qbittorrent.TorrentFilterOptions{Category: category})
+	}
+	switch {
+	case !q.scope.HasIncludes():
+		filters = append(filters, qbittorrent.TorrentFilterOptions{})
+	case len(q.scope.IncludeTags) == 0:
+		// Include categories only: the category reads are complete.
+	case q.supportsTagFilter():
+		for _, tag := range q.scope.IncludeTags {
+			filters = append(filters, qbittorrent.TorrentFilterOptions{Tag: tag})
+		}
+	default:
+		// The category reads stay on the server, because its filter includes subcategories.
+		filters = append(filters, qbittorrent.TorrentFilterOptions{})
+	}
+	return q.readInventory(ctx, filters)
+}
+
+// supportsTagFilter reports whether torrents/info filters by tag. A failed
+// version read also falls back to a local tag filter: the result stays correct, only larger.
+func (q *qbitClient) supportsTagFilter() bool {
+	supported, _ := q.c.RequiresMinVersion(qbitTagFilterVersion)
+	return supported
+}
+
+// readInventory sends the reads, keeps each hash once, and drops the torrents
+// outside the scope. An unfiltered read in a scope with includes supplies the
+// include tags on qBittorrent 4.3.
+func (q *qbitClient) readInventory(ctx context.Context, filters []qbittorrent.TorrentFilterOptions) ([]Torrent, error) {
+	results, err := q.readFilters(ctx, filters)
 	if err != nil {
-		return nil, errtrace.WithStack(fmt.Errorf("failed to get torrents: %w", err))
-	}
-	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	torrents := make([]Torrent, 0, len(ts))
-	for _, t := range ts {
-		torrents = append(torrents, Torrent{
-			Hash:     t.Hash,
-			Name:     t.Name,
-			SavePath: t.SavePath,
+	torrents := make([]Torrent, 0, len(results[0]))
+	// One read cannot repeat a hash, so only several reads need the merge.
+	var seen map[string]bool
+	if len(filters) > 1 {
+		seen = make(map[string]bool)
+	}
+	for index, ts := range results {
+		unfiltered := filters[index].Category == "" && filters[index].Tag == ""
+		for _, t := range ts {
+			if q.scope.IsSet() {
+				if unfiltered && q.scope.HasIncludes() && !qbitHasTag(t.Tags, q.scope.IncludesTag) {
+					continue
+				}
+				if q.scope.ExcludesCategory(t.Category) || qbitHasTag(t.Tags, q.scope.ExcludesTag) {
+					continue
+				}
+			}
+			if seen != nil {
+				if seen[t.Hash] {
+					continue
+				}
+				seen[t.Hash] = true
+			}
+			torrents = append(torrents, Torrent{
+				Hash:     t.Hash,
+				Name:     t.Name,
+				SavePath: t.SavePath,
+			})
+		}
+	}
+	return torrents, nil
+}
+
+// readFilters sends one torrents/info read for each filter, with at most
+// qbitInventoryReadWorkers at a time, in the order of filters. The first
+// failure stops the reads that have not started, and its error is the result.
+func (q *qbitClient) readFilters(ctx context.Context, filters []qbittorrent.TorrentFilterOptions) ([][]qbittorrent.Torrent, error) {
+	readCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	var (
+		failOnce sync.Once
+		failed   error
+	)
+	results := make([][]qbittorrent.Torrent, len(filters))
+	jobs := make(chan int)
+	var workers sync.WaitGroup
+	for range min(cmp.Or(q.inventoryReadWorkers, qbitInventoryReadWorkers), len(filters)) {
+		workers.Go(func() {
+			for index := range jobs {
+				if readCtx.Err() != nil {
+					continue
+				}
+				ts, err := q.c.GetTorrents(filters[index])
+				if err != nil {
+					failOnce.Do(func() {
+						failed = errtrace.WithStack(fmt.Errorf("failed to get torrents: %w", err))
+						stop()
+					})
+					continue
+				}
+				results[index] = ts
+			}
 		})
 	}
 
-	return torrents, nil
+sendJobs:
+	for index := range filters {
+		select {
+		case jobs <- index:
+		case <-readCtx.Done():
+			break sendJobs
+		}
+	}
+	close(jobs)
+	workers.Wait()
+
+	if failed != nil {
+		return nil, failed
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+// qbitHasTag reports whether match accepts one of the tags of a torrent.
+// qBittorrent lists tags as "a, b". It runs for each torrent of the inventory,
+// and strings.SplitSeq here moved its state to the heap on each call, so it uses strings.Cut.
+func qbitHasTag(tags string, match func(string) bool) bool {
+	for rest := tags; rest != ""; {
+		var tag string
+		tag, rest, _ = strings.Cut(rest, ",")
+		if tag = strings.TrimSpace(tag); tag != "" && match(tag) {
+			return true
+		}
+	}
+	return false
 }
 
 func (q *qbitClient) GetFiles(ctx context.Context, hashes []string) []FileResult {

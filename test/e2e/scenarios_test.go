@@ -38,6 +38,13 @@ type client interface {
 	peerAddress(t *testing.T) string
 }
 
+// inventoryScoper is a client whose entry in test/harness/seasonpackarr/config.yaml
+// has an inventory scope. The inventory scope scenario runs only for these clients.
+type inventoryScoper interface {
+	// excludeFromInventory moves the torrent hash out of the inventory scope.
+	excludeFromInventory(ctx context.Context, hash string) error
+}
+
 // torrentState is the client state of one torrent, as the client reports it.
 type torrentState struct {
 	present  bool
@@ -62,6 +69,9 @@ func runScenarios(t *testing.T, c client) {
 
 	t.Run("partial pack", func(t *testing.T) { partialPack(t, h, c, h.announceImport) })
 	t.Run("complete pack", func(t *testing.T) { completePack(t, h, c) })
+	if scoper, ok := c.(inventoryScoper); ok {
+		t.Run("inventory scope", func(t *testing.T) { importPartialPack(t, h, c, h.announceImport, scoper) })
+	}
 	t.Run("candidate rejection", func(t *testing.T) { candidateRejection(t, h, c) })
 }
 
@@ -73,6 +83,13 @@ type importPack func(t *testing.T, name string, torrent []byte)
 // as their own torrents, and the import must end in a seeding pack that reuses
 // them and downloads only the missing episode from the seeder.
 func partialPack(t *testing.T, h *harness, c client, start importPack) {
+	importPartialPack(t, h, c, start, nil)
+}
+
+// importPartialPack runs the partial pack. With scoper, it runs the inventory
+// scope: the client also has the missing episode, but outside the inventory
+// scope. Without the scope, the pack would be complete and download nothing.
+func importPartialPack(t *testing.T, h *harness, c client, start importPack, scoper inventoryScoper) {
 	s := daemontest.NewSeeder(t)
 	const missing = daemontest.PackEpisodes
 	name := packName()
@@ -81,6 +98,11 @@ func partialPack(t *testing.T, h *harness, c client, start importPack) {
 	present := map[int]daemontest.Episode{}
 	for episode := 1; episode < missing; episode++ {
 		present[episode] = addEpisode(t, c, sourceDir, name, episode)
+	}
+	if scoper != nil {
+		outside := addEpisode(t, c, sourceDir, name, missing)
+		require.NoError(t, scoper.excludeFromInventory(t.Context(), outside.Hashes.Legacy),
+			"move episode %s out of the inventory scope", outside.Name)
 	}
 	hash := pack.Hashes.Legacy
 	removeAtCleanup(t, c, hash)

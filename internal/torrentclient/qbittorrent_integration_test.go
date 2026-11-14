@@ -6,16 +6,20 @@
 package torrentclient
 
 import (
+	stderrors "errors"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/daemontest"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 
+	"github.com/Masterminds/semver"
 	"github.com/autobrr/go-qbittorrent"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -160,13 +164,125 @@ func TestQbitDaemon_ImportDestinationFollowsPreferences(t *testing.T) {
 	}
 }
 
+// TestQbitDaemon_ReadsOnlyInventoryScope checks the server-side category and
+// tag filters, the merge of a torrent in two results, the local excludes on
+// the qBittorrent tag list, and the lookup of an added torrent outside the scope.
+func TestQbitDaemon_ReadsOnlyInventoryScope(t *testing.T) {
+	importDir := requireDaemon(t, envQbitHost)
+	suffix := time.Now().UnixNano()
+	scoped := fmt.Sprintf("seasonpackarr-scoped-%d", suffix)
+	outside := fmt.Sprintf("seasonpackarr-outside-%d", suffix)
+	tag := fmt.Sprintf("seasonpackarr-scope-%d", suffix)
+	// A second tag makes qBittorrent list the tags as "a, b".
+	otherTag := fmt.Sprintf("seasonpackarr-other-%d", suffix)
+	unscoped := newQbitDaemonClient(t, domain.ImportPolicy{SavePath: importDir, Category: scoped, Tags: []string{otherTag, tag}})
+	raw := qbitDaemonAPI(t, unscoped)
+	t.Cleanup(func() {
+		assert.NoError(t, raw.RemoveCategories([]string{scoped, outside}), "remove categories")
+		assert.NoError(t, raw.DeleteTags([]string{tag, otherTag}), "remove tags")
+	})
+	require.NoError(t, raw.CreateCategory(scoped, ""))
+	require.NoError(t, raw.CreateCategory(outside, ""))
+
+	scope := domain.InventoryScope{IncludeCategories: []string{scoped}, IncludeTags: []string{tag}}
+	scopedClient := newQbitDaemonScopedClient(t, domain.ImportPolicy{SavePath: importDir, Category: outside}, scope)
+	scopedPack := daemontest.WriteCompletePack(t, importDir, daemontest.PackName(t, "scoped"))
+	outsidePack := daemontest.WriteCompletePack(t, importDir, daemontest.PackName(t, "outside"))
+
+	importQbitPack(t, unscoped, importRequest(scopedPack, importDir, true))
+	// The scoped client finds the added torrent, although its category is outside the scope.
+	importQbitPack(t, scopedClient, importRequest(outsidePack, importDir, true))
+
+	listed, err := scopedClient.GetTorrents(t.Context())
+	require.NoError(t, err)
+	var hashes []string
+	for _, torrent := range listed {
+		hashes = append(hashes, strings.ToLower(torrent.Hash))
+	}
+	assert.Equal(t, []string{strings.ToLower(scopedPack.Hashes.Legacy)}, hashes,
+		"the torrent in the category and tag results shows once, and the torrent outside the scope is not read")
+	requireListedPack(t, unscoped, outsidePack, importDir)
+
+	for name, scope := range map[string]domain.InventoryScope{
+		"exclude category": {ExcludeCategories: []string{scoped}},
+		"exclude tag":      {ExcludeTags: []string{tag}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			listed, err := newQbitDaemonScopedClient(t, domain.ImportPolicy{SavePath: importDir}, scope).GetTorrents(t.Context())
+			require.NoError(t, err)
+			hashes := make(map[string]bool)
+			for _, torrent := range listed {
+				hashes[strings.ToLower(torrent.Hash)] = true
+			}
+			assert.False(t, hashes[strings.ToLower(scopedPack.Hashes.Legacy)], "the excluded torrent is dropped")
+			assert.True(t, hashes[strings.ToLower(outsidePack.Hashes.Legacy)], "an exclude-only scope keeps the other torrents")
+		})
+	}
+}
+
+// TestQbitDaemon_InventoryScopeFollowsSubcategories: qBittorrent adds the
+// "parent/child" torrents to an include read of "parent" only when
+// subcategories are on. An exclude matches the exact name in both cases.
+// Before 4.6, the Web API cannot turn subcategories on, and they are off by
+// default. From 5.2, subcategories are always on.
+func TestQbitDaemon_InventoryScopeFollowsSubcategories(t *testing.T) {
+	importDir := requireDaemon(t, envQbitHost)
+	parent := fmt.Sprintf("seasonpackarr-parent-%d", time.Now().UnixNano())
+	child := parent + "/child"
+	unscoped := newQbitDaemonClient(t, domain.ImportPolicy{SavePath: importDir, Category: child})
+	raw := qbitDaemonAPI(t, unscoped)
+	original, err := raw.GetAppPreferences()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, raw.SetPreferences(map[string]any{"use_subcategories": original.UseSubcategories}), "restore preferences")
+		assert.NoError(t, raw.RemoveCategories([]string{child, parent}), "remove categories")
+	})
+	require.NoError(t, raw.CreateCategory(parent, ""))
+	require.NoError(t, raw.CreateCategory(child, ""))
+	pack := daemontest.WriteCompletePack(t, importDir, daemontest.PackName(t))
+	importQbitPack(t, unscoped, importRequest(pack, importDir, true))
+
+	included := newQbitDaemonScopedClient(t, domain.ImportPolicy{SavePath: importDir}, domain.InventoryScope{IncludeCategories: []string{parent}})
+	excluded := newQbitDaemonScopedClient(t, domain.ImportPolicy{SavePath: importDir}, domain.InventoryScope{ExcludeCategories: []string{parent}})
+	lists := func(t *testing.T, c *qbitClient) bool {
+		t.Helper()
+		listed, err := c.GetTorrents(t.Context())
+		require.NoError(t, err)
+		return slices.ContainsFunc(listed, func(torrent Torrent) bool { return strings.EqualFold(torrent.Hash, pack.Hashes.Legacy) })
+	}
+
+	alwaysOn, err := raw.RequiresMinVersion(semver.MustParse("2.15.1"))
+	if err != nil && !stderrors.Is(err, qbittorrent.ErrUnsupportedVersion) {
+		require.NoError(t, err)
+	}
+	for _, subcategories := range []bool{false, true} {
+		t.Run(fmt.Sprintf("subcategories %t", subcategories), func(t *testing.T) {
+			require.NoError(t, raw.SetPreferences(map[string]any{"use_subcategories": subcategories}))
+			prefs, err := raw.GetAppPreferences()
+			require.NoError(t, err)
+			if (alwaysOn || prefs.UseSubcategories) != subcategories {
+				t.Skipf("daemon cannot set use_subcategories to %t through the Web API", subcategories)
+			}
+
+			assert.Equal(t, subcategories, lists(t, included), "an include of %s reads %s only with subcategories", parent, child)
+			assert.True(t, lists(t, excluded), "an exclude of %s keeps %s", parent, child)
+		})
+	}
+}
+
 func newQbitDaemonClient(t *testing.T, policy domain.ImportPolicy) *qbitClient {
 	t.Helper()
+	return newQbitDaemonScopedClient(t, policy, domain.InventoryScope{})
+}
+
+func newQbitDaemonScopedClient(t *testing.T, policy domain.ImportPolicy, scope domain.InventoryScope) *qbitClient {
+	t.Helper()
 	c, err := newQbitClient(t.Context(), &domain.Client{
-		Host:     os.Getenv(envQbitHost),
-		Username: os.Getenv(envQbitUser),
-		Password: os.Getenv(envQbitPass),
-		Import:   policy,
+		Host:      os.Getenv(envQbitHost),
+		Username:  os.Getenv(envQbitUser),
+		Password:  os.Getenv(envQbitPass),
+		Import:    policy,
+		Inventory: scope,
 	})
 	require.NoError(t, err)
 	return c

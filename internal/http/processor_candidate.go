@@ -9,6 +9,7 @@ import (
 	"maps"
 	stdslices "slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/config"
@@ -46,20 +47,37 @@ type cachedTorrentClient struct {
 	client torrentclient.TorrentClient
 }
 
-// parsedReleases holds the parsed torrent names of one client endpoint. It
-// outlives entryCache, because an import drops the inventories and parsing is
-// the costly part of a refresh. Each scan replaces it with the names it saw.
+// parsedReleases holds the parsed torrent names of one inventory scope on one
+// client endpoint. It outlives entryCache, because an import drops the
+// inventories and parsing is the costly part of a refresh. Each scan replaces
+// it with the names it saw, so it never keeps the names of removed torrents.
 type parsedReleases struct {
 	fuzzyMatching domain.FuzzyMatching
 	releases      map[string]cachedRelease
 }
 
+// parsedNamesKey gives each inventory scope of an endpoint its own parsed
+// names, so the scan of one scope cannot drop the names of another.
+type parsedNamesKey struct {
+	endpoint importClientKey
+	scope    string
+}
+
+func parsedNamesKeyFor(client domain.Client) parsedNamesKey {
+	return parsedNamesKey{endpoint: importEndpoint(client), scope: client.Inventory.Key()}
+}
+
 const inventoryCacheTTL = 30 * time.Second
+
+// parsedNamesGeneration counts the clean-ups of parsedReleaseMap after config
+// reloads. A scan that overlaps a clean-up adds no key, because the clean-up
+// can have removed that key as unused.
+var parsedNamesGeneration atomic.Uint64
 
 var (
 	clientMap        = xsync.NewMapOf[string, cachedTorrentClient]()
 	entryMap         = xsync.NewMapOf[string, *entryCache]()
-	parsedReleaseMap = xsync.NewMapOf[importClientKey, parsedReleases]()
+	parsedReleaseMap = xsync.NewMapOf[parsedNamesKey, parsedReleases]()
 )
 
 // candidateSeasonPack is the announce-only prefilter. It establishes that the
@@ -187,6 +205,7 @@ func (p *processor) getClient(ctx context.Context, client *domain.Client, client
 func cloneClientConfig(client domain.Client) domain.Client {
 	clone := client
 	clone.Import.Tags = stdslices.Clone(client.Import.Tags)
+	clone.Inventory = client.Inventory.Clone()
 	return clone
 }
 
@@ -201,7 +220,8 @@ func clientConfigsEqual(a, b domain.Client) bool {
 		stdslices.Equal(a.Import.Tags, b.Import.Tags) &&
 		a.Import.Category == b.Import.Category &&
 		a.Import.DownloadPath == b.Import.DownloadPath &&
-		a.Import.ContentLayout == b.Import.ContentLayout
+		a.Import.ContentLayout == b.Import.ContentLayout &&
+		a.Inventory.Equal(b.Inventory)
 }
 
 func (p *processor) getAllTorrents(ctx context.Context, clientName string, clientConfig *domain.Client, fuzzyMatching domain.FuzzyMatching) (map[string][]entry, error) {
@@ -230,6 +250,7 @@ func (p *processor) getAllTorrents(ctx context.Context, clientName string, clien
 		return latest.entriesMap, nil
 	}
 
+	generation := parsedNamesGeneration.Load()
 	ts, err := p.req.Client.GetTorrents(ctx)
 	if err != nil {
 		return nil, err
@@ -242,18 +263,28 @@ func (p *processor) getAllTorrents(ctx context.Context, clientName string, clien
 		expiresAt:     time.Now().Add(inventoryCacheTTL),
 	}
 
-	endpoint := importEndpoint(*clientConfig)
-	previous, _ := parsedReleaseMap.Load(endpoint)
-	if previous.fuzzyMatching != fuzzyMatching {
-		// The comparable title depends on the fuzzy matching settings.
-		previous.releases = nil
+	key := parsedNamesKeyFor(*clientConfig)
+	// The comparable title depends on the fuzzy matching settings.
+	var previous []map[string]cachedRelease
+	if own, ok := parsedReleaseMap.Load(key); ok && own.fuzzyMatching == fuzzyMatching {
+		previous = append(previous, own.releases)
 	}
+	// The other scopes of the endpoint follow, so a name in two scopes is parsed once.
+	parsedReleaseMap.Range(func(other parsedNamesKey, names parsedReleases) bool {
+		if other != key && other.endpoint == key.endpoint && names.fuzzyMatching == fuzzyMatching {
+			previous = append(previous, names.releases)
+		}
+		return true
+	})
 	releases := make(map[string]cachedRelease, len(ts))
 	for _, t := range ts {
 		// Cross-seeds repeat a name in the same scan.
 		cached, ok := releases[t.Name]
-		if !ok {
-			cached, ok = previous.releases[t.Name]
+		for _, names := range previous {
+			if ok {
+				break
+			}
+			cached, ok = names[t.Name]
 		}
 		if !ok {
 			parsed := rls.ParseString(t.Name)
@@ -270,8 +301,13 @@ func (p *processor) getAllTorrents(ctx context.Context, clientName string, clien
 		)
 	}
 
-	// Parsed names stay valid after an invalidation, so publish them in all cases.
-	parsedReleaseMap.Store(endpoint, parsedReleases{fuzzyMatching: fuzzyMatching, releases: releases})
+	// Parsed names stay valid after an import invalidation, so publish them then too.
+	parsedReleaseMap.Compute(key, func(_ parsedReleases, loaded bool) (parsedReleases, bool) {
+		if !loaded && parsedNamesGeneration.Load() != generation {
+			return parsedReleases{}, true
+		}
+		return parsedReleases{fuzzyMatching: fuzzyMatching, releases: releases}, false
+	})
 
 	entryMap.Compute(clientName, func(current *entryCache, loaded bool) (*entryCache, bool) {
 		// An import can invalidate this scan while GetTorrents is in flight.
