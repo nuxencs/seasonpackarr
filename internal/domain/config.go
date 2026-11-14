@@ -10,12 +10,12 @@ import (
 )
 
 type Client struct {
-	Type     string       `yaml:"type"`
-	Host     string       `yaml:"host"`
-	Port     int          `yaml:"port"`
-	Username string       `yaml:"username"`
-	Password string       `yaml:"password"`
-	APIKey   string       `yaml:"apiKey"`
+	Type     string       `yaml:"type" env:"TYPE"`
+	Host     string       `yaml:"host" env:"HOST"`
+	Port     int          `yaml:"port" env:"PORT"`
+	Username string       `yaml:"username" env:"USERNAME"`
+	Password string       `yaml:"password" env:"PASSWORD"`
+	APIKey   string       `yaml:"apiKey" env:"APIKEY"`
 	Import   ImportPolicy `yaml:"import"`
 	// Inventory limits the torrents that seasonpackarr reads from the client. qBittorrent only.
 	Inventory InventoryScope `yaml:"inventory"`
@@ -51,10 +51,10 @@ func (c Client) Equal(other Client) bool {
 // exclude always wins. An empty scope selects every torrent. The scope never
 // applies to the import.
 type InventoryScope struct {
-	IncludeCategories []string `yaml:"includeCategories"`
-	IncludeTags       []string `yaml:"includeTags"`
-	ExcludeCategories []string `yaml:"excludeCategories"`
-	ExcludeTags       []string `yaml:"excludeTags"`
+	IncludeCategories []string `yaml:"includeCategories" env:"INVENTORY_INCLUDE_CATEGORIES"`
+	IncludeTags       []string `yaml:"includeTags" env:"INVENTORY_INCLUDE_TAGS"`
+	ExcludeCategories []string `yaml:"excludeCategories" env:"INVENTORY_EXCLUDE_CATEGORIES"`
+	ExcludeTags       []string `yaml:"excludeTags" env:"INVENTORY_EXCLUDE_TAGS"`
 }
 
 // Clone copies the lists, so the copy shares no memory with s.
@@ -135,63 +135,73 @@ type ImportPolicy struct {
 	// qBittorrent (follows its automatic-management and manual category-path
 	// preferences) and for Transmission (falls back to the session download
 	// dir). Deluge requires an explicit path.
-	SavePath string `yaml:"savePath"`
+	SavePath string `yaml:"savePath" env:"IMPORT_SAVE_PATH"`
 	// Tags are applied to the imported torrent (qBittorrent tags / Transmission
 	// labels). Deluge accepts at most one entry as its Label plugin label.
-	Tags []string `yaml:"tags"`
+	Tags []string `yaml:"tags" env:"IMPORT_TAGS"`
 
 	// Category is the qBittorrent category to add the torrent with; also used to
 	// resolve the import root when SavePath is empty. qBittorrent only.
-	Category string `yaml:"category"`
+	Category string `yaml:"category" env:"IMPORT_CATEGORY"`
 	// DownloadPath is qBittorrent's temporary (incomplete) download path. It is
 	// never used as the final import destination. qBittorrent only.
-	DownloadPath string `yaml:"downloadPath"`
+	DownloadPath string `yaml:"downloadPath" env:"IMPORT_DOWNLOAD_PATH"`
 	// ContentLayout overrides the qBittorrent content layout
 	// ("subfolder" | "nosubfolder" | "original"). Empty defers to the
 	// qBittorrent default. qBittorrent only.
-	ContentLayout string `yaml:"contentLayout"`
+	ContentLayout string `yaml:"contentLayout" env:"IMPORT_CONTENT_LAYOUT"`
 }
 
 type FuzzyMatching struct {
-	SkipRepackCompare  bool `yaml:"skipRepackCompare"`
-	SimplifyHdrCompare bool `yaml:"simplifyHdrCompare"`
-	SimplifyWebCompare bool `yaml:"simplifyWebCompare"`
-	SkipYearCompare    bool `yaml:"skipYearCompare"`
+	SkipRepackCompare  bool `yaml:"skipRepackCompare" env:"FUZZY_MATCHING_SKIP_REPACK_COMPARE"`
+	SimplifyHdrCompare bool `yaml:"simplifyHdrCompare" env:"FUZZY_MATCHING_SIMPLIFY_HDR_COMPARE"`
+	SimplifyWebCompare bool `yaml:"simplifyWebCompare" env:"FUZZY_MATCHING_SIMPLIFY_WEB_COMPARE"`
+	SkipYearCompare    bool `yaml:"skipYearCompare" env:"FUZZY_MATCHING_SKIP_YEAR_COMPARE"`
 }
 
 type Notifications struct {
-	NotificationLevel []string `yaml:"notificationLevel"`
-	Discord           string   `yaml:"discord"`
+	NotificationLevel []string `yaml:"notificationLevel" env:"NOTIFICATIONS_NOTIFICATION_LEVEL" default:"MATCH,ERROR"`
+	Discord           string   `yaml:"discord" env:"NOTIFICATIONS_DISCORD"`
 	// Shoutrrr holds one Shoutrrr URL for each notification destination other than the Discord webhook.
-	Shoutrrr []string `yaml:"shoutrrr"`
+	// Whitespace separates the URLs in the variable, because a Shoutrrr URL can hold commas, such as Telegram chats=a,b.
+	Shoutrrr []string `yaml:"shoutrrr" env:"NOTIFICATIONS_SHOUTRRR" sep:"whitespace"`
 }
 
 // Search configures Prowlarr search and opt-in RSS monitoring.
 type Search struct {
-	IndexerIDs      []int  `yaml:"indexerIDs"`
-	ProwlarrURL     string `yaml:"prowlarrURL"`
-	APIKey          string `yaml:"apiKey"`
-	RSSInterval     string `yaml:"rssInterval"`
-	RequestInterval string `yaml:"requestInterval"`
+	IndexerIDs      []int  `yaml:"indexerIDs" env:"SEARCH_INDEXER_IDS"`
+	ProwlarrURL     string `yaml:"prowlarrURL" env:"SEARCH_PROWLARR_URL"`
+	APIKey          string `yaml:"apiKey" env:"SEARCH_API_KEY"`
+	RSSInterval     string `yaml:"rssInterval" env:"SEARCH_RSS_INTERVAL" default:"0s"`
+	RequestInterval string `yaml:"requestInterval" env:"SEARCH_REQUEST_INTERVAL" default:"10s"`
 }
 
+// Config is the service config. Each setting declares its keys in tags on its field:
+//   - yaml: the config.yaml name.
+//   - env: the variable name after SEASONPACKARR__, or after SEASONPACKARR__CLIENTS_<NAME>_ for a Client field.
+//     Struct and map fields are groups and have no env tag. env:"-" marks a field that no variable sets.
+//   - default: the default as variable text, for example "MATCH,ERROR" for a list. Client fields have no defaults.
+//   - sep: "whitespace" for a list variable that whitespace separates. Other lists use commas.
+//
+// The config package reads the tags once at package start and panics on a bad tag.
+// Clone, Client.Equal, and Client.Clone stay hand-written, so a new field must be added there too.
 type Config struct {
-	// The runtime sets these fields. The "-" tags keep config.yaml from setting
-	// them, so the config load rejects them as unknown keys.
-	Version            string             `yaml:"-" koanf:"-"`
-	ConfigPath         string             `yaml:"-" koanf:"-"`
-	DisableConfigFile  bool               `yaml:"-" koanf:"-"`
-	Host               string             `yaml:"host"`
-	Port               int                `yaml:"port"`
+	// The runtime sets these fields. The yaml "-" tags keep config.yaml from setting
+	// them, so the config load rejects them as unknown keys. DISABLE_CONFIG_FILE is an environment-only key.
+	Version            string             `yaml:"-" koanf:"-" env:"-"`
+	ConfigPath         string             `yaml:"-" koanf:"-" env:"-"`
+	DisableConfigFile  bool               `yaml:"-" koanf:"-" env:"DISABLE_CONFIG_FILE"`
+	Host               string             `yaml:"host" env:"HOST" default:"0.0.0.0"`
+	Port               int                `yaml:"port" env:"PORT" default:"42069"`
 	Clients            map[string]*Client `yaml:"clients"`
-	LogPath            string             `yaml:"logPath"`
-	LogLevel           string             `yaml:"logLevel"`
-	LogMaxSize         int                `yaml:"logMaxSize"`
-	LogMaxBackups      int                `yaml:"logMaxBackups"`
-	SmartMode          bool               `yaml:"smartMode"`
-	SmartModeThreshold float32            `yaml:"smartModeThreshold"`
+	LogPath            string             `yaml:"logPath" env:"LOG_PATH"`
+	LogLevel           string             `yaml:"logLevel" env:"LOG_LEVEL" default:"DEBUG"`
+	LogMaxSize         int                `yaml:"logMaxSize" env:"LOG_MAX_SIZE" default:"50"`
+	LogMaxBackups      int                `yaml:"logMaxBackups" env:"LOG_MAX_BACKUPS" default:"3"`
+	SmartMode          bool               `yaml:"smartMode" env:"SMART_MODE"`
+	SmartModeThreshold float32            `yaml:"smartModeThreshold" env:"SMART_MODE_THRESHOLD" default:"0.75"`
 	FuzzyMatching      FuzzyMatching      `yaml:"fuzzyMatching"`
-	APIToken           string             `yaml:"apiToken"`
+	APIToken           string             `yaml:"apiToken" env:"API_TOKEN"`
 	Notifications      Notifications      `yaml:"notifications"`
 	Search             Search             `yaml:"search"`
 }

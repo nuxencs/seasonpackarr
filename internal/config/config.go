@@ -9,18 +9,15 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"iter"
 	"log"
 	"maps"
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
@@ -640,269 +637,15 @@ func validDelugeLabel(label string) bool {
 	return true
 }
 
+// defaultConfig copies the declared defaults and adds the runtime fields and an empty client map.
 func defaultConfig(version, configFile string, disableConfigFile bool) domain.Config {
-	configPath := ""
+	cfg := configDefaults.Clone()
+	cfg.Version = version
 	if configFile != "" {
-		configPath = filepath.Dir(configFile)
+		cfg.ConfigPath = filepath.Dir(configFile)
 	}
-
-	return domain.Config{
-		Version:            version,
-		ConfigPath:         configPath,
-		DisableConfigFile:  disableConfigFile,
-		Host:               "0.0.0.0",
-		Port:               42069,
-		Clients:            make(map[string]*domain.Client),
-		LogLevel:           "DEBUG",
-		LogMaxSize:         50,
-		LogMaxBackups:      3,
-		SmartModeThreshold: 0.75,
-		Search:             domain.Search{RSSInterval: "0s", RequestInterval: "10s"},
-		Notifications: domain.Notifications{
-			NotificationLevel: []string{"MATCH", "ERROR"},
-		},
-	}
-}
-
-const envPrefix = "SEASONPACKARR__"
-
-// The kind parsers check syntax only; validateConfig checks the ranges. Their errors omit the value, which can be a secret.
-
-func parseString(value string) (string, error) {
-	if strings.ContainsFunc(value, unicode.IsControl) {
-		return "", errors.New("contains a control character, such as a line break")
-	}
-	return value, nil
-}
-
-func setString(dst *string, value string) error {
-	s, err := parseString(value)
-	if err != nil {
-		return err
-	}
-	*dst = s
-	return nil
-}
-
-func setBool(dst *bool, value string) error {
-	b, err := strconv.ParseBool(value)
-	if err != nil {
-		return errors.New("is not a boolean; use true or false")
-	}
-	*dst = b
-	return nil
-}
-
-func setInt(dst *int, value string) error {
-	i, err := strconv.Atoi(value)
-	if err != nil {
-		return errors.New("is not an integer")
-	}
-	*dst = i
-	return nil
-}
-
-func setFloat32(dst *float32, value string) error {
-	f, err := strconv.ParseFloat(value, 32)
-	if err != nil {
-		return errors.New("is not a number")
-	}
-	*dst = float32(f)
-	return nil
-}
-
-// setList sets dst to the trimmed, non-empty entries. No entries is an error, because an empty list would replace the list of config.yaml.
-func setList(dst *[]string, entries iter.Seq[string]) error {
-	var list []string
-	for entry := range entries {
-		if entry = strings.TrimSpace(entry); entry == "" {
-			continue
-		}
-		entry, err := parseString(entry)
-		if err != nil {
-			return err
-		}
-		list = append(list, entry)
-	}
-	if len(list) == 0 {
-		return errors.New("has no entries; set at least one value or remove the variable")
-	}
-	*dst = list
-	return nil
-}
-
-func setCommaList(dst *[]string, value string) error {
-	return setList(dst, strings.SplitSeq(value, ","))
-}
-
-func setIntList(dst *[]int, value string) error {
-	var entries []string
-	if err := setCommaList(&entries, value); err != nil {
-		return err
-	}
-	list := make([]int, len(entries))
-	for i, entry := range entries {
-		if err := setInt(&list[i], entry); err != nil {
-			return errors.New("has an entry that is not an integer")
-		}
-	}
-	*dst = list
-	return nil
-}
-
-// envSettings maps each service variable, without envPrefix, to the field that
-// it sets. UnknownEnvironmentVariables reads the same table.
-var envSettings = map[string]func(cfg *domain.Config, value string) error{
-	"DISABLE_CONFIG_FILE": func(cfg *domain.Config, v string) error { return setBool(&cfg.DisableConfigFile, v) },
-
-	"HOST": func(cfg *domain.Config, v string) error { return setString(&cfg.Host, v) },
-	"PORT": func(cfg *domain.Config, v string) error { return setInt(&cfg.Port, v) },
-
-	"LOG_LEVEL":       func(cfg *domain.Config, v string) error { return setString(&cfg.LogLevel, v) },
-	"LOG_PATH":        func(cfg *domain.Config, v string) error { return setString(&cfg.LogPath, v) },
-	"LOG_MAX_SIZE":    func(cfg *domain.Config, v string) error { return setInt(&cfg.LogMaxSize, v) },
-	"LOG_MAX_BACKUPS": func(cfg *domain.Config, v string) error { return setInt(&cfg.LogMaxBackups, v) },
-
-	"SMART_MODE":           func(cfg *domain.Config, v string) error { return setBool(&cfg.SmartMode, v) },
-	"SMART_MODE_THRESHOLD": func(cfg *domain.Config, v string) error { return setFloat32(&cfg.SmartModeThreshold, v) },
-
-	"SEARCH_PROWLARR_URL":     func(cfg *domain.Config, v string) error { return setString(&cfg.Search.ProwlarrURL, v) },
-	"SEARCH_API_KEY":          func(cfg *domain.Config, v string) error { return setString(&cfg.Search.APIKey, v) },
-	"SEARCH_INDEXER_IDS":      func(cfg *domain.Config, v string) error { return setIntList(&cfg.Search.IndexerIDs, v) },
-	"SEARCH_RSS_INTERVAL":     func(cfg *domain.Config, v string) error { return setString(&cfg.Search.RSSInterval, v) },
-	"SEARCH_REQUEST_INTERVAL": func(cfg *domain.Config, v string) error { return setString(&cfg.Search.RequestInterval, v) },
-
-	"API_TOKEN": func(cfg *domain.Config, v string) error { return setString(&cfg.APIToken, v) },
-
-	"FUZZY_MATCHING_SKIP_REPACK_COMPARE": func(cfg *domain.Config, v string) error {
-		return setBool(&cfg.FuzzyMatching.SkipRepackCompare, v)
-	},
-	"FUZZY_MATCHING_SIMPLIFY_HDR_COMPARE": func(cfg *domain.Config, v string) error {
-		return setBool(&cfg.FuzzyMatching.SimplifyHdrCompare, v)
-	},
-	"FUZZY_MATCHING_SIMPLIFY_WEB_COMPARE": func(cfg *domain.Config, v string) error {
-		return setBool(&cfg.FuzzyMatching.SimplifyWebCompare, v)
-	},
-	"FUZZY_MATCHING_SKIP_YEAR_COMPARE": func(cfg *domain.Config, v string) error {
-		return setBool(&cfg.FuzzyMatching.SkipYearCompare, v)
-	},
-
-	"NOTIFICATIONS_DISCORD": func(cfg *domain.Config, v string) error { return setString(&cfg.Notifications.Discord, v) },
-	// Whitespace separates the URLs, because a Shoutrrr URL can hold commas, such as Telegram chats=a,b.
-	"NOTIFICATIONS_SHOUTRRR": func(cfg *domain.Config, v string) error {
-		return setList(&cfg.Notifications.Shoutrrr, strings.FieldsSeq(v))
-	},
-	"NOTIFICATIONS_NOTIFICATION_LEVEL": func(cfg *domain.Config, v string) error {
-		return setCommaList(&cfg.Notifications.NotificationLevel, v)
-	},
-}
-
-// clientEnvSettings maps each setting of a SEASONPACKARR__CLIENTS_<NAME>_<SETTING>
-// variable to the client field that it sets.
-var clientEnvSettings = map[string]func(client *domain.Client, value string) error{
-	"TYPE":                  func(c *domain.Client, v string) error { return setString(&c.Type, v) },
-	"HOST":                  func(c *domain.Client, v string) error { return setString(&c.Host, v) },
-	"PORT":                  func(c *domain.Client, v string) error { return setInt(&c.Port, v) },
-	"USERNAME":              func(c *domain.Client, v string) error { return setString(&c.Username, v) },
-	"PASSWORD":              func(c *domain.Client, v string) error { return setString(&c.Password, v) },
-	"APIKEY":                func(c *domain.Client, v string) error { return setString(&c.APIKey, v) },
-	"IMPORT_SAVE_PATH":      func(c *domain.Client, v string) error { return setString(&c.Import.SavePath, v) },
-	"IMPORT_CATEGORY":       func(c *domain.Client, v string) error { return setString(&c.Import.Category, v) },
-	"IMPORT_DOWNLOAD_PATH":  func(c *domain.Client, v string) error { return setString(&c.Import.DownloadPath, v) },
-	"IMPORT_CONTENT_LAYOUT": func(c *domain.Client, v string) error { return setString(&c.Import.ContentLayout, v) },
-	"IMPORT_TAGS":           func(c *domain.Client, v string) error { return setCommaList(&c.Import.Tags, v) },
-	"INVENTORY_INCLUDE_CATEGORIES": func(c *domain.Client, v string) error {
-		return setCommaList(&c.Inventory.IncludeCategories, v)
-	},
-	"INVENTORY_INCLUDE_TAGS": func(c *domain.Client, v string) error { return setCommaList(&c.Inventory.IncludeTags, v) },
-	"INVENTORY_EXCLUDE_CATEGORIES": func(c *domain.Client, v string) error {
-		return setCommaList(&c.Inventory.ExcludeCategories, v)
-	},
-	"INVENTORY_EXCLUDE_TAGS": func(c *domain.Client, v string) error { return setCommaList(&c.Inventory.ExcludeTags, v) },
-}
-
-// cliEnvVariables are read by CLI commands in cmd, not by the service config.
-var cliEnvVariables = []string{"URL", "CLIENT", "AUTOBRR_URL", "AUTOBRR_API_KEY"}
-
-// cutClientEnvVariable splits CLIENTS_<NAME>_<SETTING> on the first underscore
-// after the prefix, so multi-word settings such as IMPORT_SAVE_PATH stay whole.
-func cutClientEnvVariable(name string) (clientName, setting string, ok bool) {
-	after, ok := strings.CutPrefix(name, "CLIENTS_")
-	if !ok {
-		return "", "", false
-	}
-	return strings.Cut(after, "_")
-}
-
-func applyEnvironment(cfg *domain.Config) error {
-	return applyEnvironmentSettings(cfg, envSettings, clientEnvSettings)
-}
-
-// applyEnvironmentSettings applies the variables that the maps name and joins an error for each value that does not parse.
-func applyEnvironmentSettings(
-	cfg *domain.Config,
-	settings map[string]func(*domain.Config, string) error,
-	clientSettings map[string]func(*domain.Client, string) error,
-) error {
-	var errs []error
-	for _, env := range os.Environ() {
-		key, value, _ := strings.Cut(env, "=")
-		name, ok := strings.CutPrefix(key, envPrefix)
-		if !ok || value == "" {
-			continue
-		}
-		var err error
-		if set, ok := settings[name]; ok {
-			err = set(cfg, value)
-		} else if clientName, setting, ok := cutClientEnvVariable(name); ok && clientName != "" {
-			// An unknown variable only logs a warning, so it must not add an empty client that fails validation.
-			set, known := clientSettings[setting]
-			if !known {
-				continue
-			}
-			// The client is created here when absent, so clients defined only
-			// through environment variables work too.
-			clientName = strings.ToLower(clientName)
-			if cfg.Clients[clientName] == nil {
-				cfg.Clients[clientName] = &domain.Client{}
-			}
-			err = set(cfg.Clients[clientName], value)
-		}
-		if err != nil {
-			errs = append(errs, fmt.Errorf("environment variable %s %w", key, err))
-		}
-	}
-	return errors.Join(errs...)
-}
-
-// UnknownEnvironmentVariables returns the sorted SEASONPACKARR__ variables in
-// environ ("KEY=value" entries) that neither the service config nor a CLI command
-// reads. It ignores the values, so an empty unknown variable is reported too.
-func UnknownEnvironmentVariables(environ []string) []string {
-	var unknown []string
-	for _, env := range environ {
-		key, _, _ := strings.Cut(env, "=")
-		name, ok := strings.CutPrefix(key, envPrefix)
-		if ok && !knownEnvironmentVariable(name) {
-			unknown = append(unknown, key)
-		}
-	}
-	slices.Sort(unknown)
-	return unknown
-}
-
-// knownEnvironmentVariable includes the removed variables, because
-// validateDeprecatedConfigInputs stops startup with a migration error for them.
-func knownEnvironmentVariable(name string) bool {
-	if _, ok := envSettings[name]; ok || slices.Contains(cliEnvVariables, name) {
-		return true
-	}
-	if slices.Contains([]string{deprecatedParseTorrentFileEnv, deprecatedMetadataTVDBAPIKeyEnv, deprecatedMetadataTVDBPINEnv}, envPrefix+name) {
-		return true
-	}
-	clientName, setting, ok := cutClientEnvVariable(name)
-	_, known := clientEnvSettings[setting]
-	return ok && clientName != "" && (known || setting == deprecatedPreImportPathEnv)
+	cfg.DisableConfigFile = disableConfigFile
+	return cfg
 }
 
 func (c *AppConfig) resolveConfigFile(configPath string) (string, error) {

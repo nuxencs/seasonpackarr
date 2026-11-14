@@ -13,7 +13,7 @@ import (
 )
 
 // clearConnectionEnvironment empties each SEASONPACKARR__ variable, which the load ignores.
-func clearConnectionEnvironment(t *testing.T) {
+func clearConnectionEnvironment(t testing.TB) {
 	t.Helper()
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
@@ -42,7 +42,7 @@ func newTestAppConfig(t *testing.T, contents string) (*AppConfig, string) {
 	return cfg, configFile
 }
 
-func writeConfigFile(t *testing.T, configFile, contents string) {
+func writeConfigFile(t testing.TB, configFile, contents string) {
 	t.Helper()
 	require.NoError(t, os.WriteFile(configFile, []byte(contents), 0o644))
 }
