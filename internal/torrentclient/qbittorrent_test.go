@@ -95,10 +95,7 @@ func qbitFilterMatches(o qbittorrent.TorrentFilterOptions, t qbittorrent.Torrent
 	if o.Category != "" && o.Category != t.Category {
 		return false
 	}
-	if o.Tag != "" && !slices.Contains(strings.Split(t.Tags, ", "), o.Tag) {
-		return false
-	}
-	return true
+	return o.Tag == "" || slices.ContainsFunc(strings.Split(t.Tags, ","), func(tag string) bool { return strings.TrimSpace(tag) == o.Tag })
 }
 
 func (f *fakeQbitAPI) GetFilesInformation(hash string) (*qbittorrent.TorrentFiles, error) {
@@ -628,11 +625,11 @@ func TestQbitGetTorrents_ReadsEveryTorrentWithoutScope(t *testing.T) {
 	torrents, err := q.GetTorrents(t.Context())
 
 	require.NoError(t, err)
-	require.Equal(t, []Torrent{
+	assert.Equal(t, []Torrent{
 		{Hash: "a", Name: "Show.S01E01", SavePath: "/tv"},
 		{Hash: "b", Name: "Movie", SavePath: "/movies"},
 	}, torrents)
-	require.Equal(t, []qbittorrent.TorrentFilterOptions{{}}, api.inventoryReads, "an empty scope sends one unfiltered read")
+	assert.Equal(t, []qbittorrent.TorrentFilterOptions{{}}, api.inventoryReads, "an empty scope sends one unfiltered read")
 }
 
 func TestQbitGetTorrents_MergesScopedReadsByHash(t *testing.T) {
@@ -648,12 +645,12 @@ func TestQbitGetTorrents_MergesScopedReadsByHash(t *testing.T) {
 	torrents, err := q.GetTorrents(t.Context())
 
 	require.NoError(t, err)
-	require.Equal(t, []Torrent{
+	assert.Equal(t, []Torrent{
 		{Hash: "a", Name: "Show.S01E01", SavePath: "/tv"},
 		{Hash: "b", Name: "Show.S01E02", SavePath: "/tv"},
 		{Hash: "d", Name: "Show.S02E01", SavePath: "/movies"},
 	}, torrents, "a torrent in two results shows once, and torrents outside the scope are not read")
-	require.Equal(t, []qbittorrent.TorrentFilterOptions{
+	assert.Equal(t, []qbittorrent.TorrentFilterOptions{
 		{Category: "tv"},
 		{Category: "tv.cross-seed"},
 		{Tag: "keep"},
@@ -674,11 +671,12 @@ func TestQbitGetTorrents_AppliesTagScopeBeforeQbit44(t *testing.T) {
 	torrents, err := q.GetTorrents(t.Context())
 
 	require.NoError(t, err)
-	require.Equal(t, []Torrent{
+	assert.Equal(t, []Torrent{
 		{Hash: "a", Name: "Show.S01E01", SavePath: "/tv"},
 		{Hash: "c", Name: "Show.S02E01", SavePath: "/movies"},
 	}, torrents)
-	require.Equal(t, []qbittorrent.TorrentFilterOptions{{}}, api.inventoryReads, "one unfiltered read, then the adapter applies the scope")
+	assert.Equal(t, []qbittorrent.TorrentFilterOptions{{Category: "tv"}, {}}, api.inventoryReads,
+		"categories stay on the server, which includes subcategories, and one unfiltered read supplies the tags")
 }
 
 func TestQbitImport_FindsAddedTorrentOutsideScope(t *testing.T) {
@@ -698,8 +696,8 @@ func TestQbitImport_FindsAddedTorrentOutsideScope(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, [][]string{{hash}}, api.resumeCalls)
-	require.Empty(t, api.inventoryReads)
+	assert.Equal(t, [][]string{{hash}}, api.resumeCalls)
+	assert.Empty(t, api.inventoryReads)
 }
 
 // TestQbitGetTorrents_ErrorOmitsHostPath: go-qbittorrent puts the request URL

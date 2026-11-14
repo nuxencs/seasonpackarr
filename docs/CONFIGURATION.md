@@ -231,10 +231,10 @@ Before you set a scope, make sure that you accept these effects:
 - **qBittorrent and qui only:** startup fails when a Transmission or Deluge client sets a scope. An empty entry in
   `categories` or `tags` also stops startup.
 
-seasonpackarr sends one torrent list request to qBittorrent for each category and each tag, and merges the results. A
-torrent that is in more than one result counts once. qBittorrent 4.3 cannot filter the torrent list by tag. When the
-scope has tags and the client is qBittorrent 4.3, seasonpackarr reads every torrent and applies the scope itself. The
-result is the same, but the read is not smaller.
+seasonpackarr sends one request to qBittorrent for each category and each tag, and merges the results. A torrent that
+is in more than one result counts once. qBittorrent 4.3 cannot filter by tag. When the scope has tags and the client is
+qBittorrent 4.3, seasonpackarr also reads every torrent and finds the tags itself. The result is the same, but the read
+is not smaller.
 
 ## Smart mode
 
@@ -402,8 +402,8 @@ These settings need a restart:
 - `logPath`, `logMaxSize`, and `logMaxBackups`
 - `SEASONPACKARR__DISABLE_CONFIG_FILE`
 
-When a reload removes a client or changes its connection, import, or inventory settings, seasonpackarr drops the cached connection
-and torrent list of that client. The next request connects again.
+When a reload removes a client or changes its connection, import, or inventory settings, seasonpackarr drops the
+cached connection and inventory of that client. The next request connects again.
 
 When you remove an optional setting, it returns to its default. A running search or RSS run keeps the config it started
 with. A changed RSS interval sets the time of the next automatic run.

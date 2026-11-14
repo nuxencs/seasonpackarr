@@ -184,16 +184,21 @@ func (q *qbitClient) GetTorrents(ctx context.Context) ([]Torrent, error) {
 	if !q.scope.IsSet() {
 		return q.readTorrents(ctx, []qbittorrent.TorrentFilterOptions{{}}, nil)
 	}
-	if len(q.scope.Tags) > 0 {
-		// A failed version read also falls back: the result stays correct, only larger.
-		if supported, _ := q.c.RequiresMinVersion(qbitTagFilterVersion); !supported {
-			return q.readTorrents(ctx, []qbittorrent.TorrentFilterOptions{{}}, q.inScope)
-		}
-	}
 
 	filters := make([]qbittorrent.TorrentFilterOptions, 0, len(q.scope.Categories)+len(q.scope.Tags))
 	for _, category := range q.scope.Categories {
 		filters = append(filters, qbittorrent.TorrentFilterOptions{Category: category})
+	}
+	if len(q.scope.Tags) == 0 {
+		return q.readTorrents(ctx, filters, nil)
+	}
+	// A failed version read also falls back: the result stays correct, only larger.
+	if supported, _ := q.c.RequiresMinVersion(qbitTagFilterVersion); !supported {
+		// The category reads stay on the server, because its filter includes subcategories.
+		filters = append(filters, qbittorrent.TorrentFilterOptions{})
+		return q.readTorrents(ctx, filters, func(filter qbittorrent.TorrentFilterOptions, t qbittorrent.Torrent) bool {
+			return filter.Category != "" || q.hasScopeTag(t)
+		})
 	}
 	for _, tag := range q.scope.Tags {
 		filters = append(filters, qbittorrent.TorrentFilterOptions{Tag: tag})
@@ -202,8 +207,8 @@ func (q *qbitClient) GetTorrents(ctx context.Context) ([]Torrent, error) {
 }
 
 // readTorrents sends one read for each filter and keeps each hash once. A
-// non-nil keep drops the torrents that it rejects.
-func (q *qbitClient) readTorrents(ctx context.Context, filters []qbittorrent.TorrentFilterOptions, keep func(qbittorrent.Torrent) bool) ([]Torrent, error) {
+// non-nil keep drops the torrents of a read that it rejects.
+func (q *qbitClient) readTorrents(ctx context.Context, filters []qbittorrent.TorrentFilterOptions, keep func(qbittorrent.TorrentFilterOptions, qbittorrent.Torrent) bool) ([]Torrent, error) {
 	var torrents []Torrent
 	// One read cannot repeat a hash, so only several reads need the merge.
 	var seen map[string]bool
@@ -222,7 +227,7 @@ func (q *qbitClient) readTorrents(ctx context.Context, filters []qbittorrent.Tor
 			torrents = make([]Torrent, 0, len(ts))
 		}
 		for _, t := range ts {
-			if keep != nil && !keep(t) {
+			if keep != nil && !keep(filter, t) {
 				continue
 			}
 			if seen != nil {
@@ -245,12 +250,8 @@ func (q *qbitClient) readTorrents(ctx context.Context, filters []qbittorrent.Tor
 	return torrents, nil
 }
 
-// inScope applies the scope as the server-side filters do: an exact category
-// or one exact tag. qBittorrent lists tags as "a, b".
-func (q *qbitClient) inScope(t qbittorrent.Torrent) bool {
-	if slices.Contains(q.scope.Categories, t.Category) {
-		return true
-	}
+// hasScopeTag reports whether the torrent has one of the scope tags. qBittorrent lists tags as "a, b".
+func (q *qbitClient) hasScopeTag(t qbittorrent.Torrent) bool {
 	for tag := range strings.SplitSeq(t.Tags, ",") {
 		if slices.Contains(q.scope.Tags, strings.TrimSpace(tag)) {
 			return true

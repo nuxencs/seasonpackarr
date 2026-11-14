@@ -574,6 +574,9 @@ func validateClientConfig(clientName string, client *domain.Client) error {
 			return fmt.Errorf("client %q has an empty entry in inventory.categories or inventory.tags", clientName)
 		}
 	}
+	if client.Type != "" && client.Type != "qbittorrent" && client.Inventory.IsSet() {
+		return fmt.Errorf("client %q (%s) must not set inventory - the inventory scope is qBittorrent only", clientName, client.Type)
+	}
 
 	imp := client.Import
 	switch client.Type {
@@ -590,9 +593,6 @@ func validateClientConfig(clientName string, client *domain.Client) error {
 		if imp.Category != "" || imp.DownloadPath != "" || imp.ContentLayout != "" {
 			return fmt.Errorf("client %q (transmission) must not set import.category, import.downloadPath or import.contentLayout - those are qBittorrent only", clientName)
 		}
-		if client.Inventory.IsSet() {
-			return fmt.Errorf("client %q (transmission) must not set inventory - the inventory scope is qBittorrent only", clientName)
-		}
 	case "deluge", "deluge-v1", "deluge-v2":
 		if imp.SavePath == "" {
 			return fmt.Errorf("client %q (deluge) must configure import.savePath", clientName)
@@ -605,9 +605,6 @@ func validateClientConfig(clientName string, client *domain.Client) error {
 		}
 		if imp.Category != "" || imp.DownloadPath != "" || imp.ContentLayout != "" {
 			return fmt.Errorf("client %q (deluge) must not set import.category, import.downloadPath or import.contentLayout", clientName)
-		}
-		if client.Inventory.IsSet() {
-			return fmt.Errorf("client %q (deluge) must not set inventory - the inventory scope is qBittorrent only", clientName)
 		}
 		if client.APIKey != "" {
 			return fmt.Errorf("client %q (deluge) must not set apiKey", clientName)

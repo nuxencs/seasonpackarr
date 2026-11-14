@@ -932,32 +932,32 @@ func TestValidateClientConfig(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("transmission and deluge reject an inventory scope", func(t *testing.T) {
-		for _, clientType := range []string{"transmission", "deluge", "deluge-v1", "deluge-v2"} {
+	for _, clientType := range []string{"transmission", "deluge", "deluge-v1", "deluge-v2"} {
+		t.Run(clientType+" rejects an inventory scope", func(t *testing.T) {
 			err := validateClientConfig("default", &domain.Client{
 				Type:      clientType,
 				Import:    domain.ImportPolicy{SavePath: t.TempDir()},
 				Inventory: domain.InventoryScope{Tags: []string{"keep"}},
 			})
-			require.Error(t, err, clientType)
-			require.Contains(t, err.Error(), "must not set inventory", clientType)
-		}
-	})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "must not set inventory")
+		})
+	}
 
-	t.Run("an empty inventory entry is rejected", func(t *testing.T) {
-		for _, scope := range []domain.InventoryScope{
-			{Categories: []string{"tv-hd", ""}},
-			{Tags: []string{" "}},
-		} {
+	for name, scope := range map[string]domain.InventoryScope{
+		"empty category entry is rejected": {Categories: []string{"tv-hd", ""}},
+		"blank tag entry is rejected":      {Tags: []string{" "}},
+	} {
+		t.Run(name, func(t *testing.T) {
 			err := validateClientConfig("default", &domain.Client{
 				Type:      "qbittorrent",
 				Import:    domain.ImportPolicy{Category: "tv-hd"},
 				Inventory: scope,
 			})
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "empty entry")
-		}
-	})
+			assert.Contains(t, err.Error(), "empty entry")
+		})
+	}
 
 	t.Run("nonexistent savePath", func(t *testing.T) {
 		err := validateClientConfig("default", &domain.Client{Type: "qbittorrent", Import: domain.ImportPolicy{SavePath: "/nope/does/not/exist"}})
@@ -1240,12 +1240,12 @@ func TestLogInventoryScopeWarnings(t *testing.T) {
 			LogInventoryScopeWarnings(log, domain.Config{Clients: map[string]*domain.Client{"default": &tt.client}})
 
 			if !tt.warn {
-				require.Empty(t, log.String())
+				assert.Empty(t, log.String())
 				return
 			}
-			require.Contains(t, log.String(), `"level":"warn"`)
-			require.Contains(t, log.String(), `"clientname":"default"`)
-			require.Contains(t, log.String(), "inventory scope does not include the import category or an import tag")
+			assert.Contains(t, log.String(), `"level":"warn"`)
+			assert.Contains(t, log.String(), `"clientname":"default"`)
+			assert.Contains(t, log.String(), "inventory scope does not include the import category or an import tag")
 		})
 	}
 }

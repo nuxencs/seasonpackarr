@@ -170,8 +170,8 @@ func TestQbitDaemon_ReadsOnlyInventoryScope(t *testing.T) {
 	scoped := fmt.Sprintf("seasonpackarr-scoped-%d", suffix)
 	outside := fmt.Sprintf("seasonpackarr-outside-%d", suffix)
 	tag := fmt.Sprintf("seasonpackarr-scope-%d", suffix)
-	inScope := newQbitDaemonClient(t, domain.ImportPolicy{SavePath: importDir, Category: scoped, Tags: []string{tag}})
-	raw := qbitDaemonAPI(t, inScope)
+	unscoped := newQbitDaemonClient(t, domain.ImportPolicy{SavePath: importDir, Category: scoped, Tags: []string{tag}})
+	raw := qbitDaemonAPI(t, unscoped)
 	t.Cleanup(func() {
 		assert.NoError(t, raw.RemoveCategories([]string{scoped, outside}), "remove categories")
 		assert.NoError(t, raw.DeleteTags([]string{tag}), "remove tag")
@@ -180,15 +180,15 @@ func TestQbitDaemon_ReadsOnlyInventoryScope(t *testing.T) {
 	require.NoError(t, raw.CreateCategory(outside, ""))
 
 	scope := domain.InventoryScope{Categories: []string{scoped}, Tags: []string{tag}}
-	c := newQbitDaemonScopedClient(t, domain.ImportPolicy{SavePath: importDir, Category: outside}, scope)
+	scopedClient := newQbitDaemonScopedClient(t, domain.ImportPolicy{SavePath: importDir, Category: outside}, scope)
 	scopedPack := daemontest.WriteCompletePack(t, importDir, daemontest.PackName(t, "scoped"))
 	outsidePack := daemontest.WriteCompletePack(t, importDir, daemontest.PackName(t, "outside"))
 
-	importQbitPack(t, inScope, importRequest(scopedPack, importDir, true))
+	importQbitPack(t, unscoped, importRequest(scopedPack, importDir, true))
 	// The scoped client finds the added torrent, although its category is outside the scope.
-	importQbitPack(t, c, importRequest(outsidePack, importDir, true))
+	importQbitPack(t, scopedClient, importRequest(outsidePack, importDir, true))
 
-	listed, err := c.GetTorrents(t.Context())
+	listed, err := scopedClient.GetTorrents(t.Context())
 	require.NoError(t, err)
 	var hashes []string
 	for _, torrent := range listed {
@@ -196,7 +196,7 @@ func TestQbitDaemon_ReadsOnlyInventoryScope(t *testing.T) {
 	}
 	assert.Equal(t, []string{strings.ToLower(scopedPack.Hashes.Legacy)}, hashes,
 		"the torrent in the category and tag results shows once, and the torrent outside the scope is not read")
-	requireListedPack(t, inScope, outsidePack, importDir)
+	requireListedPack(t, unscoped, outsidePack, importDir)
 }
 
 func newQbitDaemonClient(t *testing.T, policy domain.ImportPolicy) *qbitClient {
