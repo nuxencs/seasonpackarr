@@ -21,65 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeAdapter is a torrent client adapter. The module calls only GetTorrents.
-type fakeAdapter struct {
-	torrentclient.TorrentClient
-
-	mu          sync.Mutex
-	torrents    []torrentclient.Torrent
-	getTorrents func(context.Context) ([]torrentclient.Torrent, error)
-	reads       int
-}
-
-func (f *fakeAdapter) GetTorrents(ctx context.Context) ([]torrentclient.Torrent, error) {
-	f.mu.Lock()
-	f.reads++
-	getTorrents, torrents := f.getTorrents, f.torrents
-	f.mu.Unlock()
-	if getTorrents != nil {
-		return getTorrents(ctx)
-	}
-	return torrents, nil
-}
-
-func (f *fakeAdapter) readCount() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.reads
-}
-
-// fakeConnector returns adapter for each connect and counts the connects.
-type fakeConnector struct {
-	mu       sync.Mutex
-	adapter  torrentclient.TorrentClient
-	err      error
-	connects int
-}
-
-func (f *fakeConnector) connect(context.Context, *domain.Client) (torrentclient.TorrentClient, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.connects++
-	if f.err != nil {
-		return nil, f.err
-	}
-	return f.adapter, nil
-}
-
-func (f *fakeConnector) connectCount() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.connects
-}
-
-func newTestStore(connector *fakeConnector) *Store {
-	return New(connector.connect, loggertest.New())
-}
-
-func configWith(clients map[string]*domain.Client) domain.Config {
-	return domain.Config{Clients: clients}
-}
-
 func TestStore_ReusesConnectionOfUnchangedConfig(t *testing.T) {
 	connector := &fakeConnector{adapter: &fakeAdapter{}}
 	store := newTestStore(connector)
@@ -100,22 +41,6 @@ func TestStore_ReusesConnectionOfUnchangedConfig(t *testing.T) {
 	_, err = store.Client(t.Context(), "default", configWith(map[string]*domain.Client{"default": &changed}))
 	require.NoError(t, err)
 	assert.Equal(t, 2, connector.connectCount(), "a changed config connects again")
-}
-
-func newTestClient(t *testing.T, store *Store, name string, client *domain.Client, fuzzy domain.FuzzyMatching) *Client {
-	t.Helper()
-	cfg := configWith(map[string]*domain.Client{name: client})
-	cfg.FuzzyMatching = fuzzy
-	handle, err := store.Client(t.Context(), name, cfg)
-	require.NoError(t, err)
-	return handle
-}
-
-func readInventory(t *testing.T, client *Client) *Inventory {
-	t.Helper()
-	inv, err := client.Inventory(t.Context())
-	require.NoError(t, err)
-	return inv
 }
 
 func torrentNames(entries []Entry) []string {
@@ -344,18 +269,6 @@ func TestInventory_DiscardEndpointKeepsOtherEndpoints(t *testing.T) {
 		readInventory(t, client)
 	}
 	assert.Equal(t, 6, adapter.readCount(), "a discard of one client keeps the other clients")
-}
-
-// releaseOf returns the parsed release of the torrent name in inv.
-func releaseOf(t *testing.T, inv *Inventory, name string) *rls.Release {
-	t.Helper()
-	for _, e := range inv.SameTitle(rls.ParseString(name)) {
-		if e.Torrent.Name == name {
-			return e.Release
-		}
-	}
-	require.Failf(t, "torrent missing from the inventory", "%s", name)
-	return nil
 }
 
 func TestInventory_ParsedNamesSurviveADiscard(t *testing.T) {

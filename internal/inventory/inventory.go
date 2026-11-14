@@ -42,6 +42,9 @@ type Store struct {
 	connections map[string]connection
 	inventories map[string]*slot
 	parsed      map[parsedNamesKey]parsedNames
+	// cleanUps counts the clean-ups. A read that overlaps a clean-up adds no
+	// parsed-name key, because the clean-up can have removed that key as unused.
+	cleanUps uint64
 }
 
 type connection struct {
@@ -210,6 +213,9 @@ func (sl *slot) validInventory() *Inventory {
 }
 
 func (s *Store) scan(ctx context.Context, c *Client, current *slot) (*Inventory, error) {
+	s.mu.Lock()
+	cleanUps := s.cleanUps
+	s.mu.Unlock()
 	torrents, err := c.adapter.GetTorrents(ctx)
 	if err != nil {
 		return nil, err
@@ -241,7 +247,9 @@ func (s *Store) scan(ctx context.Context, c *Client, current *slot) (*Inventory,
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// Parsed names stay valid after a discard, so store them then too.
-	s.parsed[key] = parsedNames{fuzzy: c.fuzzy, names: names}
+	if _, ok := s.parsed[key]; ok || s.cleanUps == cleanUps {
+		s.parsed[key] = parsedNames{fuzzy: c.fuzzy, names: names}
+	}
 	// A discard during the read removed current from the store, so no later call sees this inventory.
 	current.inventory = inv
 	current.expiresAt = expiresAt
