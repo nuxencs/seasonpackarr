@@ -351,5 +351,8 @@ These settings need a restart:
 - `logPath`, `logMaxSize`, and `logMaxBackups`
 - `SEASONPACKARR__DISABLE_CONFIG_FILE`
 
+When a reload removes a client or changes its connection or import settings, seasonpackarr drops the cached connection
+and torrent list of that client. The next request connects again.
+
 When you remove an optional setting, it returns to its default. A running search or RSS run keeps the config it started
 with. A changed RSS interval sets the time of the next automatic run.

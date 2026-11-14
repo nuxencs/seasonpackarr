@@ -173,6 +173,21 @@ func (d *delugeClient) callLocked(ctx context.Context, retry delugeRetry, reques
 	return err
 }
 
+// Close closes the daemon connection when the server drops this client. A
+// request that still holds the client connects again on its next call.
+func (d *delugeClient) Close() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	wasLost := d.lost
+	d.lost = true
+	err := d.c.Close()
+	if wasLost {
+		// A failed reconnect can already have closed the connection.
+		return nil
+	}
+	return err
+}
+
 // reconnect closes the old connection first. A request on a closed go-deluge
 // connection panics, so lost stays true until a new connection is open.
 func (d *delugeClient) reconnect(ctx context.Context) error {

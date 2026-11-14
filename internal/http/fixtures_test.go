@@ -176,7 +176,7 @@ func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFix
 	if opts.noti != nil {
 		noti = opts.noti
 	}
-	server := NewServer(log, cfg, noti, store)
+	server := NewServer(log, cfg, noti, store, nil)
 	return processorHTTPFixture{
 		search:        server.search,
 		statePath:     statePath,
@@ -326,9 +326,15 @@ func newTestProcessor(client torrentclient.TorrentClient) *processor {
 	return &processor{req: &request{Client: client}}
 }
 
+// storeTestClient makes getClient return client for name without a login.
+func storeTestClient(name string, cfg *domain.Client, client torrentclient.TorrentClient) {
+	clientMap.Store(name, cachedTorrentClient{config: cloneClientConfig(*cfg), client: client})
+}
+
 func resetProcessorGlobals() {
 	clientMap = xsync.NewMapOf[string, cachedTorrentClient]()
 	entryMap = xsync.NewMapOf[string, *entryCache]()
+	parsedReleaseMap = xsync.NewMapOf[importClientKey, parsedReleases]()
 	planMap = xsync.NewMapOf[importPlanCacheKey, cachedImportPlan]()
 }
 
@@ -465,7 +471,7 @@ func (f *searchFixture) restart(t *testing.T) {
 	store, err := state.Open(t.Context(), f.statePath, zerolog.Nop())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
-	server := NewServer(f.search.log, f.config, f.notifications, store)
+	server := NewServer(f.search.log, f.config, f.notifications, store, nil)
 	f.search, f.handler, f.tasks = server.search, server.Handler(), server.tasks
 }
 

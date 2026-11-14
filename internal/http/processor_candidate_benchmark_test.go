@@ -37,6 +37,7 @@ func BenchmarkInventoryColdBuild(b *testing.B) {
 
 			for b.Loop() {
 				entryMap.Delete(inventoryBenchmarkClientName)
+				parsedReleaseMap.Clear()
 				entries, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
 				if err != nil {
 					b.Fatal(err)
@@ -63,6 +64,28 @@ func BenchmarkInventoryWarmRefresh(b *testing.B) {
 					b.Fatal("inventory snapshot missing")
 				}
 				cached.expiresAt = time.Time{}
+				entries, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
+				if err != nil {
+					b.Fatal(err)
+				}
+				inventoryMapSink = entries
+			}
+		})
+	}
+}
+
+func BenchmarkInventoryRefreshAfterImport(b *testing.B) {
+	for _, torrentCount := range inventorySizes {
+		b.Run(strconv.Itoa(torrentCount), func(b *testing.B) {
+			p, _, clientConfig := newInventoryBenchmarkProcessor(torrentCount)
+			resetInventoryBenchmarkCache(b)
+			_, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
+			require.NoError(b, err)
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for b.Loop() {
+				invalidateClientImports(clientConfig)
 				entries, err := p.getAllTorrents(b.Context(), inventoryBenchmarkClientName, &clientConfig, domain.FuzzyMatching{})
 				if err != nil {
 					b.Fatal(err)
@@ -167,6 +190,7 @@ func TestInventory_RetainedMemory(t *testing.T) {
 	require.Positive(t, torrentCount, "INVENTORY_TORRENTS")
 
 	entryMap = xsync.NewMapOf[string, *entryCache]()
+	parsedReleaseMap = xsync.NewMapOf[importClientKey, parsedReleases]()
 	clientConfig := inventoryBenchmarkClientConfig()
 	debug.FreeOSMemory()
 	var before runtime.MemStats
@@ -183,15 +207,18 @@ func TestInventory_RetainedMemory(t *testing.T) {
 	runtime.ReadMemStats(&after)
 	cached, ok := entryMap.Load(inventoryBenchmarkClientName)
 	require.True(t, ok, "inventory snapshot missing")
+	names, ok := parsedReleaseMap.Load(importEndpoint(clientConfig))
+	require.True(t, ok, "parsed names missing")
 	runtime.KeepAlive(entries)
 	runtime.KeepAlive(cached)
+	runtime.KeepAlive(names)
 	runtime.KeepAlive(p)
 
 	t.Logf(
 		"INVENTORY_MEM torrents=%d title_buckets=%d parsed_releases=%d heap_bytes=%d heap_objects=%d total_alloc_bytes=%d mallocs=%d",
 		torrentCount,
 		len(cached.entriesMap),
-		len(cached.rlsMap),
+		len(names.releases),
 		int64(after.HeapAlloc)-int64(before.HeapAlloc),
 		int64(after.HeapObjects)-int64(before.HeapObjects),
 		after.TotalAlloc-before.TotalAlloc,
@@ -241,7 +268,9 @@ func inventoryBenchmarkTorrentsWithVariant(count, changedCount int, variant stri
 func resetInventoryBenchmarkCache(tb testing.TB) {
 	tb.Helper()
 	entryMap = xsync.NewMapOf[string, *entryCache]()
+	parsedReleaseMap = xsync.NewMapOf[importClientKey, parsedReleases]()
 	tb.Cleanup(func() {
 		entryMap = xsync.NewMapOf[string, *entryCache]()
+		parsedReleaseMap = xsync.NewMapOf[importClientKey, parsedReleases]()
 	})
 }

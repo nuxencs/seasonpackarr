@@ -25,35 +25,48 @@ import (
 var ErrServerClosed = http.ErrServerClosed
 
 type Server struct {
-	log         logger.Logger
-	cfg         config.Provider
-	noti        domain.Sender
-	tasks       *taskGroup
-	search      *searchRunner
-	searchTasks *taskGroup
+	log    logger.Logger
+	cfg    config.Provider
+	noti   domain.Sender
+	tasks  *taskGroup
+	search *searchRunner
+	// lifecycleTasks holds the search schedule, the startup inventory read, and
+	// the cache clean-up after config reloads. Shutdown cancels them first, so
+	// they cannot hold the HTTP drain.
+	lifecycleTasks *taskGroup
+	reloads        <-chan struct{}
 
 	httpServer http.Server
 }
 
-func NewServer(log logger.Logger, config config.Provider, notification domain.Sender, store *state.Store) *Server {
+// NewServer creates the server. reloads signals each successful config reload,
+// and can be nil when the config file is disabled.
+func NewServer(log logger.Logger, config config.Provider, notification domain.Sender, store *state.Store, reloads <-chan struct{}) *Server {
 	tasks := newTaskGroup()
 	return &Server{
-		log:         log,
-		cfg:         config,
-		noti:        notification,
-		tasks:       tasks,
-		search:      &searchRunner{log: log, cfg: config, noti: notification, tasks: tasks, state: store},
-		searchTasks: newTaskGroup(),
+		log:            log,
+		cfg:            config,
+		noti:           notification,
+		tasks:          tasks,
+		search:         &searchRunner{log: log, cfg: config, noti: notification, tasks: tasks, state: store},
+		lifecycleTasks: newTaskGroup(),
+		reloads:        reloads,
 	}
 }
 
 func (s *Server) Open(ctx context.Context) error {
-	s.searchTasks.Go(func(searchCtx context.Context) {
-		stop := context.AfterFunc(ctx, s.searchTasks.cancel)
+	s.lifecycleTasks.Go(func(searchCtx context.Context) {
+		stop := context.AfterFunc(ctx, s.lifecycleTasks.cancel)
 		defer stop()
 		s.search.schedule(searchCtx)
 	})
-	defer s.searchTasks.cancel()
+	s.lifecycleTasks.Go(func(warmCtx context.Context) {
+		inventoryWarmer{log: s.log, cfg: s.cfg, retryDelay: inventoryWarmRetryDelay}.run(warmCtx)
+	})
+	s.lifecycleTasks.Go(func(reloadCtx context.Context) {
+		watchConfigReloads(reloadCtx, s.log, s.cfg, s.reloads)
+	})
+	defer s.lifecycleTasks.cancel()
 	var err error
 	snapshot := s.cfg.Snapshot()
 	addr := fmt.Sprintf("%s:%d", snapshot.Host, snapshot.Port)
@@ -92,12 +105,12 @@ func (s *Server) tryToServe(ctx context.Context, addr, proto string) error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.log.Info().Msg("Shutting down the server gracefully...")
 	var shutdownErrors []error
-	s.searchTasks.cancel()
+	s.lifecycleTasks.cancel()
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		shutdownErrors = append(shutdownErrors, errtrace.WithStack(fmt.Errorf("failed to shutdown server: %w", err)))
 	}
-	if err := s.searchTasks.Wait(ctx); err != nil {
-		shutdownErrors = append(shutdownErrors, fmt.Errorf("failed to stop backfill: %w", err))
+	if err := s.lifecycleTasks.Wait(ctx); err != nil {
+		shutdownErrors = append(shutdownErrors, fmt.Errorf("failed to stop search and startup tasks: %w", err))
 	}
 	if err := s.tasks.Wait(ctx); err != nil {
 		shutdownErrors = append(shutdownErrors, errtrace.WithStack(fmt.Errorf("failed to finish background tasks: %w", err)))
