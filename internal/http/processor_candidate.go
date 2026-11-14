@@ -59,12 +59,12 @@ type parsedReleases struct {
 // parsedNamesKey gives each inventory scope of an endpoint its own parsed
 // names, so the scan of one scope cannot drop the names of another.
 type parsedNamesKey struct {
-	endpoint importClientKey
+	endpoint torrentclient.Endpoint
 	scope    string
 }
 
 func parsedNamesKeyFor(client domain.Client) parsedNamesKey {
-	return parsedNamesKey{endpoint: importEndpoint(client), scope: client.Inventory.Key()}
+	return parsedNamesKey{endpoint: torrentclient.EndpointOf(client), scope: client.Inventory.Key()}
 }
 
 const inventoryCacheTTL = 30 * time.Second
@@ -318,10 +318,10 @@ type inventoryWarmer struct {
 // run warms each endpoint in its own goroutine, so a client that times out
 // does not delay the others. A failure only logs.
 func (w inventoryWarmer) run(ctx context.Context) {
-	endpoints := make(map[importClientKey][]string)
+	endpoints := make(map[torrentclient.Endpoint][]string)
 	snapshot := w.cfg.Snapshot()
 	for _, name := range stdslices.Sorted(maps.Keys(snapshot.Clients)) {
-		endpoint := importEndpoint(*snapshot.Clients[name])
+		endpoint := torrentclient.EndpointOf(*snapshot.Clients[name])
 		endpoints[endpoint] = append(endpoints[endpoint], name)
 	}
 

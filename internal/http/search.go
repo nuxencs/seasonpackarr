@@ -25,6 +25,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/prowlarr"
 	"github.com/nuxencs/seasonpackarr/internal/release"
 	"github.com/nuxencs/seasonpackarr/internal/state"
+	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
 	"github.com/autobrr/rls"
@@ -425,7 +426,7 @@ func (run *discoveryRun) evaluateResult(ctx context.Context, indexer prowlarr.In
 		p.req.Torrent = nil
 		duplicate := false
 		for selectedClient, acceptedReleases := range run.selected {
-			if !sameImportEndpoint(*snapshot.Clients[name], *snapshot.Clients[selectedClient]) {
+			if torrentclient.EndpointOf(*snapshot.Clients[name]) != torrentclient.EndpointOf(*snapshot.Clients[selectedClient]) {
 				continue
 			}
 			for _, accepted := range acceptedReleases {
