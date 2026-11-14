@@ -200,6 +200,7 @@ func TestCLI_StartLogsNoSecretForInvalidConfig(t *testing.T) {
 		"client password": "sentinel-start-client-password",
 		"Prowlarr apiKey": "sentinel-start-prowlarr-api-key",
 		"Discord webhook": "sentinel-start-discord-webhook-token",
+		"Shoutrrr URL":    "sentinel-start-ntfy-topic",
 	}
 	valid := `apiToken: sentinel-start-api-token
 clients:
@@ -215,15 +216,23 @@ search:
   apiKey: sentinel-start-prowlarr-api-key
 notifications:
   discord: https://discord.com/api/webhooks/123/sentinel-start-discord-webhook-token
+  shoutrrr: ["ntfy://ntfy.sh/sentinel-start-ntfy-topic"]
 `
-	tests := map[string][]string{
-		"YAML syntax error after the apiToken":      {"clients:\n", "clients: [\n"},
-		"port next to the password is not a number": {"port: 8080", "port: not-a-port"},
-		"password is a map":                         {"password: sentinel-start-client-password", "password: {value: sentinel-start-client-password}"},
+	tests := map[string]struct {
+		replace []string
+		want    string
+	}{
+		"YAML syntax error after the apiToken":      {replace: []string{"clients:\n", "clients: [\n"}},
+		"port next to the password is not a number": {replace: []string{"port: 8080", "port: not-a-port"}},
+		"password is a map":                         {replace: []string{"password: sentinel-start-client-password", "password: {value: sentinel-start-client-password}"}},
+		"Shoutrrr URL is invalid": {
+			replace: []string{"ntfy://ntfy.sh/sentinel-start-ntfy-topic", "gotify://gotify.example/sentinel-start-ntfy-topic"},
+			want:    "notifications.shoutrrr[0] (gotify)",
+		},
 	}
-	for name, replace := range tests {
+	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			invalid := strings.NewReplacer(replace...).Replace(valid)
+			invalid := strings.NewReplacer(tt.replace...).Replace(valid)
 			require.NotEqual(t, valid, invalid, "the replacement matched nothing")
 			dir := t.TempDir()
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(invalid), 0o600))
@@ -237,6 +246,7 @@ notifications:
 			require.Equal(t, 1, exit.ExitCode(), string(output))
 			// The load error must be in the output, or the checks below prove nothing.
 			require.Contains(t, string(output), "config file", string(output))
+			require.Contains(t, string(output), tt.want, string(output))
 			for kind, secret := range secrets {
 				assert.NotContains(t, string(output), secret, "start output holds the %s", kind)
 			}

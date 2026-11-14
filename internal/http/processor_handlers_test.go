@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -919,6 +920,42 @@ func TestEndpoints_LogNoClientSecretOnConnectionFailure(t *testing.T) {
 	}
 }
 
+func TestImportEndpoint_LogsEachFailedNotificationDestination(t *testing.T) {
+	const gotifyToken = "Asentinelgotify"
+	rejected := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		w.WriteHeader(stdhttp.StatusUnauthorized)
+		// Quote the Gotify token, which Gotify gets in the query or in a header.
+		_, _ = fmt.Fprintf(w, `{"error": "Unauthorized", "errorDescription": "token %s%s", "errorCode": 401}`, r.URL.RawQuery, r.Header.Get("X-Gotify-Key"))
+	}))
+	t.Cleanup(rejected.Close)
+	log := newTraceLogger(t)
+	cfg := &fakeConfig{config: domain.Config{Notifications: domain.Notifications{
+		NotificationLevel: []string{domain.NotificationLevelMatch},
+		Discord:           rejected.URL + "/api/webhooks/123/sentineldiscordtoken",
+		Shoutrrr:          []string{"gotify://" + strings.TrimPrefix(rejected.URL, "http://") + "/" + gotifyToken + "?disabletls=yes"},
+	}}}
+	f := newProcessorHTTPFixture(t, fixtureOptions{
+		packEpisodes: 1, clientEpisodes: 1, log: log,
+		noti: notification.NewSender(log, cfg),
+	})
+
+	res := f.postJSON(t, "/api/import", f.packPayload())
+
+	require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code, res.Body.String())
+	require.NoError(t, f.tasks.Wait(t.Context()))
+	var failed []string
+	for _, event := range log.Events(t) {
+		if event["message"] == "error sending notification for 250" {
+			failed = append(failed, fmt.Sprint(event["error"]))
+		}
+	}
+	require.Len(t, failed, 2, log.String())
+	slices.Sort(failed)
+	assert.True(t, strings.HasPrefix(failed[0], "discord: "), failed[0])
+	assert.True(t, strings.HasPrefix(failed[1], "shoutrrr[0] (gotify): "), failed[1])
+	log.AssertNoSecrets(t, map[string]string{"Discord webhook token": "sentineldiscordtoken", "Gotify token": gotifyToken})
+}
+
 func TestImportEndpoint_LogsNoDiscordWebhookToken(t *testing.T) {
 	const token = "sentineldiscordwebhooktoken0123456789"
 	rejected := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
@@ -940,7 +977,7 @@ func TestImportEndpoint_LogsNoDiscordWebhookToken(t *testing.T) {
 			}}}
 			f := newProcessorHTTPFixture(t, fixtureOptions{
 				packEpisodes: 1, clientEpisodes: 1, log: log,
-				noti: notification.NewDiscordSender(log, cfg),
+				noti: notification.NewSender(log, cfg),
 			})
 
 			res := f.postJSON(t, "/api/import", f.packPayload())
@@ -948,7 +985,7 @@ func TestImportEndpoint_LogsNoDiscordWebhookToken(t *testing.T) {
 			require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code, res.Body.String())
 			// The send runs in the task group. Its failure must be logged, or the checks below prove nothing.
 			require.NoError(t, f.tasks.Wait(t.Context()))
-			require.Contains(t, log.String(), "error sending discord notification")
+			log.Events(t).Require(t, "error sending notification for 250")
 			log.AssertNoSecrets(t, map[string]string{
 				"Discord webhook token":       token,
 				"Discord webhook token start": token[:len(token)/2],

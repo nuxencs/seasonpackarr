@@ -100,7 +100,7 @@ A body that is not valid JSON gets `470`.
 
 ## Status codes
 
-The notification level is the `notificationLevel` value that sends a Discord
+The notification level is the `notificationLevel` value that sends a
 notification for the code. Codes without a level send no notification. A
 successful match sends no notification. See
 [Notifications and logs](#notifications-and-logs).

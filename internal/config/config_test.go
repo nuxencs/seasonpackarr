@@ -424,18 +424,21 @@ clients:
       tags: [one, two]
 notifications:
   notificationLevel: [MATCH, ERROR]
+  shoutrrr: ["ntfy://ntfy.sh/first"]
 `)
 
 	snapshot := cfg.Snapshot()
 	snapshot.Clients["default"].Import.Category = "changed"
 	snapshot.Clients["default"].Import.Tags[0] = "changed"
 	snapshot.Notifications.NotificationLevel[0] = "changed"
+	snapshot.Notifications.Shoutrrr[0] = "changed"
 	delete(snapshot.Clients, "default")
 
 	stored := cfg.Snapshot()
 	require.Equal(t, "tv-hd", stored.Clients["default"].Import.Category)
 	require.Equal(t, []string{"one", "two"}, stored.Clients["default"].Import.Tags)
 	require.Equal(t, []string{"MATCH", "ERROR"}, stored.Notifications.NotificationLevel)
+	require.Equal(t, []string{"ntfy://ntfy.sh/first"}, stored.Notifications.Shoutrrr)
 }
 
 func TestDynamicReload_PublishesSnapshotForConcurrentReaders(t *testing.T) {
@@ -1084,4 +1087,68 @@ func TestUnknownConfigKeys_AcceptsSchemaKeys(t *testing.T) {
 	unknown, err := unknownConfigKeys(k)
 	require.NoError(t, err)
 	require.Empty(t, unknown)
+}
+
+func TestLoadSnapshot_RejectsInvalidShoutrrrURL(t *testing.T) {
+	tests := []struct {
+		name, url, destination, secret string
+	}{
+		{"gotify token format", "gotify://gotify.example/sentinel-invalid-gotify-token", "(gotify)", "sentinel-invalid-gotify-token"},
+		{"telegram token without bot ID", "telegram://sentinel-telegram-token@telegram?chats=1", "(telegram)", "sentinel-telegram-token"},
+		{"unknown service", "unknownservice://sentinel-user:sentinel-password@host/path", "(unknownservice)", "sentinel-password"},
+		{"port is not a number", "gotify://gotify.example:sentinel-port/Asentinelgotify", "(gotify)", "sentinel-port"},
+		{"no scheme", "sentinel-no-scheme", "(invalid scheme)", "sentinel-no-scheme"},
+		{"ntfy priority", "ntfy://ntfy.sh/sentinel-ntfy-topic?priority=sentinel-priority", "(ntfy)", "sentinel-ntfy"},
+		{"discord without webhook ID", "discord://sentinel-discord-token@", "(discord)", "sentinel-discord-token"},
+		{"discord color is quoted", "discord://sentinel-discord-token@123?color=sentinel-color", "(discord)", "sentinel-color"},
+		{"generic token in the query", "generic://host/hook?token=sentinel-generic-token&disabletls=maybe", "(generic)", "sentinel-generic-token"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configFile := writeTestConfig(t, fmt.Sprintf(`
+notifications:
+  shoutrrr:
+    - ntfy://ntfy.sh/valid-topic
+    - %q
+`, tt.url))
+
+			_, err := (&AppConfig{configFile: configFile, version: "test"}).loadSnapshot()
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "notifications.shoutrrr[1] "+tt.destination)
+			assert.NotContains(t, err.Error(), tt.secret)
+			assert.NotContains(t, err.Error(), "valid-topic")
+		})
+	}
+}
+
+func TestReload_RejectsInvalidShoutrrrURLAndKeepsLastSnapshot(t *testing.T) {
+	cfg, configFile := newTestAppConfig(t, `
+notifications:
+  shoutrrr: ["ntfy://ntfy.sh/first"]
+`)
+	before := cfg.Snapshot()
+
+	writeConfigFile(t, configFile, `
+notifications:
+  shoutrrr: ["ntfy://ntfy.sh/first", "gotify://gotify.example/invalid"]
+`)
+	_, err := cfg.reload()
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "notifications.shoutrrr[1] (gotify)")
+	require.Equal(t, before, cfg.Snapshot())
+}
+
+func TestLoadSnapshot_SplitsShoutrrrEnvironmentOnWhitespace(t *testing.T) {
+	t.Setenv("SEASONPACKARR__NOTIFICATIONS_SHOUTRRR", " ntfy://ntfy.sh/first\ttelegram://123:abc@telegram?chats=1,2  ")
+	configFile := writeTestConfig(t, `
+notifications:
+  shoutrrr: ["ntfy://ntfy.sh/from-file"]
+`)
+
+	snapshot, err := (&AppConfig{configFile: configFile, version: "test"}).loadSnapshot()
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"ntfy://ntfy.sh/first", "telegram://123:abc@telegram?chats=1,2"}, snapshot.Notifications.Shoutrrr)
 }

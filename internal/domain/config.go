@@ -54,8 +54,8 @@ type FuzzyMatching struct {
 type Notifications struct {
 	NotificationLevel []string `yaml:"notificationLevel"`
 	Discord           string   `yaml:"discord"`
-	// Notifiarr string `yaml:"notifiarr"`
-	// Shoutrrr  string `yaml:"shoutrrr"`
+	// Shoutrrr holds one Shoutrrr URL for each notification destination other than the Discord webhook.
+	Shoutrrr []string `yaml:"shoutrrr"`
 }
 
 // Search configures Prowlarr search and opt-in RSS monitoring.

@@ -6,6 +6,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
@@ -113,8 +114,20 @@ func (p *processor) sendNotification(statusCode domain.StatusCode, action string
 	}
 	log := p.log
 	p.tasks.Go(func(ctx context.Context) {
-		if sendErr := sender.Send(ctx, statusCode, payload); sendErr != nil {
-			log.Error().Err(sendErr).Msgf("error sending %s notification for %d", sender.Name(), statusCode)
+		sendErr := sender.Send(ctx, statusCode, payload)
+		if sendErr == nil {
+			return
+		}
+		// The sender joins one error for each failed notification destination. Log each on its own line.
+		errs := []error{sendErr}
+		if joined, ok := errors.AsType[interface {
+			error
+			Unwrap() []error
+		}](sendErr); ok {
+			errs = joined.Unwrap()
+		}
+		for _, err := range errs {
+			log.Error().Err(err).Msgf("error sending %s for %d", sender.Name(), statusCode)
 		}
 	})
 }

@@ -17,7 +17,7 @@
 4. `internal/http/processor_*.go` keeps each processing stage together. The handler file owns payload decode and responses. The candidate file owns announce-only matching and inventory caching. The plan file parses torrent bytes and builds an exact side-effect-free plan. The import file reuses or rebuilds that plan, resolves the client import destination, hardlinks matched files, and imports the pack. See [docs/design/qbittorrent-import-flow.md](docs/design/qbittorrent-import-flow.md).
 5. `internal/release/` decides whether a client episode and announced season pack are compatible.
 6. `internal/files/` performs the hardlink operation.
-7. `internal/notification/` emits Discord notifications for notable events.
+7. `internal/notification/` sends notifications for notable events to each notification destination.
 
 ## Domains
 
@@ -151,8 +151,19 @@
 
 ### Notifications
 
-- Implemented in `internal/notification/`
-- Current primary output: Discord webhook notifications
+- Implemented in `internal/notification/` and `internal/shoutrrrurl/`
+- Notification destinations: the native Discord webhook (`notifications.discord`, embeds) and each Shoutrrr URL
+  (`notifications.shoutrrr`, plain text through `github.com/nicholas-fedor/shoutrrr`). See ADR-0005.
+- The HTTP server gets one `domain.Sender`. For each notification, it reads the current config snapshot, applies the
+  global `notificationLevel`, and sends to all destinations at the same time. Each send has its own 30-second timeout,
+  and a failure at one destination does not stop the others. `Send` joins one error for each failed destination, and
+  the processor logs each on its own line.
+- `internal/shoutrrrurl/` names a Shoutrrr destination by list position and scheme (`shoutrrr[1] (gotify)`),
+  validates the URLs at config load, and removes the userinfo, path, and query of each configured URL from Shoutrrr
+  error text. It is a separate package because `internal/config` validates the URLs and `internal/notification`
+  imports `internal/config`.
+- `seasonpackarr notification test` (`cmd/notification.go`) loads the config with `config.Load`, which writes no file,
+  and sends one test notification to each destination without the notification level.
 - Notification sends run in a server-owned task group. Graceful shutdown waits for them until the shutdown deadline, then cancels them.
 
 ### Cancellation And Shutdown
