@@ -4,12 +4,11 @@
 package torrentclient
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -41,6 +40,7 @@ var benchmarkTorrentsSink []Torrent
 // as a remote qBittorrent or qui does.
 func BenchmarkQbitGetTorrents(b *testing.B) {
 	tvCategories := []string{"tv-hd-completed", "tv-hd-completed.cross-seed"}
+	wideCategories := []string{"tv-hd-completed", "tv-hd-completed.cross-seed", "cross-seed-link", "tv-hd"}
 	scopes := []struct {
 		name    string
 		scope   domain.InventoryScope
@@ -53,7 +53,8 @@ func BenchmarkQbitGetTorrents(b *testing.B) {
 		{name: "include 1 tag", scope: domain.InventoryScope{IncludeTags: []string{"tv"}}},
 		{name: "exclude 1 category", scope: domain.InventoryScope{ExcludeCategories: []string{"movies"}}},
 		// The same torrents as "exclude 1 category", through four include reads.
-		{name: "include 4 categories", scope: domain.InventoryScope{IncludeCategories: []string{"tv-hd-completed", "tv-hd-completed.cross-seed", "cross-seed-link", "tv-hd"}}},
+		{name: "include 4 categories", scope: domain.InventoryScope{IncludeCategories: wideCategories}},
+		{name: "include 4 categories serial", scope: domain.InventoryScope{IncludeCategories: wideCategories}, workers: 1},
 	}
 	for _, latency := range []time.Duration{0, 5 * time.Millisecond} {
 		server := newBenchmarkQbitServer(b, latency)
@@ -93,52 +94,52 @@ type benchmarkQbitServer struct {
 }
 
 // newBenchmarkQbitServer serves torrents/info with the category and tag
-// filters of qBittorrent. It prepares each response once.
+// filters of qBittorrent. It prepares every response before it starts.
 func newBenchmarkQbitServer(b *testing.B, latency time.Duration) *benchmarkQbitServer {
 	b.Helper()
 	var inventory []qbittorrent.Torrent
+	filters := []qbittorrent.TorrentFilterOptions{{}}
 	for _, category := range benchmarkInventoryCategories {
+		filters = append(filters, qbittorrent.TorrentFilterOptions{Category: category.name})
 		for index := range category.count {
 			inventory = append(inventory, benchmarkQbitTorrent(len(inventory), index, category.name, category.tags))
 		}
 	}
+	for _, tag := range []string{"tv", "cross-seed", "noreuse"} {
+		filters = append(filters, qbittorrent.TorrentFilterOptions{Tag: tag})
+	}
+	responses := make(map[string][]byte, len(filters))
+	for _, filter := range filters {
+		var selected []qbittorrent.Torrent
+		for _, t := range inventory {
+			if qbitFilterMatches(filter, t) {
+				selected = append(selected, t)
+			}
+		}
+		body, err := json.Marshal(selected)
+		if err != nil {
+			b.Fatal(err)
+		}
+		responses[filter.Category+"\x00"+filter.Tag] = body
+	}
 
-	var mu sync.Mutex
-	responses := make(map[string][]byte)
 	server := &benchmarkQbitServer{}
-	server.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/v2/app/webapiVersion":
-			_, _ = w.Write([]byte("2.11.4"))
-			return
-		case "/api/v2/torrents/info":
-		default:
-			http.NotFound(w, r)
-			return
-		}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v2/app/webapiVersion", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("2.11.4"))
+	})
+	mux.HandleFunc("GET /api/v2/torrents/info", func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(latency)
-		category, tag := r.URL.Query().Get("category"), r.URL.Query().Get("tag")
-		mu.Lock()
-		body, ok := responses[category+"\x00"+tag]
+		body, ok := responses[r.URL.Query().Get("category")+"\x00"+r.URL.Query().Get("tag")]
 		if !ok {
-			var selected []qbittorrent.Torrent
-			for _, t := range inventory {
-				if qbitFilterMatches(qbittorrent.TorrentFilterOptions{Category: category, Tag: tag}, t) {
-					selected = append(selected, t)
-				}
-			}
-			var err error
-			body, err = json.Marshal(selected)
-			if err != nil {
-				panic(err)
-			}
-			responses[category+"\x00"+tag] = body
+			http.Error(w, "no prepared response", http.StatusBadRequest)
+			return
 		}
-		mu.Unlock()
 		server.sent.Add(int64(len(body)))
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(body)
-	}))
+	})
+	server.Server = httptest.NewServer(mux)
 	b.Cleanup(server.Close)
 	return server
 }

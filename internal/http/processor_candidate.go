@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"maps"
 	stdslices "slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -64,14 +63,7 @@ type parsedNamesKey struct {
 }
 
 func parsedNamesKeyFor(client domain.Client) parsedNamesKey {
-	// A NUL byte cannot be part of a qBittorrent category or tag.
-	scope := strings.Join([]string{
-		strings.Join(client.Inventory.IncludeCategories, "\x00"),
-		strings.Join(client.Inventory.IncludeTags, "\x00"),
-		strings.Join(client.Inventory.ExcludeCategories, "\x00"),
-		strings.Join(client.Inventory.ExcludeTags, "\x00"),
-	}, "\x01")
-	return parsedNamesKey{endpoint: importEndpoint(client), scope: scope}
+	return parsedNamesKey{endpoint: importEndpoint(client), scope: client.Inventory.Key()}
 }
 
 const inventoryCacheTTL = 30 * time.Second

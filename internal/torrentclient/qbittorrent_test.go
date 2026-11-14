@@ -4,6 +4,7 @@
 package torrentclient
 
 import (
+	"context"
 	stderrors "errors"
 	"maps"
 	"net/http"
@@ -43,6 +44,7 @@ type fakeQbitAPI struct {
 	inventory           []qbittorrent.Torrent
 	inventoryReads      []qbittorrent.TorrentFilterOptions
 	inventoryDelay      time.Duration
+	inventoryErr        map[string]error
 	activeInventoryRead int
 	maxInventoryReads   int
 	// apiVersion is the WebAPI version. Empty means a current version. Before 2.8.4, reads ignore the tag filter.
@@ -63,6 +65,10 @@ type fakeQbitAPI struct {
 func (f *fakeQbitAPI) GetTorrents(o qbittorrent.TorrentFilterOptions) ([]qbittorrent.Torrent, error) {
 	if len(o.Hashes) == 0 {
 		f.inventoryMu.Lock()
+		if err := f.inventoryErr[o.Category]; err != nil {
+			f.inventoryMu.Unlock()
+			return nil, err
+		}
 		f.inventoryReads = append(f.inventoryReads, o)
 		f.activeInventoryRead++
 		f.maxInventoryReads = max(f.maxInventoryReads, f.activeInventoryRead)
@@ -734,12 +740,11 @@ func TestQbitGetTorrents_ExcludeOnlyReadsEveryTorrent(t *testing.T) {
 func TestQbitGetTorrents_SendsBoundedParallelIncludeReads(t *testing.T) {
 	categories := []string{"one", "two", "three", "four", "five", "six"}
 	api := &fakeQbitAPI{inventoryDelay: 10 * time.Millisecond}
-	for index, category := range categories {
+	for _, category := range categories {
 		api.inventory = append(api.inventory, qbittorrent.Torrent{Hash: category, Name: category, Category: category, Tags: "shared"})
-		if index == 0 {
-			api.inventory[0].Tags = "first"
-		}
 	}
+	// The tag read returns all torrents again, so the merge must drop them.
+	api.inventory[0].Tags = "first"
 	q := newTestQbitClient(api, domain.ImportPolicy{Category: "one"})
 	q.scope = domain.InventoryScope{IncludeTags: []string{"shared"}, IncludeCategories: categories}
 
@@ -752,7 +757,26 @@ func TestQbitGetTorrents_SendsBoundedParallelIncludeReads(t *testing.T) {
 	}
 	assert.Equal(t, categories, hashes, "the results merge in the order of the reads")
 	assert.Len(t, api.inventoryReads, len(categories)+1)
-	assert.Equal(t, qbitInventoryReadWorkers, api.maxInventoryReads)
+	assert.Greater(t, api.maxInventoryReads, 1, "the reads run in parallel")
+	assert.LessOrEqual(t, api.maxInventoryReads, qbitInventoryReadWorkers)
+}
+
+// TestQbitGetTorrents_ReportsFailedReadNotCancellation: a failed read stops
+// the queued reads, and the error names the failure, not the cancellation of
+// a read that comes before it in the filter order.
+func TestQbitGetTorrents_ReportsFailedReadNotCancellation(t *testing.T) {
+	categories := []string{"one", "two", "three", "four", "five", "six"}
+	api := &fakeQbitAPI{inventoryErr: map[string]error{"one": stderrors.New("boom")}}
+	q := newTestQbitClient(api, domain.ImportPolicy{Category: "one"})
+	q.scope = domain.InventoryScope{IncludeCategories: categories}
+	q.inventoryReadWorkers = 1
+
+	_, err := q.GetTorrents(t.Context())
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "boom")
+	assert.NotErrorIs(t, err, context.Canceled)
+	assert.Empty(t, api.inventoryReads, "the reads after the failure do not run")
 }
 
 func TestQbitImport_FindsAddedTorrentOutsideScope(t *testing.T) {

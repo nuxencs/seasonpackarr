@@ -201,6 +201,7 @@ func (q *qbitClient) GetTorrents(ctx context.Context) ([]Torrent, error) {
 	case !q.scope.HasIncludes():
 		filters = append(filters, qbittorrent.TorrentFilterOptions{})
 	case len(q.scope.IncludeTags) == 0:
+		// Include categories only: the category reads are complete.
 	case q.supportsTagFilter():
 		for _, tag := range q.scope.IncludeTags {
 			filters = append(filters, qbittorrent.TorrentFilterOptions{Tag: tag})
@@ -262,47 +263,50 @@ func (q *qbitClient) readInventory(ctx context.Context, filters []qbittorrent.To
 }
 
 // readFilters sends one torrents/info read for each filter, with at most
-// qbitInventoryReadWorkers at a time. The results keep the order of filters,
-// and the error of the first failed filter wins.
+// qbitInventoryReadWorkers at a time, in the order of filters. The first
+// failure stops the reads that have not started, and its error is the result.
 func (q *qbitClient) readFilters(ctx context.Context, filters []qbittorrent.TorrentFilterOptions) ([][]qbittorrent.Torrent, error) {
+	readCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	var (
+		failOnce sync.Once
+		failed   error
+	)
 	results := make([][]qbittorrent.Torrent, len(filters))
-	errs := make([]error, len(filters))
-	read := func(index int) {
-		if err := ctx.Err(); err != nil {
-			errs[index] = err
-			return
-		}
-		ts, err := q.c.GetTorrents(filters[index])
-		if err != nil {
-			errs[index] = errtrace.WithStack(fmt.Errorf("failed to get torrents: %w", err))
-			return
-		}
-		results[index] = ts
-	}
-
-	if len(filters) == 1 {
-		read(0)
-	} else {
-		slots := make(chan struct{}, cmp.Or(q.inventoryReadWorkers, qbitInventoryReadWorkers))
-		var wg sync.WaitGroup
-		for index := range filters {
-			wg.Go(func() {
-				select {
-				case slots <- struct{}{}:
-					defer func() { <-slots }()
-					read(index)
-				case <-ctx.Done():
-					errs[index] = ctx.Err()
+	jobs := make(chan int)
+	var workers sync.WaitGroup
+	for range min(cmp.Or(q.inventoryReadWorkers, qbitInventoryReadWorkers), len(filters)) {
+		workers.Go(func() {
+			for index := range jobs {
+				if readCtx.Err() != nil {
+					continue
 				}
-			})
-		}
-		wg.Wait()
+				ts, err := q.c.GetTorrents(filters[index])
+				if err != nil {
+					failOnce.Do(func() {
+						failed = errtrace.WithStack(fmt.Errorf("failed to get torrents: %w", err))
+						stop()
+					})
+					continue
+				}
+				results[index] = ts
+			}
+		})
 	}
 
-	for _, err := range errs {
-		if err != nil {
-			return nil, err
+sendJobs:
+	for index := range filters {
+		select {
+		case jobs <- index:
+		case <-readCtx.Done():
+			break sendJobs
 		}
+	}
+	close(jobs)
+	workers.Wait()
+
+	if failed != nil {
+		return nil, failed
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -311,8 +315,8 @@ func (q *qbitClient) readFilters(ctx context.Context, filters []qbittorrent.Torr
 }
 
 // qbitHasTag reports whether match accepts one of the tags of a torrent.
-// qBittorrent lists tags as "a, b". The loop allocates nothing, because it
-// runs once for each torrent of the inventory.
+// qBittorrent lists tags as "a, b". It runs for each torrent of the inventory,
+// and strings.SplitSeq here moved its state to the heap on each call, so it uses strings.Cut.
 func qbitHasTag(tags string, match func(string) bool) bool {
 	for rest := tags; rest != ""; {
 		var tag string

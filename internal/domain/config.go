@@ -51,6 +51,17 @@ func (s InventoryScope) Equal(other InventoryScope) bool {
 		slices.Equal(s.ExcludeTags, other.ExcludeTags)
 }
 
+// Key returns the same text for equal scopes, for use as a map key.
+func (s InventoryScope) Key() string {
+	// A NUL byte cannot be part of a qBittorrent category or tag.
+	return strings.Join([]string{
+		strings.Join(s.IncludeCategories, "\x00"),
+		strings.Join(s.IncludeTags, "\x00"),
+		strings.Join(s.ExcludeCategories, "\x00"),
+		strings.Join(s.ExcludeTags, "\x00"),
+	}, "\x01")
+}
+
 // IsSet reports whether the scope limits the inventory.
 func (s InventoryScope) IsSet() bool {
 	return s.HasIncludes() || len(s.ExcludeCategories) > 0 || len(s.ExcludeTags) > 0
@@ -77,19 +88,14 @@ func (s InventoryScope) ExcludesTag(tag string) bool {
 	return slices.Contains(s.ExcludeTags, tag)
 }
 
-// Selects reports whether a torrent with the category and tags can be in the
-// scope. An include category also selects its "/" subcategories, as
-// qBittorrent does when subcategories are on.
+// Selects reports whether a torrent with the category and tags is surely in
+// the scope. It matches exact names. qBittorrent can also read the "/"
+// subcategories of an include category, but only when subcategories are on.
 func (s InventoryScope) Selects(category string, tags []string) bool {
 	if s.ExcludesCategory(category) || slices.ContainsFunc(tags, s.ExcludesTag) {
 		return false
 	}
-	if !s.HasIncludes() || slices.ContainsFunc(tags, s.IncludesTag) {
-		return true
-	}
-	return slices.ContainsFunc(s.IncludeCategories, func(include string) bool {
-		return category == include || strings.HasPrefix(category, include+"/")
-	})
+	return !s.HasIncludes() || slices.Contains(s.IncludeCategories, category) || slices.ContainsFunc(tags, s.IncludesTag)
 }
 
 // ImportPolicy controls how /api/import re-imports a matched season pack back

@@ -119,7 +119,7 @@ clients:
     # Inventory Scope (qBittorrent only)
     # Limits the torrents that seasonpackarr reads from the client for the candidate check, the match, and discovery.
     # With includes, only torrents with an include category or an include tag are read. Without includes, every torrent is read.
-    # Torrents with an exclude category or an exclude tag are then dropped. An exclude always wins. Empty lists read every torrent.
+    # Torrents with an exclude category or an exclude tag are then dropped. An exclude always wins.
     # Includes make the read from the client smaller. Excludes only drop torrents after the read.
     # Keep every category and tag where season packs end up, for example the import category.
     # Episodes outside the scope are not reused. See the configuration guide before you set a scope.

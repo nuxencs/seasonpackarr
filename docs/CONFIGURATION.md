@@ -237,10 +237,10 @@ its own delay to each request, so real times are longer.
 
 | Scope | Torrents | Data | Time |
 | --- | --- | --- | --- |
-| None | 5341 | 11.2 MB | 31 ms |
-| `excludeCategories: [movies]` | 3691 | 11.2 MB | 31 ms |
-| The same torrents through four `includeCategories` | 3691 | 7.8 MB | 14 ms |
-| Two `includeCategories` | 1204 | 2.6 MB | 6 ms |
+| None | 5341 | 11.0 MB | 28 ms |
+| `excludeCategories: [movies]` | 3691 | 11.0 MB | 28 ms |
+| The same torrents through four `includeCategories` | 3691 | 7.7 MB | 13 ms |
+| Two `includeCategories` | 1204 | 2.5 MB | 5 ms |
 
 qBittorrent 4.3 cannot filter by tag. When the scope has `includeTags` and the client is qBittorrent 4.3, seasonpackarr
 also reads every torrent and finds the tags itself. The result is the same, but the read is not smaller.
@@ -260,7 +260,9 @@ Before you set a scope, make sure that you accept these effects:
   example `tv-hd-completed`. Then the import category holds only new packs, and the completed category holds the rest.
   Include both. A new pack stays in the import category until Sonarr moves it. If the scope drops a torrent with the
   import category and import tags, a second announce of the same pack does not find it. seasonpackarr logs a warning
-  at startup and after a config reload when the scope drops such a torrent.
+  at startup and after a config reload when the scope drops such a torrent. The warning compares exact names, so it
+  also warns for an import category such as `tv/new` with `includeCategories: [tv]`. That scope is correct only when
+  subcategories are on in qBittorrent.
 - **Subcategories:** qBittorrent adds subcategories to an include category only for names with `/`, and only when
   subcategories are on in qBittorrent. A name such as `tv-hd-completed.cross-seed` is a separate category, so list it
   explicitly. Excludes match the exact name only: `excludeCategories: [movies]` does not exclude `movies/4k`.

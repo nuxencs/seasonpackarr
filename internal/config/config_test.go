@@ -1249,11 +1249,13 @@ func TestLogInventoryScopeWarnings(t *testing.T) {
 				Inventory: domain.InventoryScope{ExcludeCategories: []string{"movies"}},
 			},
 		},
+		// qBittorrent reads tv/hd for tv only when subcategories are on, which the config cannot see.
 		"include parent of the import subcategory": {
 			client: domain.Client{
 				Import:    domain.ImportPolicy{Category: "tv/hd"},
 				Inventory: domain.InventoryScope{IncludeCategories: []string{"tv"}},
 			},
+			warn: true,
 		},
 		"exclude of the import category wins over an include tag": {
 			client: domain.Client{
