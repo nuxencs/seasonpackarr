@@ -49,7 +49,7 @@ client. The client downloads only the missing episodes.
 - **Fuzzy matching**: optional rules for repacks, HDR formats, WEB sources, and years.
 - **Import policy for each client**: save path, category, tags, and content layout.
 - **Live config reload**: most settings apply without a restart, and an invalid edit keeps the last valid config.
-- **Discord notifications** with configurable levels.
+- **Notifications** to Discord and to [Shoutrrr](https://shoutrrr.nickfedor.com/latest/services/overview/) services such as Gotify, ntfy, Pushover, and Telegram, with configurable levels.
 - **No database setup**: discovery state stays in an SQLite file beside the config.
 
 ## Support

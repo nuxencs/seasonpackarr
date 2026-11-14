@@ -61,7 +61,7 @@ func newStartCommand() *cobra.Command {
 			}
 
 			// init notification sender
-			noti := notification.NewDiscordSender(log, cfg)
+			noti := notification.NewSender(log, cfg)
 
 			path, err := state.Path(cmp.Or(snapshot.ConfigPath, configPath))
 			if err != nil {

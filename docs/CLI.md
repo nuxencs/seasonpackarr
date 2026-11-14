@@ -82,6 +82,7 @@ folder name. Match and import still require the original `.torrent` file.
 | `search` | None | Searches Prowlarr and imports accepted packs |
 | `setup filter` | `--webhook-url`, autobrr URL, and autobrr API key | Creates one disabled autobrr filter for each client, or updates the filter from `--filter-id`; see [Set up the autobrr filter](#set-up-the-autobrr-filter) |
 | `start` | Config directory if outside the default locations | Starts the service; an explicit directory gets a default config if missing |
+| `notification test` | Config directory if outside the default locations | Sends a test notification to each notification destination; see [Notifications](CONFIGURATION.md#notifications) |
 | `gen-token` | None | Generates a token to store in `apiToken` |
 | `version` | None | Prints local build information without network access |
 | `completion` | Shell name | Generates shell completion; see `completion --help` |

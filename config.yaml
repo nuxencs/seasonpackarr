@@ -286,3 +286,15 @@ notifications:
   # Optional
   #
   discord: ""
+
+  # Shoutrrr
+  # Sends each notification to every Shoutrrr URL in the list, for example Gotify, ntfy, Pushover, or Telegram
+  # URL format: https://shoutrrr.nickfedor.com/latest/services/overview/
+  # A discord:// URL sends plain text. Use the discord key above for embeds.
+  #
+  # Optional
+  #
+  # Example:
+  # shoutrrr: [ "gotify://gotify.example.com/token", "ntfy://ntfy.sh/topic" ]
+  #
+  shoutrrr: []

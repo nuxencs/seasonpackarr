@@ -246,16 +246,46 @@ They reject most unwanted season packs and still match renamed packs and episode
 
 ## Notifications
 
-seasonpackarr can send notifications to a Discord webhook.
+seasonpackarr sends each notification to every notification destination: the Discord webhook and each Shoutrrr URL.
+With no destination, it sends no notifications.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `notifications.discord` | empty | Discord webhook URL. Empty turns notifications off. |
-| `notifications.notificationLevel` | `["MATCH", "ERROR"]` | Which events to send. |
+| `notifications.discord` | empty | Discord webhook URL. Notifications to it are Discord embeds. |
+| `notifications.shoutrrr` | `[]` | List of [Shoutrrr URLs](https://shoutrrr.nickfedor.com/latest/services/overview/), for example Gotify, ntfy, Pushover, or Telegram. |
+| `notifications.notificationLevel` | `["MATCH", "ERROR"]` | Which events to send. The level applies to all destinations. |
 
 - `MATCH`: an accepted season pack. The import sends one notification for each accepted pack. A successful match sends none.
 - `INFO`: a rejected season pack from a match or an import. The candidate check sends no notifications.
 - `ERROR`: a failed request, for example a client connection error.
+
+```yaml
+notifications:
+  notificationLevel: ["MATCH", "ERROR"]
+  shoutrrr:
+    - "gotify://gotify.example.com/<token>"
+    - "ntfy://ntfy.sh/<topic>"
+```
+
+A Shoutrrr destination gets plain text: the title, then one line each for the release name, the client, and the action,
+and the error for an `ERROR` notification. A `discord://` Shoutrrr URL also sends plain text. For embeds, use
+`notifications.discord`. If you set both for the same channel, each notification arrives twice.
+
+seasonpackarr checks each Shoutrrr URL when it loads the config. An invalid URL stops startup, and a config reload with
+an invalid URL keeps the last valid config. The error names the list position and the scheme, for example
+`notifications.shoutrrr[1] (gotify)`, and never the URL. A failed send to one destination does not stop the others.
+Each send has a 30-second timeout, and each failure gets its own log line.
+
+To check the destinations, run:
+
+```sh
+seasonpackarr notification test --config <dir>
+```
+
+The command reads `config.yaml` and the environment variables as `start` does, but does not write a default config.
+It needs no running service and ignores `notificationLevel`. It sends one
+test notification to each destination, prints one line for each, for example `discord: ok`, and exits `1` when a send
+fails or when no destination is configured.
 
 ## Logging
 
@@ -277,8 +307,10 @@ Most settings have an environment variable with the `SEASONPACKARR__` prefix. En
 - Fuzzy matching: `SEASONPACKARR__FUZZY_MATCHING_SKIP_REPACK_COMPARE`,
   `SEASONPACKARR__FUZZY_MATCHING_SIMPLIFY_HDR_COMPARE`, `SEASONPACKARR__FUZZY_MATCHING_SIMPLIFY_WEB_COMPARE`,
   `SEASONPACKARR__FUZZY_MATCHING_SKIP_YEAR_COMPARE`.
-- Notifications: `SEASONPACKARR__NOTIFICATIONS_DISCORD`, and `SEASONPACKARR__NOTIFICATIONS_NOTIFICATION_LEVEL` as a
-  comma-separated list, for example `MATCH,ERROR`.
+- Notifications: `SEASONPACKARR__NOTIFICATIONS_DISCORD`, `SEASONPACKARR__NOTIFICATIONS_NOTIFICATION_LEVEL` as a
+  comma-separated list, for example `MATCH,ERROR`, and `SEASONPACKARR__NOTIFICATIONS_SHOUTRRR` as a list separated by
+  spaces, for example `"gotify://gotify.example.com/<token> ntfy://ntfy.sh/<topic>"`. Shoutrrr URLs use whitespace, not
+  commas, because a URL can hold commas, for example Telegram `chats=a,b`.
 - Clients: `SEASONPACKARR__CLIENTS_<NAME>_<SETTING>`. `<NAME>` is the client name in upper case. The client name
   becomes lower case. `<SETTING>` is `TYPE`, `HOST`, `PORT`, `USERNAME`, `PASSWORD`, `APIKEY`, `IMPORT_SAVE_PATH`,
   `IMPORT_CATEGORY`, `IMPORT_DOWNLOAD_PATH`, `IMPORT_CONTENT_LAYOUT`, or `IMPORT_TAGS` (comma-separated). In these
@@ -309,7 +341,7 @@ These settings apply without a restart:
 - torrent client connections and import policies
 - API token
 - smart mode and fuzzy matching
-- Discord webhook and notification levels
+- notification destinations and notification levels
 - log level
 - Prowlarr connection, request spacing, and RSS interval
 

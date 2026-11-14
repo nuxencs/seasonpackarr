@@ -15,10 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type fakeConfig struct{ config domain.Config }
-
-func (f fakeConfig) Snapshot() domain.Config { return f.config }
-
 // TestDiscordSend_ErrorOmitsWebhookURL: the webhook URL holds the token, and the
 // caller logs the error.
 func TestDiscordSend_ErrorOmitsWebhookURL(t *testing.T) {
@@ -32,7 +28,7 @@ func TestDiscordSend_ErrorOmitsWebhookURL(t *testing.T) {
 	}
 	for name, webhook := range tests {
 		t.Run(name, func(t *testing.T) {
-			sender := NewDiscordSender(
+			sender := NewSender(
 				logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}),
 				fakeConfig{config: domain.Config{Notifications: domain.Notifications{
 					Discord:           webhook,

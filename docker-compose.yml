@@ -31,6 +31,7 @@ services:
 
       # Notification settings
       SEASONPACKARR__NOTIFICATIONS_DISCORD:
+      SEASONPACKARR__NOTIFICATIONS_SHOUTRRR: # Shoutrrr URLs separated by spaces
       SEASONPACKARR__NOTIFICATIONS_NOTIFICATION_LEVEL: MATCH,ERROR
 
       # Client settings (can have multiple clients by changing DEFAULT to another name)

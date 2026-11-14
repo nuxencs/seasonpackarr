@@ -22,6 +22,7 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
+	"github.com/nuxencs/seasonpackarr/internal/shoutrrrurl"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/go-viper/mapstructure/v2"
@@ -318,6 +319,18 @@ notifications:
   # Optional
   #
   discord: ""
+
+  # Shoutrrr
+  # Sends each notification to every Shoutrrr URL in the list, for example Gotify, ntfy, Pushover, or Telegram
+  # URL format: https://shoutrrr.nickfedor.com/latest/services/overview/
+  # A discord:// URL sends plain text. Use the discord key above for embeds.
+  #
+  # Optional
+  #
+  # Example:
+  # shoutrrr: [ "gotify://gotify.example.com/token", "ntfy://ntfy.sh/topic" ]
+  #
+  shoutrrr: []
 `
 
 func (c *AppConfig) writeConfig(configPath string, configFile string) error {
@@ -438,6 +451,33 @@ func New(configPath string, version string) *AppConfig {
 	c.current.Store(snapshot)
 
 	return c
+}
+
+// Load reads and validates the config as the service does at startup, from the
+// config file and the environment variables. It creates no file and starts no
+// watcher. configDir selects the directory of config.yaml. When it is empty,
+// Load searches the default locations.
+func Load(configDir, version string) (domain.Config, error) {
+	c := &AppConfig{
+		version:           version,
+		disableConfigFile: os.Getenv("SEASONPACKARR__DISABLE_CONFIG_FILE") == "true",
+	}
+	switch {
+	case c.disableConfigFile:
+	case configDir != "":
+		c.configFile = filepath.Join(filepath.Clean(configDir), "config.yaml")
+	default:
+		configFile, err := findConfigFile()
+		if err != nil {
+			return domain.Config{}, err
+		}
+		c.configFile = configFile
+	}
+	snapshot, err := c.loadSnapshot()
+	if err != nil {
+		return domain.Config{}, err
+	}
+	return *snapshot, nil
 }
 
 const (
@@ -649,6 +689,8 @@ var envSettings = map[string]func(cfg *domain.Config, value string){
 	"FUZZY_MATCHING_SKIP_YEAR_COMPARE":    func(cfg *domain.Config, v string) { setBool(&cfg.FuzzyMatching.SkipYearCompare, v) },
 
 	"NOTIFICATIONS_DISCORD": func(cfg *domain.Config, v string) { cfg.Notifications.Discord = v },
+	// Whitespace separates the URLs, because a Shoutrrr URL can hold commas, such as Telegram chats=a,b.
+	"NOTIFICATIONS_SHOUTRRR": func(cfg *domain.Config, v string) { cfg.Notifications.Shoutrrr = strings.Fields(v) },
 	"NOTIFICATIONS_NOTIFICATION_LEVEL": func(cfg *domain.Config, v string) {
 		levels := strings.Split(v, ",")
 		for i, level := range levels {
@@ -845,12 +887,26 @@ func validateConfig(cfg domain.Config) error {
 	if err := validateSearch(cfg.Search); err != nil {
 		return err
 	}
+	if err := validateNotifications(cfg.Notifications); err != nil {
+		return err
+	}
 	for clientName, client := range cfg.Clients {
 		if client == nil {
 			return fmt.Errorf("client %q cannot be null", clientName)
 		}
 		if err := validateClientConfig(clientName, client); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// validateNotifications names an invalid Shoutrrr URL by its list position and
+// scheme only, because the URL can hold a token.
+func validateNotifications(notifications domain.Notifications) error {
+	for i, rawURL := range notifications.Shoutrrr {
+		if err := shoutrrrurl.Validate(rawURL); err != nil {
+			return fmt.Errorf("notifications.%s: invalid Shoutrrr URL: %w", shoutrrrurl.Name(i, rawURL), err)
 		}
 	}
 	return nil
@@ -870,6 +926,7 @@ func cloneConfig(cfg domain.Config) domain.Config {
 		clone.Clients[name] = &clientClone
 	}
 	clone.Notifications.NotificationLevel = slices.Clone(cfg.Notifications.NotificationLevel)
+	clone.Notifications.Shoutrrr = slices.Clone(cfg.Notifications.Shoutrrr)
 	return clone
 }
 

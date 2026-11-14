@@ -342,6 +342,15 @@
         "discord": {
           "type": "string",
           "default": ""
+        },
+        "shoutrrr": {
+          "description": "Shoutrrr URLs. Each notification goes to every URL. See https://shoutrrr.nickfedor.com/latest/services/overview/",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://"
+          },
+          "default": []
         }
       }
     }

@@ -57,3 +57,13 @@ _Avoid_: RSS backfill
 **Search**:
 A targeted Prowlarr search for season packs, started on demand or by an external scheduler.
 _Avoid_: Backfill, manual backfill
+
+### Notifications
+
+**Notification**:
+A message to the operator about an accepted season pack, a rejected season pack, or an error.
+_Avoid_: Alert, webhook
+
+**Notification destination**:
+One place that receives notifications, such as one Discord webhook or one Gotify server.
+_Avoid_: Sender, provider, target
