@@ -909,7 +909,7 @@ func (c *AppConfig) loadSnapshot() (*domain.Config, error) {
 		return nil, fmt.Errorf("validating config file %s: %w", c.configFile, err)
 	}
 
-	snapshot := cloneConfig(cfg)
+	snapshot := cfg.Clone()
 	return &snapshot, nil
 }
 
@@ -966,28 +966,12 @@ func validateNotifications(notifications domain.Notifications) error {
 	return nil
 }
 
-func cloneConfig(cfg domain.Config) domain.Config {
-	clone := cfg
-	clone.Search.IndexerIDs = slices.Clone(cfg.Search.IndexerIDs)
-	clone.Clients = make(map[string]*domain.Client, len(cfg.Clients))
-	for name, client := range cfg.Clients {
-		if client == nil {
-			clone.Clients[name] = nil
-			continue
-		}
-		clone.Clients[name] = new(client.Clone())
-	}
-	clone.Notifications.NotificationLevel = slices.Clone(cfg.Notifications.NotificationLevel)
-	clone.Notifications.Shoutrrr = slices.Clone(cfg.Notifications.Shoutrrr)
-	return clone
-}
-
 func (c *AppConfig) Snapshot() domain.Config {
 	snapshot := c.current.Load()
 	if snapshot == nil {
 		return domain.Config{}
 	}
-	return cloneConfig(*snapshot)
+	return snapshot.Clone()
 }
 
 func (c *AppConfig) reload() (*domain.Config, error) {

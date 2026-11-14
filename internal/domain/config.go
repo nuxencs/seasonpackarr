@@ -195,3 +195,21 @@ type Config struct {
 	Notifications      Notifications      `yaml:"notifications"`
 	Search             Search             `yaml:"search"`
 }
+
+// Clone copies the lists, the client map, and each client, so the copy shares no memory with c.
+// The copy always has a client map, and a nil client stays nil.
+func (c Config) Clone() Config {
+	clone := c
+	clone.Search.IndexerIDs = slices.Clone(c.Search.IndexerIDs)
+	clone.Clients = make(map[string]*Client, len(c.Clients))
+	for name, client := range c.Clients {
+		if client == nil {
+			clone.Clients[name] = nil
+			continue
+		}
+		clone.Clients[name] = new(client.Clone())
+	}
+	clone.Notifications.NotificationLevel = slices.Clone(c.Notifications.NotificationLevel)
+	clone.Notifications.Shoutrrr = slices.Clone(c.Notifications.Shoutrrr)
+	return clone
+}
