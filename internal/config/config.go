@@ -572,11 +572,12 @@ func validateClientConfig(clientName string, client *domain.Client) error {
 		return fmt.Errorf("type for client %q is invalid: %q - must be \"qbittorrent\", \"transmission\", \"deluge\", \"deluge-v1\" or \"deluge-v2\"", clientName, client.Type)
 	}
 
-	// go-qbittorrent drops an empty filter value, so an empty entry would read every torrent.
+	// go-qbittorrent drops an empty filter value, which would read every torrent,
+	// and qBittorrent compares exact names, so " tv" would match no torrent.
 	scope := client.Inventory
 	for _, value := range slices.Concat(scope.IncludeCategories, scope.IncludeTags, scope.ExcludeCategories, scope.ExcludeTags) {
-		if strings.TrimSpace(value) == "" {
-			return fmt.Errorf("client %q has an empty entry in an inventory list", clientName)
+		if value == "" || strings.TrimSpace(value) != value {
+			return fmt.Errorf("client %q has the inventory list entry %q, which is empty or starts or ends with a space", clientName, value)
 		}
 	}
 	if client.Type != "" && client.Type != "qbittorrent" && client.Inventory.IsSet() {
@@ -642,8 +643,16 @@ func LogInventoryScopeWarnings(log logger.Logger, cfg domain.Config) {
 		if client == nil || !client.Inventory.IsSet() {
 			continue
 		}
+		// The add trims the category and the tags and drops blank tags, so compare what it sends.
 		imp := client.Import
-		if client.Inventory.Selects(imp.Category, imp.Tags) {
+		category := strings.TrimSpace(imp.Category)
+		tags := make([]string, 0, len(imp.Tags))
+		for _, tag := range imp.Tags {
+			if tag = strings.TrimSpace(tag); tag != "" {
+				tags = append(tags, tag)
+			}
+		}
+		if client.Inventory.Selects(category, tags) {
 			continue
 		}
 		log.Warn().Str("clientname", name).Str("import_category", imp.Category).Strs("import_tags", imp.Tags).
@@ -822,6 +831,25 @@ func applyEnvironment(cfg *domain.Config) {
 	}
 }
 
+// validateInventoryEnvironment rejects an inventory list variable whose value
+// has no entries, such as " " or ",". It would replace the scope of config.yaml
+// with an empty list, and an empty list reads every torrent.
+func validateInventoryEnvironment(environ []string) error {
+	for _, env := range environ {
+		key, value, _ := strings.Cut(env, "=")
+		name, ok := strings.CutPrefix(key, envPrefix)
+		if !ok || value == "" {
+			continue
+		}
+		clientName, setting, ok := cutClientEnvVariable(name)
+		if _, known := clientEnvSettings[setting]; ok && clientName != "" && known &&
+			strings.HasPrefix(setting, "INVENTORY_") && len(splitList(nil, value)) == 0 {
+			return fmt.Errorf("environment variable %s has no entries; set at least one value or remove the variable", key)
+		}
+	}
+	return nil
+}
+
 // UnknownEnvironmentVariables returns the sorted SEASONPACKARR__ variables in
 // environ ("KEY=value" entries) that neither the service config nor a CLI command
 // reads. It ignores the values, so an empty unknown variable is reported too.
@@ -909,6 +937,9 @@ func (c *AppConfig) loadSnapshot() (*domain.Config, error) {
 			c.configFile, strings.Join(unknown, ", "))
 	}
 
+	if err := validateInventoryEnvironment(os.Environ()); err != nil {
+		return nil, err
+	}
 	applyEnvironment(&cfg)
 	if err := validateConfig(cfg); err != nil {
 		return nil, fmt.Errorf("validating config file %s: %w", c.configFile, err)

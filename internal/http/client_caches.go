@@ -75,6 +75,8 @@ func pruneClientCaches(cfg domain.Config) ([]string, error) {
 	})
 	slices.Sort(dropped)
 
+	// Count the clean-up before the deletes, so a scan that stores its names after this point sees it.
+	parsedNamesGeneration.Add(1)
 	scopes := make(map[parsedNamesKey]bool, len(cfg.Clients))
 	for _, client := range cfg.Clients {
 		scopes[parsedNamesKeyFor(*client)] = true

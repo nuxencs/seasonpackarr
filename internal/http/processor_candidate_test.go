@@ -359,6 +359,8 @@ func TestInventory_InvalidationDuringScanCannotRestoreStaleCache(t *testing.T) {
 	require.NoError(t, <-done)
 	_, cached := entryMap.Load("default")
 	require.False(t, cached, "an import invalidated the in-flight inventory")
+	_, parsed := parsedReleaseMap.Load(parsedNamesKeyFor(domain.Client{}))
+	assert.True(t, parsed, "an import keeps the parsed names of the scan, because they stay valid")
 }
 
 func TestInventoryWarmer_WarmsEveryClientAndSharesParsedNames(t *testing.T) {

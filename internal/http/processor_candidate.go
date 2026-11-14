@@ -9,6 +9,7 @@ import (
 	"maps"
 	stdslices "slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/config"
@@ -67,6 +68,11 @@ func parsedNamesKeyFor(client domain.Client) parsedNamesKey {
 }
 
 const inventoryCacheTTL = 30 * time.Second
+
+// parsedNamesGeneration counts the clean-ups of parsedReleaseMap after config
+// reloads. A scan that overlaps a clean-up adds no key, because the clean-up
+// can have removed that key as unused.
+var parsedNamesGeneration atomic.Uint64
 
 var (
 	clientMap        = xsync.NewMapOf[string, cachedTorrentClient]()
@@ -244,6 +250,7 @@ func (p *processor) getAllTorrents(ctx context.Context, clientName string, clien
 		return latest.entriesMap, nil
 	}
 
+	generation := parsedNamesGeneration.Load()
 	ts, err := p.req.Client.GetTorrents(ctx)
 	if err != nil {
 		return nil, err
@@ -294,8 +301,13 @@ func (p *processor) getAllTorrents(ctx context.Context, clientName string, clien
 		)
 	}
 
-	// Parsed names stay valid after an invalidation, so publish them in all cases.
-	parsedReleaseMap.Store(key, parsedReleases{fuzzyMatching: fuzzyMatching, releases: releases})
+	// Parsed names stay valid after an import invalidation, so publish them then too.
+	parsedReleaseMap.Compute(key, func(_ parsedReleases, loaded bool) (parsedReleases, bool) {
+		if !loaded && parsedNamesGeneration.Load() != generation {
+			return parsedReleases{}, true
+		}
+		return parsedReleases{fuzzyMatching: fuzzyMatching, releases: releases}, false
+	})
 
 	entryMap.Compute(clientName, func(current *entryCache, loaded bool) (*entryCache, bool) {
 		// An import can invalidate this scan while GetTorrents is in flight.

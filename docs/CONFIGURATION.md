@@ -266,8 +266,8 @@ Before you set a scope, make sure that you accept these effects:
 - **Subcategories:** qBittorrent adds subcategories to an include category only for names with `/`. qBittorrent 5.2
   and newer always do this. Older versions do it only when subcategories are on in qBittorrent. A name such as `tv-hd-completed.cross-seed` is a separate category, so list it
   explicitly. Excludes match the exact name only: `excludeCategories: [movies]` does not exclude `movies/4k`.
-- **qBittorrent and qui only:** startup fails when a Transmission or Deluge client sets a scope. An empty entry in one
-  of the lists also stops startup.
+- **qBittorrent and qui only:** startup fails when a Transmission or Deluge client sets a scope. An entry that is
+  empty or starts or ends with a space also stops startup, because qBittorrent compares exact names.
 
 ## Smart mode
 
@@ -399,6 +399,8 @@ Most settings have an environment variable with the `SEASONPACKARR__` prefix. En
   `IMPORT_CATEGORY`, `IMPORT_DOWNLOAD_PATH`, `IMPORT_CONTENT_LAYOUT`, `IMPORT_TAGS` (comma-separated),
   `INVENTORY_INCLUDE_CATEGORIES`, `INVENTORY_INCLUDE_TAGS`, `INVENTORY_EXCLUDE_CATEGORIES`, or
   `INVENTORY_EXCLUDE_TAGS` (all four comma-separated). In these variables, a client name cannot contain an underscore.
+  An `INVENTORY_` variable with no entries, such as `" "` or `","`, stops startup, because it would replace the scope
+  of `config.yaml` with every torrent. Without the variable, the scope of `config.yaml` applies.
 - Prowlarr: see [Prowlarr discovery](PROWLARR.md).
 
 At startup, seasonpackarr logs a warning for each `SEASONPACKARR__` variable that it does not know, for example

@@ -965,6 +965,9 @@ func TestValidateClientConfig(t *testing.T) {
 		"blank tag entry is rejected":              {IncludeTags: []string{" "}},
 		"empty exclude category entry is rejected": {ExcludeCategories: []string{""}},
 		"empty exclude tag entry is rejected":      {ExcludeTags: []string{"noreuse", ""}},
+		// qBittorrent compares the exact name, so " keep " would match no torrent.
+		"include tag with spaces is rejected":       {IncludeTags: []string{" keep "}},
+		"exclude category with a space is rejected": {ExcludeCategories: []string{"movies "}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			err := validateClientConfig("default", &domain.Client{
@@ -973,7 +976,7 @@ func TestValidateClientConfig(t *testing.T) {
 				Inventory: scope,
 			})
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), "empty entry")
+			assert.Contains(t, err.Error(), "inventory list")
 		})
 	}
 
@@ -1271,6 +1274,19 @@ func TestLogInventoryScopeWarnings(t *testing.T) {
 			},
 			warn: true,
 		},
+		// The add trims the import category and tags, so the warning compares the trimmed values.
+		"scope includes the trimmed import tag": {
+			client: domain.Client{
+				Import:    domain.ImportPolicy{Category: " tv-hd ", Tags: []string{" keep ", " "}},
+				Inventory: domain.InventoryScope{IncludeTags: []string{"keep"}},
+			},
+		},
+		"scope includes the trimmed import category": {
+			client: domain.Client{
+				Import:    domain.ImportPolicy{Category: " tv-hd "},
+				Inventory: domain.InventoryScope{IncludeCategories: []string{"tv-hd"}},
+			},
+		},
 		"scope with an import savePath only": {
 			client: domain.Client{
 				Import:    domain.ImportPolicy{SavePath: "/data/tv-hd"},
@@ -1312,4 +1328,28 @@ func TestDynamicReload_WarnsWhenInventoryScopeMissesImport(t *testing.T) {
 		return strings.Contains(log.String(), "inventory scope does not select new packs")
 	}, 3*time.Second, 10*time.Millisecond, log.String())
 	require.NotContains(t, log.String(), "config reload rejected")
+}
+
+// TestLoadSnapshot_RejectsInventoryEnvironmentWithoutEntries: a blank value
+// would replace the scope of config.yaml with an empty list, which reads every torrent.
+func TestLoadSnapshot_RejectsInventoryEnvironmentWithoutEntries(t *testing.T) {
+	for _, value := range []string{" ", ",", " , "} {
+		t.Run(fmt.Sprintf("%q", value), func(t *testing.T) {
+			t.Setenv("SEASONPACKARR__CLIENTS_DEFAULT_INVENTORY_EXCLUDE_CATEGORIES", value)
+			configFile := writeTestConfig(t, `
+clients:
+  default:
+    type: qbittorrent
+    import:
+      category: tv-hd
+    inventory:
+      excludeCategories: [movies]
+`)
+
+			_, err := (&AppConfig{configFile: configFile, version: "test"}).loadSnapshot()
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "SEASONPACKARR__CLIENTS_DEFAULT_INVENTORY_EXCLUDE_CATEGORIES")
+		})
+	}
 }

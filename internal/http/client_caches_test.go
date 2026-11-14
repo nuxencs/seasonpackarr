@@ -110,6 +110,38 @@ func TestPruneClientCaches_DropsParsedNamesOfOldScope(t *testing.T) {
 	assert.True(t, ok, "another scope of the endpoint keeps its parsed names")
 }
 
+// TestPruneClientCaches_ScanDuringReloadStoresNoOldScope: a scan that started
+// before a reload changed its scope must not store the names of the old scope
+// after the clean-up, because no client would use them until a restart.
+func TestPruneClientCaches_ScanDuringReloadStoresNoOldScope(t *testing.T) {
+	resetProcessorGlobals()
+	started, proceed := make(chan struct{}), make(chan struct{})
+	torrentClient := &fakeTorrentClient{getTorrents: func(context.Context) ([]torrentclient.Torrent, error) {
+		close(started)
+		<-proceed
+		return []torrentclient.Torrent{{Name: cacheTestTorrentName, Hash: "ep1"}}, nil
+	}}
+	old := &domain.Client{Type: "qbittorrent", Host: "qbittorrent", Inventory: domain.InventoryScope{IncludeCategories: []string{"tv-hd"}}}
+	storeTestClient("default", old, torrentClient)
+	changed := cloneClientConfig(*old)
+	changed.Inventory.IncludeCategories = []string{"tv-hd", "tv-hd-completed"}
+	p := newTestProcessor(torrentClient)
+	done := make(chan error, 1)
+	go func() {
+		_, err := p.getAllTorrents(t.Context(), "default", old, domain.FuzzyMatching{})
+		done <- err
+	}()
+	<-started
+
+	_, err := pruneClientCaches(domain.Config{Clients: map[string]*domain.Client{"default": &changed}})
+	require.NoError(t, err)
+	close(proceed)
+	require.NoError(t, <-done)
+
+	_, ok := parsedReleaseMap.Load(parsedNamesKeyFor(*old))
+	assert.False(t, ok, "the scan of the old scope does not store its names after the reload")
+}
+
 func TestWatchConfigReloads_PrunesAfterEachReload(t *testing.T) {
 	resetProcessorGlobals()
 	client := &domain.Client{Type: "qbittorrent", Host: "qbittorrent"}
