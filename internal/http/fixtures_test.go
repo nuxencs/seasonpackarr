@@ -326,9 +326,15 @@ func newTestProcessor(client torrentclient.TorrentClient) *processor {
 	return &processor{req: &request{Client: client}}
 }
 
+// storeTestClient makes getClient return client for name without a login.
+func storeTestClient(name string, cfg *domain.Client, client torrentclient.TorrentClient) {
+	clientMap.Store(name, cachedTorrentClient{config: cloneClientConfig(*cfg), client: client})
+}
+
 func resetProcessorGlobals() {
 	clientMap = xsync.NewMapOf[string, cachedTorrentClient]()
 	entryMap = xsync.NewMapOf[string, *entryCache]()
+	parsedReleaseMap = xsync.NewMapOf[importClientKey, parsedReleases]()
 	planMap = xsync.NewMapOf[importPlanCacheKey, cachedImportPlan]()
 }
 

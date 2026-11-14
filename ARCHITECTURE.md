@@ -81,6 +81,8 @@
 - Exact plan matching parses each episode filename once and uses an indexed compatibility key instead of scanning every source-target pair.
 - Exact planning requests candidate file details once. Transmission and Deluge v2 batch hashes in one client call. Deluge v1 uses one session-state preflight and one bulk status call. qBittorrent uses a bounded four-worker adapter pool.
 - Client inventory is cached for 30 seconds, so the ordered candidate and match checks normally share one client scan.
+- seasonpackarr keeps the parsed torrent names of each client endpoint separately from the inventory. An import drops the inventory, but the next scan parses only new names.
+- At startup, a background task reads the inventory of each client once, so the first announce does not log in or parse every name. Clients of one endpoint share the parsed names. The task tries a client that is not ready up to four times, 10 seconds apart, then only logs a warning.
 - Accepted import plans are cached for 2 minutes. `/api/import` normally performs no second inventory or file-detail reads.
 - Cache entries validate client configuration, matching settings, release name, and torrent identity. `/api/import` rebuilds safely on a cache miss.
 - Imports to the same client type, host, and port are serialized. The candidate gate is checked again before a cached plan is used.

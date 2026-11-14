@@ -6,12 +6,15 @@ package http
 import (
 	"context"
 	"fmt"
+	"maps"
 	stdslices "slices"
 	"sync"
 	"time"
 
+	"github.com/nuxencs/seasonpackarr/internal/config"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/format"
+	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/release"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 
@@ -32,7 +35,6 @@ type cachedRelease struct {
 
 type entryCache struct {
 	entriesMap    map[string][]entry
-	rlsMap        map[string]cachedRelease
 	clientConfig  domain.Client
 	fuzzyMatching domain.FuzzyMatching
 	expiresAt     time.Time
@@ -44,11 +46,20 @@ type cachedTorrentClient struct {
 	client torrentclient.TorrentClient
 }
 
+// parsedReleases holds the parsed torrent names of one client endpoint. It
+// outlives entryCache, because an import drops the inventories and parsing is
+// the costly part of a refresh. Each scan replaces it with the names it saw.
+type parsedReleases struct {
+	fuzzyMatching domain.FuzzyMatching
+	releases      map[string]cachedRelease
+}
+
 const inventoryCacheTTL = 30 * time.Second
 
 var (
-	clientMap = xsync.NewMapOf[string, cachedTorrentClient]()
-	entryMap  = xsync.NewMapOf[string, *entryCache]()
+	clientMap        = xsync.NewMapOf[string, cachedTorrentClient]()
+	entryMap         = xsync.NewMapOf[string, *entryCache]()
+	parsedReleaseMap = xsync.NewMapOf[importClientKey, parsedReleases]()
 )
 
 // candidateSeasonPack is the announce-only prefilter. It establishes that the
@@ -199,7 +210,6 @@ func (p *processor) getAllTorrents(ctx context.Context, clientName string, clien
 			return current, false
 		}
 		return &entryCache{
-			rlsMap:        make(map[string]cachedRelease),
 			clientConfig:  cloneClientConfig(*clientConfig),
 			fuzzyMatching: fuzzyMatching,
 		}, false
@@ -227,14 +237,24 @@ func (p *processor) getAllTorrents(ctx context.Context, clientName string, clien
 
 	refreshed := &entryCache{
 		entriesMap:    make(map[string][]entry),
-		rlsMap:        make(map[string]cachedRelease, len(ts)),
 		clientConfig:  cloneClientConfig(*clientConfig),
 		fuzzyMatching: fuzzyMatching,
 		expiresAt:     time.Now().Add(inventoryCacheTTL),
 	}
 
+	endpoint := importEndpoint(*clientConfig)
+	previous, _ := parsedReleaseMap.Load(endpoint)
+	if previous.fuzzyMatching != fuzzyMatching {
+		// The comparable title depends on the fuzzy matching settings.
+		previous.releases = nil
+	}
+	releases := make(map[string]cachedRelease, len(ts))
 	for _, t := range ts {
-		cached, ok := entries.rlsMap[t.Name]
+		// Cross-seeds repeat a name in the same scan.
+		cached, ok := releases[t.Name]
+		if !ok {
+			cached, ok = previous.releases[t.Name]
+		}
 		if !ok {
 			parsed := rls.ParseString(t.Name)
 			cached = cachedRelease{
@@ -242,13 +262,16 @@ func (p *processor) getAllTorrents(ctx context.Context, clientName string, clien
 				comparableTitle: format.ComparableTitle(parsed, fuzzyMatching),
 			}
 		}
-		refreshed.rlsMap[t.Name] = cached
+		releases[t.Name] = cached
 
 		refreshed.entriesMap[cached.comparableTitle] = append(
 			refreshed.entriesMap[cached.comparableTitle],
 			entry{torrent: t, release: cached.release},
 		)
 	}
+
+	// Parsed names stay valid after an invalidation, so publish them in all cases.
+	parsedReleaseMap.Store(endpoint, parsedReleases{fuzzyMatching: fuzzyMatching, releases: releases})
 
 	entryMap.Compute(clientName, func(current *entryCache, loaded bool) (*entryCache, bool) {
 		// An import can invalidate this scan while GetTorrents is in flight.
@@ -262,4 +285,83 @@ func (p *processor) getAllTorrents(ctx context.Context, clientName string, clien
 		return refreshed, false
 	})
 	return refreshed.entriesMap, nil
+}
+
+const (
+	// inventoryWarmAttempts covers clients that start after seasonpackarr, for example after a host restart.
+	inventoryWarmAttempts   = 4
+	inventoryWarmRetryDelay = 10 * time.Second
+)
+
+// inventoryWarmer reads each client inventory once at startup, so the first
+// announce does not log in or parse every torrent name.
+type inventoryWarmer struct {
+	log        logger.Logger
+	cfg        config.Provider
+	retryDelay time.Duration
+}
+
+// run warms each endpoint in its own goroutine, so a client that times out
+// does not delay the others. A failure only logs.
+func (w inventoryWarmer) run(ctx context.Context) {
+	endpoints := make(map[importClientKey][]string)
+	snapshot := w.cfg.Snapshot()
+	for _, name := range stdslices.Sorted(maps.Keys(snapshot.Clients)) {
+		endpoint := importEndpoint(*snapshot.Clients[name])
+		endpoints[endpoint] = append(endpoints[endpoint], name)
+	}
+
+	var wg sync.WaitGroup
+	for _, names := range endpoints {
+		wg.Go(func() {
+			// One client at a time, so the first parses the names and the others reuse them.
+			for _, name := range names {
+				w.warmClient(ctx, name)
+			}
+		})
+	}
+	wg.Wait()
+}
+
+func (w inventoryWarmer) warmClient(ctx context.Context, name string) {
+	for attempt := 1; ; attempt++ {
+		// A config reload during the retries applies to the next attempt.
+		snapshot := w.cfg.Snapshot()
+		client, ok := snapshot.Clients[name]
+		if !ok {
+			return
+		}
+
+		started := time.Now()
+		// getClient and getAllTorrents send no notification.
+		p := newProcessor(w.log, w.cfg, nil, nil)
+		p.req = &request{ClientName: name}
+		err := p.getClient(ctx, client, name)
+		var entries map[string][]entry
+		if err == nil {
+			entries, err = p.getAllTorrents(ctx, name, client, snapshot.FuzzyMatching)
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		if err == nil {
+			w.log.Info().
+				Str("clientname", name).
+				Int("titles", len(entries)).
+				Int64("duration_ms", time.Since(started).Milliseconds()).
+				Msg("client inventory ready")
+			return
+		}
+		if attempt == inventoryWarmAttempts {
+			w.log.Warn().Err(err).Str("clientname", name).Msg("could not read client inventory at startup")
+			return
+		}
+		w.log.Debug().Err(err).Str("clientname", name).Int("attempt", attempt).Msg("client inventory not ready at startup")
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(w.retryDelay):
+		}
+	}
 }
