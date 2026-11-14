@@ -79,6 +79,8 @@ so the glossary does not define them.
   `httptest.NewRecorder` runs on the test goroutine and can use `require`.
 - Benchmarks keep `if err != nil { b.Fatal(err) }` in measured loops.
 - Log assertions use `internal/logger/loggertest`.
+- Tests that depend on time, or that wait until goroutines block, use
+  `testing/synctest`. Production code gets no clock parameter for them.
 - A log test for a secret uses a unique sentinel value for each secret kind,
   makes the code fail on the path under test, and asserts with
   `AssertNoSecrets` that no event holds the sentinel in any field. It first
