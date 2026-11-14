@@ -534,6 +534,10 @@ func validateClientConfig(clientName string, client *domain.Client) error {
 	if client.Type != "" && client.Type != "qbittorrent" && client.Type != "transmission" && client.Type != "deluge" && client.Type != "deluge-v1" && client.Type != "deluge-v2" {
 		return fmt.Errorf("type for client %q is invalid: %q - must be \"qbittorrent\", \"transmission\", \"deluge\", \"deluge-v1\" or \"deluge-v2\"", clientName, client.Type)
 	}
+	// 0 is the unset port, whose meaning depends on the client type, so only the values outside every port range stop the load.
+	if client.Port < 0 || client.Port > 65535 {
+		return fmt.Errorf("port for client %q (%sCLIENTS_%s_PORT) must be from 0 to 65535", clientName, envPrefix, strings.ToUpper(clientName))
+	}
 
 	// go-qbittorrent drops an empty filter value, which would read every torrent,
 	// and qBittorrent compares exact names, so " tv" would match no torrent.

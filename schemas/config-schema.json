@@ -103,6 +103,8 @@
         },
         "port": {
           "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
           "description": "Port of the client API. Set it explicitly. Only Deluge has a fallback (58846)."
         },
         "username": {
@@ -323,11 +325,19 @@
         },
         "contentLayout": {
           "type": "string",
-          "enum": [
-            "",
-            "subfolder",
-            "nosubfolder",
-            "original"
+          "description": "Any letter case. The enum gives editor completion, and the pattern accepts the other letter cases.",
+          "anyOf": [
+            {
+              "enum": [
+                "",
+                "subfolder",
+                "nosubfolder",
+                "original"
+              ]
+            },
+            {
+              "pattern": "^([Ss][Uu][Bb][Ff][Oo][Ll][Dd][Ee][Rr]|[Nn][Oo][Ss][Uu][Bb][Ff][Oo][Ll][Dd][Ee][Rr]|[Oo][Rr][Ii][Gg][Ii][Nn][Aa][Ll])$"
+            }
           ]
         }
       }

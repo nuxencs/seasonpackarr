@@ -1195,6 +1195,76 @@ func TestConfigSchema_RequiresNoOptionalKey(t *testing.T) {
 	assert.Empty(t, required, "%s requires these keys, but the config load treats them as optional", configSchemaFile)
 }
 
+// schemaAccepts checks value against the enum, pattern, minimum, maximum, and anyOf rules of node, the rules that
+// TestConfigSchema_AcceptsWhatTheLoadAccepts needs. A JSON number is a float64.
+func schemaAccepts(t *testing.T, node map[string]any, value any) bool {
+	t.Helper()
+	if enum, ok := node["enum"].([]any); ok && !slices.Contains(enum, value) {
+		return false
+	}
+	if pattern, ok := node["pattern"].(string); ok {
+		text, _ := value.(string)
+		if !regexp.MustCompile(pattern).MatchString(text) {
+			return false
+		}
+	}
+	number, _ := value.(float64)
+	if minimum, ok := node["minimum"].(float64); ok && number < minimum {
+		return false
+	}
+	if maximum, ok := node["maximum"].(float64); ok && number > maximum {
+		return false
+	}
+	if anyOf, ok := node["anyOf"].([]any); ok {
+		return slices.ContainsFunc(anyOf, func(sub any) bool {
+			subNode, ok := sub.(map[string]any)
+			require.True(t, ok, "anyOf entry %v is not an object", sub)
+			return schemaAccepts(t, subNode, value)
+		})
+	}
+	return true
+}
+
+// TestConfigSchema_AcceptsWhatTheLoadAccepts keeps the value rules of the schema and of the load equal, so that an
+// editor does not flag a config that the service loads, or accept one that stops the load.
+func TestConfigSchema_AcceptsWhatTheLoadAccepts(t *testing.T) {
+	schema := readConfigSchema(t)
+	tests := []struct {
+		key  string
+		yaml string
+		// value is the decoded JSON form of yaml.
+		value any
+	}{
+		{"clients.*.import.contentLayout", `""`, ""},
+		{"clients.*.import.contentLayout", "subfolder", "subfolder"},
+		{"clients.*.import.contentLayout", "NoSubfolder", "NoSubfolder"},
+		{"clients.*.import.contentLayout", "ORIGINAL", "ORIGINAL"},
+		{"clients.*.import.contentLayout", "subfolders", "subfolders"},
+		{"clients.*.port", "-1", float64(-1)},
+		{"clients.*.port", "0", float64(0)},
+		{"clients.*.port", "65535", float64(65535)},
+		{"clients.*.port", "65536", float64(65536)},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s=%s", tt.key, tt.yaml), func(t *testing.T) {
+			clearConnectionEnvironment(t)
+			contents := "clients:\n  default:\n    import:\n      category: tv\n"
+			if field, ok := strings.CutPrefix(tt.key, "clients.*.import."); ok {
+				contents += fmt.Sprintf("      %s: %s\n", field, tt.yaml)
+			} else {
+				contents += fmt.Sprintf("    %s: %s\n", strings.TrimPrefix(tt.key, "clients.*."), tt.yaml)
+			}
+			node, ok := schema.properties[tt.key]
+			require.True(t, ok, "%s has no key %s", configSchemaFile, tt.key)
+
+			_, err := loadWithFile(t, contents)
+
+			assert.Equal(t, err == nil, schemaAccepts(t, node, tt.value),
+				"%s and the load disagree on %s: %s (load error: %v)", configSchemaFile, tt.key, tt.yaml, err)
+		})
+	}
+}
+
 func TestLoadSnapshot_RejectsInvalidShoutrrrURL(t *testing.T) {
 	tests := []struct {
 		name, url, destination, secret string

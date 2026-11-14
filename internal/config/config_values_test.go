@@ -148,6 +148,38 @@ func TestLoad_RangeRules(t *testing.T) {
 	}
 }
 
+// TestLoad_ClientPortRange shows that a client port with no valid meaning stops the load. 0 stays allowed, because an
+// unset port means a type-specific fallback.
+func TestLoad_ClientPortRange(t *testing.T) {
+	const wantErr = `port for client "default" (SEASONPACKARR__CLIENTS_DEFAULT_PORT) must be from 0 to 65535`
+	for _, tt := range []struct{ value, wantErr string }{
+		{"-1", wantErr},
+		{"65536", wantErr},
+		{"0", ""},
+		{"65535", ""},
+	} {
+		for _, source := range []string{"file", "environment"} {
+			t.Run(fmt.Sprintf("port=%s from the %s", tt.value, source), func(t *testing.T) {
+				clearConnectionEnvironment(t)
+				contents := qbitClientConfig + "    port: 8080\n"
+				if source == "file" {
+					contents = qbitClientConfig + "    port: " + tt.value + "\n"
+				} else {
+					t.Setenv("SEASONPACKARR__CLIENTS_DEFAULT_PORT", tt.value)
+				}
+
+				_, err := loadWithFile(t, contents)
+
+				if tt.wantErr == "" {
+					assert.NoError(t, err)
+				} else {
+					assert.ErrorContains(t, err, tt.wantErr)
+				}
+			})
+		}
+	}
+}
+
 func TestLoad_LowercasesContentLayoutFromEachSource(t *testing.T) {
 	for _, source := range []string{"file", "environment"} {
 		t.Run(source, func(t *testing.T) {
