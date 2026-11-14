@@ -201,6 +201,7 @@ func TestCLI_StartLogsNoSecretForInvalidConfig(t *testing.T) {
 		"Prowlarr apiKey": "sentinel-start-prowlarr-api-key",
 		"Discord webhook": "sentinel-start-discord-webhook-token",
 		"Shoutrrr URL":    "sentinel-start-ntfy-topic",
+		"port variable":   "sentinel-start-port-value",
 	}
 	valid := `apiToken: sentinel-start-api-token
 clients:
@@ -220,6 +221,7 @@ notifications:
 `
 	tests := map[string]struct {
 		replace []string
+		env     []string
 		want    string
 	}{
 		"YAML syntax error after the apiToken":      {replace: []string{"clients:\n", "clients: [\n"}},
@@ -229,23 +231,40 @@ notifications:
 			replace: []string{"ntfy://ntfy.sh/sentinel-start-ntfy-topic", "gotify://gotify.example/sentinel-start-ntfy-topic"},
 			want:    "notifications.shoutrrr[0] (gotify)",
 		},
+		"port variable is not a number": {
+			env:  []string{"SEASONPACKARR__PORT=sentinel-start-port-value"},
+			want: "environment variable SEASONPACKARR__PORT is not an integer",
+		},
+		"apiToken variable ends with a line break": {
+			env:  []string{"SEASONPACKARR__API_TOKEN=sentinel-start-api-token\n"},
+			want: "environment variable SEASONPACKARR__API_TOKEN contains a control character",
+		},
+		"client password variable has a control character": {
+			env:  []string{"SEASONPACKARR__CLIENTS_DEFAULT_PASSWORD=sentinel-start-client-password\x01"},
+			want: "environment variable SEASONPACKARR__CLIENTS_DEFAULT_PASSWORD contains a control character",
+		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			invalid := strings.NewReplacer(tt.replace...).Replace(valid)
-			require.NotEqual(t, valid, invalid, "the replacement matched nothing")
+			invalid := valid
+			if tt.replace != nil {
+				invalid = strings.NewReplacer(tt.replace...).Replace(valid)
+				require.NotEqual(t, valid, invalid, "the replacement matched nothing")
+			}
 			dir := t.TempDir()
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(invalid), 0o600))
 
 			command := exec.CommandContext(t.Context(), binary, "start", "--config", dir)
-			command.Env = cliEnvironment()
+			command.Env = append(cliEnvironment(), tt.env...)
 			output, err := command.CombinedOutput()
 
 			exit, ok := errors.AsType[*exec.ExitError](err)
 			require.True(t, ok, "expected process failure, got %v: %s", err, output)
 			require.Equal(t, 1, exit.ExitCode(), string(output))
 			// The load error must be in the output, or the checks below prove nothing.
-			require.Contains(t, string(output), "config file", string(output))
+			if tt.env == nil {
+				require.Contains(t, string(output), "config file", string(output))
+			}
 			require.Contains(t, string(output), tt.want, string(output))
 			for kind, secret := range secrets {
 				assert.NotContains(t, string(output), secret, "start output holds the %s", kind)

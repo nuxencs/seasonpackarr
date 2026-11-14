@@ -10,6 +10,8 @@
     },
     "port": {
       "type": "integer",
+      "minimum": 1,
+      "maximum": 65535,
       "default": 42069
     },
     "search": {
@@ -35,10 +37,12 @@
     },
     "logMaxSize": {
       "type": "integer",
+      "minimum": 1,
       "default": 50
     },
     "logMaxBackups": {
       "type": "integer",
+      "minimum": 0,
       "default": 3
     },
     "smartMode": {
@@ -47,6 +51,8 @@
     },
     "smartModeThreshold": {
       "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 1,
       "default": 0.75
     },
     "fuzzyMatching": {

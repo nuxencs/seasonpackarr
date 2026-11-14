@@ -6,10 +6,22 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+// clearConnectionEnvironment empties each SEASONPACKARR__ variable, which the load ignores.
+func clearConnectionEnvironment(t *testing.T) {
+	t.Helper()
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(key, "SEASONPACKARR__") {
+			t.Setenv(key, "")
+		}
+	}
+}
 
 func writeTestConfig(t *testing.T, content string) string {
 	t.Helper()

@@ -30,6 +30,21 @@ type ConnectionSettings struct {
 	Clients  []string
 }
 
+// connectionEnvSettings omits the server-only variables, so a bad one does not stop the CLI. PORT is read as text below, so flags can override it.
+var connectionEnvSettings = map[string]func(*domain.Config, string) error{
+	"HOST":      envSettings["HOST"],
+	"API_TOKEN": envSettings["API_TOKEN"],
+}
+
+// connectionClientEnvSettings creates each named client but ignores the value, because the CLI reads only the client names.
+var connectionClientEnvSettings = func() map[string]func(*domain.Client, string) error {
+	settings := make(map[string]func(*domain.Client, string) error, len(clientEnvSettings))
+	for setting := range clientEnvSettings {
+		settings[setting] = func(*domain.Client, string) error { return nil }
+	}
+	return settings
+}()
+
 // ReadConnectionSettings reads existing YAML and environment overrides without
 // creating files, starting watchers, or validating server-only settings.
 // A missing implicit config is allowed; a missing explicit config is an error.
@@ -65,7 +80,9 @@ func ReadConnectionSettings(configDir string) (ConnectionSettings, error) {
 			}
 		}
 	}
-	applyEnvironment(&cfg)
+	if err := applyEnvironmentSettings(&cfg, connectionEnvSettings, connectionClientEnvSettings); err != nil {
+		return ConnectionSettings{}, err
+	}
 	return ConnectionSettings{
 		Host: cfg.Host, Port: cmp.Or(os.Getenv("SEASONPACKARR__PORT"), strconv.Itoa(cfg.Port)), APIToken: cfg.APIToken,
 		Clients: slices.Sorted(maps.Keys(cfg.Clients)),

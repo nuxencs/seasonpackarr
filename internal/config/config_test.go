@@ -272,7 +272,7 @@ func TestLoadFromEnv_ParsesMultiWordClientSettings(t *testing.T) {
 	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_INVENTORY_EXCLUDE_TAGS", "noreuse, trash")
 
 	cfg := domain.Config{Clients: map[string]*domain.Client{}}
-	applyEnvironment(&cfg)
+	require.NoError(t, applyEnvironment(&cfg))
 
 	client, ok := cfg.Clients["envonly"]
 	require.True(t, ok, "env-only client should be lazily created")
@@ -307,7 +307,7 @@ func TestApplyEnvironment_SetsFuzzyMatching(t *testing.T) {
 			t.Setenv(tt.key, "true")
 
 			cfg := domain.Config{Clients: map[string]*domain.Client{}}
-			applyEnvironment(&cfg)
+			require.NoError(t, applyEnvironment(&cfg))
 
 			require.Equal(t, tt.want, cfg.FuzzyMatching)
 		})

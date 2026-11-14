@@ -44,7 +44,7 @@ work with a config from a different version.
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `host` | `"0.0.0.0"` | Address the API listens on. The command line uses it too, with a wildcard address changed to loopback. |
-| `port` | `42069` | Port the API listens on. |
+| `port` | `42069` | Port the API listens on, from `1` to `65535`. |
 | `apiToken` | empty | Token for API requests. Generate one with `seasonpackarr gen-token`. When empty, the API has no authentication. |
 
 Set `apiToken`. autobrr and the command line send it in the `X-API-Token` header or the `apikey` query parameter.
@@ -132,7 +132,8 @@ Startup fails when a Transmission or Deluge client sets one of these fields.
   the same qBittorrent preferences before it creates hardlinks, so both programs use the same destination.
 - **`downloadPath`**: a temporary path for incomplete downloads. It is never the final destination. When set, the
   directory must already exist, or startup fails.
-- **`contentLayout`**: `"subfolder"`, `"nosubfolder"`, or `"original"`. Leave it empty to use the qBittorrent default.
+- **`contentLayout`**: `"subfolder"`, `"nosubfolder"`, or `"original"`, in any letter case. Leave it empty to use the
+  qBittorrent default.
 
 A qBittorrent client must set `savePath` or `category`.
 
@@ -276,7 +277,7 @@ Smart mode rejects a season pack when too few of its episodes are already on dis
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `smartMode` | `false` | Turns smart mode on. |
-| `smartModeThreshold` | `0.75` | The minimum coverage that a pack needs. |
+| `smartModeThreshold` | `0.75` | The minimum coverage that a pack needs. Greater than `0` and at most `1`. |
 
 Coverage is the share of distinct episode files in the torrent that seasonpackarr can reuse from the client. MKV and MP4
 episodes count. Samples, extra videos, and files with a different container do not count. seasonpackarr reads the
@@ -376,8 +377,8 @@ fails or when no destination is configured.
 | --- | --- | --- |
 | `logLevel` | `"DEBUG"` | `"ERROR"`, `"WARN"`, `"INFO"`, `"DEBUG"`, or `"TRACE"`. |
 | `logPath` | empty | Log file. When empty, seasonpackarr logs to stdout. Use forward slashes and include the file name, for example `logs/seasonpackarr.log`. |
-| `logMaxSize` | `50` | Maximum log file size in megabytes. |
-| `logMaxBackups` | `3` | Number of old log files to keep. |
+| `logMaxSize` | `50` | Maximum log file size in megabytes. At least `1`. |
+| `logMaxBackups` | `3` | Number of old log files to keep. At least `0`. `0` keeps all old log files. |
 
 ## Environment variables
 
@@ -399,8 +400,7 @@ Most settings have an environment variable with the `SEASONPACKARR__` prefix. En
   `IMPORT_CATEGORY`, `IMPORT_DOWNLOAD_PATH`, `IMPORT_CONTENT_LAYOUT`, `IMPORT_TAGS` (comma-separated),
   `INVENTORY_INCLUDE_CATEGORIES`, `INVENTORY_INCLUDE_TAGS`, `INVENTORY_EXCLUDE_CATEGORIES`, or
   `INVENTORY_EXCLUDE_TAGS` (all four comma-separated). In these variables, a client name cannot contain an underscore.
-  An `INVENTORY_` variable with no entries, such as `" "` or `","`, stops startup, because it would replace the scope
-  of `config.yaml` with every torrent. Without the variable, the scope of `config.yaml` applies.
+  Without an `INVENTORY_` variable, the scope of `config.yaml` applies.
 - Prowlarr: see [Prowlarr discovery](PROWLARR.md).
 
 At startup, seasonpackarr logs a warning for each `SEASONPACKARR__` variable that it does not know, for example
@@ -412,6 +412,25 @@ seasonpackarr ignores an environment variable with an empty value. The variables
 the exception: they stop startup even when they are empty. See
 [Docker Compose and environment variables](UPGRADE-v1.md#docker-compose-and-environment-variables).
 
+### Bad values
+
+A value that has no valid meaning stops the load. This rule applies to `config.yaml` and to the environment variables.
+The error names the setting or the variable. It does not show the value, because the value can be a secret.
+
+- A boolean variable must be `true` or `false` (`1`, `0`, `t`, and `f` also work).
+- An integer or number variable must be a number, for example `SEASONPACKARR__PORT=abc` stops the load.
+- A text variable must not contain a control character, such as a line break at the end of a value from a secret file.
+- seasonpackarr splits a list variable on its separator (commas, or whitespace for Shoutrrr URLs), trims each entry, and
+  drops empty entries. When no entry is left, such as `" "` or `","`, the load stops, because the variable would
+  replace the list of `config.yaml` with an empty list. For an `INVENTORY_` variable, an empty scope reads every
+  torrent.
+- After seasonpackarr merges `config.yaml` and the environment variables, it checks the ranges: `port` from `1` to
+  `65535`, `logMaxSize` at least `1`, `logMaxBackups` at least `0`, and `smartModeThreshold` greater than `0` and at
+  most `1`. The ranges apply to both sources.
+
+The commands that call the running service, such as `candidate` and `setup filter`, read only the host, the API token,
+and the client names. A bad server-only variable, for example `SEASONPACKARR__SMART_MODE=yes`, does not stop them.
+
 To run without `config.yaml`, set `SEASONPACKARR__DISABLE_CONFIG_FILE=true` and configure everything with environment
 variables. The database then moves, see [Database location](INSTALL.md#database-location).
 
@@ -419,8 +438,8 @@ variables. The database then moves, see [Database location](INSTALL.md#database-
 
 seasonpackarr watches the active `config.yaml` while it runs. For each change, it loads the complete file, applies the
 environment variables again, and validates the result. Only a valid result becomes active. When the file is not valid,
-for example during a partial write or with an [unknown key](#unknown-keys), seasonpackarr logs the error and keeps the
-last valid config.
+for example during a partial write, with an [unknown key](#unknown-keys), or with a [bad value](#bad-values),
+seasonpackarr logs the error and keeps the last valid config.
 
 These settings apply without a restart:
 

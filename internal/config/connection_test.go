@@ -6,22 +6,11 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func clearConnectionEnvironment(t *testing.T) {
-	t.Helper()
-	for _, entry := range os.Environ() {
-		key, _, _ := strings.Cut(entry, "=")
-		if strings.HasPrefix(key, "SEASONPACKARR__") {
-			t.Setenv(key, "")
-		}
-	}
-}
 
 func TestReadConnectionSettings_ReadOnlyProjection(t *testing.T) {
 	clearConnectionEnvironment(t)
@@ -97,4 +86,35 @@ func TestReadConnectionSettings_AllowsUnknownKeys(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "token", settings.APIToken)
 	assert.Equal(t, []string{"tv"}, settings.Clients)
+}
+
+// TestReadConnectionSettings_ChecksOnlyConnectionVariables keeps the CLI usable
+// when a server-only variable is bad, and stops it when a variable it reads is bad.
+func TestReadConnectionSettings_ChecksOnlyConnectionVariables(t *testing.T) {
+	for variable, value := range map[string]string{
+		"SEASONPACKARR__SMART_MODE":             "yes",
+		"SEASONPACKARR__LOG_MAX_SIZE":           "big",
+		"SEASONPACKARR__CLIENTS_TV_PORT":        "abc",
+		"SEASONPACKARR__NOTIFICATIONS_SHOUTRRR": " ",
+	} {
+		t.Run("server-only "+variable, func(t *testing.T) {
+			clearConnectionEnvironment(t)
+			t.Setenv("SEASONPACKARR__DISABLE_CONFIG_FILE", "true")
+			t.Setenv(variable, value)
+			settings, err := ReadConnectionSettings("")
+			require.NoError(t, err)
+			assert.Equal(t, "42069", settings.Port)
+		})
+	}
+	for _, variable := range []string{"SEASONPACKARR__HOST", "SEASONPACKARR__API_TOKEN"} {
+		t.Run("connection "+variable, func(t *testing.T) {
+			clearConnectionEnvironment(t)
+			t.Setenv("SEASONPACKARR__DISABLE_CONFIG_FILE", "true")
+			t.Setenv(variable, "sentinel-connection-value\n")
+			_, err := ReadConnectionSettings("")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), variable)
+			assert.NotContains(t, err.Error(), "sentinel")
+		})
+	}
 }

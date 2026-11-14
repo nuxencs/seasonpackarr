@@ -269,7 +269,9 @@ Config discovery checks these locations in order:
 3. `$HOME/.seasonpackarr/config.yaml`.
 
 API commands only read config. They do not create files, start a service, or
-require valid server-only settings such as import policies. An unreadable or
+require valid server-only settings such as import policies or
+`SEASONPACKARR__SMART_MODE`. A bad `SEASONPACKARR__HOST` or
+`SEASONPACKARR__API_TOKEN` value is an error. An unreadable or
 invalid existing config is an error. A missing implicit config permits remote
 use with flags and environment settings. An explicit `--config` directory must
 contain `config.yaml`. `SEASONPACKARR__DISABLE_CONFIG_FILE=true` skips file loading,

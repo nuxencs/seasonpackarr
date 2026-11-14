@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"iter"
 	"log"
 	"maps"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
@@ -664,95 +666,159 @@ func defaultConfig(version, configFile string, disableConfigFile bool) domain.Co
 
 const envPrefix = "SEASONPACKARR__"
 
-func setBool(dst *bool, value string) {
-	if b, err := strconv.ParseBool(value); err == nil {
-		*dst = b
+// The kind parsers check syntax only; validateConfig checks the ranges. Their errors omit the value, which can be a secret.
+
+func parseString(value string) (string, error) {
+	if strings.ContainsFunc(value, unicode.IsControl) {
+		return "", errors.New("contains a control character, such as a line break")
 	}
+	return value, nil
 }
 
-func setPositiveInt(dst *int, value string) {
-	if i, _ := strconv.ParseInt(value, 10, 32); i > 0 {
-		*dst = int(i)
+func setString(dst *string, value string) error {
+	s, err := parseString(value)
+	if err != nil {
+		return err
 	}
+	*dst = s
+	return nil
+}
+
+func setBool(dst *bool, value string) error {
+	b, err := strconv.ParseBool(value)
+	if err != nil {
+		return errors.New("is not a boolean; use true or false")
+	}
+	*dst = b
+	return nil
+}
+
+func setInt(dst *int, value string) error {
+	i, err := strconv.Atoi(value)
+	if err != nil {
+		return errors.New("is not an integer")
+	}
+	*dst = i
+	return nil
+}
+
+func setFloat32(dst *float32, value string) error {
+	f, err := strconv.ParseFloat(value, 32)
+	if err != nil {
+		return errors.New("is not a number")
+	}
+	*dst = float32(f)
+	return nil
+}
+
+// setList sets dst to the trimmed, non-empty entries. No entries is an error, because an empty list would replace the list of config.yaml.
+func setList(dst *[]string, entries iter.Seq[string]) error {
+	var list []string
+	for entry := range entries {
+		if entry = strings.TrimSpace(entry); entry == "" {
+			continue
+		}
+		entry, err := parseString(entry)
+		if err != nil {
+			return err
+		}
+		list = append(list, entry)
+	}
+	if len(list) == 0 {
+		return errors.New("has no entries; set at least one value or remove the variable")
+	}
+	*dst = list
+	return nil
+}
+
+func setCommaList(dst *[]string, value string) error {
+	return setList(dst, strings.SplitSeq(value, ","))
+}
+
+func setIntList(dst *[]int, value string) error {
+	var entries []string
+	if err := setCommaList(&entries, value); err != nil {
+		return err
+	}
+	list := make([]int, len(entries))
+	for i, entry := range entries {
+		if err := setInt(&list[i], entry); err != nil {
+			return errors.New("has an entry that is not an integer")
+		}
+	}
+	*dst = list
+	return nil
 }
 
 // envSettings maps each service variable, without envPrefix, to the field that
 // it sets. UnknownEnvironmentVariables reads the same table.
-var envSettings = map[string]func(cfg *domain.Config, value string){
-	"DISABLE_CONFIG_FILE": func(cfg *domain.Config, v string) { setBool(&cfg.DisableConfigFile, v) },
+var envSettings = map[string]func(cfg *domain.Config, value string) error{
+	"DISABLE_CONFIG_FILE": func(cfg *domain.Config, v string) error { return setBool(&cfg.DisableConfigFile, v) },
 
-	"HOST": func(cfg *domain.Config, v string) { cfg.Host = v },
-	"PORT": func(cfg *domain.Config, v string) { setPositiveInt(&cfg.Port, v) },
+	"HOST": func(cfg *domain.Config, v string) error { return setString(&cfg.Host, v) },
+	"PORT": func(cfg *domain.Config, v string) error { return setInt(&cfg.Port, v) },
 
-	"LOG_LEVEL":       func(cfg *domain.Config, v string) { cfg.LogLevel = v },
-	"LOG_PATH":        func(cfg *domain.Config, v string) { cfg.LogPath = v },
-	"LOG_MAX_SIZE":    func(cfg *domain.Config, v string) { setPositiveInt(&cfg.LogMaxSize, v) },
-	"LOG_MAX_BACKUPS": func(cfg *domain.Config, v string) { setPositiveInt(&cfg.LogMaxBackups, v) },
+	"LOG_LEVEL":       func(cfg *domain.Config, v string) error { return setString(&cfg.LogLevel, v) },
+	"LOG_PATH":        func(cfg *domain.Config, v string) error { return setString(&cfg.LogPath, v) },
+	"LOG_MAX_SIZE":    func(cfg *domain.Config, v string) error { return setInt(&cfg.LogMaxSize, v) },
+	"LOG_MAX_BACKUPS": func(cfg *domain.Config, v string) error { return setInt(&cfg.LogMaxBackups, v) },
 
-	"SMART_MODE": func(cfg *domain.Config, v string) { setBool(&cfg.SmartMode, v) },
-	"SMART_MODE_THRESHOLD": func(cfg *domain.Config, v string) {
-		if f, _ := strconv.ParseFloat(v, 32); f > 0 {
-			cfg.SmartModeThreshold = float32(f)
-		}
+	"SMART_MODE":           func(cfg *domain.Config, v string) error { return setBool(&cfg.SmartMode, v) },
+	"SMART_MODE_THRESHOLD": func(cfg *domain.Config, v string) error { return setFloat32(&cfg.SmartModeThreshold, v) },
+
+	"SEARCH_PROWLARR_URL":     func(cfg *domain.Config, v string) error { return setString(&cfg.Search.ProwlarrURL, v) },
+	"SEARCH_API_KEY":          func(cfg *domain.Config, v string) error { return setString(&cfg.Search.APIKey, v) },
+	"SEARCH_INDEXER_IDS":      func(cfg *domain.Config, v string) error { return setIntList(&cfg.Search.IndexerIDs, v) },
+	"SEARCH_RSS_INTERVAL":     func(cfg *domain.Config, v string) error { return setString(&cfg.Search.RSSInterval, v) },
+	"SEARCH_REQUEST_INTERVAL": func(cfg *domain.Config, v string) error { return setString(&cfg.Search.RequestInterval, v) },
+
+	"API_TOKEN": func(cfg *domain.Config, v string) error { return setString(&cfg.APIToken, v) },
+
+	"FUZZY_MATCHING_SKIP_REPACK_COMPARE": func(cfg *domain.Config, v string) error {
+		return setBool(&cfg.FuzzyMatching.SkipRepackCompare, v)
+	},
+	"FUZZY_MATCHING_SIMPLIFY_HDR_COMPARE": func(cfg *domain.Config, v string) error {
+		return setBool(&cfg.FuzzyMatching.SimplifyHdrCompare, v)
+	},
+	"FUZZY_MATCHING_SIMPLIFY_WEB_COMPARE": func(cfg *domain.Config, v string) error {
+		return setBool(&cfg.FuzzyMatching.SimplifyWebCompare, v)
+	},
+	"FUZZY_MATCHING_SKIP_YEAR_COMPARE": func(cfg *domain.Config, v string) error {
+		return setBool(&cfg.FuzzyMatching.SkipYearCompare, v)
 	},
 
-	"SEARCH_PROWLARR_URL":     func(cfg *domain.Config, v string) { cfg.Search.ProwlarrURL = v },
-	"SEARCH_API_KEY":          func(cfg *domain.Config, v string) { cfg.Search.APIKey = v },
-	"SEARCH_INDEXER_IDS":      func(cfg *domain.Config, v string) { cfg.Search.IndexerIDs = parseSearchIndexerIDs(v) },
-	"SEARCH_RSS_INTERVAL":     func(cfg *domain.Config, v string) { cfg.Search.RSSInterval = v },
-	"SEARCH_REQUEST_INTERVAL": func(cfg *domain.Config, v string) { cfg.Search.RequestInterval = v },
-
-	"API_TOKEN": func(cfg *domain.Config, v string) { cfg.APIToken = v },
-
-	"FUZZY_MATCHING_SKIP_REPACK_COMPARE":  func(cfg *domain.Config, v string) { setBool(&cfg.FuzzyMatching.SkipRepackCompare, v) },
-	"FUZZY_MATCHING_SIMPLIFY_HDR_COMPARE": func(cfg *domain.Config, v string) { setBool(&cfg.FuzzyMatching.SimplifyHdrCompare, v) },
-	"FUZZY_MATCHING_SIMPLIFY_WEB_COMPARE": func(cfg *domain.Config, v string) { setBool(&cfg.FuzzyMatching.SimplifyWebCompare, v) },
-	"FUZZY_MATCHING_SKIP_YEAR_COMPARE":    func(cfg *domain.Config, v string) { setBool(&cfg.FuzzyMatching.SkipYearCompare, v) },
-
-	"NOTIFICATIONS_DISCORD": func(cfg *domain.Config, v string) { cfg.Notifications.Discord = v },
+	"NOTIFICATIONS_DISCORD": func(cfg *domain.Config, v string) error { return setString(&cfg.Notifications.Discord, v) },
 	// Whitespace separates the URLs, because a Shoutrrr URL can hold commas, such as Telegram chats=a,b.
-	"NOTIFICATIONS_SHOUTRRR": func(cfg *domain.Config, v string) { cfg.Notifications.Shoutrrr = strings.Fields(v) },
-	"NOTIFICATIONS_NOTIFICATION_LEVEL": func(cfg *domain.Config, v string) {
-		levels := strings.Split(v, ",")
-		for i, level := range levels {
-			levels[i] = strings.TrimSpace(level)
-		}
-		cfg.Notifications.NotificationLevel = levels
+	"NOTIFICATIONS_SHOUTRRR": func(cfg *domain.Config, v string) error {
+		return setList(&cfg.Notifications.Shoutrrr, strings.FieldsSeq(v))
+	},
+	"NOTIFICATIONS_NOTIFICATION_LEVEL": func(cfg *domain.Config, v string) error {
+		return setCommaList(&cfg.Notifications.NotificationLevel, v)
 	},
 }
 
 // clientEnvSettings maps each setting of a SEASONPACKARR__CLIENTS_<NAME>_<SETTING>
 // variable to the client field that it sets.
-var clientEnvSettings = map[string]func(client *domain.Client, value string){
-	"TYPE":                  func(c *domain.Client, v string) { c.Type = v },
-	"HOST":                  func(c *domain.Client, v string) { c.Host = v },
-	"PORT":                  func(c *domain.Client, v string) { setPositiveInt(&c.Port, v) },
-	"USERNAME":              func(c *domain.Client, v string) { c.Username = v },
-	"PASSWORD":              func(c *domain.Client, v string) { c.Password = v },
-	"APIKEY":                func(c *domain.Client, v string) { c.APIKey = v },
-	"IMPORT_SAVE_PATH":      func(c *domain.Client, v string) { c.Import.SavePath = v },
-	"IMPORT_CATEGORY":       func(c *domain.Client, v string) { c.Import.Category = v },
-	"IMPORT_DOWNLOAD_PATH":  func(c *domain.Client, v string) { c.Import.DownloadPath = v },
-	"IMPORT_CONTENT_LAYOUT": func(c *domain.Client, v string) { c.Import.ContentLayout = strings.ToLower(v) },
-	"IMPORT_TAGS":           func(c *domain.Client, v string) { c.Import.Tags = splitList(c.Import.Tags[:0], v) },
-	"INVENTORY_INCLUDE_CATEGORIES": func(c *domain.Client, v string) {
-		c.Inventory.IncludeCategories = splitList(c.Inventory.IncludeCategories[:0], v)
+var clientEnvSettings = map[string]func(client *domain.Client, value string) error{
+	"TYPE":                  func(c *domain.Client, v string) error { return setString(&c.Type, v) },
+	"HOST":                  func(c *domain.Client, v string) error { return setString(&c.Host, v) },
+	"PORT":                  func(c *domain.Client, v string) error { return setInt(&c.Port, v) },
+	"USERNAME":              func(c *domain.Client, v string) error { return setString(&c.Username, v) },
+	"PASSWORD":              func(c *domain.Client, v string) error { return setString(&c.Password, v) },
+	"APIKEY":                func(c *domain.Client, v string) error { return setString(&c.APIKey, v) },
+	"IMPORT_SAVE_PATH":      func(c *domain.Client, v string) error { return setString(&c.Import.SavePath, v) },
+	"IMPORT_CATEGORY":       func(c *domain.Client, v string) error { return setString(&c.Import.Category, v) },
+	"IMPORT_DOWNLOAD_PATH":  func(c *domain.Client, v string) error { return setString(&c.Import.DownloadPath, v) },
+	"IMPORT_CONTENT_LAYOUT": func(c *domain.Client, v string) error { return setString(&c.Import.ContentLayout, v) },
+	"IMPORT_TAGS":           func(c *domain.Client, v string) error { return setCommaList(&c.Import.Tags, v) },
+	"INVENTORY_INCLUDE_CATEGORIES": func(c *domain.Client, v string) error {
+		return setCommaList(&c.Inventory.IncludeCategories, v)
 	},
-	"INVENTORY_INCLUDE_TAGS": func(c *domain.Client, v string) { c.Inventory.IncludeTags = splitList(c.Inventory.IncludeTags[:0], v) },
-	"INVENTORY_EXCLUDE_CATEGORIES": func(c *domain.Client, v string) {
-		c.Inventory.ExcludeCategories = splitList(c.Inventory.ExcludeCategories[:0], v)
+	"INVENTORY_INCLUDE_TAGS": func(c *domain.Client, v string) error { return setCommaList(&c.Inventory.IncludeTags, v) },
+	"INVENTORY_EXCLUDE_CATEGORIES": func(c *domain.Client, v string) error {
+		return setCommaList(&c.Inventory.ExcludeCategories, v)
 	},
-	"INVENTORY_EXCLUDE_TAGS": func(c *domain.Client, v string) { c.Inventory.ExcludeTags = splitList(c.Inventory.ExcludeTags[:0], v) },
-}
-
-// splitList appends the non-empty, trimmed comma-separated values of v to dst.
-func splitList(dst []string, v string) []string {
-	for value := range strings.SplitSeq(v, ",") {
-		if value = strings.TrimSpace(value); value != "" {
-			dst = append(dst, value)
-		}
-	}
-	return dst
+	"INVENTORY_EXCLUDE_TAGS": func(c *domain.Client, v string) error { return setCommaList(&c.Inventory.ExcludeTags, v) },
 }
 
 // cliEnvVariables are read by CLI commands in cmd, not by the service config.
@@ -768,50 +834,45 @@ func cutClientEnvVariable(name string) (clientName, setting string, ok bool) {
 	return strings.Cut(after, "_")
 }
 
-func applyEnvironment(cfg *domain.Config) {
+func applyEnvironment(cfg *domain.Config) error {
+	return applyEnvironmentSettings(cfg, envSettings, clientEnvSettings)
+}
+
+// applyEnvironmentSettings applies the variables that the maps name and joins an error for each value that does not parse.
+func applyEnvironmentSettings(
+	cfg *domain.Config,
+	settings map[string]func(*domain.Config, string) error,
+	clientSettings map[string]func(*domain.Client, string) error,
+) error {
+	var errs []error
 	for _, env := range os.Environ() {
 		key, value, _ := strings.Cut(env, "=")
 		name, ok := strings.CutPrefix(key, envPrefix)
 		if !ok || value == "" {
 			continue
 		}
-		if set, ok := envSettings[name]; ok {
-			set(cfg, value)
+		var err error
+		if set, ok := settings[name]; ok {
+			err = set(cfg, value)
+		} else if clientName, setting, ok := cutClientEnvVariable(name); ok && clientName != "" {
+			// An unknown variable only logs a warning, so it must not add an empty client that fails validation.
+			set, known := clientSettings[setting]
+			if !known {
+				continue
+			}
+			// The client is created here when absent, so clients defined only
+			// through environment variables work too.
+			clientName = strings.ToLower(clientName)
+			if cfg.Clients[clientName] == nil {
+				cfg.Clients[clientName] = &domain.Client{}
+			}
+			err = set(cfg.Clients[clientName], value)
 		}
-
-		clientName, setting, ok := cutClientEnvVariable(name)
-		set, known := clientEnvSettings[setting]
-		// An unknown variable only logs a warning, so it must not add an empty client that fails validation.
-		if !ok || clientName == "" || !known {
-			continue
-		}
-		// The client is created here when absent, so clients defined only
-		// through environment variables work too.
-		clientName = strings.ToLower(clientName)
-		if cfg.Clients[clientName] == nil {
-			cfg.Clients[clientName] = &domain.Client{}
-		}
-		set(cfg.Clients[clientName], value)
-	}
-}
-
-// validateInventoryEnvironment rejects an inventory list variable whose value
-// has no entries, such as " " or ",". It would replace the scope of config.yaml
-// with an empty list, and an empty list reads every torrent.
-func validateInventoryEnvironment(environ []string) error {
-	for _, env := range environ {
-		key, value, _ := strings.Cut(env, "=")
-		name, ok := strings.CutPrefix(key, envPrefix)
-		if !ok || value == "" {
-			continue
-		}
-		clientName, setting, ok := cutClientEnvVariable(name)
-		if _, known := clientEnvSettings[setting]; ok && clientName != "" && known &&
-			strings.HasPrefix(setting, "INVENTORY_") && len(splitList(nil, value)) == 0 {
-			return fmt.Errorf("environment variable %s has no entries; set at least one value or remove the variable", key)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("environment variable %s %w", key, err))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // UnknownEnvironmentVariables returns the sorted SEASONPACKARR__ variables in
@@ -901,10 +962,10 @@ func (c *AppConfig) loadSnapshot() (*domain.Config, error) {
 			c.configFile, strings.Join(unknown, ", "))
 	}
 
-	if err := validateInventoryEnvironment(os.Environ()); err != nil {
+	if err := applyEnvironment(&cfg); err != nil {
 		return nil, err
 	}
-	applyEnvironment(&cfg)
+	normalizeConfig(&cfg)
 	if err := validateConfig(cfg); err != nil {
 		return nil, fmt.Errorf("validating config file %s: %w", c.configFile, err)
 	}
@@ -937,7 +998,30 @@ func unknownConfigKeys(fileK *koanf.Koanf) ([]string, error) {
 	return keys, nil
 }
 
+// normalizeConfig runs after the file and the environment are merged, so both sources get the same result.
+func normalizeConfig(cfg *domain.Config) {
+	for _, client := range cfg.Clients {
+		if client != nil {
+			client.Import.ContentLayout = strings.ToLower(client.Import.ContentLayout)
+		}
+	}
+}
+
+// validateConfig runs after the merge, so its range rules cover the file and the environment.
 func validateConfig(cfg domain.Config) error {
+	if cfg.Port < 1 || cfg.Port > 65535 {
+		return errors.New("port (SEASONPACKARR__PORT) must be from 1 to 65535")
+	}
+	if cfg.LogMaxSize < 1 {
+		return errors.New("logMaxSize (SEASONPACKARR__LOG_MAX_SIZE) must be at least 1")
+	}
+	if cfg.LogMaxBackups < 0 {
+		return errors.New("logMaxBackups (SEASONPACKARR__LOG_MAX_BACKUPS) must be at least 0; 0 keeps all old log files")
+	}
+	// The negated form also rejects NaN, which every comparison fails.
+	if !(cfg.SmartModeThreshold > 0 && cfg.SmartModeThreshold <= 1) {
+		return errors.New("smartModeThreshold (SEASONPACKARR__SMART_MODE_THRESHOLD) must be greater than 0 and at most 1")
+	}
 	if err := validateSearch(cfg.Search); err != nil {
 		return err
 	}
