@@ -42,7 +42,7 @@ The torrents that seasonpackarr reads from a client for the candidate check, the
 _Avoid_: Torrent list, client torrents
 
 **Inventory scope**:
-The client setting that limits the inventory to torrents with some categories or tags. An empty scope is every torrent.
+The client setting that limits the inventory: include categories and tags select torrents, and exclude categories and tags drop them. An empty scope is every torrent.
 _Avoid_: Inventory filter
 
 ### Discovery

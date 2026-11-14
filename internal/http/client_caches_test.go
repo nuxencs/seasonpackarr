@@ -92,13 +92,13 @@ func TestPruneClientCaches_DropsOldEndpointAfterHostChange(t *testing.T) {
 
 func TestPruneClientCaches_DropsParsedNamesOfOldScope(t *testing.T) {
 	resetProcessorGlobals()
-	hd := &domain.Client{Type: "qbittorrent", Host: "qbittorrent", Inventory: domain.InventoryScope{Categories: []string{"tv-hd"}}}
+	hd := &domain.Client{Type: "qbittorrent", Host: "qbittorrent", Inventory: domain.InventoryScope{IncludeCategories: []string{"tv-hd"}}}
 	uhd := cloneClientConfig(*hd)
-	uhd.Inventory.Categories = []string{"tv-uhd"}
+	uhd.Inventory.IncludeCategories = []string{"tv-uhd"}
 	cacheClient(t, "sonarr-hd", hd, newCacheTestClient())
 	cacheClient(t, "sonarr-uhd", &uhd, newCacheTestClient())
 	changed := cloneClientConfig(*hd)
-	changed.Inventory.Categories = []string{"tv-hd", "tv-hd-completed"}
+	changed.Inventory.IncludeCategories = []string{"tv-hd", "tv-hd-completed"}
 
 	dropped, err := pruneClientCaches(domain.Config{Clients: map[string]*domain.Client{"sonarr-hd": &changed, "sonarr-uhd": &uhd}})
 	require.NoError(t, err)

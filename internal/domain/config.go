@@ -4,6 +4,11 @@
 
 package domain
 
+import (
+	"slices"
+	"strings"
+)
+
 type Client struct {
 	Type     string       `yaml:"type"`
 	Host     string       `yaml:"host"`
@@ -17,16 +22,74 @@ type Client struct {
 }
 
 // InventoryScope selects the torrents of the inventory. A torrent is in the
-// scope when it has one of the categories or one of the tags. An empty scope
-// selects every torrent. The scope never applies to the import.
+// scope when it has an include category or an include tag, or when the scope
+// has no includes, and it has no exclude category and no exclude tag. An
+// exclude always wins. An empty scope selects every torrent. The scope never
+// applies to the import.
 type InventoryScope struct {
-	Categories []string `yaml:"categories"`
-	Tags       []string `yaml:"tags"`
+	IncludeCategories []string `yaml:"includeCategories"`
+	IncludeTags       []string `yaml:"includeTags"`
+	ExcludeCategories []string `yaml:"excludeCategories"`
+	ExcludeTags       []string `yaml:"excludeTags"`
+}
+
+// Clone copies the lists, so the copy shares no memory with s.
+func (s InventoryScope) Clone() InventoryScope {
+	return InventoryScope{
+		IncludeCategories: slices.Clone(s.IncludeCategories),
+		IncludeTags:       slices.Clone(s.IncludeTags),
+		ExcludeCategories: slices.Clone(s.ExcludeCategories),
+		ExcludeTags:       slices.Clone(s.ExcludeTags),
+	}
+}
+
+// Equal reports whether both scopes have the same lists. Nil and empty lists are equal.
+func (s InventoryScope) Equal(other InventoryScope) bool {
+	return slices.Equal(s.IncludeCategories, other.IncludeCategories) &&
+		slices.Equal(s.IncludeTags, other.IncludeTags) &&
+		slices.Equal(s.ExcludeCategories, other.ExcludeCategories) &&
+		slices.Equal(s.ExcludeTags, other.ExcludeTags)
 }
 
 // IsSet reports whether the scope limits the inventory.
 func (s InventoryScope) IsSet() bool {
-	return len(s.Categories) > 0 || len(s.Tags) > 0
+	return s.HasIncludes() || len(s.ExcludeCategories) > 0 || len(s.ExcludeTags) > 0
+}
+
+// HasIncludes reports whether the scope selects only the torrents with an include category or tag.
+func (s InventoryScope) HasIncludes() bool {
+	return len(s.IncludeCategories) > 0 || len(s.IncludeTags) > 0
+}
+
+// IncludesTag reports whether the tag is an include tag.
+func (s InventoryScope) IncludesTag(tag string) bool {
+	return slices.Contains(s.IncludeTags, tag)
+}
+
+// ExcludesCategory reports whether the category is an exclude category. It
+// matches the exact name only, so it does not exclude subcategories.
+func (s InventoryScope) ExcludesCategory(category string) bool {
+	return slices.Contains(s.ExcludeCategories, category)
+}
+
+// ExcludesTag reports whether the tag is an exclude tag.
+func (s InventoryScope) ExcludesTag(tag string) bool {
+	return slices.Contains(s.ExcludeTags, tag)
+}
+
+// Selects reports whether a torrent with the category and tags can be in the
+// scope. An include category also selects its "/" subcategories, as
+// qBittorrent does when subcategories are on.
+func (s InventoryScope) Selects(category string, tags []string) bool {
+	if s.ExcludesCategory(category) || slices.ContainsFunc(tags, s.ExcludesTag) {
+		return false
+	}
+	if !s.HasIncludes() || slices.ContainsFunc(tags, s.IncludesTag) {
+		return true
+	}
+	return slices.ContainsFunc(s.IncludeCategories, func(include string) bool {
+		return category == include || strings.HasPrefix(category, include+"/")
+	})
 }
 
 // ImportPolicy controls how /api/import re-imports a matched season pack back

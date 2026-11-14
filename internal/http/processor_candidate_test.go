@@ -140,28 +140,32 @@ func TestClientConfigsEqual_CoversEveryField(t *testing.T) {
 			ContentLayout: "subfolder",
 		},
 		Inventory: domain.InventoryScope{
-			Categories: []string{"tv", "tv.cross-seed"},
-			Tags:       []string{"keep"},
+			IncludeCategories: []string{"tv", "tv.cross-seed"},
+			IncludeTags:       []string{"keep"},
+			ExcludeCategories: []string{"tv-4k"},
+			ExcludeTags:       []string{"noreuse"},
 		},
 	}
 	require.True(t, clientConfigsEqual(base, cloneClientConfig(base)))
 
 	tests := map[string]func(*domain.Client){
-		"type":           func(client *domain.Client) { client.Type = "transmission" },
-		"host":           func(client *domain.Client) { client.Host = "other" },
-		"port":           func(client *domain.Client) { client.Port++ },
-		"username":       func(client *domain.Client) { client.Username = "other" },
-		"password":       func(client *domain.Client) { client.Password = "other" },
-		"api key":        func(client *domain.Client) { client.APIKey = "other" },
-		"save path":      func(client *domain.Client) { client.Import.SavePath = "/other" },
-		"tags":           func(client *domain.Client) { client.Import.Tags[0] = "other" },
-		"category":       func(client *domain.Client) { client.Import.Category = "other" },
-		"download path":  func(client *domain.Client) { client.Import.DownloadPath = "/other" },
-		"content layout": func(client *domain.Client) { client.Import.ContentLayout = "original" },
-		"inventory categories": func(client *domain.Client) {
-			client.Inventory.Categories[1] = "other"
+		"type":               func(client *domain.Client) { client.Type = "transmission" },
+		"host":               func(client *domain.Client) { client.Host = "other" },
+		"port":               func(client *domain.Client) { client.Port++ },
+		"username":           func(client *domain.Client) { client.Username = "other" },
+		"password":           func(client *domain.Client) { client.Password = "other" },
+		"api key":            func(client *domain.Client) { client.APIKey = "other" },
+		"save path":          func(client *domain.Client) { client.Import.SavePath = "/other" },
+		"tags":               func(client *domain.Client) { client.Import.Tags[0] = "other" },
+		"category":           func(client *domain.Client) { client.Import.Category = "other" },
+		"download path":      func(client *domain.Client) { client.Import.DownloadPath = "/other" },
+		"content layout":     func(client *domain.Client) { client.Import.ContentLayout = "original" },
+		"include categories": func(client *domain.Client) { client.Inventory.IncludeCategories[1] = "other" },
+		"include tags": func(client *domain.Client) {
+			client.Inventory.IncludeTags = append(client.Inventory.IncludeTags, "other")
 		},
-		"inventory tags": func(client *domain.Client) { client.Inventory.Tags = append(client.Inventory.Tags, "other") },
+		"exclude categories": func(client *domain.Client) { client.Inventory.ExcludeCategories[0] = "other" },
+		"exclude tags":       func(client *domain.Client) { client.Inventory.ExcludeTags = nil },
 		"inventory scope removed": func(client *domain.Client) {
 			client.Inventory = domain.InventoryScope{}
 		},
@@ -183,7 +187,7 @@ func TestClientConfigsEqual_CoversEveryField(t *testing.T) {
 	withoutScope := cloneClientConfig(base)
 	withoutScope.Inventory = domain.InventoryScope{}
 	emptyScope := cloneClientConfig(base)
-	emptyScope.Inventory = domain.InventoryScope{Categories: []string{}, Tags: []string{}}
+	emptyScope.Inventory = domain.InventoryScope{IncludeCategories: []string{}, IncludeTags: []string{}, ExcludeCategories: []string{}, ExcludeTags: []string{}}
 	require.True(t, clientConfigsEqual(withoutScope, emptyScope), "nil and empty lists are the same scope")
 
 	allocations := testing.AllocsPerRun(1000, func() {
@@ -297,11 +301,11 @@ func TestInventory_KeepsParsedNamesOfEachScopeOnOneEndpoint(t *testing.T) {
 	hd := &domain.Client{
 		Type: "qbittorrent", Host: "qbittorrent",
 		Import:    domain.ImportPolicy{Category: "tv-hd"},
-		Inventory: domain.InventoryScope{Categories: []string{"tv-hd", "cross-seed"}},
+		Inventory: domain.InventoryScope{IncludeCategories: []string{"tv-hd", "cross-seed"}},
 	}
 	uhd := cloneClientConfig(*hd)
 	uhd.Import.Category = "tv-uhd"
-	uhd.Inventory.Categories = []string{"tv-uhd", "cross-seed"}
+	uhd.Inventory.IncludeCategories = []string{"tv-uhd", "cross-seed"}
 	hdProcessor := newTestProcessor(&fakeTorrentClient{torrents: []torrentclient.Torrent{{Name: hdName}, {Name: sharedName}}})
 	uhdProcessor := newTestProcessor(&fakeTorrentClient{torrents: []torrentclient.Torrent{{Name: uhdName}, {Name: sharedName}}})
 

@@ -50,8 +50,10 @@ services:
       # SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_CONTENT_LAYOUT: subfolder # qBittorrent only
 
       # Inventory scope (qBittorrent only; empty reads every torrent)
-      # SEASONPACKARR__CLIENTS_DEFAULT_INVENTORY_CATEGORIES: tv-hd,tv-hd-completed
-      # SEASONPACKARR__CLIENTS_DEFAULT_INVENTORY_TAGS:
+      # SEASONPACKARR__CLIENTS_DEFAULT_INVENTORY_INCLUDE_CATEGORIES: tv-hd,tv-hd-completed
+      # SEASONPACKARR__CLIENTS_DEFAULT_INVENTORY_INCLUDE_TAGS:
+      # SEASONPACKARR__CLIENTS_DEFAULT_INVENTORY_EXCLUDE_CATEGORIES: movies
+      # SEASONPACKARR__CLIENTS_DEFAULT_INVENTORY_EXCLUDE_TAGS:
     volumes:
       - ${DOCKERCONFDIR}/seasonpackarr:/config # location of the config file
       - /data/torrents:/data/torrents # your torrent data directory

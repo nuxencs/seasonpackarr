@@ -65,7 +65,12 @@ type parsedNamesKey struct {
 
 func parsedNamesKeyFor(client domain.Client) parsedNamesKey {
 	// A NUL byte cannot be part of a qBittorrent category or tag.
-	scope := strings.Join(client.Inventory.Categories, "\x00") + "\x01" + strings.Join(client.Inventory.Tags, "\x00")
+	scope := strings.Join([]string{
+		strings.Join(client.Inventory.IncludeCategories, "\x00"),
+		strings.Join(client.Inventory.IncludeTags, "\x00"),
+		strings.Join(client.Inventory.ExcludeCategories, "\x00"),
+		strings.Join(client.Inventory.ExcludeTags, "\x00"),
+	}, "\x01")
 	return parsedNamesKey{endpoint: importEndpoint(client), scope: scope}
 }
 
@@ -202,8 +207,7 @@ func (p *processor) getClient(ctx context.Context, client *domain.Client, client
 func cloneClientConfig(client domain.Client) domain.Client {
 	clone := client
 	clone.Import.Tags = stdslices.Clone(client.Import.Tags)
-	clone.Inventory.Categories = stdslices.Clone(client.Inventory.Categories)
-	clone.Inventory.Tags = stdslices.Clone(client.Inventory.Tags)
+	clone.Inventory = client.Inventory.Clone()
 	return clone
 }
 
@@ -219,8 +223,7 @@ func clientConfigsEqual(a, b domain.Client) bool {
 		a.Import.Category == b.Import.Category &&
 		a.Import.DownloadPath == b.Import.DownloadPath &&
 		a.Import.ContentLayout == b.Import.ContentLayout &&
-		stdslices.Equal(a.Inventory.Categories, b.Inventory.Categories) &&
-		stdslices.Equal(a.Inventory.Tags, b.Inventory.Tags)
+		a.Inventory.Equal(b.Inventory)
 }
 
 func (p *processor) getAllTorrents(ctx context.Context, clientName string, clientConfig *domain.Client, fuzzyMatching domain.FuzzyMatching) (map[string][]entry, error) {
