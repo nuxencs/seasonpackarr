@@ -8,12 +8,16 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -108,6 +112,45 @@ func (e Events) RequireField(t testing.TB, message, field, value string) Event {
 	return e.require(t, fmt.Sprintf("message %q with %s=%q", message, field, value), func(event Event) bool {
 		return event["message"] == message && event[field] == value
 	})
+}
+
+// AssertNoSecrets fails the test, without stopping it, when a key or value of
+// any recorded event contains one of secrets. A key of secrets names the
+// secret kind in the failure.
+func (l *Logger) AssertNoSecrets(t testing.TB, secrets map[string]string) bool {
+	t.Helper()
+	events := l.Events(t)
+	ok := true
+	for _, kind := range slices.Sorted(maps.Keys(secrets)) {
+		secret := secrets[kind]
+		if !assert.NotEmpty(t, secret, "empty %s sentinel", kind) {
+			ok = false
+			continue
+		}
+		for _, event := range events {
+			if containsSecret(map[string]any(event), secret) {
+				ok = assert.Fail(t, "log holds secret", "%s %q in %#v", kind, secret, event)
+				break
+			}
+		}
+	}
+	return ok
+}
+
+func containsSecret(value any, secret string) bool {
+	switch value := value.(type) {
+	case string:
+		return strings.Contains(value, secret)
+	case map[string]any:
+		for key, field := range value {
+			if strings.Contains(key, secret) || containsSecret(field, secret) {
+				return true
+			}
+		}
+	case []any:
+		return slices.ContainsFunc(value, func(item any) bool { return containsSecret(item, secret) })
+	}
+	return false
 }
 
 func (e Events) require(t testing.TB, want string, match func(Event) bool) Event {

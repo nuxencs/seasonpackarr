@@ -731,6 +731,79 @@ clients:
 	require.Equal(t, "after", cfg.Snapshot().Clients["default"].Import.Category)
 }
 
+// configSecrets are the sentinel secrets of configWithSecrets by kind.
+var configSecrets = map[string]string{
+	"apiToken":        "sentinel-config-api-token",
+	"client password": "sentinel-config-client-password",
+	"Prowlarr apiKey": "sentinel-config-prowlarr-api-key",
+	"Discord webhook": "sentinel-config-discord-webhook-token",
+}
+
+// configWithSecrets returns a valid config that holds every secret kind.
+// replace changes it into an invalid config near the secrets.
+func configWithSecrets(replace ...string) string {
+	return strings.NewReplacer(replace...).Replace(`apiToken: sentinel-config-api-token
+clients:
+  default:
+    type: qbittorrent
+    host: http://qbittorrent:8080
+    port: 8080
+    username: admin
+    password: sentinel-config-client-password
+    import:
+      category: tv-hd
+search:
+  prowlarrURL: http://prowlarr:9696
+  apiKey: sentinel-config-prowlarr-api-key
+notifications:
+  discord: https://discord.com/api/webhooks/123/sentinel-config-discord-webhook-token
+`)
+}
+
+func TestDynamicReload_LogsNoSecretOnRejectedReload(t *testing.T) {
+	tests := map[string][]string{
+		"YAML syntax error after the apiToken": {"clients:\n", "clients: [\n"},
+		"YAML indentation error at the password": {
+			"    password: sentinel-config-client-password\n", "     password: sentinel-config-client-password\n",
+		},
+		"port next to the password is not a number": {"port: 8080", "port: not-a-port"},
+		"password is a map":                         {"password: sentinel-config-client-password", "password: {value: sentinel-config-client-password}"},
+		"apiToken is a list":                        {"apiToken: sentinel-config-api-token", "apiToken: [sentinel-config-api-token]"},
+		"Prowlarr apiKey is a list":                 {"apiKey: sentinel-config-prowlarr-api-key", "apiKey: [sentinel-config-prowlarr-api-key]"},
+		"Discord webhook is a list": {
+			"discord: https://discord.com/api/webhooks/123/sentinel-config-discord-webhook-token",
+			"discord: [https://discord.com/api/webhooks/123/sentinel-config-discord-webhook-token]",
+		},
+		"unknown key next to the password": {"    username: admin\n", "    username: admin\n    passwrd: sentinel-config-client-password\n"},
+		"client validation fails":          {"type: qbittorrent", "type: transmission"},
+		"Prowlarr URL holds credentials": {
+			"prowlarrURL: http://prowlarr:9696", "prowlarrURL: http://admin:sentinel-config-prowlarr-api-key@prowlarr:9696",
+		},
+	}
+	for name, replace := range tests {
+		t.Run(name, func(t *testing.T) {
+			invalid := configWithSecrets(replace...)
+			require.NotEqual(t, configWithSecrets(), invalid, "the replacement matched nothing")
+			cfg, configFile := newTestAppConfig(t, configWithSecrets())
+			log := loggertest.New()
+			_, err := cfg.DynamicReload(log)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NotNil(t, cfg.watcher)
+				require.NoError(t, cfg.watcher.Close())
+			})
+
+			writeConfigFile(t, configFile, invalid)
+
+			// The reload must be rejected and logged, or the checks below prove nothing.
+			require.Eventually(t, func() bool {
+				return strings.Contains(log.String(), "config reload rejected")
+			}, 3*time.Second, 10*time.Millisecond, log.String())
+			log.AssertNoSecrets(t, configSecrets)
+		})
+	}
+}
+
 func TestValidateClientConfig(t *testing.T) {
 	t.Run("qbittorrent requires category or savePath", func(t *testing.T) {
 		err := validateClientConfig("default", &domain.Client{Type: "qbittorrent"})

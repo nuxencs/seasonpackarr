@@ -10,10 +10,13 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"net"
 	stdhttp "net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,6 +24,7 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
+	"github.com/nuxencs/seasonpackarr/internal/logger/loggertest"
 	"github.com/nuxencs/seasonpackarr/internal/prowlarr"
 	"github.com/nuxencs/seasonpackarr/internal/state"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
@@ -78,6 +82,17 @@ type fixtureOptions struct {
 	clientEpisodes int           // episodes from E01 that the client already holds
 	threshold      float32       // smart-mode threshold; 0 accepts any coverage
 	log            logger.Logger // nil logs errors only
+	noti           domain.Sender // nil sends no notification
+}
+
+// newTraceLogger returns a recording logger that sees every level. zerolog
+// drops events below its global level, and logger.New changes that level.
+func newTraceLogger(t *testing.T) *loggertest.Logger {
+	t.Helper()
+	previous := zerolog.GlobalLevel()
+	zerolog.SetGlobalLevel(zerolog.TraceLevel)
+	t.Cleanup(func() { zerolog.SetGlobalLevel(previous) })
+	return loggertest.New()
 }
 
 func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFixture {
@@ -134,12 +149,11 @@ func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFix
 	if log == nil {
 		log = logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"})
 	}
-	server := NewServer(
-		log,
-		cfg,
-		fakeNotificationSender{},
-		store,
-	)
+	var noti domain.Sender = fakeNotificationSender{}
+	if opts.noti != nil {
+		noti = opts.noti
+	}
+	server := NewServer(log, cfg, noti, store)
 	return processorHTTPFixture{
 		search:        server.search,
 		statePath:     statePath,
@@ -420,4 +434,108 @@ func (f *searchFixture) restart(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
 	server := NewServer(f.search.log, f.config, fakeNotificationSender{}, store)
 	f.search, f.handler = server.search, server.Handler()
+}
+
+// clientFailure is a client config that cannot connect, with the secrets that
+// it holds by kind.
+type clientFailure struct {
+	name    string
+	client  domain.Client
+	secrets map[string]string
+}
+
+// newClientFailures returns, for each client type, a config with sentinel
+// secrets for a refused connection and for a server that rejects the client.
+func newClientFailures(t *testing.T) []clientFailure {
+	t.Helper()
+	refused := newRefusedURL(t)
+	rejected := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
+		w.WriteHeader(stdhttp.StatusForbidden)
+	}))
+	t.Cleanup(rejected.Close)
+	refusedURL, err := url.Parse(refused)
+	require.NoError(t, err)
+	refusedPort, err := strconv.Atoi(refusedURL.Port())
+	require.NoError(t, err)
+	// A Deluge daemon speaks TLS. This listener drops each connection instead.
+	dropping, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = dropping.Close() })
+	go func() {
+		for {
+			conn, err := dropping.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+
+	var failures []clientFailure
+	for mode, base := range map[string]string{"refused": refused, "rejected": rejected.URL} {
+		failures = append(failures,
+			clientFailure{
+				name: "qbittorrent " + mode,
+				client: domain.Client{
+					Type: "qbittorrent", Host: base + "/sentinel-qui-proxy-key",
+					Username: "admin", Password: "sentinel-qbit-password",
+				},
+				secrets: map[string]string{"qBittorrent password": "sentinel-qbit-password", "qui proxy key": "sentinel-qui-proxy-key"},
+			},
+			clientFailure{
+				name: "transmission " + mode,
+				client: domain.Client{
+					Type: "transmission", Host: base,
+					Username: "sentinel-transmission-username", Password: "sentinel-transmission-password",
+				},
+				secrets: map[string]string{"Transmission username": "sentinel-transmission-username", "Transmission password": "sentinel-transmission-password"},
+			},
+		)
+	}
+	for mode, port := range map[string]int{"refused": refusedPort, "rejected": listenerPort(t, dropping.Addr())} {
+		for _, clientType := range []string{"deluge-v1", "deluge-v2"} {
+			failures = append(failures, clientFailure{
+				name: clientType + " " + mode,
+				client: domain.Client{
+					Type: clientType, Host: "127.0.0.1", Port: port,
+					Username: "seasonpackarr", Password: "sentinel-deluge-password",
+				},
+				secrets: map[string]string{"Deluge password": "sentinel-deluge-password"},
+			})
+		}
+	}
+	// With an API key, the client fails at the first request after the login. A
+	// refused connection retries for seconds there and adds nothing.
+	failures = append(failures, clientFailure{
+		name:    "qbittorrent api key rejected",
+		client:  domain.Client{Type: "qbittorrent", Host: rejected.URL, APIKey: "sentinel-qbit-api-key"},
+		secrets: map[string]string{"qBittorrent apiKey": "sentinel-qbit-api-key"},
+	})
+	slices.SortFunc(failures, func(a, b clientFailure) int { return strings.Compare(a.name, b.name) })
+	return failures
+}
+
+// newRefusedURL returns the URL of a closed server, so a connection to it is refused.
+func newRefusedURL(t *testing.T) string {
+	t.Helper()
+	server := httptest.NewServer(stdhttp.NotFoundHandler())
+	server.Close()
+	return server.URL
+}
+
+func listenerPort(t *testing.T, addr net.Addr) int {
+	t.Helper()
+	tcp, ok := addr.(*net.TCPAddr)
+	require.True(t, ok, "%T is not a TCP address", addr)
+	return tcp.Port
+}
+
+// useClient replaces the default client with config, so the next request
+// connects to it.
+func (f processorHTTPFixture) useClient(config domain.Client) {
+	cfg := f.config.Snapshot()
+	config.Import = cfg.Clients["default"].Import
+	cfg.Clients = map[string]*domain.Client{"default": &config}
+	f.config.Store(cfg)
+	resetProcessorGlobals()
 }

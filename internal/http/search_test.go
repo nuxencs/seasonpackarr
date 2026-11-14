@@ -557,3 +557,50 @@ func TestSearch_RemovingExistingPackRestoresQuery(t *testing.T) {
 	require.Equal(t, 2, second.Requests)
 	require.Equal(t, "would_import", second.Outcomes[0].Status)
 }
+
+// The runner logs a fixed reason for a client failure. This test keeps it so.
+func TestSearch_LogsNoClientSecretOnConnectionFailure(t *testing.T) {
+	for _, failure := range newClientFailures(t) {
+		t.Run(failure.name, func(t *testing.T) {
+			log := newTraceLogger(t)
+			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, log: log})
+			f.useClient(failure.client)
+
+			report := f.runExact(t, true)
+
+			require.Len(t, report.Failures, 1)
+			// The runner must log the failure, or the checks below prove nothing.
+			log.Events(t).RequireField(t, "Prowlarr operation failed", "clientname", "default")
+			log.AssertNoSecrets(t, failure.secrets)
+		})
+	}
+}
+
+func TestSearch_LogsNoProwlarrAPIKeyOnFailure(t *testing.T) {
+	const apiKey = "sentinel-prowlarr-api-key"
+	refused := newRefusedURL(t)
+	tests := map[string]func(*domain.Search){
+		"Prowlarr rejects the API key": func(*domain.Search) {},
+		"Prowlarr refuses the connection": func(search *domain.Search) {
+			search.ProwlarrURL = refused
+		},
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			log := newTraceLogger(t)
+			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, log: log})
+			cfg := f.config.Snapshot()
+			cfg.Search.APIKey = apiKey
+			mutate(&cfg.Search)
+			f.config.Store(cfg)
+
+			report := f.runExact(t, true)
+
+			require.Len(t, report.Failures, 1)
+			require.Contains(t, report.Failures[0].Reason, "Prowlarr")
+			// The runner must log the failure, or the check below proves nothing.
+			log.Events(t).RequireField(t, "Prowlarr operation failed", "reason", report.Failures[0].Reason)
+			log.AssertNoSecrets(t, map[string]string{"Prowlarr apiKey": apiKey})
+		})
+	}
+}
