@@ -54,7 +54,7 @@ func (p *processor) MatchSeasonPackHandler(c *gin.Context) {
 		return
 	}
 
-	p.sendNotification(statusCode, "Match", nil)
+	// The import sends the success notification, so an accepted pack notifies once.
 	p.log.Info().Msg("successfully matched season pack to episodes in client")
 	c.String(statusCode.Code(), statusCode.String())
 }

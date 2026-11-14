@@ -101,7 +101,9 @@ A body that is not valid JSON gets `470`.
 ## Status codes
 
 The notification level is the `notificationLevel` value that sends a Discord
-notification for the code. Codes without a level send no notification.
+notification for the code. Codes without a level send no notification. A
+successful match sends no notification. See
+[Notifications and logs](#notifications-and-logs).
 
 | Code | Meaning | Notification level |
 | --- | --- | --- |
@@ -121,7 +123,7 @@ notification for the code. Codes without a level send no notification.
 | `214` | Episode did not match | None |
 | `215` | Container did not match | `INFO` |
 | `230` | Coverage is below the smart mode threshold | `INFO` |
-| `250` | Successful match or import | `MATCH` |
+| `250` | Successful match or import | `MATCH` (import only) |
 | `440` | Could not create hardlinks | `ERROR` |
 | `445` | Could not match episodes to files in the pack | `ERROR` |
 | `459` | Invalid import config, for example a qBittorrent category that does not exist | `ERROR` |
@@ -148,10 +150,14 @@ contain them. For per-episode diagnostics, read the
 
 ## Notifications and logs
 
-- The candidate check sends no notifications. Match sends notifications with
-  the action label `Match`, and import with the label `Import`. An accepted
-  pack therefore sends two `MATCH` notifications: one from match and one from
-  import.
+- The candidate check sends no notifications.
+- An accepted pack sends one `MATCH` notification, from the import, with the
+  action label `Import`. A successful match sends no notification, because
+  nothing is imported yet. If autobrr accepts the match but does not call the
+  import, seasonpackarr sends no success notification.
+- Match sends a notification with the action label `Match` only for a
+  rejection (`INFO`) or an error (`ERROR`). Import sends its rejections and
+  errors with the label `Import`.
 - The candidate check and match log expected rejections, such as a release
   group mismatch, at `INFO`. Configuration, decoding, client, filesystem, and
   import failures are logged at `ERROR`. The import logs every failure at

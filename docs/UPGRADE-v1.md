@@ -27,8 +27,9 @@ autobrr filter disabled until step 6.
   - The candidate check sends no notifications. In v0.16.0, `/api/pack` sent a
     notification for every result, so the `INFO` level reported each resolution,
     source, or group mismatch. These rejections are now silent.
-  - An accepted season pack sends 2 `MATCH` notifications: one from the match
-    and one from the import.
+  - v1.0.0 sends one `MATCH` notification for each accepted season pack, from
+    the import. This is like v0.16.0, which sent one for each `/api/pack`
+    request. A successful match sends no notification.
   - The notification action label is `Match` or `Import`. It was `Pack` before.
 - **Unknown config keys stop startup.** v0.16.0 ignored a key that it did not
   know. v1.0.0 names each unknown key in `config.yaml` and does not start. An
