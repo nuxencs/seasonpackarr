@@ -31,7 +31,7 @@
         "WARN",
         "TRACE"
       ],
-      "default": "INFO"
+      "default": "DEBUG"
     },
     "logMaxSize": {
       "type": "integer",
@@ -61,12 +61,6 @@
       "default": ""
     }
   },
-  "required": [
-    "host",
-    "port",
-    "clients",
-    "logLevel"
-  ],
   "$defs": {
     "search": {
       "type": "object",
@@ -95,23 +89,23 @@
         "type": {
           "type": "string",
           "enum": ["", "qbittorrent", "transmission", "deluge", "deluge-v1", "deluge-v2"],
-          "default": "qbittorrent"
+          "description": "Empty selects qbittorrent. \"deluge\" is an alias for \"deluge-v2\"."
         },
         "host": {
           "type": "string",
-          "default": "127.0.0.1"
+          "description": "Hostname or IP address of the client. Every client request fails without it."
         },
         "port": {
           "type": "integer",
-          "default": 8080
+          "description": "Port of the client API. Set it explicitly. Only Deluge has a fallback (58846)."
         },
         "username": {
           "type": "string",
-          "default": "admin"
+          "default": ""
         },
         "password": {
           "type": "string",
-          "default": "adminadmin"
+          "default": ""
         },
         "apiKey": {
           "type": "string",
@@ -124,9 +118,6 @@
           "$ref": "#/$defs/inventory"
         }
       },
-      "required": [
-        "host"
-      ],
       "allOf": [
         {
           "if": {
