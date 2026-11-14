@@ -365,16 +365,43 @@ In each example:
 If API authentication is off (empty `apiToken`), leave the header empty and omit
 `?apikey=...` from the action endpoint.
 
-#### Change the old `/api/pack` entry into the match
+#### Add the candidate check
 
 Your filter has one External entry for `/api/pack`. Open the filter's
-**External** tab and do one of these:
+**External** tab, select **Add new**, and choose **Webhook**. autobrr adds the
+new entry below the `/api/pack` entry. Enter:
+
+| Field | Value |
+| --- | --- |
+| Name | `1. Candidate check` |
+| On Error | `Reject` |
+| Endpoint | `http://seasonpackarr:42069/api/candidate` |
+| HTTP method | `POST` |
+| HTTP Request Headers | `X-API-Token=your-api-token` |
+| Expected HTTP status code | `250` |
+
+Use this in **Data (JSON)**:
+
+```json
+{
+  "name": "{{ .TorrentName }}",
+  "clientname": "default"
+}
+```
+
+Enable the entry.
+
+![autobrr External tab with the candidate webhook](assets/v1-upgrade-autobrr-candidate.jpg)
+
+#### Change the old `/api/pack` entry into the match
+
+Do one of these with the `/api/pack` entry:
 
 - **Edit the entry.** Change the fields to the values below. The entry then
-  stays above the candidate check that you add next, so you must
+  stays above the candidate check, so you must
   [reorder the entries](#put-the-candidate-check-first).
-- **Delete the entry and add it again** after the candidate check. Select
-  **Add new** and choose **Webhook**.
+- **Delete the entry and add it again.** Select **Add new** and choose
+  **Webhook**. autobrr adds the entry below the candidate check.
 
 | Field | Value |
 | --- | --- |
@@ -399,32 +426,6 @@ Enable the entry. autobrr downloads the torrent file for this check only after
 the candidate check passes.
 
 ![autobrr External tab with the match webhook](assets/v1-upgrade-autobrr-match.jpg)
-
-#### Add the candidate check
-
-In the **External** tab, select **Add new** and choose **Webhook**. Enter:
-
-| Field | Value |
-| --- | --- |
-| Name | `1. Candidate check` |
-| On Error | `Reject` |
-| Endpoint | `http://seasonpackarr:42069/api/candidate` |
-| HTTP method | `POST` |
-| HTTP Request Headers | `X-API-Token=your-api-token` |
-| Expected HTTP status code | `250` |
-
-Use this in **Data (JSON)**:
-
-```json
-{
-  "name": "{{ .TorrentName }}",
-  "clientname": "default"
-}
-```
-
-Enable the entry.
-
-![autobrr External tab with the candidate webhook](assets/v1-upgrade-autobrr-candidate.jpg)
 
 #### Put the candidate check first
 
