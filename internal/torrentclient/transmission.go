@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/errtrace"
 
+	"github.com/hashicorp/go-cleanhttp"
 	"github.com/hekmon/transmissionrpc/v3"
 )
 
@@ -35,12 +37,15 @@ type transmissionClient struct {
 }
 
 func newTransmissionClient(ctx context.Context, client *domain.Client) (*transmissionClient, error) {
-	endpoint, err := buildTransmissionURL(client)
+	endpoint, credentials, err := buildTransmissionURL(client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build transmission URL: %w", err)
 	}
 
-	c, err := transmissionrpc.New(endpoint, nil)
+	// transmissionrpc uses this pooled transport when it has no custom client.
+	c, err := transmissionrpc.New(endpoint, &transmissionrpc.Config{CustomClient: &http.Client{
+		Transport: transmissionAuth{base: cleanhttp.DefaultPooledTransport(), endpoint: endpoint, credentials: credentials},
+	}})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create transmission client: %w", err)
 	}
@@ -58,26 +63,49 @@ func newTransmissionClient(ctx context.Context, client *domain.Client) (*transmi
 	}, nil
 }
 
-// buildTransmissionURL builds the Transmission RPC endpoint URL. Basic auth
-// credentials are embedded as user info so the underlying library sends them on
-// every request; an empty username leaves the request unauthenticated.
-func buildTransmissionURL(client *domain.Client) (*url.URL, error) {
+// buildTransmissionURL builds the Transmission RPC endpoint URL and returns the
+// basic auth credentials apart from it, nil for none. The URL holds no
+// credentials: net/http puts the URL into its errors and masks only the
+// password, and the request handlers log these errors. The username setting
+// wins over credentials in the host.
+func buildTransmissionURL(client *domain.Client) (*url.URL, *url.Userinfo, error) {
 	host, err := buildHost(client)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	parsed, err := url.Parse(host)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse host: %w", err)
+		return nil, nil, fmt.Errorf("failed to parse host: %w", err)
 	}
 
-	parsed.Path = "/transmission/rpc"
+	credentials := parsed.User
 	if client.Username != "" {
-		parsed.User = url.UserPassword(client.Username, client.Password)
+		credentials = url.UserPassword(client.Username, client.Password)
 	}
+	parsed.User = nil
+	parsed.Path = "/transmission/rpc"
+	return parsed, credentials, nil
+}
 
-	return parsed, nil
+// transmissionAuth sends the basic auth credentials on each request to the
+// scheme and host of the RPC endpoint. A redirect to another host gets none,
+// as net/http does for credentials in a URL.
+type transmissionAuth struct {
+	base        http.RoundTripper
+	endpoint    *url.URL
+	credentials *url.Userinfo // nil sends no credentials
+}
+
+func (a transmissionAuth) RoundTrip(req *http.Request) (*http.Response, error) {
+	if a.credentials == nil || req.URL.Scheme != a.endpoint.Scheme || req.URL.Host != a.endpoint.Host {
+		return a.base.RoundTrip(req)
+	}
+	password, _ := a.credentials.Password()
+	// A RoundTripper must not change the request of its caller.
+	req = req.Clone(req.Context())
+	req.SetBasicAuth(a.credentials.Username(), password)
+	return a.base.RoundTrip(req)
 }
 
 func (t *transmissionClient) GetTorrents(ctx context.Context) ([]Torrent, error) {

@@ -79,6 +79,12 @@ so the glossary does not define them.
   `httptest.NewRecorder` runs on the test goroutine and can use `require`.
 - Benchmarks keep `if err != nil { b.Fatal(err) }` in measured loops.
 - Log assertions use `internal/logger/loggertest`.
+- A log test for a secret uses a unique sentinel value for each secret kind,
+  makes the code fail on the path under test, and asserts with
+  `AssertNoSecrets` that no event holds the sentinel in any field. It first
+  requires the event of that failure, so the test cannot pass on a path that
+  logs nothing. `start` reports a config load error before the service logger
+  exists, so its CLI test asserts on the process output instead.
 - Every Go file groups imports as standard library, this module, then external
   modules.
 

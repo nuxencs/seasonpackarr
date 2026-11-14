@@ -21,6 +21,7 @@ import (
 
 	"github.com/autobrr/go-torrent/bencode"
 	"github.com/autobrr/go-torrent/metainfo"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -187,5 +188,58 @@ func TestCLI_SearchPreviewAndImport(t *testing.T) {
 			require.Equal(t, 1, report.TorrentCacheHits)
 			require.Zero(t, report.TorrentDownloads)
 		}
+	}
+}
+
+// TestCLI_StartLogsNoSecretForInvalidConfig reads the process output, because
+// start reports a config load error before the service logger exists.
+func TestCLI_StartLogsNoSecretForInvalidConfig(t *testing.T) {
+	binary := buildCLI(t)
+	secrets := map[string]string{
+		"apiToken":        "sentinel-start-api-token",
+		"client password": "sentinel-start-client-password",
+		"Prowlarr apiKey": "sentinel-start-prowlarr-api-key",
+		"Discord webhook": "sentinel-start-discord-webhook-token",
+	}
+	valid := `apiToken: sentinel-start-api-token
+clients:
+  default:
+    type: qbittorrent
+    host: http://qbittorrent
+    port: 8080
+    password: sentinel-start-client-password
+    import:
+      category: tv-hd
+search:
+  prowlarrURL: http://prowlarr:9696
+  apiKey: sentinel-start-prowlarr-api-key
+notifications:
+  discord: https://discord.com/api/webhooks/123/sentinel-start-discord-webhook-token
+`
+	tests := map[string][]string{
+		"YAML syntax error after the apiToken":      {"clients:\n", "clients: [\n"},
+		"port next to the password is not a number": {"port: 8080", "port: not-a-port"},
+		"password is a map":                         {"password: sentinel-start-client-password", "password: {value: sentinel-start-client-password}"},
+	}
+	for name, replace := range tests {
+		t.Run(name, func(t *testing.T) {
+			invalid := strings.NewReplacer(replace...).Replace(valid)
+			require.NotEqual(t, valid, invalid, "the replacement matched nothing")
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(invalid), 0o600))
+
+			command := exec.CommandContext(t.Context(), binary, "start", "--config", dir)
+			command.Env = cliEnvironment()
+			output, err := command.CombinedOutput()
+
+			exit, ok := errors.AsType[*exec.ExitError](err)
+			require.True(t, ok, "expected process failure, got %v: %s", err, output)
+			require.Equal(t, 1, exit.ExitCode(), string(output))
+			// The load error must be in the output, or the checks below prove nothing.
+			require.Contains(t, string(output), "config file", string(output))
+			for kind, secret := range secrets {
+				assert.NotContains(t, string(output), secret, "start output holds the %s", kind)
+			}
+		})
 	}
 }

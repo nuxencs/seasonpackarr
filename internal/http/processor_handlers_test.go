@@ -21,6 +21,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/logger/loggertest"
+	"github.com/nuxencs/seasonpackarr/internal/notification"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
@@ -890,4 +891,69 @@ func TestCandidateEndpoint_ReturnsSuccessfulMatchWithoutFileReads(t *testing.T) 
 
 	require.Equal(t, domain.StatusSuccessfulMatch.Code(), res.Code)
 	require.Zero(t, torrentClient.fileCalls)
+}
+
+func TestEndpoints_LogNoClientSecretOnConnectionFailure(t *testing.T) {
+	for _, failure := range newClientFailures(t) {
+		t.Run(failure.name, func(t *testing.T) {
+			for _, endpoint := range []struct{ path, message string }{
+				{path: "/api/candidate", message: "error checking season pack candidate"},
+				{path: "/api/match", message: "error matching season pack"},
+				{path: "/api/import", message: "error importing season pack"},
+			} {
+				t.Run(endpoint.path, func(t *testing.T) {
+					log := newTraceLogger(t)
+					f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, log: log})
+					f.useClient(failure.client)
+
+					res := f.postJSON(t, endpoint.path, f.packPayload())
+
+					require.GreaterOrEqual(t, res.Code, stdhttp.StatusBadRequest, res.Body.String())
+					// The handler must log the client error, or the checks below prove nothing.
+					event := log.Events(t).Require(t, endpoint.message)
+					require.Contains(t, event["error"], "torrent")
+					log.AssertNoSecrets(t, failure.secrets)
+				})
+			}
+		})
+	}
+}
+
+func TestImportEndpoint_LogsNoDiscordWebhookToken(t *testing.T) {
+	const token = "sentineldiscordwebhooktoken0123456789"
+	rejected := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
+		w.WriteHeader(stdhttp.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"message": "Invalid Webhook Token", "code": 50027}`))
+	}))
+	t.Cleanup(rejected.Close)
+	tests := map[string]string{
+		"refused connection": newRefusedURL(t) + "/api/webhooks/123/" + token,
+		"rejected token":     rejected.URL + "/api/webhooks/123/" + token,
+		"invalid URL":        "http://discord.invalid/api/webhooks/123/" + token + "\n",
+	}
+	for name, webhook := range tests {
+		t.Run(name, func(t *testing.T) {
+			log := newTraceLogger(t)
+			cfg := &fakeConfig{config: domain.Config{Notifications: domain.Notifications{
+				Discord:           webhook,
+				NotificationLevel: []string{domain.NotificationLevelMatch},
+			}}}
+			f := newProcessorHTTPFixture(t, fixtureOptions{
+				packEpisodes: 1, clientEpisodes: 1, log: log,
+				noti: notification.NewDiscordSender(log, cfg),
+			})
+
+			res := f.postJSON(t, "/api/import", f.packPayload())
+
+			require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code, res.Body.String())
+			// The send runs in the task group. Its failure must be logged, or the checks below prove nothing.
+			require.NoError(t, f.tasks.Wait(t.Context()))
+			require.Contains(t, log.String(), "error sending discord notification")
+			log.AssertNoSecrets(t, map[string]string{
+				"Discord webhook token":       token,
+				"Discord webhook token start": token[:len(token)/2],
+				"Discord webhook token end":   token[len(token)/2:],
+			})
+		})
+	}
 }
