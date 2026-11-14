@@ -253,7 +253,7 @@ seasonpackarr can send notifications to a Discord webhook.
 | `notifications.discord` | empty | Discord webhook URL. Empty turns notifications off. |
 | `notifications.notificationLevel` | `["MATCH", "ERROR"]` | Which events to send. |
 
-- `MATCH`: an accepted season pack. The match and the import each send one, so an accepted pack sends two.
+- `MATCH`: an accepted season pack. The import sends one notification for each accepted pack. A successful match sends none.
 - `INFO`: a rejected season pack from a match or an import. The candidate check sends no notifications.
 - `ERROR`: a failed request, for example a client connection error.
 
