@@ -300,6 +300,20 @@ func TestIsValidEpisodeFile(t *testing.T) {
 			want: false,
 		},
 		{
+			name: "sample in uppercase",
+			args: args{
+				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.SAMPLE.mkv",
+			},
+			want: false,
+		},
+		{
+			name: "sample as group suffix",
+			args: args{
+				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp-sample.mkv",
+			},
+			want: false,
+		},
+		{
 			name: "wrong ext",
 			args: args{
 				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.nfo",
