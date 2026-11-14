@@ -57,7 +57,7 @@ func TestNewTransmissionClient_PerformsSessionHandshakeAndPing(t *testing.T) {
 	newTransmissionClientFromServer(t, srv, "", "")
 	// The constructor pings via session-get; reaching here means the 409 handshake
 	// and the authenticated retry both completed.
-	lastRequest(t, captured, "session-get")
+	require.False(t, lastRequest(t, captured, "session-get").HadAuth, "an empty username must send no basic auth")
 }
 
 func TestTransmissionGetTorrents(t *testing.T) {
@@ -138,13 +138,15 @@ func TestTransmissionGetFiles_ExpandsWholeCallError(t *testing.T) {
 
 func TestNewTransmissionClient_UsesBasicAuth(t *testing.T) {
 	t.Parallel()
-	srv, captured := transmissionTestServer(t, map[string]string{"session-get": emptySessionResp})
-	newTransmissionClientFromServer(t, srv, "admin", "secret")
+	for _, password := range []string{"secret", ""} {
+		srv, captured := transmissionTestServer(t, map[string]string{"session-get": emptySessionResp})
+		newTransmissionClientFromServer(t, srv, "admin", password)
 
-	req := lastRequest(t, captured, "session-get")
-	require.True(t, req.HadAuth, "basic auth header was not sent")
-	require.Equal(t, "admin", req.User)
-	require.Equal(t, "secret", req.Pass)
+		req := lastRequest(t, captured, "session-get")
+		require.True(t, req.HadAuth, "basic auth header was not sent")
+		require.Equal(t, "admin", req.User)
+		require.Equal(t, password, req.Pass)
+	}
 }
 
 func TestNewTransmissionClient_FailsFastOnConnectionError(t *testing.T) {
@@ -296,14 +298,9 @@ func TestBuildTransmissionURL(t *testing.T) {
 			want:   "http://localhost/transmission/rpc",
 		},
 		{
-			name:   "credentials embedded as user info",
+			name:   "credentials stay out of the URL",
 			client: &domain.Client{Host: "localhost", Port: 9091, Username: "admin", Password: "secret"},
-			want:   "http://admin:secret@localhost:9091/transmission/rpc",
-		},
-		{
-			name:   "username only still embeds user info",
-			client: &domain.Client{Host: "localhost", Username: "admin"},
-			want:   "http://admin:@localhost/transmission/rpc",
+			want:   "http://localhost:9091/transmission/rpc",
 		},
 	}
 	for _, tt := range tests {

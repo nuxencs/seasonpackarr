@@ -59,7 +59,7 @@ Track known gaps and follow-up work as GitHub issues, not in files.
 
 ## Security rules
 
-- Never log API tokens, API keys, passwords, or other secrets.
+- Never log API tokens, API keys, passwords, or other secrets. Library errors often hold the request URL. Send credentials in a header when the client accepts one, and redact the URL when it must hold a secret.
 - Treat the derivation of filesystem target paths as security-sensitive. Torrent-controlled names flow into hardlink paths.
 - Treat the database and its backups as sensitive. Cached torrent bytes and download links can contain tracker credentials.
 - Record each new outbound network dependency in [research/](research/) with its primary sources.

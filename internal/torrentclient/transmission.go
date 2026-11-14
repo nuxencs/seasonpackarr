@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/errtrace"
 
+	"github.com/hashicorp/go-cleanhttp"
 	"github.com/hekmon/transmissionrpc/v3"
 )
 
@@ -40,7 +42,10 @@ func newTransmissionClient(ctx context.Context, client *domain.Client) (*transmi
 		return nil, fmt.Errorf("failed to build transmission URL: %w", err)
 	}
 
-	c, err := transmissionrpc.New(endpoint, nil)
+	// transmissionrpc uses this pooled transport when it has no custom client.
+	c, err := transmissionrpc.New(endpoint, &transmissionrpc.Config{CustomClient: &http.Client{
+		Transport: transmissionAuth{base: cleanhttp.DefaultPooledTransport(), username: client.Username, password: client.Password},
+	}})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create transmission client: %w", err)
 	}
@@ -58,9 +63,9 @@ func newTransmissionClient(ctx context.Context, client *domain.Client) (*transmi
 	}, nil
 }
 
-// buildTransmissionURL builds the Transmission RPC endpoint URL. Basic auth
-// credentials are embedded as user info so the underlying library sends them on
-// every request; an empty username leaves the request unauthenticated.
+// buildTransmissionURL builds the Transmission RPC endpoint URL. It holds no
+// credentials: net/http puts the URL into its errors and masks only the
+// password, and the request handlers log these errors.
 func buildTransmissionURL(client *domain.Client) (*url.URL, error) {
 	host, err := buildHost(client)
 	if err != nil {
@@ -73,11 +78,24 @@ func buildTransmissionURL(client *domain.Client) (*url.URL, error) {
 	}
 
 	parsed.Path = "/transmission/rpc"
-	if client.Username != "" {
-		parsed.User = url.UserPassword(client.Username, client.Password)
-	}
-
 	return parsed, nil
+}
+
+// transmissionAuth sends the basic auth credentials on every request. An empty
+// username leaves the request unauthenticated.
+type transmissionAuth struct {
+	base               http.RoundTripper
+	username, password string
+}
+
+func (a transmissionAuth) RoundTrip(req *http.Request) (*http.Response, error) {
+	if a.username == "" {
+		return a.base.RoundTrip(req)
+	}
+	// A RoundTripper must not change the request of its caller.
+	req = req.Clone(req.Context())
+	req.SetBasicAuth(a.username, a.password)
+	return a.base.RoundTrip(req)
 }
 
 func (t *transmissionClient) GetTorrents(ctx context.Context) ([]Torrent, error) {
