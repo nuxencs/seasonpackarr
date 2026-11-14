@@ -3,7 +3,7 @@
 seasonpackarr reads `config.yaml`. The first start writes a commented file with every setting, so most changes are edits
 to that file. The [JSON schema](../schemas/config-schema.json) gives editor completion and checks values.
 
-This page explains the settings that need a decision. For the Prowlarr settings under `search`, see
+This page lists every setting and explains the settings that need a decision. For how Prowlarr discovery works, see
 [Prowlarr discovery](PROWLARR.md).
 
 ## Config file location
@@ -52,17 +52,18 @@ Set `apiToken`. autobrr and the command line send it in the `X-API-Token` header
 ## Torrent clients
 
 Each entry under `clients` connects seasonpackarr to one torrent client. The entry name, for example `default`, is the
-client name that autobrr and the command line use. Each name must be unique.
+client name that autobrr and the command line use. Each name must be unique. In the tables, `<name>` is the client
+name.
 
 | Setting | Meaning |
 | --- | --- |
-| `type` | `"qbittorrent"` (default), `"transmission"`, `"deluge-v1"`, or `"deluge-v2"`. `"deluge"` is an alias for `"deluge-v2"`. |
-| `host` | Hostname or IP address of the client. |
-| `port` | Port of the client API. Set it explicitly. Only Deluge has a fallback (`58846`). |
-| `username`, `password` | Client credentials. |
-| `apiKey` | qBittorrent only. See [qBittorrent](#qbittorrent). |
-| `import` | How seasonpackarr adds season packs to this client. See [Import policy](#import-policy). |
-| `inventory` | qBittorrent only. Limits the torrents that seasonpackarr reads from this client. See [Inventory scope](#inventory-scope). |
+| `clients.<name>.type` | `"qbittorrent"` (default), `"transmission"`, `"deluge-v1"`, or `"deluge-v2"`. `"deluge"` is an alias for `"deluge-v2"`. |
+| `clients.<name>.host` | Hostname or IP address of the client. |
+| `clients.<name>.port` | Port of the client API. Set it explicitly. Only Deluge has a fallback (`58846`). |
+| `clients.<name>.username`, `clients.<name>.password` | Client credentials. |
+| `clients.<name>.apiKey` | qBittorrent only. See [qBittorrent](#qbittorrent). |
+| `clients.<name>.import` | How seasonpackarr adds season packs to this client. See [Import policy](#import-policy). |
+| `clients.<name>.inventory` | qBittorrent only. Limits the torrents that seasonpackarr reads from this client. See [Inventory scope](#inventory-scope). |
 
 ### qBittorrent
 
@@ -112,28 +113,20 @@ The `import` block of each client controls where a season pack goes and how seas
 
 ### Fields for every client
 
-- **`savePath`**: the final destination. seasonpackarr hardlinks the reusable episodes into the season pack folder in
-  this directory and adds the torrent with this save path. When set, the directory must already exist, or startup fails.
-  - qBittorrent: optional. Without it, the destination follows the category and the qBittorrent automatic management
-    and category path preferences.
-  - Transmission: optional. Without it, seasonpackarr uses the session download directory.
-  - Deluge: required.
-- **`tags`**: qBittorrent tags or Transmission labels for imported torrents. Deluge accepts at most one entry, as
-  described in [Deluge](#deluge). There is no default: if you remove `tags`, imported torrents get no tag. The generated
-  config sets `["seasonpackarr"]`.
+| Setting | Meaning |
+| --- | --- |
+| `clients.<name>.import.savePath` | The final destination. seasonpackarr hardlinks the reusable episodes into the season pack folder in this directory and adds the torrent with this save path. When set, the directory must already exist, or startup fails. Optional for qBittorrent: without it, the destination follows the category and the qBittorrent automatic management and category path preferences. Optional for Transmission: without it, seasonpackarr uses the session download directory. Required for Deluge. |
+| `clients.<name>.import.tags` | qBittorrent tags or Transmission labels for imported torrents. Deluge accepts at most one entry, as described in [Deluge](#deluge). There is no default: if you remove `tags`, imported torrents get no tag. The generated config sets `["seasonpackarr"]`. |
 
 ### qBittorrent-only fields
 
 Startup fails when a Transmission or Deluge client sets one of these fields.
 
-- **`category`**: the category for the added torrent. When `savePath` is empty, the category also sets the destination,
-  and it must already exist in qBittorrent. A missing category makes the import fail with status `459`. When no save path
-  and no download path are set, seasonpackarr sends only the category and lets qBittorrent choose the path. It reads
-  the same qBittorrent preferences before it creates hardlinks, so both programs use the same destination.
-- **`downloadPath`**: a temporary path for incomplete downloads. It is never the final destination. When set, the
-  directory must already exist, or startup fails.
-- **`contentLayout`**: `"subfolder"`, `"nosubfolder"`, or `"original"`, in any letter case. Leave it empty to use the
-  qBittorrent default.
+| Setting | Meaning |
+| --- | --- |
+| `clients.<name>.import.category` | The category for the added torrent. When `savePath` is empty, the category also sets the destination, and it must already exist in qBittorrent. A missing category makes the import fail with status `459`. When no save path and no download path are set, seasonpackarr sends only the category and lets qBittorrent choose the path. It reads the same qBittorrent preferences before it creates hardlinks, so both programs use the same destination. |
+| `clients.<name>.import.downloadPath` | A temporary path for incomplete downloads. It is never the final destination. When set, the directory must already exist, or startup fails. |
+| `clients.<name>.import.contentLayout` | `"subfolder"`, `"nosubfolder"`, or `"original"`, in any letter case. Leave it empty to use the qBittorrent default. |
 
 A qBittorrent client must set `savePath` or `category`.
 
@@ -209,8 +202,8 @@ clients:
 
 | Setting | Meaning |
 | --- | --- |
-| `includeCategories`, `includeTags` | Read only the torrents with one of these categories or one of these tags. When both lists are empty, seasonpackarr reads every torrent. |
-| `excludeCategories`, `excludeTags` | Drop the torrents with one of these categories or one of these tags. An exclude always wins over an include. |
+| `clients.<name>.inventory.includeCategories`, `clients.<name>.inventory.includeTags` | Read only the torrents with one of these categories or one of these tags. When both lists are empty, seasonpackarr reads every torrent. |
+| `clients.<name>.inventory.excludeCategories`, `clients.<name>.inventory.excludeTags` | Drop the torrents with one of these categories or one of these tags. An exclude always wins over an include. |
 
 When all four lists are empty, or the `inventory` block is missing, the scope is every torrent. Names must match
 exactly.
@@ -306,10 +299,10 @@ comparisons. All are `false` by default.
 
 | Setting | Effect when `true` |
 | --- | --- |
-| `skipRepackCompare` | Ignores the repack status. The pack `Show.S01.1080p.WEB-DL.DDPA5.1.H.264-RlsGrp` then matches the episode `Show.S01E01.1080p.WEB-DL.REPACK.DDPA5.1.H.264-RlsGrp`. |
-| `simplifyHdrCompare` | Treats `HDR10`, `HDR10+`, and `HDR+` as `HDR`. The pack `Show.S01.2160p.WEB-DL.DDPA5.1.DV.HDR10+.H.265-RlsGrp` then matches the episode `Show.S01E01.2160p.WEB-DL.DDPA5.1.DV.HDR.H.265-RlsGrp`. |
-| `simplifyWebCompare` | Treats `WEB-DL` and `WEB` as the same source. |
-| `skipYearCompare` | Lets a release without a year match a release with a year. |
+| `fuzzyMatching.skipRepackCompare` | Ignores the repack status. The pack `Show.S01.1080p.WEB-DL.DDPA5.1.H.264-RlsGrp` then matches the episode `Show.S01E01.1080p.WEB-DL.REPACK.DDPA5.1.H.264-RlsGrp`. |
+| `fuzzyMatching.simplifyHdrCompare` | Treats `HDR10`, `HDR10+`, and `HDR+` as `HDR`. The pack `Show.S01.2160p.WEB-DL.DDPA5.1.DV.HDR10+.H.265-RlsGrp` then matches the episode `Show.S01E01.2160p.WEB-DL.DDPA5.1.DV.HDR.H.265-RlsGrp`. |
+| `fuzzyMatching.simplifyWebCompare` | Treats `WEB-DL` and `WEB` as the same source. |
+| `fuzzyMatching.skipYearCompare` | Lets a release without a year match a release with a year. |
 
 Each relaxed comparison accepts more packs. A wrong match costs more than a pack that downloads in full, so turn on only
 the comparisons that your trackers need.
@@ -371,6 +364,19 @@ It needs no running service and ignores `notificationLevel`. It sends one
 test notification to each destination, prints one line for each, for example `discord: ok`, and exits `1` when a send
 fails or when no destination is configured.
 
+## Prowlarr discovery
+
+The `search` settings connect seasonpackarr to Prowlarr for RSS monitoring and search. See
+[Prowlarr discovery](PROWLARR.md) for how they work.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `search.prowlarrURL` | empty | Base URL of Prowlarr, including the URL base when used. Do not append `/api/v1`. |
+| `search.apiKey` | empty | Prowlarr API key. |
+| `search.indexerIDs` | `[]` | Prowlarr indexer IDs for RSS polls and searches. An empty list selects all eligible indexers. |
+| `search.rssInterval` | `"0s"` | Time between RSS polls. `"0s"` turns RSS monitoring off. Otherwise at least `"10m"`. |
+| `search.requestInterval` | `"10s"` | Minimum time between requests to Prowlarr. At least `"10s"`. |
+
 ## Logging
 
 | Setting | Default | Meaning |
@@ -382,8 +388,9 @@ fails or when no destination is configured.
 
 ## Environment variables
 
-Most settings have an environment variable with the `SEASONPACKARR__` prefix. Environment variables override
-`config.yaml`. The repository's [`docker-compose.yml`](../docker-compose.yml) lists the common ones.
+Each setting has an environment variable with the `SEASONPACKARR__` prefix. Environment variables override
+`config.yaml`. The repository's [`docker-compose.yml`](../docker-compose.yml) lists all of them. The variables that few
+setups need are commented-out lines.
 
 - Top-level settings: `SEASONPACKARR__HOST`, `SEASONPACKARR__PORT`, `SEASONPACKARR__API_TOKEN`,
   `SEASONPACKARR__LOG_LEVEL`, `SEASONPACKARR__LOG_PATH`, `SEASONPACKARR__LOG_MAX_SIZE`, `SEASONPACKARR__LOG_MAX_BACKUPS`,
@@ -396,11 +403,17 @@ Most settings have an environment variable with the `SEASONPACKARR__` prefix. En
   spaces, for example `"gotify://gotify.example.com/<token> ntfy://ntfy.sh/<topic>"`. Shoutrrr URLs use whitespace, not
   commas, because a URL can hold commas, for example Telegram `chats=a,b`.
 - Clients: `SEASONPACKARR__CLIENTS_<NAME>_<SETTING>`. `<NAME>` is the client name in upper case. The client name
-  becomes lower case. `<SETTING>` is `TYPE`, `HOST`, `PORT`, `USERNAME`, `PASSWORD`, `APIKEY`, `IMPORT_SAVE_PATH`,
-  `IMPORT_CATEGORY`, `IMPORT_DOWNLOAD_PATH`, `IMPORT_CONTENT_LAYOUT`, `IMPORT_TAGS` (comma-separated),
-  `INVENTORY_INCLUDE_CATEGORIES`, `INVENTORY_INCLUDE_TAGS`, `INVENTORY_EXCLUDE_CATEGORIES`, or
-  `INVENTORY_EXCLUDE_TAGS` (all four comma-separated). In these variables, a client name cannot contain an underscore.
-  Without an `INVENTORY_` variable, the scope of `config.yaml` applies.
+  becomes lower case. In these variables, a client name cannot contain an underscore.
+  - Connection: `SEASONPACKARR__CLIENTS_<NAME>_TYPE`, `SEASONPACKARR__CLIENTS_<NAME>_HOST`,
+    `SEASONPACKARR__CLIENTS_<NAME>_PORT`, `SEASONPACKARR__CLIENTS_<NAME>_USERNAME`,
+    `SEASONPACKARR__CLIENTS_<NAME>_PASSWORD`, `SEASONPACKARR__CLIENTS_<NAME>_APIKEY`.
+  - Import policy: `SEASONPACKARR__CLIENTS_<NAME>_IMPORT_SAVE_PATH`, `SEASONPACKARR__CLIENTS_<NAME>_IMPORT_CATEGORY`,
+    `SEASONPACKARR__CLIENTS_<NAME>_IMPORT_DOWNLOAD_PATH`, `SEASONPACKARR__CLIENTS_<NAME>_IMPORT_CONTENT_LAYOUT`, and
+    `SEASONPACKARR__CLIENTS_<NAME>_IMPORT_TAGS` as a comma-separated list.
+  - Inventory scope: `SEASONPACKARR__CLIENTS_<NAME>_INVENTORY_INCLUDE_CATEGORIES`,
+    `SEASONPACKARR__CLIENTS_<NAME>_INVENTORY_INCLUDE_TAGS`, `SEASONPACKARR__CLIENTS_<NAME>_INVENTORY_EXCLUDE_CATEGORIES`,
+    and `SEASONPACKARR__CLIENTS_<NAME>_INVENTORY_EXCLUDE_TAGS`, each as a comma-separated list. Without an `INVENTORY_`
+    variable, the scope of `config.yaml` applies.
 - Prowlarr: see [Prowlarr discovery](PROWLARR.md).
 
 At startup, seasonpackarr logs a warning for each `SEASONPACKARR__` variable that it does not know, for example

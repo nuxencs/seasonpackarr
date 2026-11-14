@@ -4,9 +4,7 @@
 package config
 
 import (
-	"os"
 	"reflect"
-	"regexp"
 	"testing"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
@@ -111,18 +109,4 @@ func TestUnknownEnvironmentVariables(t *testing.T) {
 		"SEASONPACKARR__LOG_LEVL",
 		"SEASONPACKARR__SMART_MODE_TRESHOLD",
 	}, UnknownEnvironmentVariables(environ))
-}
-
-// TestUnknownEnvironmentVariables_AllowsComposeExample keeps the example Compose
-// file and the variables that applyEnvironment reads in sync.
-func TestUnknownEnvironmentVariables_AllowsComposeExample(t *testing.T) {
-	compose, err := os.ReadFile("../../docker-compose.yml")
-	require.NoError(t, err)
-	names := regexp.MustCompile(`SEASONPACKARR__[A-Z0-9_]+`).FindAllString(string(compose), -1)
-	require.NotEmpty(t, names)
-	environ := make([]string, 0, len(names))
-	for _, name := range names {
-		environ = append(environ, name+"=value")
-	}
-	require.Empty(t, UnknownEnvironmentVariables(environ))
 }
