@@ -243,6 +243,24 @@ func TestDelugeGetTorrents_ReconnectsAfterLostConnection(t *testing.T) {
 	assert.Equal(t, 2, api.torrentCalls)
 }
 
+// TestDelugeClose_NextCallConnectsAgain: the server closes a client that the
+// config no longer has, but a running request can still hold it.
+func TestDelugeClose_NextCallConnectsAgain(t *testing.T) {
+	t.Parallel()
+
+	api := newListingDelugeAPI()
+	client := newTestDelugeClient(api, domain.ImportPolicy{})
+
+	require.NoError(t, client.Close())
+	assert.Equal(t, 1, api.closeCalls)
+	assert.Zero(t, api.connectCalls)
+
+	torrents, err := client.GetTorrents(t.Context())
+	require.NoError(t, err)
+	assert.Len(t, torrents, 2)
+	assert.Equal(t, 1, api.connectCalls, "a request after Close must not use the closed connection")
+}
+
 // TestDelugeGetTorrents_KeepsConnectionOnRPCError: the daemon answered, so the
 // connection is intact and a second request would get the same answer.
 func TestDelugeGetTorrents_KeepsConnectionOnRPCError(t *testing.T) {

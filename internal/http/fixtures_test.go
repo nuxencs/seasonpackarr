@@ -176,7 +176,7 @@ func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFix
 	if opts.noti != nil {
 		noti = opts.noti
 	}
-	server := NewServer(log, cfg, noti, store)
+	server := NewServer(log, cfg, noti, store, nil)
 	return processorHTTPFixture{
 		search:        server.search,
 		statePath:     statePath,
@@ -471,7 +471,7 @@ func (f *searchFixture) restart(t *testing.T) {
 	store, err := state.Open(t.Context(), f.statePath, zerolog.Nop())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
-	server := NewServer(f.search.log, f.config, f.notifications, store)
+	server := NewServer(f.search.log, f.config, f.notifications, store, nil)
 	f.search, f.handler, f.tasks = server.search, server.Handler(), server.tasks
 }
 

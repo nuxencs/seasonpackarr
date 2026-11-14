@@ -83,6 +83,7 @@
 - Client inventory is cached for 30 seconds, so the ordered candidate and match checks normally share one client scan.
 - seasonpackarr keeps the parsed torrent names of each client endpoint separately from the inventory. An import drops the inventory, but the next scan parses only new names.
 - At startup, a background task reads the inventory of each client once, so the first announce does not log in or parse every name. Clients of one endpoint share the parsed names. The task tries a client that is not ready up to four times, 10 seconds apart, then only logs a warning.
+- After each config reload, seasonpackarr drops the cached connection and inventory of each client that the config no longer has or configures differently, and the parsed names of endpoints that no client uses. It closes the Deluge connection of a dropped client. A request that still holds that client connects again.
 - Accepted import plans are cached for 2 minutes. `/api/import` normally performs no second inventory or file-detail reads.
 - Cache entries validate client configuration, matching settings, release name, and torrent identity. `/api/import` rebuilds safely on a cache miss.
 - Imports to the same client type, host, and port are serialized. The candidate gate is checked again before a cached plan is used.

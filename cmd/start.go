@@ -56,7 +56,8 @@ func newStartCommand() *cobra.Command {
 			}
 
 			// init dynamic config
-			if _, err := cfg.DynamicReload(log); err != nil {
+			reloads, err := cfg.DynamicReload(log)
+			if err != nil {
 				return fmt.Errorf("failed to start config reload watcher: %w", err)
 			}
 
@@ -76,7 +77,7 @@ func newStartCommand() *cobra.Command {
 					log.Error().Err(err).Msg("could not close database")
 				}
 			}()
-			srv := http.NewServer(log, cfg, noti, store)
+			srv := http.NewServer(log, cfg, noti, store, reloads)
 
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
 			defer stop()

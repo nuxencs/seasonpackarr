@@ -30,14 +30,18 @@ type Server struct {
 	noti   domain.Sender
 	tasks  *taskGroup
 	search *searchRunner
-	// lifecycleTasks holds the search schedule and the startup inventory read.
-	// Shutdown cancels them first, so they cannot hold the HTTP drain.
+	// lifecycleTasks holds the search schedule, the startup inventory read, and
+	// the cache clean-up after config reloads. Shutdown cancels them first, so
+	// they cannot hold the HTTP drain.
 	lifecycleTasks *taskGroup
+	reloads        <-chan struct{}
 
 	httpServer http.Server
 }
 
-func NewServer(log logger.Logger, config config.Provider, notification domain.Sender, store *state.Store) *Server {
+// NewServer creates the server. reloads signals each successful config reload,
+// and can be nil when the config file is disabled.
+func NewServer(log logger.Logger, config config.Provider, notification domain.Sender, store *state.Store, reloads <-chan struct{}) *Server {
 	tasks := newTaskGroup()
 	return &Server{
 		log:            log,
@@ -46,6 +50,7 @@ func NewServer(log logger.Logger, config config.Provider, notification domain.Se
 		tasks:          tasks,
 		search:         &searchRunner{log: log, cfg: config, noti: notification, tasks: tasks, state: store},
 		lifecycleTasks: newTaskGroup(),
+		reloads:        reloads,
 	}
 }
 
@@ -57,6 +62,9 @@ func (s *Server) Open(ctx context.Context) error {
 	})
 	s.lifecycleTasks.Go(func(warmCtx context.Context) {
 		inventoryWarmer{log: s.log, cfg: s.cfg, retryDelay: inventoryWarmRetryDelay}.run(warmCtx)
+	})
+	s.lifecycleTasks.Go(func(reloadCtx context.Context) {
+		watchConfigReloads(reloadCtx, s.log, s.cfg, s.reloads)
 	})
 	defer s.lifecycleTasks.cancel()
 	var err error
