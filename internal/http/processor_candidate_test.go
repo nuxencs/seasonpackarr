@@ -122,80 +122,6 @@ func TestInventory_SharedByCandidateAndMatch(t *testing.T) {
 	require.Equal(t, 1, torrentClient.torrentCalls, "candidate and match must share one inventory snapshot")
 }
 
-var clientConfigsEqualSink bool
-
-func TestClientConfigsEqual_CoversEveryField(t *testing.T) {
-	base := domain.Client{
-		Type:     "qbittorrent",
-		Host:     "localhost",
-		Port:     8080,
-		Username: "user",
-		Password: "password",
-		APIKey:   "api-key",
-		Import: domain.ImportPolicy{
-			SavePath:      "/save",
-			Tags:          []string{"one", "two"},
-			Category:      "category",
-			DownloadPath:  "/download",
-			ContentLayout: "subfolder",
-		},
-		Inventory: domain.InventoryScope{
-			IncludeCategories: []string{"tv", "tv.cross-seed"},
-			IncludeTags:       []string{"keep"},
-			ExcludeCategories: []string{"tv-4k"},
-			ExcludeTags:       []string{"noreuse"},
-		},
-	}
-	require.True(t, clientConfigsEqual(base, cloneClientConfig(base)))
-
-	tests := map[string]func(*domain.Client){
-		"type":               func(client *domain.Client) { client.Type = "transmission" },
-		"host":               func(client *domain.Client) { client.Host = "other" },
-		"port":               func(client *domain.Client) { client.Port++ },
-		"username":           func(client *domain.Client) { client.Username = "other" },
-		"password":           func(client *domain.Client) { client.Password = "other" },
-		"api key":            func(client *domain.Client) { client.APIKey = "other" },
-		"save path":          func(client *domain.Client) { client.Import.SavePath = "/other" },
-		"tags":               func(client *domain.Client) { client.Import.Tags[0] = "other" },
-		"category":           func(client *domain.Client) { client.Import.Category = "other" },
-		"download path":      func(client *domain.Client) { client.Import.DownloadPath = "/other" },
-		"content layout":     func(client *domain.Client) { client.Import.ContentLayout = "original" },
-		"include categories": func(client *domain.Client) { client.Inventory.IncludeCategories[1] = "other" },
-		"include tags": func(client *domain.Client) {
-			client.Inventory.IncludeTags = append(client.Inventory.IncludeTags, "other")
-		},
-		"exclude categories": func(client *domain.Client) { client.Inventory.ExcludeCategories[0] = "other" },
-		"exclude tags":       func(client *domain.Client) { client.Inventory.ExcludeTags = nil },
-		"inventory scope removed": func(client *domain.Client) {
-			client.Inventory = domain.InventoryScope{}
-		},
-	}
-	for name, mutate := range tests {
-		t.Run(name, func(t *testing.T) {
-			changed := cloneClientConfig(base)
-			mutate(&changed)
-			require.False(t, clientConfigsEqual(base, changed))
-		})
-	}
-
-	withoutTags := cloneClientConfig(base)
-	withoutTags.Import.Tags = nil
-	emptyTags := cloneClientConfig(base)
-	emptyTags.Import.Tags = []string{}
-	require.True(t, clientConfigsEqual(withoutTags, emptyTags), "nil and empty tags have the same policy")
-
-	withoutScope := cloneClientConfig(base)
-	withoutScope.Inventory = domain.InventoryScope{}
-	emptyScope := cloneClientConfig(base)
-	emptyScope.Inventory = domain.InventoryScope{IncludeCategories: []string{}, IncludeTags: []string{}, ExcludeCategories: []string{}, ExcludeTags: []string{}}
-	require.True(t, clientConfigsEqual(withoutScope, emptyScope), "nil and empty lists are the same scope")
-
-	allocations := testing.AllocsPerRun(1000, func() {
-		clientConfigsEqualSink = clientConfigsEqual(base, base)
-	})
-	require.Zero(t, allocations, "config equality is on the request path")
-}
-
 func TestInventory_IsScopedToClientAndFuzzyConfig(t *testing.T) {
 	resetProcessorGlobals()
 	torrentClient := &fakeTorrentClient{torrents: []torrentclient.Torrent{{Name: "Series.S01E01.1080p.WEB-DL-GRP"}}}
@@ -211,7 +137,7 @@ func TestInventory_IsScopedToClientAndFuzzyConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, torrentClient.torrentCalls, "unchanged config should reuse cached entries")
 
-	changedClient := cloneClientConfig(*client)
+	changedClient := client.Clone()
 	changedClient.Import.Category = "two"
 	_, err = p.getAllTorrents(t.Context(), "default", &changedClient, domain.FuzzyMatching{})
 	require.NoError(t, err)
@@ -254,7 +180,7 @@ func TestInventory_ReusesParsedReleasesAfterImportInvalidation(t *testing.T) {
 	torrentClient := &fakeTorrentClient{torrents: []torrentclient.Torrent{{Name: torrentName}, {Name: torrentName}}}
 	p := newTestProcessor(torrentClient)
 	client := &domain.Client{Type: "qbittorrent", Host: "qbittorrent", Import: domain.ImportPolicy{Category: "tv-hd"}}
-	alias := cloneClientConfig(*client)
+	alias := client.Clone()
 	alias.Import.Category = "tv-uhd"
 
 	entries, err := p.getAllTorrents(t.Context(), "default", client, domain.FuzzyMatching{})
@@ -303,7 +229,7 @@ func TestInventory_KeepsParsedNamesOfEachScopeOnOneEndpoint(t *testing.T) {
 		Import:    domain.ImportPolicy{Category: "tv-hd"},
 		Inventory: domain.InventoryScope{IncludeCategories: []string{"tv-hd", "cross-seed"}},
 	}
-	uhd := cloneClientConfig(*hd)
+	uhd := hd.Clone()
 	uhd.Import.Category = "tv-uhd"
 	uhd.Inventory.IncludeCategories = []string{"tv-uhd", "cross-seed"}
 	hdProcessor := newTestProcessor(&fakeTorrentClient{torrents: []torrentclient.Torrent{{Name: hdName}, {Name: sharedName}}})

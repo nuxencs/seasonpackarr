@@ -775,11 +775,11 @@ func TestImportEndpoint_RebuildsUnavailableOrInvalidPlans(t *testing.T) {
 		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
 		changed := f.config.Snapshot()
-		changedClient := cloneClientConfig(*changed.Clients["default"])
+		changedClient := changed.Clients["default"].Clone()
 		changedClient.Import.Category = "changed"
 		changed.Clients = map[string]*domain.Client{"default": &changedClient}
 		f.config.Store(changed)
-		clientMap.Store("default", cachedTorrentClient{config: cloneClientConfig(changedClient), client: f.torrentClient})
+		clientMap.Store("default", cachedTorrentClient{config: changedClient.Clone(), client: f.torrentClient})
 
 		res := f.postJSON(t, "/api/import", f.packPayload())
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
@@ -880,7 +880,7 @@ func TestCandidateEndpoint_ReturnsSuccessfulMatchWithoutFileReads(t *testing.T) 
 			{Name: "Candidate.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: "/data/tv"},
 		},
 	}
-	clientMap.Store("default", cachedTorrentClient{config: cloneClientConfig(*clientCfg), client: torrentClient})
+	clientMap.Store("default", cachedTorrentClient{config: clientCfg.Clone(), client: torrentClient})
 
 	cfg := &fakeConfig{config: domain.Config{Clients: map[string]*domain.Client{"default": clientCfg}}}
 	router := gin.New()

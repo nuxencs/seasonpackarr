@@ -205,7 +205,7 @@ func TestSearch_PaginationFindsPackAfterRejectedResult(t *testing.T) {
 func TestSearch_PreviewDeduplicatesClientAliases(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	cfg := f.config.Snapshot()
-	alias := cloneClientConfig(*cfg.Clients["default"])
+	alias := cfg.Clients["default"].Clone()
 	alias.Import.Category = "other-category"
 	cfg.Clients["alias"] = &alias
 	f.config.Store(cfg)
@@ -527,7 +527,7 @@ func TestSearch_ExistingPackDoesNotSuppressIndependentClient(t *testing.T) {
 	other := &fakeTorrentClient{torrents: []torrentclient.Torrent{f.torrentClient.torrents[0]}}
 	f.torrentClient.torrents = append(f.torrentClient.torrents, torrentclient.Torrent{Name: f.releaseName, Hash: "pack"})
 	cfg := f.config.Snapshot()
-	otherCfg := cloneClientConfig(*cfg.Clients["default"])
+	otherCfg := cfg.Clients["default"].Clone()
 	otherCfg.Host = "http://independent:8080"
 	cfg.Clients["other"] = &otherCfg
 	f.config.Store(cfg)
