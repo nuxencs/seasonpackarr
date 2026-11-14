@@ -161,7 +161,7 @@ func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFix
 		SmartModeThreshold: opts.threshold,
 		APIToken:           processorTestToken,
 	}}
-	clientMap.Store("default", cachedTorrentClient{config: cloneClientConfig(*clientCfg), client: torrentClient})
+	clientMap.Store("default", cachedTorrentClient{config: clientCfg.Clone(), client: torrentClient})
 
 	statePath := filepath.Join(tempDir, "seasonpackarr.db")
 	store, err := state.Open(t.Context(), statePath, zerolog.Nop())
@@ -328,7 +328,7 @@ func newTestProcessor(client torrentclient.TorrentClient) *processor {
 
 // storeTestClient makes getClient return client for name without a login.
 func storeTestClient(name string, cfg *domain.Client, client torrentclient.TorrentClient) {
-	clientMap.Store(name, cachedTorrentClient{config: cloneClientConfig(*cfg), client: client})
+	clientMap.Store(name, cachedTorrentClient{config: cfg.Clone(), client: client})
 }
 
 func resetProcessorGlobals() {

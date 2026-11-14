@@ -184,7 +184,7 @@ func (p *processor) getClient(ctx context.Context, client *domain.Client, client
 		return nil
 	}
 
-	if cached, ok := clientMap.Load(clientName); ok && clientConfigsEqual(cached.config, *client) {
+	if cached, ok := clientMap.Load(clientName); ok && cached.config.Equal(*client) {
 		p.req.Client = cached.client
 		return nil
 	}
@@ -195,42 +195,20 @@ func (p *processor) getClient(ctx context.Context, client *domain.Client, client
 	}
 
 	clientMap.Store(clientName, cachedTorrentClient{
-		config: cloneClientConfig(*client),
+		config: client.Clone(),
 		client: c,
 	})
 	p.req.Client = c
 	return nil
 }
 
-func cloneClientConfig(client domain.Client) domain.Client {
-	clone := client
-	clone.Import.Tags = stdslices.Clone(client.Import.Tags)
-	clone.Inventory = client.Inventory.Clone()
-	return clone
-}
-
-func clientConfigsEqual(a, b domain.Client) bool {
-	return a.Type == b.Type &&
-		a.Host == b.Host &&
-		a.Port == b.Port &&
-		a.Username == b.Username &&
-		a.Password == b.Password &&
-		a.APIKey == b.APIKey &&
-		a.Import.SavePath == b.Import.SavePath &&
-		stdslices.Equal(a.Import.Tags, b.Import.Tags) &&
-		a.Import.Category == b.Import.Category &&
-		a.Import.DownloadPath == b.Import.DownloadPath &&
-		a.Import.ContentLayout == b.Import.ContentLayout &&
-		a.Inventory.Equal(b.Inventory)
-}
-
 func (p *processor) getAllTorrents(ctx context.Context, clientName string, clientConfig *domain.Client, fuzzyMatching domain.FuzzyMatching) (map[string][]entry, error) {
 	entries, _ := entryMap.Compute(clientName, func(current *entryCache, loaded bool) (*entryCache, bool) {
-		if loaded && clientConfigsEqual(current.clientConfig, *clientConfig) && current.fuzzyMatching == fuzzyMatching {
+		if loaded && current.clientConfig.Equal(*clientConfig) && current.fuzzyMatching == fuzzyMatching {
 			return current, false
 		}
 		return &entryCache{
-			clientConfig:  cloneClientConfig(*clientConfig),
+			clientConfig:  clientConfig.Clone(),
 			fuzzyMatching: fuzzyMatching,
 		}, false
 	})
@@ -245,7 +223,7 @@ func (p *processor) getAllTorrents(ctx context.Context, clientName string, clien
 		return entries.entriesMap, nil
 	}
 	if latest, ok := entryMap.Load(clientName); ok && latest != entries &&
-		clientConfigsEqual(latest.clientConfig, *clientConfig) && latest.fuzzyMatching == fuzzyMatching &&
+		latest.clientConfig.Equal(*clientConfig) && latest.fuzzyMatching == fuzzyMatching &&
 		latest.expiresAt.After(time.Now()) {
 		return latest.entriesMap, nil
 	}
@@ -258,7 +236,7 @@ func (p *processor) getAllTorrents(ctx context.Context, clientName string, clien
 
 	refreshed := &entryCache{
 		entriesMap:    make(map[string][]entry),
-		clientConfig:  cloneClientConfig(*clientConfig),
+		clientConfig:  clientConfig.Clone(),
 		fuzzyMatching: fuzzyMatching,
 		expiresAt:     time.Now().Add(inventoryCacheTTL),
 	}

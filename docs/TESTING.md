@@ -426,8 +426,7 @@ has a `full` input for the integration group.
 ## Coverage
 
 Packages without tests: `internal/api`, `internal/buildinfo`,
-`internal/daemontest`, `internal/domain`, `internal/logger`,
-`internal/logger/loggertest`.
+`internal/daemontest`, `internal/logger`, `internal/logger/loggertest`.
 
 High-value regression targets:
 

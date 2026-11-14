@@ -41,7 +41,7 @@ func watchConfigReloads(ctx context.Context, log logger.Logger, cfg config.Provi
 func pruneClientCaches(cfg domain.Config) ([]string, error) {
 	current := func(name string, client domain.Client) bool {
 		configured, ok := cfg.Clients[name]
-		return ok && clientConfigsEqual(*configured, client)
+		return ok && configured.Equal(client)
 	}
 
 	entryMap.Range(func(name string, cached *entryCache) bool {

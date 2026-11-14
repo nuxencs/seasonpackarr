@@ -275,7 +275,7 @@ func (p *processor) storeImportPlan(clientName string, clientCfg domain.Client, 
 	planMap.Store(importPlanKey(clientName, plan.hashes), cachedImportPlan{
 		plan:          plan,
 		releaseName:   p.req.Name,
-		clientConfig:  cloneClientConfig(clientCfg),
+		clientConfig:  clientCfg.Clone(),
 		fuzzyMatching: fuzzyMatching,
 		expiresAt:     now.Add(importPlanCacheTTL),
 	})
@@ -287,7 +287,7 @@ func (p *processor) loadImportPlan(clientName string, clientCfg domain.Client, f
 	if !ok {
 		return importPlan{}, false
 	}
-	if time.Now().After(cached.expiresAt) || cached.releaseName != p.req.Name || !clientConfigsEqual(cached.clientConfig, clientCfg) || cached.fuzzyMatching != fuzzyMatching {
+	if time.Now().After(cached.expiresAt) || cached.releaseName != p.req.Name || !cached.clientConfig.Equal(clientCfg) || cached.fuzzyMatching != fuzzyMatching {
 		planMap.Delete(key)
 		return importPlan{}, false
 	}

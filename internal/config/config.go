@@ -1011,10 +1011,7 @@ func cloneConfig(cfg domain.Config) domain.Config {
 			clone.Clients[name] = nil
 			continue
 		}
-		clientClone := *client
-		clientClone.Import.Tags = slices.Clone(client.Import.Tags)
-		clientClone.Inventory = client.Inventory.Clone()
-		clone.Clients[name] = &clientClone
+		clone.Clients[name] = new(client.Clone())
 	}
 	clone.Notifications.NotificationLevel = slices.Clone(cfg.Notifications.NotificationLevel)
 	clone.Notifications.Shoutrrr = slices.Clone(cfg.Notifications.Shoutrrr)

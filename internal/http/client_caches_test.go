@@ -75,7 +75,7 @@ func TestPruneClientCaches_DropsOldEndpointAfterHostChange(t *testing.T) {
 	resetProcessorGlobals()
 	old := &domain.Client{Type: "qbittorrent", Host: "http://qui:7476/proxy/old"}
 	cacheClient(t, "default", old, newCacheTestClient())
-	changed := cloneClientConfig(*old)
+	changed := old.Clone()
 	changed.Host = "http://qui:7476/proxy/new"
 
 	dropped, err := pruneClientCaches(domain.Config{Clients: map[string]*domain.Client{"default": &changed}})
@@ -93,11 +93,11 @@ func TestPruneClientCaches_DropsOldEndpointAfterHostChange(t *testing.T) {
 func TestPruneClientCaches_DropsParsedNamesOfOldScope(t *testing.T) {
 	resetProcessorGlobals()
 	hd := &domain.Client{Type: "qbittorrent", Host: "qbittorrent", Inventory: domain.InventoryScope{IncludeCategories: []string{"tv-hd"}}}
-	uhd := cloneClientConfig(*hd)
+	uhd := hd.Clone()
 	uhd.Inventory.IncludeCategories = []string{"tv-uhd"}
 	cacheClient(t, "sonarr-hd", hd, newCacheTestClient())
 	cacheClient(t, "sonarr-uhd", &uhd, newCacheTestClient())
-	changed := cloneClientConfig(*hd)
+	changed := hd.Clone()
 	changed.Inventory.IncludeCategories = []string{"tv-hd", "tv-hd-completed"}
 
 	dropped, err := pruneClientCaches(domain.Config{Clients: map[string]*domain.Client{"sonarr-hd": &changed, "sonarr-uhd": &uhd}})
@@ -123,7 +123,7 @@ func TestPruneClientCaches_ScanDuringReloadStoresNoOldScope(t *testing.T) {
 	}}
 	old := &domain.Client{Type: "qbittorrent", Host: "qbittorrent", Inventory: domain.InventoryScope{IncludeCategories: []string{"tv-hd"}}}
 	storeTestClient("default", old, torrentClient)
-	changed := cloneClientConfig(*old)
+	changed := old.Clone()
 	changed.Inventory.IncludeCategories = []string{"tv-hd", "tv-hd-completed"}
 	p := newTestProcessor(torrentClient)
 	done := make(chan error, 1)
