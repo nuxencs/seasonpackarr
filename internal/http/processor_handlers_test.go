@@ -276,6 +276,73 @@ func TestImportEndpoint_LogsFailedPlanRebuildTiming(t *testing.T) {
 	require.Contains(t, completed, "total_duration_ms")
 }
 
+func TestEndpoints_AcceptedPackSendsOneImportNotification(t *testing.T) {
+	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.75})
+
+	matchResponse := f.postJSON(t, "/api/match", f.packPayload())
+	require.Equal(t, domain.StatusSuccessfulMatch.Code(), matchResponse.Code)
+	importResponse := f.postJSON(t, "/api/import", f.packPayload())
+	require.Equal(t, domain.StatusSuccessfulHardlink.Code(), importResponse.Code)
+
+	sent := f.sentNotifications(t)
+	require.Len(t, sent, 1)
+	assert.Equal(t, domain.StatusSuccessfulHardlink, sent[0].statusCode)
+	assert.Equal(t, "Import", sent[0].payload.Action)
+	assert.Equal(t, f.releaseName, sent[0].payload.ReleaseName)
+	assert.NoError(t, sent[0].payload.Error)
+}
+
+func TestMatchEndpoint_NotifiesRejectionsAndErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		opts   fixtureOptions
+		mutate func(*processorHTTPFixture)
+		want   domain.StatusCode
+	}{
+		{
+			// The match reports a group mismatch as no matching releases.
+			name: "release group mismatch",
+			opts: fixtureOptions{packEpisodes: 2, clientEpisodes: 2},
+			mutate: func(f *processorHTTPFixture) {
+				for i := range f.torrentClient.torrents {
+					f.torrentClient.torrents[i].Name = strings.Replace(f.torrentClient.torrents[i].Name, "-RlsGrp", "-OtherGrp", 1)
+				}
+			},
+			want: domain.StatusNoMatches,
+		},
+		{
+			name: "below threshold",
+			opts: fixtureOptions{packEpisodes: 2, clientEpisodes: 1, threshold: 0.75},
+			want: domain.StatusBelowThreshold,
+		},
+		{
+			name: "client inventory error",
+			opts: fixtureOptions{packEpisodes: 2, clientEpisodes: 2},
+			mutate: func(f *processorHTTPFixture) {
+				f.torrentClient.torrentsErr = errors.New("client offline")
+			},
+			want: domain.StatusGetTorrentsError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newProcessorHTTPFixture(t, tt.opts)
+			if tt.mutate != nil {
+				tt.mutate(&f)
+			}
+
+			response := f.postJSON(t, "/api/match", f.packPayload())
+			require.Equal(t, tt.want.Code(), response.Code, response.Body.String())
+
+			sent := f.sentNotifications(t)
+			require.Len(t, sent, 1)
+			assert.Equal(t, tt.want, sent[0].statusCode)
+			assert.Equal(t, "Match", sent[0].payload.Action)
+			assert.Error(t, sent[0].payload.Error)
+		})
+	}
+}
+
 func TestEndpoints_ImportReusesAcceptedPlan(t *testing.T) {
 	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.75})
 
@@ -852,7 +919,7 @@ func TestEndpoints_LogNoClientSecretOnConnectionFailure(t *testing.T) {
 	}
 }
 
-func TestMatchEndpoint_LogsNoDiscordWebhookToken(t *testing.T) {
+func TestImportEndpoint_LogsNoDiscordWebhookToken(t *testing.T) {
 	const token = "sentineldiscordwebhooktoken0123456789"
 	rejected := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
 		w.WriteHeader(stdhttp.StatusUnauthorized)
@@ -876,13 +943,12 @@ func TestMatchEndpoint_LogsNoDiscordWebhookToken(t *testing.T) {
 				noti: notification.NewDiscordSender(log, cfg),
 			})
 
-			res := f.postJSON(t, "/api/match", f.packPayload())
+			res := f.postJSON(t, "/api/import", f.packPayload())
 
-			require.Equal(t, domain.StatusSuccessfulMatch.Code(), res.Code, res.Body.String())
-			// The send runs in the background. Its failure must be logged, or the checks below prove nothing.
-			require.Eventually(t, func() bool {
-				return strings.Contains(log.String(), "error sending discord notification")
-			}, 5*time.Second, 10*time.Millisecond, log.String())
+			require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code, res.Body.String())
+			// The send runs in the task group. Its failure must be logged, or the checks below prove nothing.
+			require.NoError(t, f.tasks.Wait(t.Context()))
+			require.Contains(t, log.String(), "error sending discord notification")
 			log.AssertNoSecrets(t, map[string]string{
 				"Discord webhook token":       token,
 				"Discord webhook token start": token[:len(token)/2],

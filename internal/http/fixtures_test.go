@@ -38,12 +38,32 @@ import (
 
 const processorTestToken = "processor-test-token"
 
-type fakeNotificationSender struct{}
+// sentNotification is one Send call that fakeNotificationSender recorded.
+type sentNotification struct {
+	statusCode domain.StatusCode
+	payload    domain.NotificationPayload
+}
 
-func (fakeNotificationSender) Name() string { return "noop" }
+// fakeNotificationSender records each notification. Sends run in the server
+// task group, so read them with processorHTTPFixture.sentNotifications.
+type fakeNotificationSender struct {
+	mu   sync.Mutex
+	sent []sentNotification
+}
 
-func (fakeNotificationSender) Send(context.Context, domain.StatusCode, domain.NotificationPayload) error {
+func (f *fakeNotificationSender) Name() string { return "fake" }
+
+func (f *fakeNotificationSender) Send(_ context.Context, statusCode domain.StatusCode, payload domain.NotificationPayload) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sent = append(f.sent, sentNotification{statusCode: statusCode, payload: payload})
 	return nil
+}
+
+func (f *fakeNotificationSender) recorded() []sentNotification {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.sent)
 }
 
 type fakeConfig struct {
@@ -73,6 +93,8 @@ type processorHTTPFixture struct {
 	torrent       []byte
 	sourceDir     string
 	importDir     string
+	notifications *fakeNotificationSender
+	tasks         *taskGroup
 }
 
 // fixtureOptions sets the season pack and the client inventory that a fixture
@@ -82,7 +104,7 @@ type fixtureOptions struct {
 	clientEpisodes int           // episodes from E01 that the client already holds
 	threshold      float32       // smart-mode threshold; 0 accepts any coverage
 	log            logger.Logger // nil logs errors only
-	noti           domain.Sender // nil sends no notification
+	noti           domain.Sender // nil records notifications in fakeNotificationSender
 }
 
 // newTraceLogger returns a recording logger that sees every level. zerolog
@@ -149,7 +171,8 @@ func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFix
 	if log == nil {
 		log = logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"})
 	}
-	var noti domain.Sender = fakeNotificationSender{}
+	notifications := &fakeNotificationSender{}
+	var noti domain.Sender = notifications
 	if opts.noti != nil {
 		noti = opts.noti
 	}
@@ -164,7 +187,17 @@ func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFix
 		torrent:       torrentBytes,
 		sourceDir:     sourceDir,
 		importDir:     importDir,
+		notifications: notifications,
+		tasks:         server.tasks,
 	}
+}
+
+// sentNotifications waits for the queued sends and returns them. It closes the
+// task group, so call it after the last request of the test.
+func (f processorHTTPFixture) sentNotifications(t *testing.T) []sentNotification {
+	t.Helper()
+	require.NoError(t, f.tasks.Wait(t.Context()))
+	return f.notifications.recorded()
 }
 
 func (f processorHTTPFixture) postJSON(t *testing.T, path string, payload any) *httptest.ResponseRecorder {
@@ -432,8 +465,8 @@ func (f *searchFixture) restart(t *testing.T) {
 	store, err := state.Open(t.Context(), f.statePath, zerolog.Nop())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
-	server := NewServer(f.search.log, f.config, fakeNotificationSender{}, store)
-	f.search, f.handler = server.search, server.Handler()
+	server := NewServer(f.search.log, f.config, f.notifications, store)
+	f.search, f.handler, f.tasks = server.search, server.Handler(), server.tasks
 }
 
 // clientFailure is a client config that cannot connect, with the secrets that
