@@ -37,14 +37,14 @@ type transmissionClient struct {
 }
 
 func newTransmissionClient(ctx context.Context, client *domain.Client) (*transmissionClient, error) {
-	endpoint, err := buildTransmissionURL(client)
+	endpoint, credentials, err := buildTransmissionURL(client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build transmission URL: %w", err)
 	}
 
 	// transmissionrpc uses this pooled transport when it has no custom client.
 	c, err := transmissionrpc.New(endpoint, &transmissionrpc.Config{CustomClient: &http.Client{
-		Transport: transmissionAuth{base: cleanhttp.DefaultPooledTransport(), username: client.Username, password: client.Password},
+		Transport: transmissionAuth{base: cleanhttp.DefaultPooledTransport(), endpoint: endpoint, credentials: credentials},
 	}})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create transmission client: %w", err)
@@ -63,38 +63,48 @@ func newTransmissionClient(ctx context.Context, client *domain.Client) (*transmi
 	}, nil
 }
 
-// buildTransmissionURL builds the Transmission RPC endpoint URL. It holds no
+// buildTransmissionURL builds the Transmission RPC endpoint URL and returns the
+// basic auth credentials apart from it, nil for none. The URL holds no
 // credentials: net/http puts the URL into its errors and masks only the
-// password, and the request handlers log these errors.
-func buildTransmissionURL(client *domain.Client) (*url.URL, error) {
+// password, and the request handlers log these errors. The username setting
+// wins over credentials in the host.
+func buildTransmissionURL(client *domain.Client) (*url.URL, *url.Userinfo, error) {
 	host, err := buildHost(client)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	parsed, err := url.Parse(host)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse host: %w", err)
+		return nil, nil, fmt.Errorf("failed to parse host: %w", err)
 	}
 
+	credentials := parsed.User
+	if client.Username != "" {
+		credentials = url.UserPassword(client.Username, client.Password)
+	}
+	parsed.User = nil
 	parsed.Path = "/transmission/rpc"
-	return parsed, nil
+	return parsed, credentials, nil
 }
 
-// transmissionAuth sends the basic auth credentials on every request. An empty
-// username leaves the request unauthenticated.
+// transmissionAuth sends the basic auth credentials on each request to the
+// scheme and host of the RPC endpoint. A redirect to another host gets none,
+// as net/http does for credentials in a URL.
 type transmissionAuth struct {
-	base               http.RoundTripper
-	username, password string
+	base        http.RoundTripper
+	endpoint    *url.URL
+	credentials *url.Userinfo // nil sends no credentials
 }
 
 func (a transmissionAuth) RoundTrip(req *http.Request) (*http.Response, error) {
-	if a.username == "" {
+	if a.credentials == nil || req.URL.Scheme != a.endpoint.Scheme || req.URL.Host != a.endpoint.Host {
 		return a.base.RoundTrip(req)
 	}
+	password, _ := a.credentials.Password()
 	// A RoundTripper must not change the request of its caller.
 	req = req.Clone(req.Context())
-	req.SetBasicAuth(a.username, a.password)
+	req.SetBasicAuth(a.credentials.Username(), password)
 	return a.base.RoundTrip(req)
 }
 

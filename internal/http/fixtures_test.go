@@ -523,6 +523,14 @@ func newClientFailures(t *testing.T) []clientFailure {
 				},
 				secrets: map[string]string{"Transmission username": "sentinel-transmission-username", "Transmission password": "sentinel-transmission-password"},
 			},
+			clientFailure{
+				name: "transmission host credentials " + mode,
+				client: domain.Client{
+					Type: "transmission",
+					Host: strings.Replace(base, "://", "://sentinel-transmission-host-username:sentinel-transmission-host-password@", 1),
+				},
+				secrets: map[string]string{"Transmission host username": "sentinel-transmission-host-username", "Transmission host password": "sentinel-transmission-host-password"},
+			},
 		)
 	}
 	for mode, port := range map[string]int{"refused": refusedPort, "rejected": listenerPort(t, dropping.Addr())} {

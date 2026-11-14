@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"sync/atomic"
 	"testing"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
@@ -149,6 +150,24 @@ func TestNewTransmissionClient_UsesBasicAuth(t *testing.T) {
 	}
 }
 
+func TestNewTransmissionClient_SendsNoCredentialsOnCrossHostRedirect(t *testing.T) {
+	t.Parallel()
+	other, captured := transmissionTestServer(t, map[string]string{"session-get": emptySessionResp})
+	var configuredAuth atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, _, ok := r.BasicAuth(); ok {
+			configuredAuth.Store(true)
+		}
+		http.Redirect(w, r, other.URL+r.URL.Path, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(srv.Close)
+
+	newTransmissionClientFromServer(t, srv, "admin", "secret")
+
+	require.True(t, configuredAuth.Load(), "the configured host got no basic auth")
+	require.False(t, lastRequest(t, captured, "session-get").HadAuth, "the redirect target got the credentials")
+}
+
 func TestNewTransmissionClient_FailsFastOnConnectionError(t *testing.T) {
 	t.Parallel()
 	// Server completes the 409 handshake but then rejects auth, so the constructor
@@ -252,10 +271,11 @@ func TestTransmissionImportDestination(t *testing.T) {
 func TestBuildTransmissionURL(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name    string
-		client  *domain.Client
-		want    string
-		wantErr bool
+		name            string
+		client          *domain.Client
+		want            string
+		wantCredentials string // user info of the returned credentials, empty for none
+		wantErr         bool
 	}{
 		{
 			name:    "empty host",
@@ -298,21 +318,45 @@ func TestBuildTransmissionURL(t *testing.T) {
 			want:   "http://localhost/transmission/rpc",
 		},
 		{
-			name:   "credentials stay out of the URL",
-			client: &domain.Client{Host: "localhost", Port: 9091, Username: "admin", Password: "secret"},
-			want:   "http://localhost:9091/transmission/rpc",
+			name:            "credentials stay out of the URL",
+			client:          &domain.Client{Host: "localhost", Port: 9091, Username: "admin", Password: "secret"},
+			want:            "http://localhost:9091/transmission/rpc",
+			wantCredentials: "admin:secret",
+		},
+		{
+			name:            "username without password",
+			client:          &domain.Client{Host: "localhost", Username: "admin"},
+			want:            "http://localhost/transmission/rpc",
+			wantCredentials: "admin:",
+		},
+		{
+			name:            "host credentials move out of the URL",
+			client:          &domain.Client{Host: "http://rpc-user:rpc-pass@localhost:9091"},
+			want:            "http://localhost:9091/transmission/rpc",
+			wantCredentials: "rpc-user:rpc-pass",
+		},
+		{
+			name:            "username setting wins over host credentials",
+			client:          &domain.Client{Host: "http://rpc-user:rpc-pass@localhost", Username: "admin", Password: "secret"},
+			want:            "http://localhost/transmission/rpc",
+			wantCredentials: "admin:secret",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := buildTransmissionURL(tt.client)
+			got, credentials, err := buildTransmissionURL(tt.client)
 			if tt.wantErr {
 				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
 			require.Equal(t, tt.want, got.String())
+			if tt.wantCredentials == "" {
+				require.Nil(t, credentials)
+			} else {
+				require.Equal(t, tt.wantCredentials, credentials.String())
+			}
 		})
 	}
 }
