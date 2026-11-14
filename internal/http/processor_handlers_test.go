@@ -700,7 +700,7 @@ func TestImportEndpoint_RebuildsUnavailableOrInvalidPlans(t *testing.T) {
 
 		planMap = xsync.NewMapOf[importPlanCacheKey, cachedImportPlan]()
 		entryMap = xsync.NewMapOf[string, *entryCache]()
-		parsedReleaseMap = xsync.NewMapOf[importClientKey, parsedReleases]()
+		parsedReleaseMap = xsync.NewMapOf[parsedNamesKey, parsedReleases]()
 		res := f.postJSON(t, "/api/import", f.packPayload())
 
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)

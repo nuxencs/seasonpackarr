@@ -190,7 +190,7 @@ func TestInventory_RetainedMemory(t *testing.T) {
 	require.Positive(t, torrentCount, "INVENTORY_TORRENTS")
 
 	entryMap = xsync.NewMapOf[string, *entryCache]()
-	parsedReleaseMap = xsync.NewMapOf[importClientKey, parsedReleases]()
+	parsedReleaseMap = xsync.NewMapOf[parsedNamesKey, parsedReleases]()
 	clientConfig := inventoryBenchmarkClientConfig()
 	debug.FreeOSMemory()
 	var before runtime.MemStats
@@ -207,7 +207,7 @@ func TestInventory_RetainedMemory(t *testing.T) {
 	runtime.ReadMemStats(&after)
 	cached, ok := entryMap.Load(inventoryBenchmarkClientName)
 	require.True(t, ok, "inventory snapshot missing")
-	names, ok := parsedReleaseMap.Load(importEndpoint(clientConfig))
+	names, ok := parsedReleaseMap.Load(parsedNamesKeyFor(clientConfig))
 	require.True(t, ok, "parsed names missing")
 	runtime.KeepAlive(entries)
 	runtime.KeepAlive(cached)
@@ -268,9 +268,9 @@ func inventoryBenchmarkTorrentsWithVariant(count, changedCount int, variant stri
 func resetInventoryBenchmarkCache(tb testing.TB) {
 	tb.Helper()
 	entryMap = xsync.NewMapOf[string, *entryCache]()
-	parsedReleaseMap = xsync.NewMapOf[importClientKey, parsedReleases]()
+	parsedReleaseMap = xsync.NewMapOf[parsedNamesKey, parsedReleases]()
 	tb.Cleanup(func() {
 		entryMap = xsync.NewMapOf[string, *entryCache]()
-		parsedReleaseMap = xsync.NewMapOf[importClientKey, parsedReleases]()
+		parsedReleaseMap = xsync.NewMapOf[parsedNamesKey, parsedReleases]()
 	})
 }

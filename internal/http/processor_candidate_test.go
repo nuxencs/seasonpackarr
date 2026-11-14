@@ -14,6 +14,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
+	"github.com/autobrr/rls"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -277,11 +278,61 @@ func TestInventory_ReusesParsedReleasesAfterImportInvalidation(t *testing.T) {
 
 func requireParsedRelease(t *testing.T, client domain.Client, torrentName string) cachedRelease {
 	t.Helper()
-	names, ok := parsedReleaseMap.Load(importEndpoint(client))
+	names, ok := parsedReleaseMap.Load(parsedNamesKeyFor(client))
 	require.True(t, ok, "parsed names missing")
 	parsed, ok := names.releases[torrentName]
 	require.True(t, ok, "parsed release missing")
 	return parsed
+}
+
+// TestInventory_KeepsParsedNamesOfEachScopeOnOneEndpoint: two clients of one
+// qBittorrent with different inventory scopes must not drop each other's parsed names.
+func TestInventory_KeepsParsedNamesOfEachScopeOnOneEndpoint(t *testing.T) {
+	resetProcessorGlobals()
+	const (
+		hdName     = "Series.S01E01.1080p.WEB-DL-GRP"
+		uhdName    = "Series.S01E01.2160p.WEB-DL-GRP"
+		sharedName = "Other.S01E01.1080p.WEB-DL-GRP"
+	)
+	hd := &domain.Client{
+		Type: "qbittorrent", Host: "qbittorrent",
+		Import:    domain.ImportPolicy{Category: "tv-hd"},
+		Inventory: domain.InventoryScope{Categories: []string{"tv-hd", "cross-seed"}},
+	}
+	uhd := cloneClientConfig(*hd)
+	uhd.Import.Category = "tv-uhd"
+	uhd.Inventory.Categories = []string{"tv-uhd", "cross-seed"}
+	hdProcessor := newTestProcessor(&fakeTorrentClient{torrents: []torrentclient.Torrent{{Name: hdName}, {Name: sharedName}}})
+	uhdProcessor := newTestProcessor(&fakeTorrentClient{torrents: []torrentclient.Torrent{{Name: uhdName}, {Name: sharedName}}})
+
+	hdEntries, err := hdProcessor.getAllTorrents(t.Context(), "sonarr-hd", hd, domain.FuzzyMatching{})
+	require.NoError(t, err)
+	uhdEntries, err := uhdProcessor.getAllTorrents(t.Context(), "sonarr-uhd", &uhd, domain.FuzzyMatching{})
+	require.NoError(t, err)
+	assert.Same(t, inventoryRelease(t, hdEntries, sharedName), inventoryRelease(t, uhdEntries, sharedName),
+		"a name in both scopes is parsed once")
+
+	cached, ok := entryMap.Load("sonarr-hd")
+	require.True(t, ok)
+	cached.expiresAt = time.Time{}
+	refreshed, err := hdProcessor.getAllTorrents(t.Context(), "sonarr-hd", hd, domain.FuzzyMatching{})
+	require.NoError(t, err)
+	assert.Same(t, inventoryRelease(t, hdEntries, hdName), inventoryRelease(t, refreshed, hdName),
+		"the scan of another scope keeps the parsed names of this scope")
+}
+
+// inventoryRelease returns the parsed release of the torrent name in entries.
+func inventoryRelease(t *testing.T, entries map[string][]entry, name string) *rls.Release {
+	t.Helper()
+	for _, bucket := range entries {
+		for _, e := range bucket {
+			if e.torrent.Name == name {
+				return e.release
+			}
+		}
+	}
+	require.Failf(t, "torrent missing from the inventory", "%s", name)
+	return nil
 }
 
 func TestInventory_InvalidationDuringScanCannotRestoreStaleCache(t *testing.T) {
