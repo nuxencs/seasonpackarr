@@ -55,16 +55,11 @@ func lockImport(ctx context.Context, client domain.Client) (func(), error) {
 	}
 }
 
-// A client may add a torrent before reporting a verification/resume failure.
-// Drop all plans and inventories for aliases before another import can proceed.
-func invalidateClientImports(client domain.Client) {
+// A client may add a torrent before it reports a verification or resume
+// failure, so the import runs this before it releases the endpoint import lock.
+func (p *processor) invalidateClientImports(client domain.Client) {
 	endpoint := torrentclient.EndpointOf(client)
-	entryMap.Range(func(name string, cached *entryCache) bool {
-		if torrentclient.EndpointOf(cached.clientConfig) == endpoint {
-			entryMap.Delete(name)
-		}
-		return true
-	})
+	p.inv.DiscardEndpoint(endpoint)
 	planMap.Range(func(key importPlanCacheKey, cached cachedImportPlan) bool {
 		if torrentclient.EndpointOf(cached.clientConfig) == endpoint {
 			planMap.Delete(key)

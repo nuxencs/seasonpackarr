@@ -19,7 +19,7 @@ so the glossary does not define them.
 
 - `<file>_test.go` tests the code in `<file>.go`. A large set can split by
   aspect: `<file>_<aspect>_test.go` (`search_cooldown_test.go`,
-  `client_rss_test.go`, `processor_candidate_benchmark_test.go`).
+  `client_rss_test.go`, `inventory_benchmark_test.go`).
 - Tests that drive several files through one entry point live with the entry
   point. HTTP endpoint tests live in `internal/http/processor_handlers_test.go`.
 - `fixtures_test.go` holds the fakes and fixtures that more than one test file

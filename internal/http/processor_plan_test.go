@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/inventory"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
@@ -42,11 +43,10 @@ func TestMatchSeasonPack_UsesTorrentEpisodeCoverage(t *testing.T) {
 		SmartMode:          true,
 		SmartModeThreshold: 0.75,
 	}}
-	p := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil, nil)
+	p := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, newTestInventory(torrentClient), nil, nil)
 	p.req = &request{
 		Name:       releaseName,
 		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
-		Client:     torrentClient,
 		ClientName: "default",
 	}
 
@@ -79,11 +79,10 @@ func TestMatchSeasonPack_RejectsCoverageBelowTorrentThreshold(t *testing.T) {
 		SmartMode:          true,
 		SmartModeThreshold: 0.75,
 	}}
-	p := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil, nil)
+	p := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, newTestInventory(torrentClient), nil, nil)
 	p.req = &request{
 		Name:       releaseName,
 		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
-		Client:     torrentClient,
 		ClientName: "default",
 	}
 
@@ -119,11 +118,10 @@ func TestMatchSeasonPack_IsGateOnly(t *testing.T) {
 		importRoot: importDir,
 	}
 
-	p := newImportProcessor()
+	p := newImportProcessor(newTestInventory(torrentClient))
 	p.req = &request{
 		Name:       "Series.S01.1080p.WEB-DL.H.264-RlsGrp",
 		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
-		Client:     torrentClient,
 		ClientName: "default",
 	}
 
@@ -150,15 +148,14 @@ func TestBuildImportPlan_CoverageCannotExceedTorrentEpisodeCount(t *testing.T) {
 	}
 	clientCfg := &domain.Client{Type: "qbittorrent", Import: domain.ImportPolicy{Category: "tv-hd"}}
 	cfg := &fakeConfig{config: domain.Config{Clients: map[string]*domain.Client{"default": clientCfg}}}
-	p := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil, nil)
+	p := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, newTestInventory(torrentClient), nil, nil)
 	p.req = &request{
 		Name:       releaseName,
 		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
-		Client:     torrentClient,
 		ClientName: "default",
 	}
 
-	plan, statusCode, err := p.buildImportPlan(t.Context(), "default", clientCfg, cfg.Snapshot())
+	plan, statusCode, err := p.buildImportPlan(t.Context(), "default", cfg.Snapshot())
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
 	require.Equal(t, 6, plan.totalEps)
@@ -170,7 +167,7 @@ func TestStoreImportPlan_SweepsExpiredPlans(t *testing.T) {
 
 	expiredKey := importPlanKey("default", torrents.Hashes{HasV1: true, Legacy: "expired"})
 	planMap.Store(expiredKey, cachedImportPlan{expiresAt: time.Now().Add(-time.Second)})
-	p := newImportProcessor()
+	p := newImportProcessor(nil)
 	p.req = &request{Name: "Current.S01.1080p.WEB-DL.H.264-RlsGrp"}
 	p.storeImportPlan("default", domain.Client{}, domain.FuzzyMatching{}, importPlan{
 		hashes: torrents.Hashes{HasV1: true, Legacy: "current"},
@@ -198,13 +195,11 @@ func TestEpisodeFileFromFiles_FollowsTorrentClientPathContract(t *testing.T) {
 			{Name: "Some.Show.S01.1080p/Some.Show.S01E01.1080p.mkv", Size: 1_000_000},
 		},
 	}
-	p := newTestProcessor(torrentClient)
-
-	ts, err := p.req.Client.GetTorrents(t.Context())
+	ts, err := torrentClient.GetTorrents(t.Context())
 	require.NoError(t, err)
 	require.Len(t, ts, 1)
 
-	results := p.req.Client.GetFiles(t.Context(), []string{ts[0].Hash})
+	results := torrentClient.GetFiles(t.Context(), []string{ts[0].Hash})
 	require.Len(t, results, 1)
 	require.NoError(t, results[0].Err)
 	episode, err := episodeFileFromFiles(results[0].Files, ts[0].SavePath)
@@ -244,10 +239,10 @@ func TestGetEpisodeFiles_KeepsSuccessfulBulkResults(t *testing.T) {
 		},
 		fileErrByHash: map[string]error{"two": errors.New("boom")},
 	}
-	p := newTestProcessor(torrentClient)
-	candidates := []entry{
-		{torrent: torrentclient.Torrent{Hash: "one", Name: "Show.S01E01", SavePath: "/one"}},
-		{torrent: torrentclient.Torrent{Hash: "two", Name: "Show.S01E02", SavePath: "/two"}},
+	p := newTestProcessor(t, torrentClient)
+	candidates := []inventory.Entry{
+		{Torrent: torrentclient.Torrent{Hash: "one", Name: "Show.S01E01", SavePath: "/one"}},
+		{Torrent: torrentclient.Torrent{Hash: "two", Name: "Show.S01E02", SavePath: "/two"}},
 	}
 
 	episodes := p.getEpisodeFiles(t.Context(), candidates)

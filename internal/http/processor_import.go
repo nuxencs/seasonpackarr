@@ -57,7 +57,8 @@ func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.Sta
 		return domain.StatusTorrentBytesError, domain.StatusTorrentBytesError.Error()
 	}
 
-	if err := p.getClient(ctx, clientCfg, clientName); err != nil {
+	client, err := p.connect(ctx, clientName, snapshot)
+	if err != nil {
 		return domain.StatusGetClientError, fmt.Errorf("%s: %w", domain.StatusGetClientError, err)
 	}
 
@@ -70,7 +71,7 @@ func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.Sta
 		return domain.StatusParseTorrentInfoError, fmt.Errorf("%s: %w", domain.StatusParseTorrentInfoError, err)
 	}
 
-	if _, gateStatus, gateErr := p.findCandidates(ctx, clientName, clientCfg, snapshot); gateErr != nil {
+	if _, gateStatus, gateErr := p.findCandidates(ctx, clientName, snapshot); gateErr != nil {
 		return gateStatus, gateErr
 	}
 
@@ -80,7 +81,7 @@ func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.Sta
 	if !ok {
 		planSource = "rebuilt"
 		var planStatusCode domain.StatusCode
-		plan, planStatusCode, err = p.buildImportPlan(ctx, clientName, clientCfg, snapshot)
+		plan, planStatusCode, err = p.buildImportPlan(ctx, clientName, snapshot)
 		statusCode = planStatusCode
 	}
 	p.log.Info().
@@ -97,7 +98,7 @@ func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.Sta
 	}
 
 	destinationStarted := time.Now()
-	importDestination, err := p.req.Client.ImportDestination(ctx)
+	importDestination, err := client.Adapter().ImportDestination(ctx)
 	destinationEvent := p.log.Info().
 		Bool("successful", err == nil).
 		Int64("duration_ms", time.Since(destinationStarted).Milliseconds())
@@ -115,10 +116,10 @@ func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.Sta
 	hardlinkResult := p.createPlanHardlinks(plan, importDestination)
 	if hardlinkResult.sourceMissing {
 		p.log.Warn().Msg("hardlink source disappeared; refreshing client inventory and import plan")
-		invalidateImportCaches(clientName, plan.hashes)
+		p.invalidateImportCaches(clientName, plan.hashes)
 
 		refreshStarted := time.Now()
-		refreshedPlan, refreshStatusCode, refreshErr := p.buildImportPlan(ctx, clientName, clientCfg, snapshot)
+		refreshedPlan, refreshStatusCode, refreshErr := p.buildImportPlan(ctx, clientName, snapshot)
 		refreshEvent := p.log.Info().
 			Bool("successful", refreshErr == nil).
 			Int64("duration_ms", time.Since(refreshStarted).Milliseconds())
@@ -151,12 +152,12 @@ func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.Sta
 		}
 	}
 
-	defer invalidateClientImports(*clientCfg)
+	defer p.invalidateClientImports(*clientCfg)
 	dataComplete := packDataComplete(plan, importDestination)
 	clientImportStarted := time.Now()
 	// A caller disconnect must not interrupt a started client mutation and
 	// leave the torrent stopped. Each adapter bounds its own client calls.
-	importReport, err := p.req.Client.Import(context.WithoutCancel(ctx), torrentclient.ImportRequest{
+	importReport, err := client.Adapter().Import(context.WithoutCancel(ctx), torrentclient.ImportRequest{
 		TorrentBytes: plan.torrentBytes,
 		SavePath:     importRoot,
 		LegacyHash:   plan.hashes.Legacy,
@@ -180,7 +181,7 @@ func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.Sta
 		return statusCode, fmt.Errorf("%s: %w", statusCode, err)
 	}
 
-	invalidateImportCaches(clientName, plan.hashes)
+	p.invalidateImportCaches(clientName, plan.hashes)
 
 	return domain.StatusSuccessfulHardlink, nil
 }
