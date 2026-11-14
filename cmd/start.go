@@ -16,9 +16,11 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/buildinfo"
 	"github.com/nuxencs/seasonpackarr/internal/config"
 	"github.com/nuxencs/seasonpackarr/internal/http"
+	"github.com/nuxencs/seasonpackarr/internal/inventory"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/notification"
 	"github.com/nuxencs/seasonpackarr/internal/state"
+	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 
 	"github.com/spf13/cobra"
 )
@@ -78,7 +80,7 @@ func newStartCommand() *cobra.Command {
 					log.Error().Err(err).Msg("could not close database")
 				}
 			}()
-			srv := http.NewServer(log, cfg, noti, store, reloads)
+			srv := http.NewServer(log, cfg, noti, store, inventory.New(torrentclient.New, log), reloads)
 
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
 			defer stop()

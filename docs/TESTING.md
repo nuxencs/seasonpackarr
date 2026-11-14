@@ -19,7 +19,7 @@ so the glossary does not define them.
 
 - `<file>_test.go` tests the code in `<file>.go`. A large set can split by
   aspect: `<file>_<aspect>_test.go` (`search_cooldown_test.go`,
-  `client_rss_test.go`, `processor_candidate_benchmark_test.go`).
+  `client_rss_test.go`, `inventory_benchmark_test.go`).
 - Tests that drive several files through one entry point live with the entry
   point. HTTP endpoint tests live in `internal/http/processor_handlers_test.go`.
 - `fixtures_test.go` holds the fakes and fixtures that more than one test file
@@ -79,6 +79,8 @@ so the glossary does not define them.
   `httptest.NewRecorder` runs on the test goroutine and can use `require`.
 - Benchmarks keep `if err != nil { b.Fatal(err) }` in measured loops.
 - Log assertions use `internal/logger/loggertest`.
+- Tests that depend on time, or that wait until goroutines block, use
+  `testing/synctest`. Production code gets no clock parameter for them.
 - A log test for a secret uses a unique sentinel value for each secret kind,
   makes the code fail on the path under test, and asserts with
   `AssertNoSecrets` that no event holds the sentinel in any field. It first
@@ -426,8 +428,7 @@ has a `full` input for the integration group.
 ## Coverage
 
 Packages without tests: `internal/api`, `internal/buildinfo`,
-`internal/daemontest`, `internal/domain`, `internal/logger`,
-`internal/logger/loggertest`.
+`internal/daemontest`, `internal/logger`, `internal/logger/loggertest`.
 
 High-value regression targets:
 

@@ -15,6 +15,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/config"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/errtrace"
+	"github.com/nuxencs/seasonpackarr/internal/inventory"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/state"
 
@@ -28,6 +29,7 @@ type Server struct {
 	log    logger.Logger
 	cfg    config.Provider
 	noti   domain.Sender
+	inv    *inventory.Store
 	tasks  *taskGroup
 	search *searchRunner
 	// lifecycleTasks holds the search schedule, the startup inventory read, and
@@ -39,16 +41,18 @@ type Server struct {
 	httpServer http.Server
 }
 
-// NewServer creates the server. reloads signals each successful config reload,
+// NewServer creates the server. inv holds the client inventories that the
+// webhooks and search share. reloads signals each successful config reload,
 // and can be nil when the config file is disabled.
-func NewServer(log logger.Logger, config config.Provider, notification domain.Sender, store *state.Store, reloads <-chan struct{}) *Server {
+func NewServer(log logger.Logger, config config.Provider, notification domain.Sender, store *state.Store, inv *inventory.Store, reloads <-chan struct{}) *Server {
 	tasks := newTaskGroup()
 	return &Server{
 		log:            log,
 		cfg:            config,
 		noti:           notification,
+		inv:            inv,
 		tasks:          tasks,
-		search:         &searchRunner{log: log, cfg: config, noti: notification, tasks: tasks, state: store},
+		search:         &searchRunner{log: log, cfg: config, inv: inv, noti: notification, tasks: tasks, state: store},
 		lifecycleTasks: newTaskGroup(),
 		reloads:        reloads,
 	}
@@ -61,10 +65,10 @@ func (s *Server) Open(ctx context.Context) error {
 		s.search.schedule(searchCtx)
 	})
 	s.lifecycleTasks.Go(func(warmCtx context.Context) {
-		inventoryWarmer{log: s.log, cfg: s.cfg, retryDelay: inventoryWarmRetryDelay}.run(warmCtx)
+		s.inv.ReadAtStartup(warmCtx, s.cfg)
 	})
 	s.lifecycleTasks.Go(func(reloadCtx context.Context) {
-		watchConfigReloads(reloadCtx, s.log, s.cfg, s.reloads)
+		watchConfigReloads(reloadCtx, s.log, s.cfg, s.inv, s.reloads)
 	})
 	defer s.lifecycleTasks.cancel()
 	var err error
@@ -135,7 +139,7 @@ func (s *Server) Handler() http.Handler {
 
 		api.Use(s.AuthMiddleware())
 		{
-			newWebhookHandler(s.log, s.cfg, s.noti, s.tasks).Routes(api.Group("/"))
+			newWebhookHandler(s.log, s.cfg, s.inv, s.noti, s.tasks).Routes(api.Group("/"))
 			api.POST("/search", s.search.handler)
 		}
 	}

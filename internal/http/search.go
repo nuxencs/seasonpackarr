@@ -21,10 +21,12 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/errtrace"
 	"github.com/nuxencs/seasonpackarr/internal/format"
+	"github.com/nuxencs/seasonpackarr/internal/inventory"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/prowlarr"
 	"github.com/nuxencs/seasonpackarr/internal/release"
 	"github.com/nuxencs/seasonpackarr/internal/state"
+	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
 	"github.com/autobrr/rls"
@@ -77,6 +79,7 @@ type searchReport struct {
 
 type searchRunner struct {
 	cfg         config.Provider
+	inv         *inventory.Store
 	log         logger.Logger
 	noti        domain.Sender
 	tasks       *taskGroup
@@ -197,33 +200,33 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 		if ctx.Err() != nil {
 			break
 		}
-		p := newProcessor(r.log, searchConfig{snapshot}, r.noti, r.tasks)
+		p := newProcessor(r.log, searchConfig{snapshot}, r.inv, r.noti, r.tasks)
 		p.req = &request{ClientName: name}
-		cfg := snapshot.Clients[name]
-		if err := p.getClient(ctx, cfg, name); err != nil {
+		client, err := p.connect(ctx, name, snapshot)
+		if err != nil {
 			report.Failures = append(report.Failures, searchFailure{ClientName: name, Reason: "could not connect to torrent client"})
 			continue
 		}
 		// Search starts from fresh summaries. Exact planning can reuse this scan.
-		entryMap.Delete(name)
-		inventory, err := p.getAllTorrents(ctx, name, cfg, snapshot.FuzzyMatching)
+		r.inv.DiscardClient(name)
+		clientInventory, err := client.Inventory(ctx)
 		if err != nil {
 			report.Failures = append(report.Failures, searchFailure{ClientName: name, Reason: "could not read torrent client inventory"})
 			continue
 		}
 		processors[name] = p
-		for _, entries := range inventory {
+		for entries := range clientInventory.TitleGroups() {
 			// Inventory buckets already apply the title, season, and year rules.
 			// Collect packs once so episode-only seasons do not need pairwise scans.
 			var packs []*rls.Release
-			for _, entry := range entries {
-				if entry.release.Type.Is(rls.Series) && entry.release.Episode == 0 {
-					packs = append(packs, entry.release)
+			for entry := range entries {
+				if entry.Release.Type.Is(rls.Series) && entry.Release.Episode == 0 {
+					packs = append(packs, entry.Release)
 				}
 			}
-			for _, entry := range entries {
+			for entry := range entries {
 				report.ScannedTorrents++
-				parsed := entry.release
+				parsed := entry.Release
 				// Date-based and ambiguous releases need metadata that this feature does
 				// not have. Existing season packs never create search groups.
 				if parsed.Type != rls.Episode || parsed.Series <= 0 || parsed.Episode <= 0 || strings.TrimSpace(parsed.Title) == "" {
@@ -425,7 +428,7 @@ func (run *discoveryRun) evaluateResult(ctx context.Context, indexer prowlarr.In
 		p.req.Torrent = nil
 		duplicate := false
 		for selectedClient, acceptedReleases := range run.selected {
-			if !sameImportEndpoint(*snapshot.Clients[name], *snapshot.Clients[selectedClient]) {
+			if torrentclient.EndpointOf(*snapshot.Clients[name]) != torrentclient.EndpointOf(*snapshot.Clients[selectedClient]) {
 				continue
 			}
 			for _, accepted := range acceptedReleases {
@@ -443,7 +446,7 @@ func (run *discoveryRun) evaluateResult(ctx context.Context, indexer prowlarr.In
 			run.report.Outcomes = append(run.report.Outcomes, outcome)
 			continue
 		}
-		candidates, status, err := p.findCandidates(ctx, name, snapshot.Clients[name], snapshot)
+		candidates, status, err := p.findCandidates(ctx, name, snapshot)
 		if err != nil {
 			outcome.Reason = status.String()
 			if !isExpectedGateRejection(status) {
@@ -503,7 +506,7 @@ func (run *discoveryRun) evaluateResult(ctx context.Context, indexer prowlarr.In
 			continue
 		}
 		p.req.Torrent, _ = json.Marshal(data)
-		plan, status, err := p.buildImportPlanWithSources(ctx, name, snapshot.Clients[name], snapshot, sources)
+		plan, status, err := p.buildImportPlanWithSources(ctx, name, snapshot, sources)
 		if plan.totalEps > 0 {
 			outcome.ReusableEpisodes = new(len(plan.links))
 			outcome.TotalEpisodes = new(plan.totalEps)
@@ -571,7 +574,7 @@ func (run *discoveryRun) storageFailure(err error) {
 
 // This preflight does not prove completion or piece validity. The torrent client
 // still verifies linked data during import.
-func (p *processor) availableSearchSources(ctx context.Context, candidates []entry) ([]release.EpisodeFile, error) {
+func (p *processor) availableSearchSources(ctx context.Context, candidates []inventory.Entry) ([]release.EpisodeFile, error) {
 	sources, err := p.getEpisodeFilesChecked(ctx, candidates)
 	if err != nil {
 		return nil, err

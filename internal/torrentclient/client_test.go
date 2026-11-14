@@ -10,6 +10,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 
 	pkgerrors "github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,6 +37,71 @@ func TestNew_RejectsUnknownClientType(t *testing.T) {
 
 	_, err := New(t.Context(), &domain.Client{Type: "notarealclient"})
 	require.EqualError(t, err, "unknown client type: notarealclient")
+}
+
+func TestEndpointOf(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		a, b domain.Client
+		same bool
+	}{
+		{
+			name: "same type host and port",
+			a:    domain.Client{Type: "transmission", Host: "10.0.0.1", Port: 9091, Username: "a", Inventory: domain.InventoryScope{IncludeCategories: []string{"tv"}}},
+			b:    domain.Client{Type: "transmission", Host: "10.0.0.1", Port: 9091, Username: "b"},
+			same: true,
+		},
+		{
+			name: "empty type is qBittorrent",
+			a:    domain.Client{Host: "qbit", Port: 8080},
+			b:    domain.Client{Type: "qbittorrent", Host: "qbit", Port: 8080},
+			same: true,
+		},
+		{
+			name: "deluge alias is Deluge v2",
+			a:    domain.Client{Type: "deluge", Host: "deluge", Port: 58846},
+			b:    domain.Client{Type: "deluge-v2", Host: "deluge", Port: 58846},
+			same: true,
+		},
+		{
+			name: "Deluge v1 is not Deluge v2",
+			a:    domain.Client{Type: "deluge-v1", Host: "deluge", Port: 58846},
+			b:    domain.Client{Type: "deluge-v2", Host: "deluge", Port: 58846},
+		},
+		{
+			name: "Deluge v1 is not the deluge alias",
+			a:    domain.Client{Type: "deluge-v1", Host: "deluge", Port: 58846},
+			b:    domain.Client{Type: "deluge", Host: "deluge", Port: 58846},
+		},
+		{
+			name: "different type",
+			a:    domain.Client{Type: "qbittorrent", Host: "seedbox", Port: 8080},
+			b:    domain.Client{Type: "transmission", Host: "seedbox", Port: 8080},
+		},
+		{
+			name: "different host",
+			a:    domain.Client{Host: "qbit-a", Port: 8080},
+			b:    domain.Client{Host: "qbit-b", Port: 8080},
+		},
+		{
+			name: "different port",
+			a:    domain.Client{Host: "qbit", Port: 8080},
+			b:    domain.Client{Host: "qbit", Port: 8081},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if tt.same {
+				assert.Equal(t, EndpointOf(tt.a), EndpointOf(tt.b))
+			} else {
+				assert.NotEqual(t, EndpointOf(tt.a), EndpointOf(tt.b))
+			}
+		})
+	}
 }
 
 func TestBuildHost(t *testing.T) {

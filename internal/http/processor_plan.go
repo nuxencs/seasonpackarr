@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/inventory"
 	"github.com/nuxencs/seasonpackarr/internal/release"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
@@ -75,7 +76,7 @@ func (p *processor) matchSeasonPack(ctx context.Context) (domain.StatusCode, err
 	}
 	p.log.Info().Msgf("using %s client", clientName)
 
-	plan, statusCode, err := p.buildImportPlan(ctx, clientName, clientCfg, snapshot)
+	plan, statusCode, err := p.buildImportPlan(ctx, clientName, snapshot)
 	if plan.totalEps > 0 {
 		p.logImportPlan(plan, snapshot)
 	}
@@ -126,16 +127,16 @@ func (p *processor) logImportPlan(plan importPlan, cfg domain.Config) {
 	summary.Msg("season pack import plan built")
 }
 
-func (p *processor) buildImportPlan(ctx context.Context, clientName string, clientCfg *domain.Client, cfg domain.Config) (importPlan, domain.StatusCode, error) {
-	return p.buildImportPlanWithSources(ctx, clientName, clientCfg, cfg, nil)
+func (p *processor) buildImportPlan(ctx context.Context, clientName string, cfg domain.Config) (importPlan, domain.StatusCode, error) {
+	return p.buildImportPlanWithSources(ctx, clientName, cfg, nil)
 }
 
-func (p *processor) buildImportPlanWithSources(ctx context.Context, clientName string, clientCfg *domain.Client, cfg domain.Config, sources []release.EpisodeFile) (importPlan, domain.StatusCode, error) {
+func (p *processor) buildImportPlanWithSources(ctx context.Context, clientName string, cfg domain.Config, sources []release.EpisodeFile) (importPlan, domain.StatusCode, error) {
 	if len(p.req.Torrent) == 0 {
 		return importPlan{}, domain.StatusTorrentBytesError, domain.StatusTorrentBytesError.Error()
 	}
 
-	candidates, statusCode, err := p.findCandidates(ctx, clientName, clientCfg, cfg)
+	candidates, statusCode, err := p.findCandidates(ctx, clientName, cfg)
 	if err != nil {
 		return importPlan{}, statusCode, err
 	}
@@ -197,42 +198,42 @@ func (p *processor) buildImportPlanWithSources(ctx context.Context, clientName s
 	return plan, domain.StatusSuccessfulMatch, nil
 }
 
-func (p *processor) getEpisodeFiles(ctx context.Context, candidates []entry) []release.EpisodeFile {
+func (p *processor) getEpisodeFiles(ctx context.Context, candidates []inventory.Entry) []release.EpisodeFile {
 	episodes, _ := p.getEpisodeFilesChecked(ctx, candidates)
 	return episodes
 }
 
-func (p *processor) getEpisodeFilesChecked(ctx context.Context, candidates []entry) ([]release.EpisodeFile, error) {
+func (p *processor) getEpisodeFilesChecked(ctx context.Context, candidates []inventory.Entry) ([]release.EpisodeFile, error) {
 	var failures []error
 	hashes := make([]string, len(candidates))
 	for index, candidate := range candidates {
-		hashes[index] = candidate.torrent.Hash
+		hashes[index] = candidate.Torrent.Hash
 	}
 
-	results := p.req.Client.GetFiles(ctx, hashes)
+	results := p.client.Adapter().GetFiles(ctx, hashes)
 	episodes := make([]release.EpisodeFile, 0, len(results))
 	for index, candidate := range candidates {
 		if index >= len(results) {
 			failures = append(failures, errors.New("torrent client omitted a file result"))
-			p.log.Error().Msgf("torrent client omitted file result for %s", candidate.torrent.Name)
+			p.log.Error().Msgf("torrent client omitted file result for %s", candidate.Torrent.Name)
 			continue
 		}
 
 		result := results[index]
-		if !strings.EqualFold(result.Hash, candidate.torrent.Hash) {
+		if !strings.EqualFold(result.Hash, candidate.Torrent.Hash) {
 			failures = append(failures, errors.New("torrent client returned an out-of-order file result"))
-			p.log.Error().Msgf("torrent client returned out-of-order file result for %s", candidate.torrent.Name)
+			p.log.Error().Msgf("torrent client returned out-of-order file result for %s", candidate.Torrent.Name)
 			continue
 		}
 		if result.Err != nil {
 			failures = append(failures, result.Err)
-			p.log.Error().Err(result.Err).Msgf("error getting file info: %s", candidate.torrent.Name)
+			p.log.Error().Err(result.Err).Msgf("error getting file info: %s", candidate.Torrent.Name)
 			continue
 		}
 
-		episode, err := episodeFileFromFiles(result.Files, candidate.torrent.SavePath)
+		episode, err := episodeFileFromFiles(result.Files, candidate.Torrent.SavePath)
 		if err != nil {
-			p.log.Error().Err(err).Msgf("error getting file info: %s", candidate.torrent.Name)
+			p.log.Error().Err(err).Msgf("error getting file info: %s", candidate.Torrent.Name)
 			continue
 		}
 		episodes = append(episodes, episode)
@@ -259,9 +260,9 @@ func importPlanKey(clientName string, hashes torrents.Hashes) importPlanCacheKey
 	return importPlanCacheKey{clientName: clientName, hashes: hashes}
 }
 
-func invalidateImportCaches(clientName string, hashes torrents.Hashes) {
+func (p *processor) invalidateImportCaches(clientName string, hashes torrents.Hashes) {
 	planMap.Delete(importPlanKey(clientName, hashes))
-	entryMap.Delete(clientName)
+	p.inv.DiscardClient(clientName)
 }
 
 func (p *processor) storeImportPlan(clientName string, clientCfg domain.Client, fuzzyMatching domain.FuzzyMatching, plan importPlan) {
@@ -275,7 +276,7 @@ func (p *processor) storeImportPlan(clientName string, clientCfg domain.Client, 
 	planMap.Store(importPlanKey(clientName, plan.hashes), cachedImportPlan{
 		plan:          plan,
 		releaseName:   p.req.Name,
-		clientConfig:  cloneClientConfig(clientCfg),
+		clientConfig:  clientCfg.Clone(),
 		fuzzyMatching: fuzzyMatching,
 		expiresAt:     now.Add(importPlanCacheTTL),
 	})
@@ -287,7 +288,7 @@ func (p *processor) loadImportPlan(clientName string, clientCfg domain.Client, f
 	if !ok {
 		return importPlan{}, false
 	}
-	if time.Now().After(cached.expiresAt) || cached.releaseName != p.req.Name || !clientConfigsEqual(cached.clientConfig, clientCfg) || cached.fuzzyMatching != fuzzyMatching {
+	if time.Now().After(cached.expiresAt) || cached.releaseName != p.req.Name || !cached.clientConfig.Equal(clientCfg) || cached.fuzzyMatching != fuzzyMatching {
 		planMap.Delete(key)
 		return importPlan{}, false
 	}
