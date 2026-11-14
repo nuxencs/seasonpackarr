@@ -267,6 +267,8 @@ func TestLoadFromEnv_ParsesMultiWordClientSettings(t *testing.T) {
 	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_IMPORT_SAVE_PATH", "/data/tv-hd")
 	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_IMPORT_CATEGORY", "tv-hd")
 	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_IMPORT_TAGS", "a, b")
+	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_INVENTORY_CATEGORIES", "tv-hd, tv-hd.cross-seed,")
+	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_INVENTORY_TAGS", "keep")
 
 	cfg := domain.Config{Clients: map[string]*domain.Client{}}
 	applyEnvironment(&cfg)
@@ -277,6 +279,7 @@ func TestLoadFromEnv_ParsesMultiWordClientSettings(t *testing.T) {
 	require.Equal(t, "/data/tv-hd", client.Import.SavePath)
 	require.Equal(t, "tv-hd", client.Import.Category)
 	require.Equal(t, []string{"a", "b"}, client.Import.Tags)
+	require.Equal(t, domain.InventoryScope{Categories: []string{"tv-hd", "tv-hd.cross-seed"}, Tags: []string{"keep"}}, client.Inventory)
 }
 
 func TestApplyEnvironment_SetsFuzzyMatching(t *testing.T) {
@@ -422,6 +425,9 @@ clients:
     import:
       category: tv-hd
       tags: [one, two]
+    inventory:
+      categories: [tv-hd, tv-hd.cross-seed]
+      tags: [keep]
 notifications:
   notificationLevel: [MATCH, ERROR]
   shoutrrr: ["ntfy://ntfy.sh/first"]
@@ -430,6 +436,8 @@ notifications:
 	snapshot := cfg.Snapshot()
 	snapshot.Clients["default"].Import.Category = "changed"
 	snapshot.Clients["default"].Import.Tags[0] = "changed"
+	snapshot.Clients["default"].Inventory.Categories[0] = "changed"
+	snapshot.Clients["default"].Inventory.Tags[0] = "changed"
 	snapshot.Notifications.NotificationLevel[0] = "changed"
 	snapshot.Notifications.Shoutrrr[0] = "changed"
 	delete(snapshot.Clients, "default")
@@ -437,6 +445,7 @@ notifications:
 	stored := cfg.Snapshot()
 	require.Equal(t, "tv-hd", stored.Clients["default"].Import.Category)
 	require.Equal(t, []string{"one", "two"}, stored.Clients["default"].Import.Tags)
+	require.Equal(t, domain.InventoryScope{Categories: []string{"tv-hd", "tv-hd.cross-seed"}, Tags: []string{"keep"}}, stored.Clients["default"].Inventory)
 	require.Equal(t, []string{"MATCH", "ERROR"}, stored.Notifications.NotificationLevel)
 	require.Equal(t, []string{"ntfy://ntfy.sh/first"}, stored.Notifications.Shoutrrr)
 }
@@ -914,6 +923,42 @@ func TestValidateClientConfig(t *testing.T) {
 		require.Contains(t, err.Error(), "contentLayout")
 	})
 
+	t.Run("qbittorrent accepts an inventory scope", func(t *testing.T) {
+		err := validateClientConfig("default", &domain.Client{
+			Type:      "qbittorrent",
+			Import:    domain.ImportPolicy{Category: "tv-hd"},
+			Inventory: domain.InventoryScope{Categories: []string{"tv-hd"}, Tags: []string{"keep"}},
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("transmission and deluge reject an inventory scope", func(t *testing.T) {
+		for _, clientType := range []string{"transmission", "deluge", "deluge-v1", "deluge-v2"} {
+			err := validateClientConfig("default", &domain.Client{
+				Type:      clientType,
+				Import:    domain.ImportPolicy{SavePath: t.TempDir()},
+				Inventory: domain.InventoryScope{Tags: []string{"keep"}},
+			})
+			require.Error(t, err, clientType)
+			require.Contains(t, err.Error(), "must not set inventory", clientType)
+		}
+	})
+
+	t.Run("an empty inventory entry is rejected", func(t *testing.T) {
+		for _, scope := range []domain.InventoryScope{
+			{Categories: []string{"tv-hd", ""}},
+			{Tags: []string{" "}},
+		} {
+			err := validateClientConfig("default", &domain.Client{
+				Type:      "qbittorrent",
+				Import:    domain.ImportPolicy{Category: "tv-hd"},
+				Inventory: scope,
+			})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "empty entry")
+		}
+	})
+
 	t.Run("nonexistent savePath", func(t *testing.T) {
 		err := validateClientConfig("default", &domain.Client{Type: "qbittorrent", Import: domain.ImportPolicy{SavePath: "/nope/does/not/exist"}})
 		require.Error(t, err)
@@ -1151,4 +1196,74 @@ notifications:
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{"ntfy://ntfy.sh/first", "telegram://123:abc@telegram?chats=1,2"}, snapshot.Notifications.Shoutrrr)
+}
+
+func TestLogInventoryScopeWarnings(t *testing.T) {
+	tests := map[string]struct {
+		client domain.Client
+		warn   bool
+	}{
+		"no scope": {
+			client: domain.Client{Import: domain.ImportPolicy{Category: "tv-hd"}},
+		},
+		"scope includes the import category": {
+			client: domain.Client{
+				Import:    domain.ImportPolicy{Category: "tv-hd"},
+				Inventory: domain.InventoryScope{Categories: []string{"tv-hd-completed", "tv-hd"}},
+			},
+		},
+		"scope includes an import tag": {
+			client: domain.Client{
+				Import:    domain.ImportPolicy{Category: "tv-hd", Tags: []string{"seasonpackarr", "tv"}},
+				Inventory: domain.InventoryScope{Categories: []string{"tv-hd-completed"}, Tags: []string{"tv"}},
+			},
+		},
+		"scope misses the import category and tags": {
+			client: domain.Client{
+				Import:    domain.ImportPolicy{Category: "tv-hd", Tags: []string{"seasonpackarr"}},
+				Inventory: domain.InventoryScope{Categories: []string{"tv-hd-completed"}},
+			},
+			warn: true,
+		},
+		"scope with an import savePath only": {
+			client: domain.Client{
+				Import:    domain.ImportPolicy{SavePath: "/data/tv-hd"},
+				Inventory: domain.InventoryScope{Tags: []string{"keep"}},
+			},
+			warn: true,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			log := loggertest.New()
+
+			LogInventoryScopeWarnings(log, domain.Config{Clients: map[string]*domain.Client{"default": &tt.client}})
+
+			if !tt.warn {
+				require.Empty(t, log.String())
+				return
+			}
+			require.Contains(t, log.String(), `"level":"warn"`)
+			require.Contains(t, log.String(), `"clientname":"default"`)
+			require.Contains(t, log.String(), "inventory scope does not include the import category or an import tag")
+		})
+	}
+}
+
+func TestDynamicReload_WarnsWhenInventoryScopeMissesImport(t *testing.T) {
+	cfg, configFile := newTestAppConfig(t, configWithSecrets())
+	log := loggertest.New()
+	_, err := cfg.DynamicReload(log)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NotNil(t, cfg.watcher)
+		require.NoError(t, cfg.watcher.Close())
+	})
+
+	writeConfigFile(t, configFile, configWithSecrets("    import:\n", "    inventory:\n      categories: [tv-hd-completed]\n    import:\n"))
+
+	require.Eventually(t, func() bool {
+		return strings.Contains(log.String(), "inventory scope does not include the import category or an import tag")
+	}, 3*time.Second, 10*time.Millisecond, log.String())
+	require.NotContains(t, log.String(), "config reload rejected")
 }

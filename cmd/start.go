@@ -54,6 +54,7 @@ func newStartCommand() *cobra.Command {
 			for _, name := range config.UnknownEnvironmentVariables(os.Environ()) {
 				log.Warn().Str("variable", name).Msg("unknown environment variable; seasonpackarr ignores it - remove or rename it (see the configuration guide)")
 			}
+			config.LogInventoryScopeWarnings(log, snapshot)
 
 			// init dynamic config
 			reloads, err := cfg.DynamicReload(log)

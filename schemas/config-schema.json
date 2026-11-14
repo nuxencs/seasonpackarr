@@ -119,6 +119,9 @@
         },
         "import": {
           "$ref": "#/$defs/import"
+        },
+        "inventory": {
+          "$ref": "#/$defs/inventory"
         }
       },
       "required": [
@@ -138,6 +141,16 @@
           },
           "then": {
             "properties": {
+              "inventory": {
+                "properties": {
+                  "categories": {
+                    "maxItems": 0
+                  },
+                  "tags": {
+                    "maxItems": 0
+                  }
+                }
+              },
               "import": {
                 "allOf": [
                   {
@@ -176,6 +189,16 @@
             "properties": {
               "apiKey": {
                 "maxLength": 0
+              },
+              "inventory": {
+                "properties": {
+                  "categories": {
+                    "maxItems": 0
+                  },
+                  "tags": {
+                    "maxItems": 0
+                  }
+                }
               },
               "import": {
                 "allOf": [
@@ -297,6 +320,29 @@
             "nosubfolder",
             "original"
           ]
+        }
+      }
+    },
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "qBittorrent only. Limits the torrents that seasonpackarr reads from the client to those with one of the categories or one of the tags. Empty lists read every torrent.",
+      "properties": {
+        "categories": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          }
+        },
+        "tags": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          }
         }
       }
     },

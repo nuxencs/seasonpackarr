@@ -116,6 +116,18 @@ clients:
       #
       # contentLayout: "subfolder"
 
+    # Inventory Scope (qBittorrent only)
+    # Limits the torrents that seasonpackarr reads from the client for the candidate check, the match, and discovery.
+    # A torrent is in the scope when it has one of the categories or one of the tags. Empty lists read every torrent.
+    # Include every category and tag where season packs end up, for example the import category.
+    # Episodes outside the scope are not reused. See the configuration guide before you set a scope.
+    #
+    # Optional
+    #
+    inventory:
+      categories: []
+      tags: []
+
   # Below you can find an example on how to define a second qBittorrent client
   # If you want to define even more clients just copy this segment and adjust the values accordingly
   #

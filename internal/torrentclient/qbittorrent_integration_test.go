@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -160,13 +161,57 @@ func TestQbitDaemon_ImportDestinationFollowsPreferences(t *testing.T) {
 	}
 }
 
+// TestQbitDaemon_ReadsOnlyInventoryScope checks the server-side category and
+// tag filters, the merge of a torrent in two results, and the lookup of an
+// added torrent outside the scope.
+func TestQbitDaemon_ReadsOnlyInventoryScope(t *testing.T) {
+	importDir := requireDaemon(t, envQbitHost)
+	suffix := time.Now().UnixNano()
+	scoped := fmt.Sprintf("seasonpackarr-scoped-%d", suffix)
+	outside := fmt.Sprintf("seasonpackarr-outside-%d", suffix)
+	tag := fmt.Sprintf("seasonpackarr-scope-%d", suffix)
+	inScope := newQbitDaemonClient(t, domain.ImportPolicy{SavePath: importDir, Category: scoped, Tags: []string{tag}})
+	raw := qbitDaemonAPI(t, inScope)
+	t.Cleanup(func() {
+		assert.NoError(t, raw.RemoveCategories([]string{scoped, outside}), "remove categories")
+		assert.NoError(t, raw.DeleteTags([]string{tag}), "remove tag")
+	})
+	require.NoError(t, raw.CreateCategory(scoped, ""))
+	require.NoError(t, raw.CreateCategory(outside, ""))
+
+	scope := domain.InventoryScope{Categories: []string{scoped}, Tags: []string{tag}}
+	c := newQbitDaemonScopedClient(t, domain.ImportPolicy{SavePath: importDir, Category: outside}, scope)
+	scopedPack := daemontest.WriteCompletePack(t, importDir, daemontest.PackName(t, "scoped"))
+	outsidePack := daemontest.WriteCompletePack(t, importDir, daemontest.PackName(t, "outside"))
+
+	importQbitPack(t, inScope, importRequest(scopedPack, importDir, true))
+	// The scoped client finds the added torrent, although its category is outside the scope.
+	importQbitPack(t, c, importRequest(outsidePack, importDir, true))
+
+	listed, err := c.GetTorrents(t.Context())
+	require.NoError(t, err)
+	var hashes []string
+	for _, torrent := range listed {
+		hashes = append(hashes, strings.ToLower(torrent.Hash))
+	}
+	assert.Equal(t, []string{strings.ToLower(scopedPack.Hashes.Legacy)}, hashes,
+		"the torrent in the category and tag results shows once, and the torrent outside the scope is not read")
+	requireListedPack(t, inScope, outsidePack, importDir)
+}
+
 func newQbitDaemonClient(t *testing.T, policy domain.ImportPolicy) *qbitClient {
 	t.Helper()
+	return newQbitDaemonScopedClient(t, policy, domain.InventoryScope{})
+}
+
+func newQbitDaemonScopedClient(t *testing.T, policy domain.ImportPolicy, scope domain.InventoryScope) *qbitClient {
+	t.Helper()
 	c, err := newQbitClient(t.Context(), &domain.Client{
-		Host:     os.Getenv(envQbitHost),
-		Username: os.Getenv(envQbitUser),
-		Password: os.Getenv(envQbitPass),
-		Import:   policy,
+		Host:      os.Getenv(envQbitHost),
+		Username:  os.Getenv(envQbitUser),
+		Password:  os.Getenv(envQbitPass),
+		Import:    policy,
+		Inventory: scope,
 	})
 	require.NoError(t, err)
 	return c

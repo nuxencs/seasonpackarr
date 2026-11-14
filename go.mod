@@ -3,6 +3,7 @@ module github.com/nuxencs/seasonpackarr
 go 1.27.3
 
 require (
+	github.com/Masterminds/semver v1.5.0
 	github.com/autobrr/go-deluge v1.4.0
 	github.com/autobrr/go-qbittorrent v1.19.0
 	github.com/autobrr/go-torrent v1.1.1
@@ -30,7 +31,6 @@ require (
 )
 
 require (
-	github.com/Masterminds/semver v1.5.0 // indirect
 	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/bytedance/gopkg v0.1.4 // indirect
 	github.com/bytedance/sonic v1.15.2 // indirect

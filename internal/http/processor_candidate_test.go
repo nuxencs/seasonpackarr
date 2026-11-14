@@ -138,6 +138,10 @@ func TestClientConfigsEqual_CoversEveryField(t *testing.T) {
 			DownloadPath:  "/download",
 			ContentLayout: "subfolder",
 		},
+		Inventory: domain.InventoryScope{
+			Categories: []string{"tv", "tv.cross-seed"},
+			Tags:       []string{"keep"},
+		},
 	}
 	require.True(t, clientConfigsEqual(base, cloneClientConfig(base)))
 
@@ -153,6 +157,13 @@ func TestClientConfigsEqual_CoversEveryField(t *testing.T) {
 		"category":       func(client *domain.Client) { client.Import.Category = "other" },
 		"download path":  func(client *domain.Client) { client.Import.DownloadPath = "/other" },
 		"content layout": func(client *domain.Client) { client.Import.ContentLayout = "original" },
+		"inventory categories": func(client *domain.Client) {
+			client.Inventory.Categories[1] = "other"
+		},
+		"inventory tags": func(client *domain.Client) { client.Inventory.Tags = append(client.Inventory.Tags, "other") },
+		"inventory scope removed": func(client *domain.Client) {
+			client.Inventory = domain.InventoryScope{}
+		},
 	}
 	for name, mutate := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -167,6 +178,12 @@ func TestClientConfigsEqual_CoversEveryField(t *testing.T) {
 	emptyTags := cloneClientConfig(base)
 	emptyTags.Import.Tags = []string{}
 	require.True(t, clientConfigsEqual(withoutTags, emptyTags), "nil and empty tags have the same policy")
+
+	withoutScope := cloneClientConfig(base)
+	withoutScope.Inventory = domain.InventoryScope{}
+	emptyScope := cloneClientConfig(base)
+	emptyScope.Inventory = domain.InventoryScope{Categories: []string{}, Tags: []string{}}
+	require.True(t, clientConfigsEqual(withoutScope, emptyScope), "nil and empty lists are the same scope")
 
 	allocations := testing.AllocsPerRun(1000, func() {
 		clientConfigsEqualSink = clientConfigsEqual(base, base)

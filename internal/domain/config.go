@@ -12,6 +12,21 @@ type Client struct {
 	Password string       `yaml:"password"`
 	APIKey   string       `yaml:"apiKey"`
 	Import   ImportPolicy `yaml:"import"`
+	// Inventory limits the torrents that seasonpackarr reads from the client. qBittorrent only.
+	Inventory InventoryScope `yaml:"inventory"`
+}
+
+// InventoryScope selects the torrents of the inventory. A torrent is in the
+// scope when it has one of the categories or one of the tags. An empty scope
+// selects every torrent. The scope never applies to the import.
+type InventoryScope struct {
+	Categories []string `yaml:"categories"`
+	Tags       []string `yaml:"tags"`
+}
+
+// IsSet reports whether the scope limits the inventory.
+func (s InventoryScope) IsSet() bool {
+	return len(s.Categories) > 0 || len(s.Tags) > 0
 }
 
 // ImportPolicy controls how /api/import re-imports a matched season pack back
