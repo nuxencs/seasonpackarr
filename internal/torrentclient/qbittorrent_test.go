@@ -6,6 +6,7 @@ package torrentclient
 import (
 	"context"
 	stderrors "errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -41,11 +42,12 @@ type fakeQbitAPI struct {
 
 	// inventory answers reads without hashes, filtered as qBittorrent does.
 	// Without lookupSeq, it also answers reads with hashes.
-	inventoryMu         sync.Mutex
-	inventory           []qbittorrent.Torrent
-	inventoryReads      []qbittorrent.TorrentFilterOptions
-	hashReads           [][]string
-	hashReadErr         error
+	inventoryMu    sync.Mutex
+	inventory      []qbittorrent.Torrent
+	inventoryReads []qbittorrent.TorrentFilterOptions
+	hashReads      [][]string
+	// hashReadErrByHash fails each hash read that holds one of its hashes.
+	hashReadErrByHash   map[string]error
 	inventoryDelay      time.Duration
 	inventoryErr        map[string]error
 	activeInventoryRead int
@@ -89,8 +91,10 @@ func (f *fakeQbitAPI) GetTorrents(o qbittorrent.TorrentFilterOptions) ([]qbittor
 		f.inventoryMu.Lock()
 		defer f.inventoryMu.Unlock()
 		f.hashReads = append(f.hashReads, slices.Clone(o.Hashes))
-		if f.hashReadErr != nil {
-			return nil, f.hashReadErr
+		for _, hash := range o.Hashes {
+			if err := f.hashReadErrByHash[hash]; err != nil {
+				return nil, err
+			}
 		}
 		return slices.DeleteFunc(slices.Clone(f.inventory), func(t qbittorrent.Torrent) bool {
 			return !slices.ContainsFunc(o.Hashes, func(hash string) bool { return strings.EqualFold(hash, t.Hash) })
@@ -223,11 +227,11 @@ func TestQbitGetFiles_UsesBoundedOrderedReads(t *testing.T) {
 	require.Equal(t, []File{{Name: "one.mkv", Size: 1}}, results[0].Files)
 	require.Error(t, results[3].Err)
 	require.Equal(t, qbitFileReadWorkers, api.maxFileReads)
-	assert.Equal(t, [][]string{hashes}, api.hashReads, "one torrents/info request for more hashes than workers")
+	assert.Equal(t, [][]string{hashes}, api.hashReads, "one torrents/info request for more hashes than workers, fewer than qbitInfoHashesPerRead")
 }
 
 // torrents/files has no save path, so GetFiles reads it from torrents/info in
-// the same call: one request for all hashes.
+// the same call: one request for up to qbitInfoHashesPerRead hashes.
 func TestQbitGetFiles_ReturnsSavePathOfOneInfoRead(t *testing.T) {
 	t.Parallel()
 
@@ -250,7 +254,7 @@ func TestQbitGetFiles_ReturnsSavePathOfOneInfoRead(t *testing.T) {
 		{Hash: "AAAA", SavePath: "/tv/moved", Files: []File{{Name: "Show.S01E01.mkv", Size: 1}}},
 		{Hash: "bbbb", SavePath: "/tv", Files: []File{{Name: "Show.S01E02.mkv", Size: 2}}},
 	}, results)
-	assert.Equal(t, [][]string{{"AAAA", "bbbb"}}, api.hashReads, "one torrents/info request for all hashes")
+	assert.Equal(t, [][]string{{"AAAA", "bbbb"}}, api.hashReads, "one torrents/info request for fewer hashes than qbitInfoHashesPerRead")
 }
 
 func TestQbitGetFiles_ReportsHashMissingFromInfoRead(t *testing.T) {
@@ -278,8 +282,8 @@ func TestQbitGetFiles_ExpandsInfoReadError(t *testing.T) {
 
 	errBoom := stderrors.New("boom")
 	api := &fakeQbitAPI{
-		hashReadErr: errBoom,
-		filesByHash: map[string]qbittorrent.TorrentFiles{"one": {{Name: "one.mkv", Size: 1}}},
+		hashReadErrByHash: map[string]error{"two": errBoom},
+		filesByHash:       map[string]qbittorrent.TorrentFiles{"one": {{Name: "one.mkv", Size: 1}}},
 	}
 	client := newTestQbitClient(api, domain.ImportPolicy{})
 
@@ -291,6 +295,45 @@ func TestQbitGetFiles_ExpandsInfoReadError(t *testing.T) {
 		assert.ErrorIs(t, results[index].Err, errBoom)
 	}
 	assert.Zero(t, api.maxFileReads, "no file read without a save path")
+}
+
+// A long hash filter can pass the request-line limit of a reverse proxy, and
+// one failed read must not fail the hashes of the other chunks.
+func TestQbitGetFiles_ReadsSavePathsInChunks(t *testing.T) {
+	t.Parallel()
+
+	errBoom := stderrors.New("boom")
+	api := &fakeQbitAPI{
+		filesByHash:       map[string]qbittorrent.TorrentFiles{},
+		hashReadErrByHash: map[string]error{"hash-150": errBoom},
+	}
+	hashes := make([]string, 2*qbitInfoHashesPerRead+1)
+	for index := range hashes {
+		hash := fmt.Sprintf("hash-%03d", index)
+		hashes[index] = hash
+		api.inventory = append(api.inventory, qbittorrent.Torrent{Hash: hash, SavePath: "/tv"})
+		api.filesByHash[hash] = qbittorrent.TorrentFiles{{Name: hash + ".mkv", Size: 1}}
+	}
+	// The client can report a hash in another case than the caller sends.
+	hashes[120] = strings.ToUpper(hashes[120])
+	client := newTestQbitClient(api, domain.ImportPolicy{})
+
+	results := client.GetFiles(t.Context(), hashes)
+
+	require.Len(t, api.hashReads, 3)
+	assert.Equal(t, hashes[:qbitInfoHashesPerRead], api.hashReads[0])
+	assert.Equal(t, hashes[qbitInfoHashesPerRead:2*qbitInfoHashesPerRead], api.hashReads[1])
+	assert.Equal(t, hashes[2*qbitInfoHashesPerRead:], api.hashReads[2])
+	require.Len(t, results, len(hashes))
+	for index, result := range results {
+		assert.Equal(t, hashes[index], result.Hash)
+		if index >= qbitInfoHashesPerRead && index < 2*qbitInfoHashesPerRead {
+			assert.ErrorIs(t, result.Err, errBoom, "hash %d is in the failed chunk", index)
+			continue
+		}
+		assert.NoError(t, result.Err, "hash %d is in a chunk that the client read", index)
+		assert.Equal(t, "/tv", result.SavePath)
+	}
 }
 
 func TestQbitBuildTorrentAddOptions(t *testing.T) {
