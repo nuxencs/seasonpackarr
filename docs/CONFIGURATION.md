@@ -132,7 +132,7 @@ A qBittorrent client must set `savePath` or `category`.
 
 ### What happens during an import
 
-The season pack folder gets its name from the torrent, not from the announce. An announce can differ from the folder
+The pack folder gets its name from the torrent, not from the announce. An announce can differ from the folder
 name, for example `Show.S01.1080p.WEB-DL.DDPA5.1.H.264-RlsGrp` against the folder
 `Show.S01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp`. A folder with the announce name would not match the torrent, and the client
 would download every file again.

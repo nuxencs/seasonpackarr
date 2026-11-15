@@ -39,7 +39,7 @@ autobrr filter disabled until step 6.
   startup, also when you do not use Prowlarr. You do not install or configure a
   database. See [application data](INSTALL.md#application-data).
 
-Existing torrent data does not move if the new import destination points to the
+Existing torrent data does not move if the new import root points to the
 same location.
 
 ## 1. Back up
@@ -482,7 +482,7 @@ Save the filter, but keep it disabled.
 3. Watch the first accepted season pack. Make sure that:
    - autobrr runs the candidate check first and the match second
    - the client gets only one torrent
-   - existing episodes appear as hardlinks in the season pack folder
+   - existing episodes appear as hardlinks in the pack folder
    - the torrent finishes its check and starts
    - only missing data downloads
 

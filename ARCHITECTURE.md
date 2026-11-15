@@ -2,7 +2,7 @@
 
 ## System Summary
 
-`seasonpackarr` is a config-driven Go service with a small CLI surface. It finds season packs through authenticated autobrr webhook requests and through opt-in Prowlarr discovery (RSS monitoring and search). It filters releases against configured torrent clients, builds exact import plans from torrent contents, hardlinks reusable episode files into the expected season-pack folder, and imports the pack into the torrent client.
+`seasonpackarr` is a config-driven Go service with a small CLI surface. It finds season packs through authenticated autobrr webhook requests and through opt-in Prowlarr discovery (RSS monitoring and search). It filters releases against configured torrent clients, builds exact import plans from torrent contents, hardlinks reusable episode files into the expected pack folder, and imports the pack into the torrent client.
 
 ## Main Runtime Flow
 
