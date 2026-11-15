@@ -601,6 +601,29 @@ func TestSearch_LogsReleaseAndClientOfEachResult(t *testing.T) {
 	assert.Equal(t, map[any]bool{"1080p": true, "2160p": true}, seen)
 }
 
+// A search run drops a source that is not on disk with the log line of the
+// webhook match, and the line names the release and the client of its result.
+func TestSearch_LogsSourceThatIsNotOnDisk(t *testing.T) {
+	log := newTraceLogger(t)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.5, log: log})
+	cfg := f.config.Snapshot()
+	cfg.Search.IndexerIDs = []int{1}
+	f.config.Store(cfg)
+	source := filepath.Join(f.sourceDir, f.torrentClient.filesByHash["ep2"][0].Name)
+	require.NoError(t, os.Remove(source))
+
+	report := f.runExact(t, true)
+
+	require.Len(t, report.Outcomes, 1)
+	assert.Equal(t, "would_import", report.Outcomes[0].Status)
+	assert.Equal(t, new(1), report.Outcomes[0].ReusableEpisodes)
+	dropped := log.Events(t).RequireField(t, "client episode file is not reusable", "source", source)
+	assert.Equal(t, "info", dropped["level"])
+	assert.Equal(t, "missing", dropped["reason"])
+	assert.Equal(t, f.releaseName, dropped["release"])
+	assert.Equal(t, "default", dropped["clientname"])
+}
+
 // The runner logs a fixed reason for a client failure. This test keeps it so.
 func TestSearch_LogsNoClientSecretOnConnectionFailure(t *testing.T) {
 	for _, failure := range newClientFailures(t) {

@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -190,11 +192,17 @@ func (p *processor) buildImportPlanWithSources(ctx context.Context, clientName s
 	return plan, domain.StatusSuccessfulMatch, nil
 }
 
+// getEpisodeFiles is the policy of the webhook endpoints for a file-detail read
+// error: getEpisodeFilesChecked logs it, and the plan build continues with the
+// sources that were read.
 func (p *processor) getEpisodeFiles(ctx context.Context, candidates []inventory.Entry) []release.EpisodeFile {
 	episodes, _ := p.getEpisodeFilesChecked(ctx, candidates)
 	return episodes
 }
 
+// getEpisodeFilesChecked reads the episode file of each candidate from the
+// client and keeps the files that are on disk. The error holds each failed
+// file-detail read. A file that is not on disk is no error.
 func (p *processor) getEpisodeFilesChecked(ctx context.Context, candidates []inventory.Entry) ([]release.EpisodeFile, error) {
 	var failures []error
 	hashes := make([]string, len(candidates))
@@ -228,9 +236,42 @@ func (p *processor) getEpisodeFilesChecked(ctx context.Context, candidates []inv
 			p.log.Error().Err(err).Msgf("error getting file info: %s", candidate.Torrent.Name)
 			continue
 		}
+		if !p.onDisk(episode) {
+			continue
+		}
 		episodes = append(episodes, episode)
 	}
 	return episodes, errors.Join(failures...)
+}
+
+// onDisk reports whether source is a regular file with the declared size, and
+// logs the reason when it is not. The inventory has no download state, so a
+// running episode download is a normal cause. The check does not prove that the
+// download is complete: a file that the client preallocated to its full size
+// passes. The torrent client still verifies the linked data during the import.
+func (p *processor) onDisk(source release.EpisodeFile) bool {
+	info, err := os.Stat(source.Path())
+	if err == nil && info.Mode().IsRegular() && info.Size() == source.Size() {
+		return true
+	}
+
+	event := p.log.Info().Str("source", source.Path())
+	switch {
+	case err != nil:
+		event = event.Str("reason", "missing")
+		// Another stat error, such as a denied permission, needs its own text.
+		if !errors.Is(err, fs.ErrNotExist) {
+			event = event.Err(err)
+		}
+	case !info.Mode().IsRegular():
+		event = event.Str("reason", "not_regular_file")
+	default:
+		event = event.Str("reason", "size_mismatch").
+			Int64("want_size", source.Size()).
+			Int64("got_size", info.Size())
+	}
+	event.Msg("client episode file is not reusable")
+	return false
 }
 
 func episodeFileFromFiles(files []torrentclient.File, savePath string) (release.EpisodeFile, error) {

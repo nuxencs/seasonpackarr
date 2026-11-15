@@ -28,11 +28,13 @@ func TestMatchSeasonPack_UsesTorrentEpisodeCoverage(t *testing.T) {
 	torrentBytes, err := torrents.TorrentFromRls(releaseName, 12)
 	require.NoError(t, err)
 
+	sourceDir := t.TempDir()
 	torrentClient := &fakeTorrentClient{filesByHash: make(map[string][]torrentclient.File)}
 	for episode := 1; episode <= 10; episode++ {
 		episodeName := fmt.Sprintf("Coverage.S01E%02d.1080p.WEB-DL.H.264-RlsGrp", episode)
 		hash := fmt.Sprintf("ep%d", episode)
-		torrentClient.torrents = append(torrentClient.torrents, torrentclient.Torrent{Name: episodeName, Hash: hash, SavePath: "/data/tv"})
+		writeEpisode(t, filepath.Join(sourceDir, episodeName+".mkv"))
+		torrentClient.torrents = append(torrentClient.torrents, torrentclient.Torrent{Name: episodeName, Hash: hash, SavePath: sourceDir})
 		torrentClient.filesByHash[hash] = []torrentclient.File{{Name: episodeName + ".mkv", Size: 1}}
 	}
 
@@ -64,11 +66,13 @@ func TestMatchSeasonPack_RejectsCoverageBelowTorrentThreshold(t *testing.T) {
 	torrentBytes, err := torrents.TorrentFromRls(releaseName, 4)
 	require.NoError(t, err)
 
+	sourceDir := t.TempDir()
 	torrentClient := &fakeTorrentClient{filesByHash: make(map[string][]torrentclient.File)}
 	for episode := 1; episode <= 2; episode++ {
 		episodeName := fmt.Sprintf("BelowThreshold.S01E%02d.1080p.WEB-DL.H.264-RlsGrp", episode)
 		hash := fmt.Sprintf("ep%d", episode)
-		torrentClient.torrents = append(torrentClient.torrents, torrentclient.Torrent{Name: episodeName, Hash: hash, SavePath: "/data/tv"})
+		writeEpisode(t, filepath.Join(sourceDir, episodeName+".mkv"))
+		torrentClient.torrents = append(torrentClient.torrents, torrentclient.Torrent{Name: episodeName, Hash: hash, SavePath: sourceDir})
 		torrentClient.filesByHash[hash] = []torrentclient.File{{Name: episodeName + ".mkv", Size: 1}}
 	}
 
@@ -139,11 +143,13 @@ func TestBuildImportPlan_CoverageCannotExceedTorrentEpisodeCount(t *testing.T) {
 	torrentBytes, err := torrents.TorrentFromRls(releaseName, 6)
 	require.NoError(t, err)
 
+	sourceDir := t.TempDir()
 	torrentClient := &fakeTorrentClient{filesByHash: make(map[string][]torrentclient.File)}
 	for episode := 1; episode <= 10; episode++ {
 		episodeName := fmt.Sprintf("CappedCoverage.S01E%02d.1080p.WEB-DL.H.264-RlsGrp", episode)
 		hash := fmt.Sprintf("ep%d", episode)
-		torrentClient.torrents = append(torrentClient.torrents, torrentclient.Torrent{Name: episodeName, Hash: hash, SavePath: "/data/tv"})
+		writeEpisode(t, filepath.Join(sourceDir, episodeName+".mkv"))
+		torrentClient.torrents = append(torrentClient.torrents, torrentclient.Torrent{Name: episodeName, Hash: hash, SavePath: sourceDir})
 		torrentClient.filesByHash[hash] = []torrentclient.File{{Name: episodeName + ".mkv", Size: 1}}
 	}
 	clientCfg := &domain.Client{Type: "qbittorrent", Import: domain.ImportPolicy{Category: "tv-hd"}}
@@ -233,21 +239,24 @@ func TestEpisodeFileFromFiles_ErrorsWhenNoValidEpisode(t *testing.T) {
 }
 
 func TestGetEpisodeFiles_KeepsSuccessfulBulkResults(t *testing.T) {
+	const episodeFile = "Show.S01E01.1080p.WEB-DL-GROUP.mkv"
+	sourceDir := t.TempDir()
+	writeEpisode(t, filepath.Join(sourceDir, episodeFile))
 	torrentClient := &fakeTorrentClient{
 		filesByHash: map[string][]torrentclient.File{
-			"one": {{Name: "Show.S01E01.1080p.WEB-DL-GROUP.mkv", Size: 100}},
+			"one": {{Name: episodeFile, Size: 1}},
 		},
 		fileErrByHash: map[string]error{"two": errors.New("boom")},
 	}
 	p := newTestProcessor(t, torrentClient)
 	candidates := []inventory.Entry{
-		{Torrent: torrentclient.Torrent{Hash: "one", Name: "Show.S01E01", SavePath: "/one"}},
+		{Torrent: torrentclient.Torrent{Hash: "one", Name: "Show.S01E01", SavePath: sourceDir}},
 		{Torrent: torrentclient.Torrent{Hash: "two", Name: "Show.S01E02", SavePath: "/two"}},
 	}
 
 	episodes := p.getEpisodeFiles(t.Context(), candidates)
 	require.Len(t, episodes, 1)
-	require.Equal(t, "/one/Show.S01E01.1080p.WEB-DL-GROUP.mkv", episodes[0].Path())
+	require.Equal(t, filepath.Join(sourceDir, episodeFile), episodes[0].Path())
 	require.Equal(t, 1, torrentClient.fileBatchCalls)
 	require.Equal(t, 2, torrentClient.fileCalls)
 	require.Equal(t, []string{"one", "two"}, torrentClient.gotHashes)

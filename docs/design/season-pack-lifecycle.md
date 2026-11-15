@@ -12,7 +12,7 @@ Describe the normal path from webhook hit to hardlink creation and client import
 4. A webhook request enters `internal/http/webhook.go`. Its context is passed through planning and torrent-client operations, so client disconnects and request cancellation stop context-aware work.
 5. `internal/http/processor_handlers.go` decodes the payload. The candidate, plan, and import processor files keep the three lifecycle stages separate.
 6. `/api/candidate` compares the announce with cached torrent summaries. It does not read torrent bytes or file details. At debug level, it logs each client release that caused the gate to pass.
-7. `/api/match` reuses the short-lived inventory, parses the announced torrent, and requests details only for candidate client torrents.
+7. `/api/match` reuses the short-lived inventory, parses the announced torrent, and requests details only for candidate client torrents. Each plan build keeps only the client episode files that are on disk, see [matching-and-hardlinking.md](matching-and-hardlinking.md).
 8. `internal/release/` keeps MKV and MP4 files that parse as episodes. It excludes samples, extra videos, and other non-episode files from coverage.
 9. Reusable source files map to distinct valid targets with the same container under configured fuzzy rules.
 10. Smart mode compares the exact reusable target count with the actual torrent episode count. `/api/match` caches an accepted side-effect-free plan.
@@ -70,6 +70,16 @@ Operators debug with these logs and notifications. Keep them stable, and update
   reports either a missing source episode, a duplicate torrent target, or the
   closest same-episode client source plus every incompatible safety field. Each
   incompatible field reports its torrent `want` and client `got` value.
+- Each client episode file that a plan build drops produces one `INFO` event
+  with the message `client episode file is not reusable`. The event reports the
+  `source` path and a `reason`: `missing`, `not_regular_file`, or
+  `size_mismatch`. A size mismatch also reports `want_size` (the size that the
+  client declares) and `got_size` (the size on disk). A `missing` event reports
+  the `error` when the file check failed for a cause other than a file that
+  does not exist. The level is `INFO`, because a running episode download is a
+  normal cause. The webhook endpoints and a search run log the same event. The
+  torrent episode of a dropped file reports a missing source episode in its own
+  event.
 - `/api/import` logs whether it reused or rebuilt the import plan. It also logs
   each successful or failed destination-resolution attempt at `INFO`, hardlink
   duration, each torrent-client import stage, total client-import duration, and

@@ -115,6 +115,10 @@ func TestMatchEndpoint_LogsReasonWhenNoEpisodeIsReusable(t *testing.T) {
 
 	log := loggertest.New()
 	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0, log: log})
+	// The file is on disk with the size that the client declares, so the size
+	// differs only from the size in the torrent.
+	episodeFile := f.torrentClient.filesByHash["ep1"][0].Name
+	require.NoError(t, os.WriteFile(filepath.Join(f.sourceDir, episodeFile), []byte("00"), 0o644))
 	f.torrentClient.filesByHash["ep1"][0].Size = 2
 
 	response := f.postJSON(t, "/api/match", f.packPayload())
@@ -131,6 +135,124 @@ func TestMatchEndpoint_LogsReasonWhenNoEpisodeIsReusable(t *testing.T) {
 	rejection := logs.Require(t, "season pack rejected")
 	require.Equal(t, "info", rejection["level"])
 	require.Equal(t, "could not match episodes to files in pack", rejection["error"])
+}
+
+// TestMatchEndpoint_DropsSourceThatIsNotOnDisk: the client lists an episode
+// whose file is not a regular file with the declared size. The match must not
+// count it, because the import cannot hardlink it (issue #358).
+func TestMatchEndpoint_DropsSourceThatIsNotOnDisk(t *testing.T) {
+	tests := []struct {
+		name   string
+		fault  func(t *testing.T, path string)
+		reason string
+		sizes  map[string]any // the size fields of the log line
+	}{
+		{
+			name:   "missing",
+			fault:  func(t *testing.T, path string) { require.NoError(t, os.Remove(path)) },
+			reason: "missing",
+		},
+		{
+			// A running episode download: the file is shorter than the client declares.
+			name:   "another size",
+			fault:  func(t *testing.T, path string) { require.NoError(t, os.WriteFile(path, []byte("12345"), 0o644)) },
+			reason: "size_mismatch",
+			sizes:  map[string]any{"want_size": float64(1), "got_size": float64(5)},
+		},
+		{
+			name: "not a regular file",
+			fault: func(t *testing.T, path string) {
+				require.NoError(t, os.Remove(path))
+				require.NoError(t, os.Mkdir(path, 0o755))
+			},
+			reason: "not_regular_file",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			log := newTraceLogger(t)
+			f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.5, log: log})
+			episodeFile := f.torrentClient.filesByHash["ep2"][0].Name
+			source := filepath.Join(f.sourceDir, episodeFile)
+			tt.fault(t, source)
+
+			response := f.postJSON(t, "/api/match", f.packPayload())
+			require.Equal(t, domain.StatusSuccessfulMatch.Code(), response.Code, response.Body.String())
+
+			logs := log.Events(t)
+			dropped := logs.RequireField(t, "client episode file is not reusable", "source", source)
+			assert.Equal(t, "info", dropped["level"])
+			assert.Equal(t, tt.reason, dropped["reason"])
+			assert.NotContains(t, dropped, "error")
+			for _, field := range []string{"want_size", "got_size"} {
+				assert.Equal(t, tt.sizes[field], dropped[field], field)
+			}
+
+			unmatched := logs.Require(t, "torrent episode is not reusable")
+			assert.Equal(t, episodeFile, filepath.Base(unmatched["torrent_path"].(string)))
+			assert.Equal(t, "source_episode_not_found", unmatched["reason"])
+
+			summary := logs.Require(t, "season pack import plan built")
+			assert.Equal(t, float64(1), summary["reusable_episodes"])
+			assert.Equal(t, float64(2), summary["total_episodes"])
+		})
+	}
+}
+
+// TestMatchEndpoint_LogsErrorWhenSourceCheckFails: the file check fails for a
+// cause other than a file that does not exist. Here the save path of the
+// client is a file. The line must hold the error, so an operator can tell this
+// from a path that is not there.
+func TestMatchEndpoint_LogsErrorWhenSourceCheckFails(t *testing.T) {
+	log := newTraceLogger(t)
+	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0, log: log})
+	episodeFile := f.torrentClient.filesByHash["ep1"][0].Name
+	f.torrentClient.torrents[0].SavePath = filepath.Join(f.sourceDir, episodeFile)
+
+	response := f.postJSON(t, "/api/match", f.packPayload())
+	require.Equal(t, domain.StatusFailedMatchToTorrentEps.Code(), response.Code, response.Body.String())
+
+	dropped := log.Events(t).Require(t, "client episode file is not reusable")
+	assert.Equal(t, filepath.Join(f.sourceDir, episodeFile, episodeFile), dropped["source"])
+	assert.Equal(t, "missing", dropped["reason"])
+	assert.Contains(t, dropped["error"], "not a directory")
+}
+
+// TestMatchEndpoint_RejectsPackWhenNoSourceIsOnDisk: with each source dropped,
+// the match has no reusable episode and changes nothing.
+func TestMatchEndpoint_RejectsPackWhenNoSourceIsOnDisk(t *testing.T) {
+	log := newTraceLogger(t)
+	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0, log: log})
+	for _, files := range f.torrentClient.filesByHash {
+		require.NoError(t, os.Remove(filepath.Join(f.sourceDir, files[0].Name)))
+	}
+
+	response := f.postJSON(t, "/api/match", f.packPayload())
+	require.Equal(t, domain.StatusFailedMatchToTorrentEps.Code(), response.Code, response.Body.String())
+
+	summary := log.Events(t).Require(t, "season pack import plan built")
+	assert.Equal(t, float64(0), summary["reusable_episodes"])
+	assert.Equal(t, float64(2), summary["total_episodes"])
+	assert.Zero(t, f.torrentClient.importCalls)
+	for _, dir := range []string{f.sourceDir, f.importDir} {
+		entries, err := os.ReadDir(dir)
+		require.NoError(t, err)
+		assert.Empty(t, entries, dir)
+	}
+}
+
+// TestMatchEndpoint_SmartModeCountsOnlySourcesOnDisk: the client lists each
+// episode of the pack, but only half of the files are on disk.
+func TestMatchEndpoint_SmartModeCountsOnlySourcesOnDisk(t *testing.T) {
+	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 4, clientEpisodes: 4, threshold: 0.75})
+	for _, hash := range []string{"ep3", "ep4"} {
+		require.NoError(t, os.Remove(filepath.Join(f.sourceDir, f.torrentClient.filesByHash[hash][0].Name)))
+	}
+
+	response := f.postJSON(t, "/api/match", f.packPayload())
+	require.Equal(t, domain.StatusBelowThreshold.Code(), response.Code, response.Body.String())
+	assert.Zero(t, f.torrentClient.importCalls)
+	assert.NoDirExists(t, filepath.Join(f.importDir, f.releaseName))
 }
 
 func TestMatchEndpoint_LogsBelowThresholdAsExpectedRejection(t *testing.T) {
@@ -413,7 +535,10 @@ func TestImportEndpoint_RefreshesPlanWhenSourceMoves(t *testing.T) {
 	require.Equal(t, float64(2), hardlinks["linked_episodes"])
 }
 
-func TestImportEndpoint_RefreshesAtMostOnceWhenSourceMovesAgain(t *testing.T) {
+// TestImportEndpoint_RefreshDropsSourceThatMovedAgain: the source moves again
+// between the client read and the plan build of the refresh. The refreshed
+// plan must not hold it, so the import makes no second hardlink attempt.
+func TestImportEndpoint_RefreshDropsSourceThatMovedAgain(t *testing.T) {
 	previousLevel := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previousLevel) })
@@ -448,9 +573,12 @@ func TestImportEndpoint_RefreshesAtMostOnceWhenSourceMovesAgain(t *testing.T) {
 	require.Equal(t, 4, f.torrentClient.fileCalls, "import must rebuild the plan only once")
 	require.Zero(t, f.torrentClient.importCalls)
 
+	logs := log.Events(t)
+	dropped := logs.RequireField(t, "client episode file is not reusable", "source", filepath.Join(movedDir, episodeFile))
+	require.Equal(t, "missing", dropped["reason"])
 	refreshCount := 0
 	missingCount := 0
-	for _, event := range log.Events(t) {
+	for _, event := range logs {
 		switch event["message"] {
 		case "import plan refreshed after missing hardlink source":
 			refreshCount++
@@ -459,7 +587,32 @@ func TestImportEndpoint_RefreshesAtMostOnceWhenSourceMovesAgain(t *testing.T) {
 		}
 	}
 	require.Equal(t, 1, refreshCount)
-	require.Equal(t, 2, missingCount)
+	require.Equal(t, 1, missingCount, "only the hardlink attempt of the first plan finds a missing source")
+}
+
+// TestImportEndpoint_RebuiltPlanDropsSourceThatIsNotOnDisk: an import with no
+// plan of a match builds the plan with the same on-disk rule. A partly
+// downloaded episode must not become a hardlink in the pack.
+func TestImportEndpoint_RebuiltPlanDropsSourceThatIsNotOnDisk(t *testing.T) {
+	log := newTraceLogger(t)
+	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.5, log: log})
+	partFile := f.torrentClient.filesByHash["ep2"][0].Name
+	source := filepath.Join(f.sourceDir, partFile)
+	require.NoError(t, os.WriteFile(source, []byte("12345"), 0o644))
+
+	response := f.postJSON(t, "/api/import", f.packPayload())
+	require.Equal(t, domain.StatusSuccessfulHardlink.Code(), response.Code, response.Body.String())
+
+	logs := log.Events(t)
+	assert.Equal(t, "rebuilt", logs.Require(t, "import plan resolved")["plan_source"])
+	dropped := logs.RequireField(t, "client episode file is not reusable", "source", source)
+	assert.Equal(t, "size_mismatch", dropped["reason"])
+	hardlinks := logs.Require(t, "hardlink stage completed")
+	assert.Equal(t, float64(1), hardlinks["planned_links"])
+	assert.Equal(t, float64(1), hardlinks["linked_episodes"])
+	assert.FileExists(t, filepath.Join(f.importDir, f.releaseName, f.torrentClient.filesByHash["ep1"][0].Name))
+	assert.NoFileExists(t, filepath.Join(f.importDir, f.releaseName, partFile))
+	assert.Equal(t, 1, f.torrentClient.importCalls)
 }
 
 func TestImportEndpoint_RejectsRefreshedPlanBelowThreshold(t *testing.T) {

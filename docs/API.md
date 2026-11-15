@@ -148,6 +148,26 @@ contain them. For per-episode diagnostics, read the
 `duplicate_torrent_target`) and `mismatches[].field` (`size`, `container`,
 `resolution`, or `release_group`) explain why an episode was not reused.
 
+The match and the import count only client episode files that are on disk. An
+episode file that the client lists is not reusable when it is not a regular
+file with the size that the client declares. Each such file gives one
+`client episode file is not reusable` log line at `INFO`:
+
+| Field | Value |
+| --- | --- |
+| `source` | The path of the client episode file |
+| `reason` | `missing`, `not_regular_file`, or `size_mismatch` |
+| `want_size`, `got_size` | Only for `size_mismatch`: the size that the client declares and the size on disk, in bytes |
+| `error` | Only for `missing`, when the file check failed for a cause other than a file that does not exist, for example a denied permission |
+
+A running episode download is a normal cause of `size_mismatch`. `missing`
+on each file usually shows that seasonpackarr and the client do not see the
+same paths. The torrent episode of such a file then shows
+`source_episode_not_found` in its own `torrent episode is not reusable` line.
+When no client episode file is left, the match returns `445`. A file that the
+client preallocated to its full size passes this check before its download
+completes.
+
 ## Notifications and logs
 
 - The candidate check sends no notifications.
@@ -166,6 +186,9 @@ contain them. For per-episode diagnostics, read the
 - When a match does not use a torrent episode, the log shows why: a missing
   source episode, a duplicate target, or the closest client file and each field
   that did not match.
+- When a client episode file is not on disk as the client declares it, the log
+  line `client episode file is not reusable` shows the path and the reason.
+  The webhook endpoints and a search run log the same line.
 - Logs never include configured credentials or request tokens.
 
 ## Search

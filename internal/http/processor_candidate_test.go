@@ -6,6 +6,7 @@ package http
 import (
 	"context"
 	"encoding/base64"
+	"path/filepath"
 	"testing"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
@@ -82,9 +83,11 @@ func TestInventory_SharedByCandidateAndMatch(t *testing.T) {
 	torrentBytes, err := torrents.TorrentFromRls("Inventory.S01.1080p.WEB-DL.H.264-RlsGrp", 1)
 	require.NoError(t, err)
 
+	sourceDir := t.TempDir()
+	writeEpisode(t, filepath.Join(sourceDir, "Inventory.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"))
 	torrentClient := &fakeTorrentClient{
 		torrents: []torrentclient.Torrent{
-			{Name: "Inventory.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: "/data/tv"},
+			{Name: "Inventory.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
 		},
 		filesByHash: map[string][]torrentclient.File{
 			"ep1": {{Name: "Inventory.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv", Size: 1}},

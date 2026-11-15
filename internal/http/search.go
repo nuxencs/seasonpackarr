@@ -11,7 +11,6 @@ import (
 	"io"
 	"maps"
 	"net/http"
-	"os"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -459,7 +458,7 @@ func (run *discoveryRun) evaluateResult(ctx context.Context, indexer prowlarr.In
 			run.report.Outcomes = append(run.report.Outcomes, outcome)
 			continue
 		}
-		sources, err := p.availableSearchSources(ctx, candidates)
+		sources, err := p.getEpisodeFilesChecked(ctx, candidates)
 		if err != nil {
 			outcome.Status = "failed"
 			outcome.Reason = "could not read episode file details from torrent client"
@@ -577,17 +576,4 @@ func (p *processor) forResult(releaseName string) *processor {
 	evaluation.req = &request{Name: releaseName, ClientName: p.req.ClientName}
 	evaluation.log = p.log.With().Str("release", releaseName).Str("clientname", p.req.ClientName).Logger()
 	return &evaluation
-}
-
-// This preflight does not prove completion or piece validity. The torrent client
-// still verifies linked data during import.
-func (p *processor) availableSearchSources(ctx context.Context, candidates []inventory.Entry) ([]release.EpisodeFile, error) {
-	sources, err := p.getEpisodeFilesChecked(ctx, candidates)
-	if err != nil {
-		return nil, err
-	}
-	return slices.DeleteFunc(sources, func(source release.EpisodeFile) bool {
-		info, err := os.Stat(source.Path())
-		return err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() != source.Size()
-	}), nil
 }

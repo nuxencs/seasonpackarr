@@ -89,6 +89,7 @@
 
 - `/api/candidate` reads torrent summaries only. It does not need torrent bytes or file-detail calls.
 - `/api/match` parses the announced torrent, maps reusable source files to distinct valid torrent targets, and applies smart mode to exact torrent coverage.
+- Each plan build drops a client episode file that is not on disk as a regular file with the size that the client declares, and logs the reason. The webhook match, the import, and search use this one rule. See [docs/design/matching-and-hardlinking.md](docs/design/matching-and-hardlinking.md).
 - Exact plan matching parses each episode filename once and uses an indexed compatibility key instead of scanning every source-target pair.
 - Exact planning requests candidate file details once. Transmission and Deluge v2 batch hashes in one client call. Deluge v1 uses one session-state preflight and one bulk status call. qBittorrent uses a bounded four-worker adapter pool.
 - `internal/inventory/` owns the client connection, the inventory, and the parsed torrent names of each configured client. The candidate check, the match, the import, and search get their client handle and their inventory from it. An inventory is valid for 30 seconds, so the ordered candidate and match checks normally share one client scan.
