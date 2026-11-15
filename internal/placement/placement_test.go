@@ -399,6 +399,127 @@ func TestComplete(t *testing.T) {
 	})
 }
 
+// TestComplete_StaysBelowImportRoot: the completeness check must refuse the
+// symlinks that Link refuses. A client skips its full data check only for data
+// that seasonpackarr can read below the import root (issue #351).
+func TestComplete_StaysBelowImportRoot(t *testing.T) {
+	newDirs := func(t *testing.T) (root, outside string) {
+		t.Helper()
+		dir := t.TempDir()
+		root = filepath.Join(dir, "import")
+		outside = filepath.Join(dir, "outside")
+		require.NoError(t, os.Mkdir(root, 0o755))
+		require.NoError(t, os.Mkdir(outside, 0o755))
+		return root, outside
+	}
+	// writePack writes both episodes of the pack with their size of 7 bytes.
+	writePack := func(t *testing.T, packDir string) {
+		t.Helper()
+		writeSource(t, packDir, episode1)
+		writeSource(t, packDir, episode2)
+	}
+
+	t.Run("symlinked pack folder that leaves the root", func(t *testing.T) {
+		root, outside := newDirs(t)
+		writePack(t, outside)
+		require.NoError(t, os.Symlink(outside, filepath.Join(root, packName)))
+
+		assert.False(t, New(newPackInfo(t), PackFolderDestination(root)).Complete())
+	})
+
+	t.Run("symlinked subfolder that leaves the root", func(t *testing.T) {
+		root, outside := newDirs(t)
+		writeSource(t, outside, episode1)
+		require.NoError(t, os.Mkdir(filepath.Join(root, packName), 0o755))
+		require.NoError(t, os.Symlink(outside, filepath.Join(root, packName, "Extras")))
+		info := newInfo(t, metainfo.Info{
+			Name:  packName,
+			Files: []metainfo.FileInfo{{Path: []string{"Extras", episode1}, Length: 7}},
+		})
+
+		assert.False(t, New(info, PackFolderDestination(root)).Complete())
+	})
+
+	t.Run("symlinked file that leaves the root", func(t *testing.T) {
+		root, outside := newDirs(t)
+		packDir := filepath.Join(root, packName)
+		writeSource(t, packDir, episode1)
+		require.NoError(t, os.Symlink(writeSource(t, outside, episode2), filepath.Join(packDir, episode2)))
+
+		assert.False(t, New(newPackInfo(t), PackFolderDestination(root)).Complete())
+	})
+
+	t.Run("relative symlink that stays below the root", func(t *testing.T) {
+		root, _ := newDirs(t)
+		writePack(t, filepath.Join(root, "real"))
+		require.NoError(t, os.Symlink("real", filepath.Join(root, packName)))
+
+		assert.True(t, New(newPackInfo(t), PackFolderDestination(root)).Complete())
+	})
+
+	t.Run("import root that is a symlink", func(t *testing.T) {
+		realRoot, _ := newDirs(t)
+		writePack(t, filepath.Join(realRoot, packName))
+		root := filepath.Join(filepath.Dir(realRoot), "link")
+		require.NoError(t, os.Symlink(realRoot, root))
+
+		assert.True(t, New(newPackInfo(t), PackFolderDestination(root)).Complete())
+	})
+}
+
+// TestPlacement_RefusesRelativeImportRoot: a relative import root points below
+// the working directory of seasonpackarr, while the client reads the same value
+// relative to its own working directory (issue #351).
+func TestPlacement_RefusesRelativeImportRoot(t *testing.T) {
+	tests := map[string]string{
+		"folder name":               "import",
+		"current directory element": "." + string(filepath.Separator) + "import",
+		"parent element":            filepath.Join("..", "import"),
+		"empty path":                "",
+	}
+	for name, root := range tests {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			workDir := filepath.Join(dir, "work")
+			require.NoError(t, os.Mkdir(workDir, 0o755))
+			t.Chdir(workDir)
+			source1 := writeSource(t, filepath.Join(dir, "library"), "one.mkv")
+			source2 := writeSource(t, filepath.Join(dir, "library"), "two.mkv")
+			placed := New(newPackInfo(t), PackFolderDestination(root))
+
+			outcomes := placed.Link([]PlannedLink{
+				{Source: source1, TorrentPath: episode1},
+				{Source: source2, TorrentPath: episode2},
+			})
+
+			require.Len(t, outcomes, 2)
+			assert.ErrorContains(t, outcomes[0].Err, "is not an absolute path")
+			assert.Equal(t, Outcome{Err: outcomes[0].Err}, outcomes[0])
+			assert.Equal(t, outcomes[0], outcomes[1])
+			assert.Empty(t, dirNames(t, workDir), "nothing must appear below the working directory")
+			assert.Equal(t, []string{"library", "work"}, dirNames(t, dir))
+
+			// The pack is at the place that the relative path names, with its sizes.
+			packDir := filepath.Join(workDir, root, packName)
+			writeSource(t, packDir, episode1)
+			writeSource(t, packDir, episode2)
+			assert.False(t, placed.Complete())
+		})
+	}
+}
+
+// dirNames returns the sorted names of the entries directly below dir.
+func dirNames(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	return names
+}
+
 func TestLink_MakesNothingWithoutLinks(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "import")
 

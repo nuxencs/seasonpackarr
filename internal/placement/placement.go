@@ -19,7 +19,8 @@ import (
 
 // Destination is the import root of a torrent client plus the layout that the
 // client expects below it. Two destinations with the same root and layout are
-// equal.
+// equal. The root must be an absolute path. With a relative root, each link
+// fails and the pack data is not complete.
 type Destination struct {
 	root       string
 	packFolder bool
@@ -86,7 +87,7 @@ func New(info torrents.Info, destination Destination) Placement {
 }
 
 // Link makes the planned hardlinks and returns one outcome for each link in
-// input order.
+// input order. A failure of the import root gives each link the same error.
 func (p Placement) Link(links []PlannedLink) []Outcome {
 	outcomes := make([]Outcome, len(links))
 	failAll := func(err error) []Outcome {
@@ -104,7 +105,7 @@ func (p Placement) Link(links []PlannedLink) []Outcome {
 	if !p.info.IsDir() {
 		return failAll(errtrace.WithStack(fmt.Errorf("torrent %q is not a directory torrent", p.info.Name())))
 	}
-	rootDir, err := p.openRoot()
+	rootDir, err := p.openRoot(true)
 	if err != nil {
 		return failAll(err)
 	}
@@ -129,15 +130,23 @@ func (p Placement) Link(links []PlannedLink) []Outcome {
 // Complete reports whether each file of the torrent that is not a padding file
 // is a regular file with the expected size at its hardlink target. A client
 // skips its full data check only for complete data, so any doubt gives false.
+// It reads through os.Root, as Link does, so a hardlink target behind a symlink
+// that Link refuses is not complete. It makes nothing on disk.
 func (p Placement) Complete() bool {
 	if !p.info.IsDir() {
 		return false
 	}
+	rootDir, err := p.openRoot(false)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = rootDir.Close() }()
+
 	for file := range p.info.Files() {
 		if file.Padding {
 			continue
 		}
-		stat, err := os.Stat(p.target(file.Path).path)
+		stat, err := rootDir.Stat(p.target(file.Path).rel)
 		if err != nil || !stat.Mode().IsRegular() || stat.Size() != file.Size {
 			return false
 		}
@@ -145,13 +154,21 @@ func (p Placement) Complete() bool {
 	return true
 }
 
-// openRoot makes and opens the import root. The operator sets the root, so it
-// can be new and can be a symlink.
-func (p Placement) openRoot() (*os.Root, error) {
-	if err := os.MkdirAll(p.destination.root, 0o755); err != nil {
-		return nil, errtrace.WithStack(err)
+// openRoot opens the import root, and makes it first when create is set. The
+// operator sets the root, so it can be new and can be a symlink. A relative root
+// is refused: it names a folder below the working directory of seasonpackarr,
+// and the client reads the same value relative to its own working directory.
+func (p Placement) openRoot(create bool) (*os.Root, error) {
+	root := p.destination.root
+	if !filepath.IsAbs(root) {
+		return nil, errtrace.WithStack(fmt.Errorf("import root %q is not an absolute path", root))
 	}
-	rootDir, err := os.OpenRoot(p.destination.root)
+	if create {
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			return nil, errtrace.WithStack(err)
+		}
+	}
+	rootDir, err := os.OpenRoot(root)
 	if err != nil {
 		return nil, errtrace.WithStack(err)
 	}

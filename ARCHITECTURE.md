@@ -173,7 +173,10 @@
   the torrent, and it links only a directory torrent. It opens the import root one time for each call and makes the
   target folders through `os.Root`. When the import root cannot be made or opened, each link gets the same error.
 - `Complete` answers whether each file that is not a padding file is a regular file with the expected size at its
-  hardlink target. The comparison is size-only.
+  hardlink target. The comparison is size-only. It reads each hardlink target through `os.Root`, as `Link` does, so
+  a hardlink target behind a symlink that `os.Root` rejects is not complete. It makes nothing on disk.
+- The import root must be an absolute path. With a relative root, each link fails with an error that names the
+  root, `Complete` answers false, and the import returns status `440`.
 - The package has no logger and returns no status code. The HTTP processor owns the operator logs, the count of
   linked episodes, the one refresh after a missing source, and the status mapping.
 

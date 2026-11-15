@@ -175,7 +175,8 @@ Transmission client.
 
 Before you start v1.0.0, make sure that:
 
-- The configured `savePath` exists.
+- The configured `savePath` is an absolute path and exists. A relative path
+  fails the import with status `440`.
 - The configured `downloadPath` exists, if you set one. seasonpackarr does not
   start when `savePath` or `downloadPath` is missing. If you copy the
   incomplete-download path from the old autobrr action, seasonpackarr must also

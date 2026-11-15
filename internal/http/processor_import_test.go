@@ -314,6 +314,51 @@ func TestImportSeasonPack_UsesFlatImportDestination(t *testing.T) {
 	require.NoFileExists(t, filepath.Join(importDir, releaseName, episodeName))
 }
 
+// TestImportSeasonPack_RefusesRelativeImportRoot: a relative import root must
+// not make seasonpackarr link below its own working directory (issue #351).
+func TestImportSeasonPack_RefusesRelativeImportRoot(t *testing.T) {
+	resetProcessorGlobals()
+
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	workDir := filepath.Join(tempDir, "work")
+	require.NoError(t, os.MkdirAll(sourceDir, 0o755))
+	require.NoError(t, os.MkdirAll(workDir, 0o755))
+	t.Chdir(workDir)
+
+	releaseName := "RelativeImport.S01.1080p.WEB-DL.H.264-RlsGrp"
+	torrentBytes, err := torrents.TorrentFromRls(releaseName, 1)
+	require.NoError(t, err)
+
+	episodeName := "RelativeImport.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"
+	writeEpisode(t, filepath.Join(sourceDir, episodeName))
+
+	torrentClient := &fakeTorrentClient{
+		torrents: []torrentclient.Torrent{
+			{Name: "RelativeImport.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
+		},
+		filesByHash: map[string][]torrentclient.File{
+			"ep1": {{Name: episodeName, Size: 1}},
+		},
+		importRoot: "import",
+	}
+
+	p := newImportProcessor(newTestInventory(torrentClient))
+	p.req = &request{
+		Name:       releaseName,
+		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
+		ClientName: "default",
+	}
+
+	statusCode, err := p.importSeasonPack(t.Context())
+	require.EqualError(t, err, domain.StatusFailedHardlink.String())
+	require.Equal(t, domain.StatusFailedHardlink, statusCode)
+	require.False(t, torrentClient.importCalled, "the client must not get a relative save path")
+	entries, err := os.ReadDir(workDir)
+	require.NoError(t, err)
+	require.Empty(t, entries, "nothing must appear below the working directory")
+}
+
 func TestImportSeasonPack_RetryReusesExistingHardlinks(t *testing.T) {
 	resetProcessorGlobals()
 

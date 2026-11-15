@@ -41,6 +41,18 @@ Current comparison logic checks:
     an absolute target, also when the target is below the import root. The
     link call itself uses the full path, because `os.Root` can link only when
     both names are below the root, and the source is not.
+- the import root must be an absolute path. The placement module refuses a
+  relative root: each link fails with an error that names the root, the
+  completeness check answers false, and the import returns status `440` with
+  no link made. A relative root names a folder below the working directory of
+  seasonpackarr, and the client reads the same value relative to its own
+  working directory.
+- the completeness check (`Complete`) reads each hardlink target through
+  `os.Root`, as the links do, and it makes nothing on disk. A hardlink target
+  behind a symlink that `os.Root` rejects reads as incomplete, so the client
+  does its full data check. The comparison is size-only: each file that is not
+  a padding file must be a regular file with the expected size. Any doubt gives
+  the answer "not complete".
 - the client adapter decides the import root and the layout (with a pack folder
   or flat) and returns both as one `placement.Destination`. The links, the
   completeness check, and the save path of the client import use that one value
