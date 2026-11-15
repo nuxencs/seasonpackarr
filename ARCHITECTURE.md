@@ -76,6 +76,14 @@
 
 - Implemented in `internal/torrents/`
 - Concerns: decoding supplied torrent bytes, deriving torrent identity, and discovering pack files
+- `torrents.ParseInfo` returns the validated torrent info, `torrents.Info`. It rejects a torrent whose name is not one
+  folder or file name, or whose file path is absolute or leaves the pack folder. The type has no exported fields, so
+  only the parse can make a value with content, and no other package reads a name or a file path from the raw info of
+  the torrent library. It holds the torrent name, the files (path, size, and the BEP 47 padding mark), the total
+  length, and the episode list. It also covers a single-file torrent, for which the episode list gives an error.
+- The import plan holds the validated torrent info. The completeness check of the import reads it from the plan and
+  does not parse the torrent again.
+- `torrents.InfoHashes` derives the torrent identity. It is a separate function, and the validated type holds no hashes.
 
 ### Pack Evaluation and Cache Reuse
 

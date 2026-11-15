@@ -29,7 +29,7 @@ type plannedLink struct {
 type importPlan struct {
 	torrentBytes []byte
 	hashes       torrents.Hashes
-	packName     string
+	info         torrents.Info
 	links        []plannedLink
 	unmatched    []release.EpisodeUnmatched
 	totalEps     int
@@ -146,12 +146,12 @@ func (p *processor) buildImportPlanWithSources(ctx context.Context, clientName s
 		return importPlan{}, domain.StatusDecodeTorrentBytesError, fmt.Errorf("%s: %w", domain.StatusDecodeTorrentBytesError, err)
 	}
 
-	torrentInfo, err := torrents.Info(torrentBytes)
+	torrentInfo, err := torrents.ParseInfo(torrentBytes)
 	if err != nil {
 		return importPlan{}, domain.StatusParseTorrentInfoError, fmt.Errorf("%s: %w", domain.StatusParseTorrentInfoError, err)
 	}
 
-	torrentEps, err := torrents.Episodes(torrentInfo)
+	torrentEps, err := torrentInfo.Episodes()
 	if err != nil {
 		return importPlan{}, domain.StatusGetEpisodesError, fmt.Errorf("%s: %w", domain.StatusGetEpisodesError, err)
 	}
@@ -187,7 +187,7 @@ func (p *processor) buildImportPlanWithSources(ctx context.Context, clientName s
 	plan := importPlan{
 		torrentBytes: torrentBytes,
 		hashes:       hashes,
-		packName:     torrentInfo.BestName(),
+		info:         torrentInfo,
 		links:        links,
 		unmatched:    matchResult.Unmatched,
 		totalEps:     len(eligibleEps),

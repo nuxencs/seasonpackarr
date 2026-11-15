@@ -27,8 +27,19 @@ The step that carries out an import plan: it creates the hardlinks, then adds th
 _Avoid_: Pack, parse
 
 **Reusable episode**:
-An episode file already on disk that an import can hardlink into the season pack folder.
+An episode file already on disk that an import can hardlink into the pack folder.
 _Avoid_: Existing episode, matched file
+
+**Import root**:
+The folder of the torrent client below which an import puts a season pack.
+_Avoid_: Import folder, import destination
+
+**Pack folder**:
+The folder below the import root that has the name of the season pack and holds its files. A client layout without a subfolder has no pack folder.
+_Avoid_: Season pack folder
+
+**Hardlink target**:
+The path below the import root where one file of the season pack must be.
 
 **Coverage**:
 The share of distinct episode targets in a season pack that reusable episodes supply.

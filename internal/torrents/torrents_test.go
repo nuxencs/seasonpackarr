@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/autobrr/go-torrent/bencode"
@@ -83,13 +84,13 @@ func TestTorrentFromRls_RoundTrip(t *testing.T) {
 	torrentBytes, err := TorrentFromRls(rlsName, 3)
 	require.NoError(t, err)
 
-	info, err := Info(torrentBytes)
+	info, err := ParseInfo(torrentBytes)
 	require.NoError(t, err)
 
-	assert.Equal(t, rlsName, info.Name)
+	assert.Equal(t, rlsName, info.Name())
 	assert.True(t, info.IsDir())
 
-	episodes, err := Episodes(info)
+	episodes, err := info.Episodes()
 	require.NoError(t, err)
 
 	assert.Equal(t, []Episode{
@@ -104,8 +105,8 @@ func TestTorrentFromRls_RejectsNameWithoutSeason(t *testing.T) {
 	assert.ErrorContains(t, err, "no season information found in release name")
 }
 
-func TestInfo_RejectsInvalidBytes(t *testing.T) {
-	_, err := Info([]byte("not a torrent"))
+func TestParseInfo_RejectsInvalidBytes(t *testing.T) {
+	_, err := ParseInfo([]byte("not a torrent"))
 	assert.Error(t, err)
 }
 
@@ -123,9 +124,9 @@ func mustTorrentFromInfo(t *testing.T, info metainfo.Info) []byte {
 	return torrent.Bytes()
 }
 
-// TestInfo_RejectsPathsOutsidePackFolder: the name and the file paths become
-// hardlink targets below the import root (issue #290).
-func TestInfo_RejectsPathsOutsidePackFolder(t *testing.T) {
+// TestParseInfo_RejectsPathsOutsidePackFolder: the name and the file paths
+// become hardlink targets below the import root (issue #290).
+func TestParseInfo_RejectsPathsOutsidePackFolder(t *testing.T) {
 	episode := []metainfo.FileInfo{{Path: []string{"Show.S01E01.mkv"}, Length: 1}}
 	tests := []struct {
 		name string
@@ -167,14 +168,15 @@ func TestInfo_RejectsPathsOutsidePackFolder(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := Info(mustTorrentFromInfo(t, tt.info))
+			info, err := ParseInfo(mustTorrentFromInfo(t, tt.info))
 			assert.ErrorContains(t, err, tt.want)
+			assert.Equal(t, Info{}, info, "a rejected torrent must give no usable info")
 		})
 	}
 }
 
-func TestInfo_AcceptsPathsBelowPackFolder(t *testing.T) {
-	info, err := Info(mustTorrentFromInfo(t, metainfo.Info{
+func TestParseInfo_AcceptsPathsBelowPackFolder(t *testing.T) {
+	info, err := ParseInfo(mustTorrentFromInfo(t, metainfo.Info{
 		Name: "Show.S01..1080p",
 		Files: []metainfo.FileInfo{
 			{Path: []string{"Show.S01E01.mkv"}, Length: 1},
@@ -183,18 +185,44 @@ func TestInfo_AcceptsPathsBelowPackFolder(t *testing.T) {
 		},
 	}))
 	require.NoError(t, err)
-	assert.Len(t, info.Files, 3)
+	assert.Equal(t, "Show.S01..1080p", info.Name())
+	assert.True(t, info.IsDir())
+	assert.Equal(t, []File{
+		{Path: "Show.S01E01.mkv", Size: 1},
+		{Path: "Extras/..Interview.mkv", Size: 1},
+		{Path: ".pad/1024", Size: 1024, Padding: true},
+	}, slices.Collect(info.Files()))
+	assert.Equal(t, int64(1026), info.TotalLength())
+}
 
-	_, err = Info(mustTorrentFromInfo(t, metainfo.Info{Name: "Show.S01E01.mkv", Length: 1}))
-	assert.NoError(t, err)
+func TestParseInfo_AcceptsSingleFileTorrent(t *testing.T) {
+	info, err := ParseInfo(mustTorrentFromInfo(t, metainfo.Info{Name: "Show.S01E01.mkv", Length: 7}))
+	require.NoError(t, err)
+	assert.Equal(t, "Show.S01E01.mkv", info.Name())
+	assert.False(t, info.IsDir())
+	assert.Equal(t, []File{{Path: "Show.S01E01.mkv", Size: 7}}, slices.Collect(info.Files()))
+	assert.Equal(t, int64(7), info.TotalLength())
+}
+
+func TestParseInfo_PrefersUTF8NameAndPaths(t *testing.T) {
+	info, err := ParseInfo(mustTorrentFromInfo(t, metainfo.Info{
+		Name:     "Show.S01",
+		NameUtf8: "Shöw.S01",
+		Files: []metainfo.FileInfo{
+			{Path: []string{"Show.S01E01.mkv"}, PathUtf8: []string{"Shöw.S01E01.mkv"}, Length: 1},
+		},
+	}))
+	require.NoError(t, err)
+	assert.Equal(t, "Shöw.S01", info.Name())
+	assert.Equal(t, []File{{Path: "Shöw.S01E01.mkv", Size: 1}}, slices.Collect(info.Files()))
 }
 
 func TestEpisodes_ReturnsMKVAndMP4Files(t *testing.T) {
-	info, err := Info(mustTorrentWithFiles(t, "Series.S01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp",
+	info, err := ParseInfo(mustTorrentWithFiles(t, "Series.S01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp",
 		"Series.S01E01.mkv", "Series.S01E01.nfo", "Series.S01E02.mp4", "Series.S01E03.MP4"))
 	require.NoError(t, err)
 
-	episodes, err := Episodes(info)
+	episodes, err := info.Episodes()
 	require.NoError(t, err)
 
 	assert.Equal(t, []Episode{
@@ -205,18 +233,18 @@ func TestEpisodes_ReturnsMKVAndMP4Files(t *testing.T) {
 }
 
 func TestEpisodes_RejectsTorrentWithoutSupportedVideoFiles(t *testing.T) {
-	info, err := Info(mustTorrentWithFiles(t, "Series.S01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp",
+	info, err := ParseInfo(mustTorrentWithFiles(t, "Series.S01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp",
 		"Series.S01E01.nfo", "Series.S01E02.nfo"))
 	require.NoError(t, err)
 
-	_, err = Episodes(info)
+	_, err = info.Episodes()
 	assert.ErrorContains(t, err, "no supported video files found")
 }
 
 func TestEpisodes_RejectsSingleFileTorrent(t *testing.T) {
-	info, err := Info(mustTorrentWithFiles(t, "Series.S01E01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp.mkv"))
+	info, err := ParseInfo(mustTorrentWithFiles(t, "Series.S01E01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp.mkv"))
 	require.NoError(t, err)
 
-	_, err = Episodes(info)
+	_, err = info.Episodes()
 	assert.ErrorContains(t, err, "not a directory")
 }

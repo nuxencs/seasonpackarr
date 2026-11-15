@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
@@ -191,17 +190,15 @@ func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.Sta
 // for complete data, so any doubt reports the pack as partial. Season packs are
 // directory torrents; a single-file torrent always gets a normal client check.
 func packDataComplete(plan importPlan, importDestination torrentclient.ImportDestination) bool {
-	info, err := torrents.Info(plan.torrentBytes)
-	if err != nil || !info.IsDir() {
+	if !plan.info.IsDir() {
 		return false
 	}
-	for _, file := range info.UpvertedFiles() {
-		// BEP 47 padding files are never written to disk.
-		if strings.Contains(file.Attr, "p") {
+	for file := range plan.info.Files() {
+		if file.Padding {
 			continue
 		}
-		stat, err := os.Stat(importDestination.TargetPath(plan.packName, file.DisplayPath(&info)))
-		if err != nil || !stat.Mode().IsRegular() || stat.Size() != file.Length {
+		stat, err := os.Stat(importDestination.TargetPath(plan.info.Name(), file.Path))
+		if err != nil || !stat.Mode().IsRegular() || stat.Size() != file.Size {
 			return false
 		}
 	}
@@ -216,7 +213,7 @@ type hardlinkAttemptResult struct {
 func (p *processor) createPlanHardlinks(plan importPlan, importDestination torrentclient.ImportDestination) hardlinkAttemptResult {
 	result := hardlinkAttemptResult{}
 	for _, link := range plan.links {
-		targetEpPath := importDestination.TargetPath(plan.packName, link.torrentEpPath)
+		targetEpPath := importDestination.TargetPath(plan.info.Name(), link.torrentEpPath)
 		if err := files.CreateHardlink(importDestination.SavePath(), link.clientEpPath, targetEpPath); err != nil {
 			if _, statErr := os.Stat(link.clientEpPath); errors.Is(statErr, fs.ErrNotExist) {
 				result.sourceMissing = true

@@ -410,11 +410,11 @@ func (f *fakeSearchClient) Import(ctx context.Context, req torrentclient.ImportR
 	}
 	report, err := f.fakeTorrentClient.Import(ctx, req)
 	if err == nil {
-		info, parseErr := torrents.Info(req.TorrentBytes)
+		info, parseErr := torrents.ParseInfo(req.TorrentBytes)
 		if parseErr != nil {
 			return report, parseErr
 		}
-		f.torrents = append(f.torrents, torrentclient.Torrent{Name: info.BestName(), Hash: req.LegacyHash, SavePath: req.SavePath})
+		f.torrents = append(f.torrents, torrentclient.Torrent{Name: info.Name(), Hash: req.LegacyHash, SavePath: req.SavePath})
 	}
 	return report, err
 }

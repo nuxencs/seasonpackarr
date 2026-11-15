@@ -4,6 +4,7 @@
 package http
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
@@ -16,6 +17,8 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
+	"github.com/autobrr/go-torrent/bencode"
+	"github.com/autobrr/go-torrent/metainfo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -388,6 +391,26 @@ func TestSearch_MetadataReuseRechecksSourcesAndSettings(t *testing.T) {
 	fourth := f.runExact(t, true)
 	require.Equal(t, "rejected", fourth.Outcomes[0].Status)
 	require.Zero(t, fourth.TorrentCacheHits)
+	require.Equal(t, 1, f.downloads)
+}
+
+// TestSearch_MetadataKeepsSingleFileTorrent: a single-file result is a valid
+// torrent, so its bytes stay in the stored torrent cache.
+func TestSearch_MetadataKeepsSingleFileTorrent(t *testing.T) {
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
+	cfg := f.config.Snapshot()
+	cfg.Search.IndexerIDs = []int{1}
+	f.config.Store(cfg)
+	infoBytes, err := bencode.Marshal(metainfo.Info{Name: f.releaseName + ".mkv", PieceLength: 16384, Length: 1})
+	require.NoError(t, err)
+	var torrent bytes.Buffer
+	require.NoError(t, (&metainfo.MetaInfo{InfoBytes: infoBytes}).Write(&torrent))
+	f.torrentByTitle = map[string][]byte{f.releaseName: torrent.Bytes()}
+
+	first := f.runExact(t, true)
+	require.Equal(t, 1, first.TorrentDownloads)
+	second := f.runExact(t, true)
+	require.Equal(t, 1, second.TorrentCacheHits)
 	require.Equal(t, 1, f.downloads)
 }
 
