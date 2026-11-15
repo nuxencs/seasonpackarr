@@ -17,6 +17,7 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/errtrace"
+	"github.com/nuxencs/seasonpackarr/internal/placement"
 
 	"github.com/Masterminds/semver"
 	"github.com/autobrr/go-qbittorrent"
@@ -389,9 +390,9 @@ func (q *qbitClient) getFiles(ctx context.Context, hash string) FileResult {
 // ImportDestination resolves the final import destination for this qBittorrent client.
 // An explicit savePath wins. Category-only policy follows qBittorrent's Auto TMM
 // and manual category-path preferences.
-func (q *qbitClient) ImportDestination(ctx context.Context) (ImportDestination, error) {
+func (q *qbitClient) ImportDestination(ctx context.Context) (placement.Destination, error) {
 	if err := ctx.Err(); err != nil {
-		return ImportDestination{}, err
+		return placement.Destination{}, err
 	}
 	categoryOnly := strings.TrimSpace(q.policy.SavePath) == "" && strings.TrimSpace(q.policy.DownloadPath) == ""
 	contentLayout := strings.TrimSpace(q.policy.ContentLayout)
@@ -401,10 +402,10 @@ func (q *qbitClient) ImportDestination(ctx context.Context) (ImportDestination, 
 		var err error
 		preferences, err = q.c.GetAppPreferences()
 		if err != nil {
-			return ImportDestination{}, importErr(ImportStageConfig, errtrace.WithStack(fmt.Errorf("could not read qbittorrent preferences: %w", err)))
+			return placement.Destination{}, importErr(ImportStageConfig, errtrace.WithStack(fmt.Errorf("could not read qbittorrent preferences: %w", err)))
 		}
 		if err := ctx.Err(); err != nil {
-			return ImportDestination{}, err
+			return placement.Destination{}, err
 		}
 	}
 
@@ -414,38 +415,38 @@ func (q *qbitClient) ImportDestination(ctx context.Context) (ImportDestination, 
 	} else {
 		categories, err := q.c.GetCategories()
 		if err != nil {
-			return ImportDestination{}, importErr(ImportStageConfig, errtrace.WithStack(fmt.Errorf("could not read qbittorrent categories: %w", err)))
+			return placement.Destination{}, importErr(ImportStageConfig, errtrace.WithStack(fmt.Errorf("could not read qbittorrent categories: %w", err)))
 		}
 		if err := ctx.Err(); err != nil {
-			return ImportDestination{}, err
+			return placement.Destination{}, err
 		}
 
 		_, ok := categories[q.policy.Category]
 		if !ok {
-			return ImportDestination{}, importErr(ImportStageConfig, fmt.Errorf("qbit category %q was not found in qbittorrent", q.policy.Category))
+			return placement.Destination{}, importErr(ImportStageConfig, fmt.Errorf("qbit category %q was not found in qbittorrent", q.policy.Category))
 		}
 
 		useCategoryPath := !categoryOnly || preferences.AutoTmmEnabled || preferences.UseCategoryPathsInManualMode
 		if !useCategoryPath {
 			defaultSavePath, err := q.c.GetDefaultSavePath()
 			if err != nil {
-				return ImportDestination{}, importErr(ImportStageConfig, errtrace.WithStack(fmt.Errorf("could not read qbittorrent default save path: %w", err)))
+				return placement.Destination{}, importErr(ImportStageConfig, errtrace.WithStack(fmt.Errorf("could not read qbittorrent default save path: %w", err)))
 			}
 			if err := ctx.Err(); err != nil {
-				return ImportDestination{}, err
+				return placement.Destination{}, err
 			}
 			actualPath = defaultSavePath
 		} else {
 			var err error
 			actualPath, err = q.resolveCategorySavePath(ctx, q.policy.Category, categories)
 			if err != nil {
-				return ImportDestination{}, err
+				return placement.Destination{}, err
 			}
 		}
 	}
 
 	if strings.TrimSpace(actualPath) == "" {
-		return ImportDestination{}, importErr(ImportStageConfig, errors.New("resolved qbittorrent destination is empty"))
+		return placement.Destination{}, importErr(ImportStageConfig, errors.New("resolved qbittorrent destination is empty"))
 	}
 
 	if contentLayout == "" {
@@ -454,15 +455,15 @@ func (q *qbitClient) ImportDestination(ctx context.Context) (ImportDestination, 
 
 	resolvedLayout, _, err := resolveContentLayout(contentLayout)
 	if err != nil {
-		return ImportDestination{}, importErr(ImportStageConfig, err)
+		return placement.Destination{}, importErr(ImportStageConfig, err)
 	}
 
 	root := normalizePath(actualPath)
 	if resolvedLayout == qbittorrent.ContentLayoutSubfolderNone {
-		return NewFlatImportDestination(root), nil
+		return placement.FlatDestination(root), nil
 	}
 
-	return NewRootedImportDestination(root), nil
+	return placement.PackFolderDestination(root), nil
 }
 
 func (q *qbitClient) resolveCategorySavePath(ctx context.Context, categoryName string, categories map[string]qbittorrent.Category) (string, error) {

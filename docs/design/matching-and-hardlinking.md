@@ -31,11 +31,19 @@ Current comparison logic checks:
     parse returns the validated type `torrents.Info`. Only the parse can make
     a value of it, so each pack name and file path in an import plan passed
     this check.
-  - `files.CreateHardlink` makes the target folders through `os.Root`, which
-    also rejects a symlink below the import root that points outside of it. A
+  - The placement module (`internal/placement/`) owns the check at link time.
+    It is the only code that joins the import root, the pack folder, and a
+    file path, and it refuses a link whose path is not a file of the validated
+    torrent. `Link` makes the target folders through `os.Root`, which also
+    rejects a symlink below the import root that points outside of it. A
     relative symlink that stays below the import root is allowed, and the
     import root itself can be a symlink. `os.Root` rejects each symlink with
-    an absolute target, also when the target is below the import root.
+    an absolute target, also when the target is below the import root. The
+    link call itself uses the full path, because `os.Root` can link only when
+    both names are below the root, and the source is not.
+- the client adapter decides the import root and the layout (with a pack folder
+  or flat) and returns both as one `placement.Destination`. The links, the
+  completeness check, and the save path of the client import use that one value
 
 ## Safety Expectations
 

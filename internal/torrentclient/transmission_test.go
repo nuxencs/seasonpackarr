@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/placement"
 
 	"github.com/hekmon/transmissionrpc/v3"
 	"github.com/stretchr/testify/require"
@@ -250,14 +251,14 @@ func TestTransmissionImportDestination(t *testing.T) {
 		tc := newTestTransmissionClient(&fakeTransmissionAPI{sessionDir: "/downloads"}, domain.ImportPolicy{SavePath: "/data/tv"})
 		destination, err := tc.ImportDestination(t.Context())
 		require.NoError(t, err)
-		require.Equal(t, normalizePath("/data/tv"), destination.SavePath())
+		require.Equal(t, placement.PackFolderDestination(normalizePath("/data/tv")), destination)
 	})
 
 	t.Run("falls back to session download dir", func(t *testing.T) {
 		tc := newTestTransmissionClient(&fakeTransmissionAPI{sessionDir: "/downloads"}, domain.ImportPolicy{})
 		destination, err := tc.ImportDestination(t.Context())
 		require.NoError(t, err)
-		require.Equal(t, normalizePath("/downloads"), destination.SavePath())
+		require.Equal(t, placement.PackFolderDestination(normalizePath("/downloads")), destination)
 	})
 
 	t.Run("errors when download dir empty", func(t *testing.T) {

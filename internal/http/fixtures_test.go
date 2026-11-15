@@ -26,6 +26,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/inventory"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/logger/loggertest"
+	"github.com/nuxencs/seasonpackarr/internal/placement"
 	"github.com/nuxencs/seasonpackarr/internal/prowlarr"
 	"github.com/nuxencs/seasonpackarr/internal/state"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
@@ -308,17 +309,17 @@ func (f *fakeTorrentClient) GetFiles(_ context.Context, hashes []string) []torre
 	return results
 }
 
-func (f *fakeTorrentClient) ImportDestination(context.Context) (torrentclient.ImportDestination, error) {
+func (f *fakeTorrentClient) ImportDestination(context.Context) (placement.Destination, error) {
 	if f.onImportDestination != nil {
 		f.onImportDestination()
 	}
 	if f.importRootErr != nil {
-		return torrentclient.ImportDestination{}, f.importRootErr
+		return placement.Destination{}, f.importRootErr
 	}
 	if f.flatImport {
-		return torrentclient.NewFlatImportDestination(f.importRoot), nil
+		return placement.FlatDestination(f.importRoot), nil
 	}
-	return torrentclient.NewRootedImportDestination(f.importRoot), nil
+	return placement.PackFolderDestination(f.importRoot), nil
 }
 
 func (f *fakeTorrentClient) Import(ctx context.Context, req torrentclient.ImportRequest) (torrentclient.ImportReport, error) {

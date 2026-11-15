@@ -13,6 +13,7 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/inventory"
+	"github.com/nuxencs/seasonpackarr/internal/placement"
 	"github.com/nuxencs/seasonpackarr/internal/release"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
@@ -21,16 +22,11 @@ import (
 	"github.com/rs/zerolog"
 )
 
-type plannedLink struct {
-	clientEpPath  string
-	torrentEpPath string
-}
-
 type importPlan struct {
 	torrentBytes []byte
 	hashes       torrents.Hashes
 	info         torrents.Info
-	links        []plannedLink
+	links        []placement.PlannedLink
 	unmatched    []release.EpisodeUnmatched
 	totalEps     int
 }
@@ -176,11 +172,11 @@ func (p *processor) buildImportPlanWithSources(ctx context.Context, clientName s
 	}
 	matchResult := matcher.Match(sources)
 
-	links := make([]plannedLink, 0, len(matchResult.Matches))
+	links := make([]placement.PlannedLink, 0, len(matchResult.Matches))
 	for _, match := range matchResult.Matches {
-		links = append(links, plannedLink{
-			clientEpPath:  match.ClientPath,
-			torrentEpPath: match.TorrentPath,
+		links = append(links, placement.PlannedLink{
+			Source:      match.ClientPath,
+			TorrentPath: match.TorrentPath,
 		})
 	}
 
