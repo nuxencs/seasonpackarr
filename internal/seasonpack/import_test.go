@@ -130,8 +130,9 @@ func TestImport_RejectsArchivePackWithSampleVideos(t *testing.T) {
 
 	torrentClient := &torrentclienttest.Client{
 		Torrents: []torrentclient.Torrent{
-			{Name: "ArchivePack.S01E01.1080p.WEB.h264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
+			{Name: "ArchivePack.S01E01.1080p.WEB.h264-RlsGrp", Hash: "ep1"},
 		},
+		SavePath: sourceDir,
 		FilesByHash: map[string][]torrentclient.File{
 			"ep1": {{Name: episodeName, Size: 1}},
 		},
@@ -219,11 +220,12 @@ func TestImport_SkipsCrossSeedDuplicates(t *testing.T) {
 
 	torrentClient := &torrentclienttest.Client{
 		Torrents: []torrentclient.Torrent{
-			{Name: "CrossSeed.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1a", SavePath: sourceDir1},
-			{Name: "CrossSeed.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1b", SavePath: sourceDir2},
-			{Name: "CrossSeed.S01E02.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep2a", SavePath: sourceDir1},
-			{Name: "CrossSeed.S01E02.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep2b", SavePath: sourceDir2},
+			{Name: "CrossSeed.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1a"},
+			{Name: "CrossSeed.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1b"},
+			{Name: "CrossSeed.S01E02.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep2a"},
+			{Name: "CrossSeed.S01E02.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep2b"},
 		},
+		SavePathByHash: map[string]string{"ep1a": sourceDir1, "ep1b": sourceDir2, "ep2a": sourceDir1, "ep2b": sourceDir2},
 		FilesByHash: map[string][]torrentclient.File{
 			"ep1a": {{Name: ep1, Size: 1}},
 			"ep1b": {{Name: ep1, Size: 1}},
@@ -355,6 +357,31 @@ func TestImport_ChecksCandidateAgain(t *testing.T) {
 	require.NoFileExists(t, pack.target(1))
 }
 
+// The client moved an episode between the candidate check and the match. The
+// plan of the match holds the new path, so the import links each episode with
+// no refresh.
+func TestImport_LinksEpisodeMovedBeforeMatch(t *testing.T) {
+	pack := newPack(t, "MovedBefore", 2, 2)
+	f := newFixture(pack.client)
+	client := f.defaultClient(t)
+	require.NoError(t, f.processor.Candidate(t.Context(), client, pack.name).Err)
+	pack.moveEpisode(t, 2)
+	outcome := f.processor.Match(t.Context(), client, pack.name, TorrentBytes(pack.torrent))
+	require.NoError(t, outcome.Err)
+	require.Equal(t, &Coverage{Reusable: 2, Total: 2}, outcome.Coverage)
+
+	outcome = f.processor.Import(t.Context(), client, pack.name, pack.torrent)
+
+	require.NoError(t, outcome.Err)
+	require.Equal(t, domain.StatusSuccessfulHardlink, outcome.Status)
+	assert.Equal(t, &Coverage{Reusable: 2, Total: 2}, outcome.Coverage)
+	assert.FileExists(t, pack.target(1))
+	assert.FileExists(t, pack.target(2))
+	assert.True(t, pack.client.ImportReq.DataComplete, "the client import must get complete pack data")
+	assert.Equal(t, 1, pack.client.TorrentCalls, "the import must need no inventory refresh")
+	assert.Equal(t, 1, pack.client.FileBatchCalls, "the import must use the plan of the match")
+}
+
 // The client moved an episode after the match. The import reads the client
 // again and builds the plan again, one time.
 func TestImport_RefreshesPlanOnceAfterMissingSource(t *testing.T) {
@@ -364,10 +391,7 @@ func TestImport_RefreshesPlanOnceAfterMissingSource(t *testing.T) {
 	outcome := f.processor.Match(t.Context(), f.client(t, "default", cfg), pack.name, TorrentBytes(pack.torrent))
 	require.NoError(t, outcome.Err)
 
-	movedDir := filepath.Join(filepath.Dir(pack.sourceDir), "source-completed")
-	require.NoError(t, os.MkdirAll(movedDir, 0o755))
-	require.NoError(t, os.Rename(pack.source(2), filepath.Join(movedDir, pack.episodeFile(2))))
-	pack.client.Torrents[1].SavePath = movedDir
+	pack.moveEpisode(t, 2)
 	outcome = f.processor.Import(t.Context(), f.client(t, "default", cfg), pack.name, pack.torrent)
 
 	require.NoError(t, outcome.Err)

@@ -23,6 +23,8 @@ type Client struct {
 	TorrentCalls    int
 	Files           []torrentclient.File            // returned for any hash when FilesByHash is nil
 	FilesByHash     map[string][]torrentclient.File // per-hash file lists
+	SavePath        string                          // save path of each file result without an entry in SavePathByHash
+	SavePathByHash  map[string]string               // per-hash save paths
 	FilesErr        error
 	FileErrByHash   map[string]error
 	GotHash         string   // first hash of the last GetFiles call
@@ -71,6 +73,10 @@ func (f *Client) GetFiles(_ context.Context, hashes []string) []torrentclient.Fi
 		if err := f.FileErrByHash[hash]; err != nil {
 			results[index].Err = err
 			continue
+		}
+		results[index].SavePath = f.SavePath
+		if savePath, ok := f.SavePathByHash[hash]; ok {
+			results[index].SavePath = savePath
 		}
 		if f.FilesByHash != nil {
 			results[index].Files = f.FilesByHash[hash]

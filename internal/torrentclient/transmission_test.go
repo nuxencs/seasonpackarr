@@ -16,6 +16,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/placement"
 
 	"github.com/hekmon/transmissionrpc/v3"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,7 +65,7 @@ func TestNewTransmissionClient_PerformsSessionHandshakeAndPing(t *testing.T) {
 
 func TestTransmissionGetTorrents(t *testing.T) {
 	t.Parallel()
-	const resp = `{"torrents":[{"hashString":"abc123","name":"Show.S01","downloadDir":"/downloads"}]}`
+	const resp = `{"torrents":[{"hashString":"abc123","name":"Show.S01"}]}`
 	srv, captured := transmissionTestServer(t, map[string]string{
 		"session-get": emptySessionResp,
 		"torrent-get": resp,
@@ -73,19 +74,19 @@ func TestTransmissionGetTorrents(t *testing.T) {
 
 	torrents, err := c.GetTorrents(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, []Torrent{{Hash: "abc123", Name: "Show.S01", SavePath: "/downloads"}}, torrents)
+	require.Equal(t, []Torrent{{Hash: "abc123", Name: "Show.S01"}}, torrents)
 
 	// Wire-format assertion: the adapter must request exactly the fields it maps,
 	// and must not scope the listing by ids.
 	req := lastRequest(t, captured, "torrent-get")
-	requireStringSlice(t, req.Arguments["fields"], []string{"hashString", "name", "downloadDir"})
+	requireStringSlice(t, req.Arguments["fields"], []string{"hashString", "name"})
 	require.NotContains(t, req.Arguments, "ids", "GetTorrents must not scope the listing")
 }
 
 func TestTransmissionGetFiles_ReadsAllHashesInOneRequest(t *testing.T) {
 	t.Parallel()
 	// The server response order differs from the requested hash order.
-	const resp = `{"torrents":[{"hashString":"DEF456","files":[{"name":"Other.S01/E01.mkv","length":2000000}]},{"hashString":"abc123","files":[{"name":"Show.S01/E01.mkv","length":1000000},{"name":"Show.S01/E02.mkv","length":1050000}]}]}`
+	const resp = `{"torrents":[{"hashString":"DEF456","downloadDir":"/downloads/other","files":[{"name":"Other.S01/E01.mkv","length":2000000}]},{"hashString":"abc123","downloadDir":"/downloads/tv","files":[{"name":"Show.S01/E01.mkv","length":1000000},{"name":"Show.S01/E02.mkv","length":1050000}]}]}`
 	srv, captured := transmissionTestServer(t, map[string]string{
 		"session-get": emptySessionResp,
 		"torrent-get": resp,
@@ -96,16 +97,18 @@ func TestTransmissionGetFiles_ReadsAllHashesInOneRequest(t *testing.T) {
 	require.Len(t, results, 2)
 	require.NoError(t, results[0].Err)
 	require.Equal(t, "abc123", results[0].Hash)
+	assert.Equal(t, "/downloads/tv", results[0].SavePath)
 	require.Len(t, results[0].Files, 2)
 	require.Equal(t, "Show.S01/E01.mkv", results[0].Files[0].Name)
 	require.EqualValues(t, 1000000, results[0].Files[0].Size)
 	require.NoError(t, results[1].Err)
 	require.Equal(t, "def456", results[1].Hash)
+	assert.Equal(t, "/downloads/other", results[1].SavePath)
 	require.Len(t, results[1].Files, 1)
 
-	// Wire-format assertion: both hashes use one request with identity and files.
+	// Wire-format assertion: both hashes use one request with identity, save path, and files.
 	req := lastRequest(t, captured, "torrent-get")
-	requireStringSlice(t, req.Arguments["fields"], []string{"hashString", "files"})
+	requireStringSlice(t, req.Arguments["fields"], []string{"hashString", "downloadDir", "files"})
 	requireStringSlice(t, req.Arguments["ids"], []string{"abc123", "def456"})
 }
 

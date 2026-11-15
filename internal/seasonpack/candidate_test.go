@@ -20,8 +20,9 @@ import (
 func TestCandidate_UsesTorrentSummariesOnly(t *testing.T) {
 	torrentClient := &torrentclienttest.Client{
 		Torrents: []torrentclient.Torrent{
-			{Name: "Candidate.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: "/data/tv"},
+			{Name: "Candidate.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1"},
 		},
+		SavePath: "/data/tv",
 		FilesByHash: map[string][]torrentclient.File{
 			"ep1": {{Name: "Candidate.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv", Size: 1}},
 		},
@@ -144,8 +145,9 @@ func TestInventory_SharedByCandidateAndMatch(t *testing.T) {
 	writeEpisode(t, filepath.Join(sourceDir, "Inventory.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"))
 	torrentClient := &torrentclienttest.Client{
 		Torrents: []torrentclient.Torrent{
-			{Name: "Inventory.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
+			{Name: "Inventory.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1"},
 		},
+		SavePath: sourceDir,
 		FilesByHash: map[string][]torrentclient.File{
 			"ep1": {{Name: "Inventory.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv", Size: 1}},
 		},

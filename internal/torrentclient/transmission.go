@@ -113,7 +113,7 @@ func (t *transmissionClient) GetTorrents(ctx context.Context) ([]Torrent, error)
 	ctx, cancel := context.WithTimeout(ctx, transmissionTimeout)
 	defer cancel()
 
-	ts, err := t.c.TorrentGet(ctx, []string{"hashString", "name", "downloadDir"}, nil)
+	ts, err := t.c.TorrentGet(ctx, []string{"hashString", "name"}, nil)
 	if err != nil {
 		return nil, errtrace.WithStack(fmt.Errorf("failed to get torrents: %w", err))
 	}
@@ -121,9 +121,8 @@ func (t *transmissionClient) GetTorrents(ctx context.Context) ([]Torrent, error)
 	torrents := make([]Torrent, 0, len(ts))
 	for _, tr := range ts {
 		torrents = append(torrents, Torrent{
-			Hash:     derefString(tr.HashString),
-			Name:     derefString(tr.Name),
-			SavePath: derefString(tr.DownloadDir),
+			Hash: derefString(tr.HashString),
+			Name: derefString(tr.Name),
 		})
 	}
 
@@ -138,29 +137,28 @@ func (t *transmissionClient) GetFiles(ctx context.Context, hashes []string) []Fi
 	ctx, cancel := context.WithTimeout(ctx, transmissionTimeout)
 	defer cancel()
 
-	ts, err := t.c.TorrentGetHashes(ctx, []string{"hashString", "files"}, hashes)
+	ts, err := t.c.TorrentGetHashes(ctx, []string{"hashString", "downloadDir", "files"}, hashes)
 	if err != nil {
 		return fileResultsWithError(hashes, errtrace.WithStack(fmt.Errorf("failed to get files: %w", err)))
 	}
 
-	filesByHash := make(map[string][]File, len(ts))
+	resultByHash := make(map[string]FileResult, len(ts))
 	for _, torrent := range ts {
 		files := make([]File, 0, len(torrent.Files))
 		for _, file := range torrent.Files {
 			files = append(files, File{Name: file.Name, Size: file.Length})
 		}
-		filesByHash[strings.ToLower(derefString(torrent.HashString))] = files
+		resultByHash[strings.ToLower(derefString(torrent.HashString))] = FileResult{SavePath: derefString(torrent.DownloadDir), Files: files}
 	}
 
 	results := make([]FileResult, len(hashes))
 	for index, hash := range hashes {
-		results[index].Hash = hash
-		files, ok := filesByHash[strings.ToLower(hash)]
+		result, ok := resultByHash[strings.ToLower(hash)]
 		if !ok {
-			results[index].Err = fmt.Errorf("transmission: torrent not found: %s", hash)
-			continue
+			result.Err = fmt.Errorf("transmission: torrent not found: %s", hash)
 		}
-		results[index].Files = files
+		result.Hash = hash
+		results[index] = result
 	}
 	return results
 }

@@ -97,15 +97,15 @@ func newPack(t *testing.T, title string, packEpisodes, clientEpisodes int) packF
 
 	pack.client = &torrentclienttest.Client{
 		FilesByHash: make(map[string][]torrentclient.File),
+		SavePath:    pack.sourceDir,
 		ImportRoot:  pack.importDir,
 	}
 	for episode := 1; episode <= clientEpisodes; episode++ {
 		hash := fmt.Sprintf("ep%d", episode)
 		writeEpisode(t, filepath.Join(pack.sourceDir, pack.episodeFile(episode)))
 		pack.client.Torrents = append(pack.client.Torrents, torrentclient.Torrent{
-			Name:     pack.episodeRelease(episode),
-			Hash:     hash,
-			SavePath: pack.sourceDir,
+			Name: pack.episodeRelease(episode),
+			Hash: hash,
 		})
 		pack.client.FilesByHash[hash] = []torrentclient.File{{Name: pack.episodeFile(episode), Size: 1}}
 	}
@@ -124,6 +124,19 @@ func (p packFixture) episodeFile(episode int) string {
 // source returns the path of the client file of episode.
 func (p packFixture) source(episode int) string {
 	return filepath.Join(p.sourceDir, p.episodeFile(episode))
+}
+
+// moveEpisode moves the client file of episode to another folder, as a
+// client relocation does, and makes the fake client report the new save path.
+func (p packFixture) moveEpisode(t *testing.T, episode int) {
+	t.Helper()
+	movedDir := filepath.Join(filepath.Dir(p.sourceDir), "source-moved")
+	require.NoError(t, os.MkdirAll(movedDir, 0o755))
+	require.NoError(t, os.Rename(p.source(episode), filepath.Join(movedDir, p.episodeFile(episode))))
+	if p.client.SavePathByHash == nil {
+		p.client.SavePathByHash = make(map[string]string)
+	}
+	p.client.SavePathByHash[fmt.Sprintf("ep%d", episode)] = movedDir
 }
 
 // target returns the hardlink target of episode below the pack folder.

@@ -69,7 +69,7 @@ func assertPartialProgress(t *testing.T, progress float64, present int) {
 }
 
 // requireListedPack stops the test unless the adapter's read path reports the
-// imported pack with its save path and every file.
+// imported pack, and its file-detail read reports the save path and every file.
 func requireListedPack(t *testing.T, client TorrentClient, pack daemontest.Pack, savePath string) {
 	t.Helper()
 
@@ -82,11 +82,11 @@ func requireListedPack(t *testing.T, client TorrentClient, pack daemontest.Pack,
 		}
 	}
 	require.NotNil(t, found, "GetTorrents does not list %s", pack.Hashes.Legacy)
-	require.Equal(t, normalizePath(savePath), normalizePath(found.SavePath))
 
 	results := client.GetFiles(t.Context(), []string{pack.Hashes.Legacy})
 	require.Len(t, results, 1)
 	require.NoError(t, results[0].Err)
+	require.Equal(t, normalizePath(savePath), normalizePath(results[0].SavePath), "GetFiles must return the save path with the files")
 	require.Len(t, results[0].Files, daemontest.PackEpisodes)
 	for _, file := range results[0].Files {
 		require.True(t, strings.HasPrefix(file.Name, pack.Name+"/"), "file %q is outside the pack folder", file.Name)

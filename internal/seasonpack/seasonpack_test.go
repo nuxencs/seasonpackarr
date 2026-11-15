@@ -41,6 +41,7 @@ func TestProcessor_LogsReleaseAndClientOfEachCall(t *testing.T) {
 	// One client holds the episodes of both packs.
 	first.client.Torrents = append(first.client.Torrents, second.client.Torrents...)
 	first.client.FilesByHash["second"] = second.client.FilesByHash["ep1"]
+	first.client.SavePathByHash = map[string]string{"second": second.sourceDir}
 	first.client.Torrents[len(first.client.Torrents)-1].Hash = "second"
 	f := newFixture(first.client)
 	cfg := newConfig()

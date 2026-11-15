@@ -20,23 +20,20 @@ import (
 )
 
 // Torrent is the neutral view of a torrent shared across client implementations.
-//
-// SavePath MUST be the absolute on-disk directory the torrent's content was
-// downloaded into. Together with File.Name it forms the hardlink source path
-// (see TorrentClient).
+// It has no save path: the candidate check needs only the hash and the name, and
+// GetFiles returns the save path together with the files.
 type Torrent struct {
-	Hash     string
-	Name     string
-	SavePath string
+	Hash string
+	Name string
 }
 
 // File is the neutral view of a single file within a torrent.
 //
-// Name MUST be the file path relative to the owning Torrent.SavePath, including
-// the torrent's root folder (e.g. "Show.S01/Show.S01E01.mkv" for a multi-file
+// Name MUST be the file path relative to FileResult.SavePath, including the
+// torrent's root folder (e.g. "Show.S01/Show.S01E01.mkv" for a multi-file
 // torrent). This is load-bearing: the processor hardlinks
-// filepath.Join(Torrent.SavePath, File.Name), so returning a bare basename here
-// would silently break hardlinking.
+// filepath.Join(FileResult.SavePath, File.Name), so returning a bare basename
+// here would silently break hardlinking.
 type File struct {
 	Name string
 	Size int64
@@ -45,10 +42,15 @@ type File struct {
 // FileResult is one ordered response to a hash supplied to GetFiles. Err is
 // scoped to that hash, so callers can keep successful results from a partial
 // read.
+//
+// SavePath MUST be the absolute on-disk directory of the torrent content, read
+// in the same GetFiles call as Files. A client can move a torrent between two
+// reads, so a save path from an earlier read can give a stale source path.
 type FileResult struct {
-	Hash  string
-	Files []File
-	Err   error
+	Hash     string
+	SavePath string
+	Files    []File
+	Err      error
 }
 
 // ImportRequest carries a parsed season pack to be (re-)imported into the
@@ -154,9 +156,10 @@ func ImportStatusCode(err error) domain.StatusCode {
 
 // TorrentClient is the surface the processor needs from a torrent client.
 //
-// Read contract: the values returned by GetTorrents/GetFiles must satisfy
-// filepath.Join(Torrent.SavePath, File.Name) == the real absolute on-disk path
-// of the file, so it can be used directly as a hardlink source. The hash
+// Read contract: each result of GetFiles must satisfy
+// filepath.Join(FileResult.SavePath, File.Name) == the real absolute on-disk
+// path of the file, so it can be used directly as a hardlink source. The save
+// path and the files of a result come from one GetFiles call. The hash
 // returned by GetTorrents must be accepted as-is by GetFiles.
 //
 // Import contract: ImportDestination resolves the absolute directory and file

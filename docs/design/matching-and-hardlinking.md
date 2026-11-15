@@ -27,13 +27,12 @@ Current comparison logic checks:
 - the on-disk rule is size-only. A file that the client preallocated to its
   full size passes, and the data check of the client during the import finds
   the missing pieces
-- known limit: the on-disk rule builds each path from the save path of the
-  inventory and the file names of the file-detail read. When the client moves
-  an episode between the two reads, the rule drops a file that is on disk at
-  its new path, and the match can return `445` or `230`. In the normal flow the
-  two reads are less than a second apart. The refresh after a missing hardlink
-  source covers only a move after the match
-  ([#364](https://github.com/nuxencs/seasonpackarr/issues/364))
+- build each client episode path from one file-detail read: the save path and
+  the file names of a torrent come from the same `GetFiles` call. The inventory
+  has no save path, so a client move between the candidate check and the match
+  does not give a stale path. A move that is still in progress can drop the
+  file, because the file is complete at neither path. The refresh after a
+  missing hardlink source covers a move after the match
 - path naming must reflect the pack folder users actually need, not just the announce title when parsing is enabled
 - if a planned source disappears before linking, refresh the client inventory
   and exact plan once before the import fails

@@ -208,7 +208,7 @@ func TestMatchEndpoint_LogsErrorWhenSourceCheckFails(t *testing.T) {
 	log := newTraceLogger(t)
 	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0, log: log})
 	episodeFile := f.torrentClient.FilesByHash["ep1"][0].Name
-	f.torrentClient.Torrents[0].SavePath = filepath.Join(f.sourceDir, episodeFile)
+	f.torrentClient.SavePath = filepath.Join(f.sourceDir, episodeFile)
 
 	response := f.postJSON(t, "/api/match", f.packPayload())
 	require.Equal(t, domain.StatusFailedMatchToTorrentEps.Code(), response.Code, response.Body.String())
@@ -515,7 +515,7 @@ func TestImportEndpoint_RefreshesPlanWhenSourceMoves(t *testing.T) {
 		filepath.Join(f.sourceDir, episodeFile),
 		filepath.Join(movedDir, episodeFile),
 	))
-	f.torrentClient.Torrents[1].SavePath = movedDir
+	f.torrentClient.SavePathByHash = map[string]string{"ep2": movedDir}
 
 	importResponse := f.postJSON(t, "/api/import", f.packPayload())
 	require.Equal(t, domain.StatusSuccessfulHardlink.Code(), importResponse.Code, importResponse.Body.String())
@@ -559,7 +559,7 @@ func TestImportEndpoint_RefreshDropsSourceThatMovedAgain(t *testing.T) {
 		filepath.Join(f.sourceDir, episodeFile),
 		filepath.Join(movedDir, episodeFile),
 	))
-	f.torrentClient.Torrents[1].SavePath = movedDir
+	f.torrentClient.SavePathByHash = map[string]string{"ep2": movedDir}
 	f.torrentClient.AfterGetFiles = func() {
 		require.NoError(t, os.Rename(
 			filepath.Join(movedDir, episodeFile),
@@ -1099,7 +1099,7 @@ func TestCandidateEndpoint_ReturnsSuccessfulMatchWithoutFileReads(t *testing.T) 
 	clientCfg := &domain.Client{Type: "qbittorrent", Import: domain.ImportPolicy{Category: "tv-hd"}}
 	torrentClient := &torrentclienttest.Client{
 		Torrents: []torrentclient.Torrent{
-			{Name: "Candidate.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: "/data/tv"},
+			{Name: "Candidate.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1"},
 		},
 	}
 	cfg := &fakeConfig{config: domain.Config{Clients: map[string]*domain.Client{"default": clientCfg}}}
