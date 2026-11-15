@@ -420,12 +420,10 @@ func (run *discoveryRun) evaluateResult(ctx context.Context, indexer prowlarr.In
 		if ctx.Err() != nil || run.storageFailed {
 			return
 		}
-		p := run.processors[name]
+		p := run.processors[name].forResult(result.Title)
 		snapshot := p.cfg.Snapshot()
 		parsed := rls.ParseString(result.Title)
 		outcome := searchOutcome{ClientName: name, Title: result.Title, IndexerID: indexer.ID, Status: "rejected"}
-		p.req.Name = result.Title
-		p.req.Torrent = nil
 		duplicate := false
 		for selectedClient, acceptedReleases := range run.selected {
 			if torrentclient.EndpointOf(*snapshot.Clients[name]) != torrentclient.EndpointOf(*snapshot.Clients[selectedClient]) {
@@ -528,7 +526,7 @@ func (run *discoveryRun) evaluateResult(ctx context.Context, indexer prowlarr.In
 			run.selected[name] = append(run.selected[name], parsed)
 		} else {
 			p.storeImportPlan(name, *snapshot.Clients[name], snapshot.FuzzyMatching, plan)
-			status, err = p.importSeasonPack(ctx)
+			status, err = p.runImport(ctx, name)
 			if err != nil {
 				outcome.Status = "failed"
 				outcome.Reason = status.String()
@@ -570,6 +568,15 @@ func (r *searchRunner) stateError(err error) error {
 func (run *discoveryRun) storageFailure(err error) {
 	run.storageFailed = true
 	run.report.Failures = append(run.report.Failures, searchFailure{Reason: run.runner.stateError(err).Error()})
+}
+
+// forResult returns a copy of p with its own request and logger for one release,
+// so no log field and no torrent of this evaluation reaches the next one.
+func (p *processor) forResult(releaseName string) *processor {
+	evaluation := *p
+	evaluation.req = &request{Name: releaseName, ClientName: p.req.ClientName}
+	evaluation.log = p.log.With().Str("release", releaseName).Str("clientname", p.req.ClientName).Logger()
+	return &evaluation
 }
 
 // This preflight does not prove completion or piece validity. The torrent client

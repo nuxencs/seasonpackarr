@@ -78,7 +78,9 @@ so the glossary does not define them.
   A handler that the test calls directly through `ServeHTTP` and
   `httptest.NewRecorder` runs on the test goroutine and can use `require`.
 - Benchmarks keep `if err != nil { b.Fatal(err) }` in measured loops.
-- Log assertions use `internal/logger/loggertest`.
+- Log assertions use `internal/logger/loggertest`. `Events` decodes each line
+  and keeps only the last value of a duplicate key, so a test for duplicate
+  keys uses `AssertNoDuplicateKeys`, which reads the raw lines.
 - Tests that depend on time, or that wait until goroutines block, use
   `testing/synctest`. Production code gets no clock parameter for them.
 - A log test for a secret uses a unique sentinel value for each secret kind,

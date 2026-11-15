@@ -15,7 +15,6 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
-	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
 	"github.com/autobrr/go-torrent/bencode"
 	"github.com/autobrr/go-torrent/metainfo"
@@ -152,15 +151,7 @@ func TestSearch_ConcurrentWebhookCannotAddAnotherVariantCopy(t *testing.T) {
 
 func TestSearch_SeparateReleaseVariantsShareQuery(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
-	otherPack := "Lifecycle.S01.2160p.WEB-DL.H.265-OtherGrp"
-	otherEpisode := "Lifecycle.S01E01.2160p.WEB-DL.H.265-OtherGrp"
-	f.titles = append(f.titles, otherPack)
-	data, err := torrents.TorrentFromRls(otherPack, 1)
-	require.NoError(t, err)
-	f.torrentByTitle = map[string][]byte{otherPack: data}
-	writeEpisode(t, filepath.Join(f.sourceDir, otherEpisode+".mkv"))
-	f.torrentClient.torrents = append(f.torrentClient.torrents, torrentclient.Torrent{Name: otherEpisode, Hash: "other", SavePath: f.sourceDir})
-	f.torrentClient.filesByHash["other"] = []torrentclient.File{{Name: otherEpisode + ".mkv", Size: 1}}
+	f.addOtherVariant(t)
 	report := f.runExact(t, false)
 	require.Empty(t, report.Failures)
 	require.Equal(t, 1, report.Groups)
@@ -521,18 +512,8 @@ func TestSearch_ExistingPackRespectsVariantAndFuzzySettings(t *testing.T) {
 
 func TestSearch_ExistingPackKeepsUncoveredVariantInSameSeason(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
-	otherPack := "Lifecycle.S01.2160p.WEB-DL.H.265-OtherGrp"
-	otherEpisode := "Lifecycle.S01E01.2160p.WEB-DL.H.265-OtherGrp"
-	f.titles = append(f.titles, otherPack)
-	f.torrentClient.torrents = append(f.torrentClient.torrents,
-		torrentclient.Torrent{Name: f.releaseName, Hash: "pack"},
-		torrentclient.Torrent{Name: otherEpisode, Hash: "other", SavePath: f.sourceDir},
-	)
-	writeEpisode(t, filepath.Join(f.sourceDir, otherEpisode+".mkv"))
-	f.torrentClient.filesByHash["other"] = []torrentclient.File{{Name: otherEpisode + ".mkv", Size: 1}}
-	data, err := torrents.TorrentFromRls(otherPack, 1)
-	require.NoError(t, err)
-	f.torrentByTitle = map[string][]byte{otherPack: data}
+	otherPack := f.addOtherVariant(t)
+	f.torrentClient.torrents = append(f.torrentClient.torrents, torrentclient.Torrent{Name: f.releaseName, Hash: "pack"})
 	report := f.runExact(t, true)
 	require.Equal(t, 1, report.Groups)
 	require.Equal(t, 2, report.Requests)
@@ -577,6 +558,47 @@ func TestSearch_RemovingExistingPackRestoresQuery(t *testing.T) {
 	second := f.runExact(t, true)
 	require.Equal(t, 2, second.Requests)
 	require.Equal(t, "would_import", second.Outcomes[0].Status)
+}
+
+// One run evaluates each release variant for the client. Each stage line must
+// name the release that it is about, also before and after another import.
+func TestSearch_LogsReleaseAndClientOfEachResult(t *testing.T) {
+	log := newTraceLogger(t)
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75, log: log})
+	otherPack := f.addOtherVariant(t)
+
+	report := f.runExact(t, false)
+
+	require.Empty(t, report.Failures)
+	require.Equal(t, 2, f.torrentClient.importCalls)
+	log.AssertNoDuplicateKeys(t)
+	events := log.Events(t)
+	releases := func(message string) []any {
+		var names []any
+		for _, event := range events {
+			if event["message"] == message {
+				assert.Equal(t, "default", event["clientname"], "%s: %v", message, event)
+				names = append(names, event["release"])
+			}
+		}
+		return names
+	}
+	assert.Equal(t, []any{f.releaseName, otherPack}, releases("import plan resolved"))
+	assert.Equal(t, []any{f.releaseName, otherPack}, releases("season pack import completed"))
+	// Each pack rejects the client releases of the other resolution, so "want"
+	// names the pack of the line.
+	packByResolution := map[any]string{"1080p": f.releaseName, "2160p": otherPack}
+	seen := make(map[any]bool)
+	for _, event := range events {
+		if event["message"] != "client release is not compatible" {
+			continue
+		}
+		require.Equal(t, "resolution", event["field"], "%v", event)
+		assert.Equal(t, "default", event["clientname"], "%v", event)
+		assert.Equal(t, packByResolution[event["want"]], event["release"], "%v", event)
+		seen[event["want"]] = true
+	}
+	assert.Equal(t, map[any]bool{"1080p": true, "2160p": true}, seen)
 }
 
 // The runner logs a fixed reason for a client failure. This test keeps it so.

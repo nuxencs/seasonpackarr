@@ -76,6 +76,9 @@ Operators debug with these logs and notifications. Keep them stable, and update
   total import duration. A missing hardlink source logs a static warning with a
   structured `source` path, followed by the bounded inventory and plan refresh
   result.
+- In a search run or an RSS poll, each log line of the candidate check, the
+  match, and the import has the `release` and the `clientname` of the result
+  that it is about. No line holds a key two times.
 - Torrent-client stages use the stable names `config`, `add`, `find`, `recheck`,
   and `resume`. A client omits stages that it does not perform. Deluge reports a
   torrent that does not leave its paused state under `resume`. The client-import

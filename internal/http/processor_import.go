@@ -17,9 +17,22 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// importSeasonPack is the /api/import path. It reuses an accepted plan or rebuilds it
-// on a cache miss, hardlinks the planned episodes, then imports the pack.
-func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.StatusCode, err error) {
+// importSeasonPack is the /api/import path. It names the release and the client
+// on the logger of this request, then runs the import.
+func (p *processor) importSeasonPack(ctx context.Context) (domain.StatusCode, error) {
+	clientName := p.getClientName()
+
+	p.log.UpdateContext(func(c zerolog.Context) zerolog.Context {
+		return c.Str("release", p.req.Name).Str("clientname", clientName)
+	})
+
+	return p.runImport(ctx, clientName)
+}
+
+// runImport reuses an accepted plan or rebuilds it on a cache miss, hardlinks
+// the planned episodes, then imports the pack. It adds no log fields: discovery
+// calls it on a logger that names the release already, see forResult.
+func (p *processor) runImport(ctx context.Context, clientName string) (statusCode domain.StatusCode, err error) {
 	totalStarted := time.Now()
 	defer func() {
 		event := p.log.Info().
@@ -31,12 +44,7 @@ func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.Sta
 		}
 		event.Msg("season pack import completed")
 	}()
-	clientName := p.getClientName()
 	snapshot := p.cfg.Snapshot()
-
-	p.log.UpdateContext(func(c zerolog.Context) zerolog.Context {
-		return c.Str("release", p.req.Name).Str("clientname", clientName)
-	})
 
 	clientCfg, ok := snapshot.Clients[clientName]
 	if !ok {

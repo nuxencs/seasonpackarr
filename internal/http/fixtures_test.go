@@ -498,6 +498,24 @@ func newSearchFixture(t *testing.T, opts fixtureOptions) *searchFixture {
 	return f
 }
 
+// addOtherVariant adds a second release variant of the season: the feed gets
+// its one-episode pack, and the client gets its episode. It returns the pack name.
+func (f *searchFixture) addOtherVariant(t *testing.T) string {
+	t.Helper()
+	const (
+		pack    = "Lifecycle.S01.2160p.WEB-DL.H.265-OtherGrp"
+		episode = "Lifecycle.S01E01.2160p.WEB-DL.H.265-OtherGrp"
+	)
+	data, err := torrents.TorrentFromRls(pack, 1)
+	require.NoError(t, err)
+	f.titles = append(f.titles, pack)
+	f.torrentByTitle = map[string][]byte{pack: data}
+	writeEpisode(t, filepath.Join(f.sourceDir, episode+".mkv"))
+	f.torrentClient.torrents = append(f.torrentClient.torrents, torrentclient.Torrent{Name: episode, Hash: "other", SavePath: f.sourceDir})
+	f.torrentClient.filesByHash["other"] = []torrentclient.File{{Name: episode + ".mkv", Size: 1}}
+	return pack
+}
+
 func (f *searchFixture) runExact(t *testing.T, dryRun bool) searchReport {
 	t.Helper()
 	response := f.postJSON(t, "/api/search", map[string]any{"dryRun": dryRun, "verify": dryRun})

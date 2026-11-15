@@ -7,7 +7,9 @@ package loggertest
 import (
 	"bytes"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"fmt"
+	"iter"
 	"maps"
 	"slices"
 	"strings"
@@ -86,15 +88,40 @@ type Events []Event
 func (l *Logger) Events(t testing.TB) Events {
 	t.Helper()
 	var events Events
-	for line := range bytes.SplitSeq([]byte(l.String()), []byte("\n")) {
-		if len(bytes.TrimSpace(line)) == 0 {
-			continue
-		}
+	for line := range l.lines() {
 		var event Event
 		require.NoError(t, json.Unmarshal(line, &event))
 		events = append(events, event)
 	}
 	return events
+}
+
+// AssertNoDuplicateKeys fails the test, without stopping it, when a recorded
+// line holds one key two times. Events cannot show this, because its decode
+// keeps only the last value of such a key.
+func (l *Logger) AssertNoDuplicateKeys(t testing.TB) bool {
+	t.Helper()
+	ok := true
+	for line := range l.lines() {
+		// The v2 decode rejects a duplicate key at each depth.
+		var event map[string]any
+		if err := jsonv2.Unmarshal(line, &event); err != nil {
+			ok = assert.Fail(t, "log line holds a duplicate key", "%v in %s", err, line)
+		}
+	}
+	return ok
+}
+
+// lines returns each recorded line that is not empty.
+func (l *Logger) lines() iter.Seq[[]byte] {
+	recorded := []byte(l.String())
+	return func(yield func([]byte) bool) {
+		for line := range bytes.SplitSeq(recorded, []byte("\n")) {
+			if len(bytes.TrimSpace(line)) > 0 && !yield(line) {
+				return
+			}
+		}
+	}
 }
 
 // Require returns the first event with message.
