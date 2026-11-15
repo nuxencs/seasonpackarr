@@ -50,6 +50,13 @@ func (p *processor) runImport(ctx context.Context, clientName string) (statusCod
 	if !ok {
 		return domain.StatusClientNotFound, domain.StatusClientNotFound.Error()
 	}
+	// The request checks come before the endpoint import lock, so a bad request
+	// does not wait for a running import.
+	torrentBytes, statusCode, err := p.checkTorrentRequest(ctx, clientName, snapshot)
+	if err != nil {
+		return statusCode, err
+	}
+
 	unlock, lockErr := lockImport(ctx, *clientCfg)
 	if lockErr != nil {
 		return domain.StatusGetClientError, lockErr
@@ -57,19 +64,6 @@ func (p *processor) runImport(ctx context.Context, clientName string) (statusCod
 	defer unlock()
 	p.log.Info().Msgf("using %s client", clientName)
 
-	if len(p.req.Torrent) == 0 {
-		return domain.StatusTorrentBytesError, domain.StatusTorrentBytesError.Error()
-	}
-
-	client, err := p.connect(ctx, clientName, snapshot)
-	if err != nil {
-		return domain.StatusGetClientError, fmt.Errorf("%s: %w", domain.StatusGetClientError, err)
-	}
-
-	torrentBytes, err := torrents.DecodeTorrentBytes(p.req.Torrent)
-	if err != nil {
-		return domain.StatusDecodeTorrentBytesError, fmt.Errorf("%s: %w", domain.StatusDecodeTorrentBytesError, err)
-	}
 	hashes, err := torrents.InfoHashes(torrentBytes)
 	if err != nil {
 		return domain.StatusParseTorrentInfoError, fmt.Errorf("%s: %w", domain.StatusParseTorrentInfoError, err)
@@ -102,7 +96,7 @@ func (p *processor) runImport(ctx context.Context, clientName string) (statusCod
 	}
 
 	destinationStarted := time.Now()
-	importDestination, err := client.Adapter().ImportDestination(ctx)
+	importDestination, err := p.client.Adapter().ImportDestination(ctx)
 	destinationEvent := p.log.Info().
 		Bool("successful", err == nil).
 		Int64("duration_ms", time.Since(destinationStarted).Milliseconds())
@@ -161,7 +155,7 @@ func (p *processor) runImport(ctx context.Context, clientName string) (statusCod
 	clientImportStarted := time.Now()
 	// A caller disconnect must not interrupt a started client mutation and
 	// leave the torrent stopped. Each adapter bounds its own client calls.
-	importReport, err := client.Adapter().Import(context.WithoutCancel(ctx), torrentclient.ImportRequest{
+	importReport, err := p.client.Adapter().Import(context.WithoutCancel(ctx), torrentclient.ImportRequest{
 		TorrentBytes: plan.torrentBytes,
 		SavePath:     importRoot,
 		LegacyHash:   plan.hashes.Legacy,

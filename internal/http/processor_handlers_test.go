@@ -576,14 +576,18 @@ func TestEndpoints_FailuresDoNotMutateClientOrFilesystem(t *testing.T) {
 	})
 
 	t.Run("invalid base64", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
-		payload := f.packPayload()
-		payload["torrent"] = "%%%"
-		res := f.postJSON(t, "/api/match", payload)
-		require.Equal(t, domain.StatusDecodeTorrentBytesError.Code(), res.Code)
-		require.Equal(t, 1, f.torrentClient.torrentCalls)
-		require.Zero(t, f.torrentClient.fileCalls)
-		require.Zero(t, f.torrentClient.importCalls)
+		for _, path := range []string{"/api/match", "/api/import"} {
+			t.Run(path, func(t *testing.T) {
+				f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
+				payload := f.packPayload()
+				payload["torrent"] = "%%%"
+				res := f.postJSON(t, path, payload)
+				require.Equal(t, domain.StatusDecodeTorrentBytesError.Code(), res.Code)
+				require.Zero(t, f.torrentClient.torrentCalls)
+				require.Zero(t, f.torrentClient.fileCalls)
+				require.Zero(t, f.torrentClient.importCalls)
+			})
+		}
 	})
 
 	t.Run("malformed torrent metadata", func(t *testing.T) {
@@ -623,6 +627,90 @@ func TestEndpoints_FailuresDoNotMutateClientOrFilesystem(t *testing.T) {
 		require.Zero(t, f.torrentClient.importCalls)
 		require.NoDirExists(t, filepath.Join(f.importDir, f.releaseName))
 	})
+}
+
+// TestEndpoints_CheckRequestInOrder: a request with more than one fault gets the
+// status of the first check, and no check reads the client. The order is the
+// client connect, the torrent payload (empty, or not decodable), the release
+// name, and then the stages.
+func TestEndpoints_CheckRequestInOrder(t *testing.T) {
+	allPaths := []string{"/api/candidate", "/api/match", "/api/import"}
+	torrentPaths := []string{"/api/match", "/api/import"}
+	tests := []struct {
+		name        string
+		unreachable bool // the client cannot connect
+		mutate      func(payload map[string]any)
+		paths       []string
+		want        domain.StatusCode
+	}{
+		{
+			name:        "client that cannot connect with empty release name",
+			unreachable: true,
+			mutate:      func(payload map[string]any) { delete(payload, "name") },
+			paths:       allPaths,
+			want:        domain.StatusGetClientError,
+		},
+		{
+			name:        "client that cannot connect with empty torrent",
+			unreachable: true,
+			mutate:      func(payload map[string]any) { delete(payload, "torrent") },
+			paths:       torrentPaths,
+			want:        domain.StatusGetClientError,
+		},
+		{
+			name: "invalid base64 with empty release name",
+			mutate: func(payload map[string]any) {
+				payload["torrent"] = "%%%"
+				delete(payload, "name")
+			},
+			paths: torrentPaths,
+			want:  domain.StatusDecodeTorrentBytesError,
+		},
+		{
+			name: "empty torrent with empty release name",
+			mutate: func(payload map[string]any) {
+				delete(payload, "torrent")
+				delete(payload, "name")
+			},
+			paths: torrentPaths,
+			want:  domain.StatusTorrentBytesError,
+		},
+		{
+			name:   "empty release name",
+			mutate: func(payload map[string]any) { delete(payload, "name") },
+			paths:  allPaths,
+			want:   domain.StatusAnnounceNameError,
+		},
+		{
+			name: "empty release name with malformed torrent metadata",
+			mutate: func(payload map[string]any) {
+				delete(payload, "name")
+				payload["torrent"] = base64.StdEncoding.EncodeToString([]byte("not-a-torrent"))
+			},
+			paths: torrentPaths,
+			want:  domain.StatusAnnounceNameError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, path := range tt.paths {
+				t.Run(path, func(t *testing.T) {
+					f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
+					if tt.unreachable {
+						f.useClient(domain.Client{Type: "qbittorrent", Host: newRefusedURL(t), Username: "admin", Password: "password"})
+					}
+					payload := f.packPayload()
+					tt.mutate(payload)
+
+					res := f.postJSON(t, path, payload)
+
+					assert.Equal(t, tt.want.Code(), res.Code, res.Body.String())
+					assert.Zero(t, f.torrentClient.torrentCalls)
+					assert.Zero(t, f.torrentClient.importCalls)
+				})
+			}
+		})
+	}
 }
 
 // TestEndpoints_RejectTorrentPathsOutsidePackFolder: the pack name and the file

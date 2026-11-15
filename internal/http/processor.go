@@ -6,11 +6,13 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/nuxencs/seasonpackarr/internal/config"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/inventory"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
+	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
 	"github.com/rs/zerolog"
 )
@@ -65,4 +67,27 @@ func (p *processor) connect(ctx context.Context, clientName string, cfg domain.C
 		p.client = client
 	}
 	return p.client, nil
+}
+
+// checkTorrentRequest runs the request checks of the match and the import, and
+// returns the decoded torrent bytes. The client connect comes first. Each check
+// comes before the inventory read, so a bad request costs no client read.
+func (p *processor) checkTorrentRequest(ctx context.Context, clientName string, cfg domain.Config) ([]byte, domain.StatusCode, error) {
+	if _, err := p.connect(ctx, clientName, cfg); err != nil {
+		return nil, domain.StatusGetClientError, fmt.Errorf("%s: %w", domain.StatusGetClientError, err)
+	}
+
+	if len(p.req.Torrent) == 0 {
+		return nil, domain.StatusTorrentBytesError, domain.StatusTorrentBytesError.Error()
+	}
+	torrentBytes, err := torrents.DecodeTorrentBytes(p.req.Torrent)
+	if err != nil {
+		return nil, domain.StatusDecodeTorrentBytesError, fmt.Errorf("%s: %w", domain.StatusDecodeTorrentBytesError, err)
+	}
+
+	if len(p.req.Name) == 0 {
+		return nil, domain.StatusAnnounceNameError, domain.StatusAnnounceNameError.Error()
+	}
+
+	return torrentBytes, domain.StatusSuccessfulMatch, nil
 }

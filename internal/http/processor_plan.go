@@ -128,18 +128,14 @@ func (p *processor) buildImportPlan(ctx context.Context, clientName string, cfg 
 }
 
 func (p *processor) buildImportPlanWithSources(ctx context.Context, clientName string, cfg domain.Config, sources []release.EpisodeFile) (importPlan, domain.StatusCode, error) {
-	if len(p.req.Torrent) == 0 {
-		return importPlan{}, domain.StatusTorrentBytesError, domain.StatusTorrentBytesError.Error()
+	torrentBytes, statusCode, err := p.checkTorrentRequest(ctx, clientName, cfg)
+	if err != nil {
+		return importPlan{}, statusCode, err
 	}
 
 	candidates, statusCode, err := p.findCandidates(ctx, clientName, cfg)
 	if err != nil {
 		return importPlan{}, statusCode, err
-	}
-
-	torrentBytes, err := torrents.DecodeTorrentBytes(p.req.Torrent)
-	if err != nil {
-		return importPlan{}, domain.StatusDecodeTorrentBytesError, fmt.Errorf("%s: %w", domain.StatusDecodeTorrentBytesError, err)
 	}
 
 	torrentInfo, err := torrents.ParseInfo(torrentBytes)

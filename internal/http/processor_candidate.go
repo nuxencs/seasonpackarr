@@ -44,13 +44,15 @@ func (p *processor) candidateSeasonPack(ctx context.Context) (domain.StatusCode,
 }
 
 func (p *processor) findCandidates(ctx context.Context, clientName string, cfg domain.Config) ([]inventory.Entry, domain.StatusCode, error) {
-	if len(p.req.Name) == 0 {
-		return nil, domain.StatusAnnounceNameError, domain.StatusAnnounceNameError.Error()
-	}
-
+	// The connect comes first, so a client that cannot connect gets its status
+	// also for a request with no release name.
 	client, err := p.connect(ctx, clientName, cfg)
 	if err != nil {
 		return nil, domain.StatusGetClientError, fmt.Errorf("%s: %w", domain.StatusGetClientError, err)
+	}
+
+	if len(p.req.Name) == 0 {
+		return nil, domain.StatusAnnounceNameError, domain.StatusAnnounceNameError.Error()
 	}
 
 	clientInventory, err := client.Inventory(ctx)
