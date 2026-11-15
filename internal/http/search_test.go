@@ -670,3 +670,16 @@ func TestSearch_LogsNoProwlarrAPIKeyOnFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestSearch_ImportedPackSendsSearchNotification(t *testing.T) {
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.75})
+	report := f.runExact(t, false)
+	require.Equal(t, "imported", report.Outcomes[0].Status)
+
+	sent := f.sentNotifications(t)
+	require.Len(t, sent, 1)
+	assert.Equal(t, domain.StatusSuccessfulHardlink, sent[0].statusCode)
+	assert.Equal(t, "Search", sent[0].payload.Action)
+	assert.Equal(t, f.releaseName, sent[0].payload.ReleaseName)
+	assert.NoError(t, sent[0].payload.Error)
+}

@@ -178,6 +178,21 @@ completes.
 - Match sends a notification with the action label `Match` only for a
   rejection (`INFO`) or an error (`ERROR`). Import sends its rejections and
   errors with the label `Import`.
+- A search run and an RSS poll send one notification after each import
+  attempt, with the level of the import result. A result that is rejected or
+  that fails before the import sends no notification, and a dry run sends
+  none.
+- The action label shows what sent the notification:
+
+  | Action label | Sent for |
+  | --- | --- |
+  | `Match` | A rejection or an error of a match on `/api/match`. |
+  | `Import` | An accepted pack, a rejection, or an error of an import on `/api/import`. |
+  | `Search` | Each import attempt of a search run (`POST /api/search` or `seasonpackarr search`). |
+  | `RSS` | Each import attempt of an RSS poll. |
+
+  The `notification test` command sends its test notification with the label
+  `Test`.
 - The candidate check and match log expected rejections, such as a release
   group mismatch, at `INFO`. Configuration, decoding, client, filesystem, and
   import failures are logged at `ERROR`. The import logs every failure at

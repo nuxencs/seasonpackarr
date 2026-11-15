@@ -538,11 +538,11 @@ func (run *discoveryRun) evaluateResult(ctx context.Context, indexer prowlarr.In
 			// After an import attempt, a client may already contain the pack even if
 			// verification/resume failed. Leave recovery to the next inventory scan.
 			run.selected[name] = append(run.selected[name], parsed)
-			source := "Backfill"
+			action := "Search"
 			if run.report.RSS {
-				source = "RSS"
+				action = "RSS"
 			}
-			p.sendNotification(status, source, err)
+			p.sendNotification(status, action, err)
 		}
 		run.report.Outcomes = append(run.report.Outcomes, outcome)
 	}

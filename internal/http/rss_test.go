@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 
 	"github.com/stretchr/testify/assert"
@@ -66,6 +67,19 @@ func TestRSS_ImportsOneVariantAcrossTrackersAndManualSearch(t *testing.T) {
 		require.Equal(t, 1, next.CoveredEpisodeTorrents)
 	}
 	require.Equal(t, 1, f.torrentClient.importCalls)
+}
+
+func TestRSS_ImportedPackSendsRSSNotification(t *testing.T) {
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
+	report := f.runRSS(t)
+	require.Equal(t, "imported", report.Outcomes[0].Status)
+
+	sent := f.sentNotifications(t)
+	require.Len(t, sent, 1)
+	assert.Equal(t, domain.StatusSuccessfulHardlink, sent[0].statusCode)
+	assert.Equal(t, "RSS", sent[0].payload.Action)
+	assert.Equal(t, f.releaseName, sent[0].payload.ReleaseName)
+	assert.NoError(t, sent[0].payload.Error)
 }
 
 func TestRSS_RetainedPackRechecksCoverageAfterLeavingFeed(t *testing.T) {

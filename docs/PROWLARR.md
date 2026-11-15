@@ -161,6 +161,10 @@ To import the accepted packs, run the search without flags:
 seasonpackarr search
 ```
 
+Each import attempt sends one notification with the action label `Search`. An
+RSS poll uses the label `RSS`. See
+[Notifications and logs](API.md#notifications-and-logs).
+
 RSS monitoring runs only on its configured interval and always evaluates imports
 for all clients. The CLI and API run searches across the configured searchable
 indexers. The preview flags apply only to searches.

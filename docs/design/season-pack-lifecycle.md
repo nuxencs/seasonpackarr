@@ -60,6 +60,9 @@ Operators debug with these logs and notifications. Keep them stable, and update
 - Match and import notifications use the action labels `Match` and `Import`.
   An accepted pack sends one `MATCH` notification, from the import. The match
   notifies only for rejections and errors.
+- Discovery sends one notification after each import attempt, with the action
+  label `Search` for a search run and `RSS` for an RSS poll. A result that is
+  rejected or that fails before the import sends none.
 - `/api/candidate` logs each release compatibility rejection as a structured
   event. The event reports the incompatible field, the original announced `want`
   value, the original client `got` value, and the client release. Fuzzy matching
