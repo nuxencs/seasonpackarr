@@ -11,6 +11,7 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
+	"github.com/nuxencs/seasonpackarr/internal/torrentclient/torrentclienttest"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
 	"github.com/stretchr/testify/require"
@@ -18,11 +19,11 @@ import (
 
 func TestCandidateSeasonPack_UsesTorrentSummariesOnly(t *testing.T) {
 	resetProcessorGlobals()
-	torrentClient := &fakeTorrentClient{
-		torrents: []torrentclient.Torrent{
+	torrentClient := &torrentclienttest.Client{
+		Torrents: []torrentclient.Torrent{
 			{Name: "Candidate.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: "/data/tv"},
 		},
-		filesByHash: map[string][]torrentclient.File{
+		FilesByHash: map[string][]torrentclient.File{
 			"ep1": {{Name: "Candidate.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv", Size: 1}},
 		},
 	}
@@ -36,14 +37,14 @@ func TestCandidateSeasonPack_UsesTorrentSummariesOnly(t *testing.T) {
 	statusCode, err := p.candidateSeasonPack(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
-	require.Equal(t, 1, torrentClient.torrentCalls)
-	require.Zero(t, torrentClient.fileCalls, "candidate evaluation must not request torrent file details")
+	require.Equal(t, 1, torrentClient.TorrentCalls)
+	require.Zero(t, torrentClient.FileCalls, "candidate evaluation must not request torrent file details")
 }
 
 func TestCandidateSeasonPack_PropagatesCancellation(t *testing.T) {
 	resetProcessorGlobals()
-	torrentClient := &fakeTorrentClient{
-		getTorrents: func(ctx context.Context) ([]torrentclient.Torrent, error) {
+	torrentClient := &torrentclienttest.Client{
+		GetTorrentsFunc: func(ctx context.Context) ([]torrentclient.Torrent, error) {
 			return nil, ctx.Err()
 		},
 	}
@@ -85,11 +86,11 @@ func TestInventory_SharedByCandidateAndMatch(t *testing.T) {
 
 	sourceDir := t.TempDir()
 	writeEpisode(t, filepath.Join(sourceDir, "Inventory.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"))
-	torrentClient := &fakeTorrentClient{
-		torrents: []torrentclient.Torrent{
+	torrentClient := &torrentclienttest.Client{
+		Torrents: []torrentclient.Torrent{
 			{Name: "Inventory.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
 		},
-		filesByHash: map[string][]torrentclient.File{
+		FilesByHash: map[string][]torrentclient.File{
 			"ep1": {{Name: "Inventory.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv", Size: 1}},
 		},
 	}
@@ -113,5 +114,5 @@ func TestInventory_SharedByCandidateAndMatch(t *testing.T) {
 	statusCode, err = matchProcessor.matchSeasonPack(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
-	require.Equal(t, 1, torrentClient.torrentCalls, "candidate and match must share one inventory snapshot")
+	require.Equal(t, 1, torrentClient.TorrentCalls, "candidate and match must share one inventory snapshot")
 }

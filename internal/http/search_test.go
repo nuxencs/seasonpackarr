@@ -15,6 +15,7 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
+	"github.com/nuxencs/seasonpackarr/internal/torrentclient/torrentclienttest"
 
 	"github.com/autobrr/go-torrent/bencode"
 	"github.com/autobrr/go-torrent/metainfo"
@@ -34,7 +35,7 @@ func TestSearch_PreviewGroupsEpisodesAndSelectsOneVariant(t *testing.T) {
 	require.Equal(t, new(3), report.Outcomes[0].TotalEpisodes)
 	require.Equal(t, "rejected", report.Outcomes[1].Status)
 	require.Equal(t, 1, f.downloads)
-	require.Zero(t, f.torrentClient.importCalls)
+	require.Zero(t, f.torrentClient.ImportCalls)
 	entries, err := os.ReadDir(f.importDir)
 	require.NoError(t, err)
 	require.Empty(t, entries)
@@ -44,7 +45,7 @@ func TestSearch_ImportsOnceAndSkipsExistingPackAcrossTrackers(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.75})
 	first := f.runExact(t, false)
 	require.Equal(t, "imported", first.Outcomes[0].Status)
-	require.Equal(t, 1, f.torrentClient.importCalls)
+	require.Equal(t, 1, f.torrentClient.ImportCalls)
 	source, err := os.Stat(filepath.Join(f.sourceDir, "Lifecycle.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"))
 	require.NoError(t, err)
 	target, err := os.Stat(filepath.Join(f.importDir, f.releaseName, "Lifecycle.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"))
@@ -55,7 +56,7 @@ func TestSearch_ImportsOnceAndSkipsExistingPackAcrossTrackers(t *testing.T) {
 	require.Zero(t, second.Groups)
 	require.Zero(t, second.Requests)
 	require.Equal(t, 2, second.CoveredEpisodeTorrents)
-	require.Equal(t, 1, f.torrentClient.importCalls)
+	require.Equal(t, 1, f.torrentClient.ImportCalls)
 	require.Equal(t, 1, f.downloads)
 }
 
@@ -103,7 +104,7 @@ func TestSearch_RejectsIncompatibleResultsBeforeDownload(t *testing.T) {
 		require.Equal(t, "rejected", outcome.Status)
 	}
 	require.Zero(t, f.downloads)
-	require.Zero(t, f.torrentClient.fileCalls)
+	require.Zero(t, f.torrentClient.FileCalls)
 }
 
 func TestSearch_AuthAndOverlappingRuns(t *testing.T) {
@@ -135,7 +136,7 @@ func TestSearch_AuthAndOverlappingRuns(t *testing.T) {
 func TestSearch_ConcurrentWebhookCannotAddAnotherVariantCopy(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	importing, resume := make(chan struct{}), make(chan struct{})
-	f.connector.use("", &fakeSearchClient{fakeTorrentClient: f.torrentClient, importing: importing, resume: resume})
+	f.connector.use("", &fakeSearchClient{Client: f.torrentClient, importing: importing, resume: resume})
 	first := make(chan *httptest.ResponseRecorder, 1)
 	searchBody := encodeJSON(t, map[string]any{"dryRun": false})
 	go func() { first <- f.postRaw(t, "/api/search", searchBody, processorTestToken) }()
@@ -146,7 +147,7 @@ func TestSearch_ConcurrentWebhookCannotAddAnotherVariantCopy(t *testing.T) {
 	close(resume)
 	require.Equal(t, 200, (<-first).Code)
 	require.Equal(t, domain.StatusAlreadyInClient.Code(), (<-second).Code)
-	require.Equal(t, 1, f.torrentClient.importCalls)
+	require.Equal(t, 1, f.torrentClient.ImportCalls)
 }
 
 func TestSearch_SeparateReleaseVariantsShareQuery(t *testing.T) {
@@ -155,7 +156,7 @@ func TestSearch_SeparateReleaseVariantsShareQuery(t *testing.T) {
 	report := f.runExact(t, false)
 	require.Empty(t, report.Failures)
 	require.Equal(t, 1, report.Groups)
-	require.Equal(t, 2, f.torrentClient.importCalls)
+	require.Equal(t, 2, f.torrentClient.ImportCalls)
 	require.Equal(t, "imported", report.Outcomes[0].Status)
 	require.Equal(t, "imported", report.Outcomes[1].Status)
 	require.Equal(t, "rejected", report.Outcomes[2].Status)
@@ -172,7 +173,7 @@ func TestSearch_GroupIdentityAndUnrelatedTorrents(t *testing.T) {
 		"Packed.S01.1080p.WEB-DL.H.264-RlsGrp",
 		"readme.txt",
 	} {
-		f.torrentClient.torrents = append(f.torrentClient.torrents, torrentclient.Torrent{Name: name, Hash: name})
+		f.torrentClient.Torrents = append(f.torrentClient.Torrents, torrentclient.Torrent{Name: name, Hash: name})
 	}
 	report := f.runExact(t, true)
 	require.Equal(t, 3, report.Groups)
@@ -243,8 +244,8 @@ func TestSearch_QueryOmitsYearButMatchingRespectsSettings(t *testing.T) {
 			cfg.Search.IndexerIDs = []int{1}
 			cfg.FuzzyMatching.SkipYearCompare = skipYear
 			f.config.Store(cfg)
-			f.torrentClient.torrents[0].Name = "Lifecycle.2024.S01E01.1080p.WEB-DL.H.264-RlsGrp"
-			f.torrentClient.torrents = append(f.torrentClient.torrents, torrentclient.Torrent{
+			f.torrentClient.Torrents[0].Name = "Lifecycle.2024.S01E01.1080p.WEB-DL.H.264-RlsGrp"
+			f.torrentClient.Torrents = append(f.torrentClient.Torrents, torrentclient.Torrent{
 				Name: "Lifecycle.2025.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "year2025",
 			})
 			f.titles = []string{
@@ -287,8 +288,8 @@ func TestSearch_DryRunDoesNotRetrieveFilesOrMetadata(t *testing.T) {
 	}
 	require.Zero(t, f.downloads)
 	require.Zero(t, report.TorrentDownloads)
-	require.Zero(t, f.torrentClient.fileBatchCalls)
-	require.Zero(t, f.torrentClient.importCalls)
+	require.Zero(t, f.torrentClient.FileBatchCalls)
+	require.Zero(t, f.torrentClient.ImportCalls)
 }
 
 func TestSearch_IndexerAllowlist(t *testing.T) {
@@ -321,7 +322,7 @@ func TestSearch_PreflightStopsBeforeMetadata(t *testing.T) {
 	for _, mode := range []string{"missing", "empty", "wrong size", "directory", "client error"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
-			path := filepath.Join(f.sourceDir, f.torrentClient.filesByHash["ep1"][0].Name)
+			path := filepath.Join(f.sourceDir, f.torrentClient.FilesByHash["ep1"][0].Name)
 			switch mode {
 			case "missing":
 				require.NoError(t, os.Rename(path, path+"-moved"))
@@ -333,11 +334,11 @@ func TestSearch_PreflightStopsBeforeMetadata(t *testing.T) {
 				require.NoError(t, os.Rename(path, path+"-moved"))
 				require.NoError(t, os.Mkdir(path, 0o755))
 			case "client error":
-				f.torrentClient.filesErr = fmt.Errorf("client failed")
+				f.torrentClient.FilesErr = fmt.Errorf("client failed")
 			}
 			report := f.runExact(t, true)
 			require.Zero(t, f.downloads)
-			require.Zero(t, f.torrentClient.importCalls)
+			require.Zero(t, f.torrentClient.ImportCalls)
 			require.Nil(t, report.Outcomes[0].TotalEpisodes)
 			if mode == "client error" {
 				require.Equal(t, "failed", report.Outcomes[0].Status)
@@ -354,13 +355,13 @@ func TestSearch_MetadataReuseRechecksSourcesAndSettings(t *testing.T) {
 	cfg := f.config.Snapshot()
 	cfg.Search.IndexerIDs = []int{1}
 	f.config.Store(cfg)
-	path := filepath.Join(f.sourceDir, f.torrentClient.filesByHash["ep2"][0].Name)
+	path := filepath.Join(f.sourceDir, f.torrentClient.FilesByHash["ep2"][0].Name)
 	require.NoError(t, os.Rename(path, path+"-moved"))
 	first := f.runExact(t, true)
 	require.Equal(t, "rejected", first.Outcomes[0].Status)
 	require.Equal(t, new(1), first.Outcomes[0].ReusableEpisodes)
 	require.Equal(t, 1, first.TorrentDownloads)
-	require.Equal(t, 1, f.torrentClient.fileBatchCalls)
+	require.Equal(t, 1, f.torrentClient.FileBatchCalls)
 	// Lowering the threshold must re-evaluate cached metadata.
 	cfg.SmartModeThreshold = 0.5
 	f.config.Store(cfg)
@@ -431,7 +432,7 @@ func TestSearch_ExistingPackSkipsQueriesInEveryMode(t *testing.T) {
 	for _, req := range []SearchRequest{{DryRun: true}, {DryRun: true, Verify: true}, {}} {
 		t.Run(fmt.Sprintf("dry=%t verify=%t", req.DryRun, req.Verify), func(t *testing.T) {
 			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
-			f.torrentClient.torrents = append(f.torrentClient.torrents, torrentclient.Torrent{Name: f.releaseName, Hash: "pack"})
+			f.torrentClient.Torrents = append(f.torrentClient.Torrents, torrentclient.Torrent{Name: f.releaseName, Hash: "pack"})
 			response := f.postJSON(t, "/api/search", req)
 			require.Equal(t, 200, response.Code, response.Body.String())
 			var report searchReport
@@ -445,8 +446,8 @@ func TestSearch_ExistingPackSkipsQueriesInEveryMode(t *testing.T) {
 			require.Zero(t, f.discoveryCalls)
 			require.Empty(t, f.queries)
 			require.Zero(t, f.downloads)
-			require.Zero(t, f.torrentClient.fileBatchCalls)
-			require.Zero(t, f.torrentClient.importCalls)
+			require.Zero(t, f.torrentClient.FileBatchCalls)
+			require.Zero(t, f.torrentClient.ImportCalls)
 		})
 	}
 }
@@ -454,7 +455,7 @@ func TestSearch_ExistingPackSkipsQueriesInEveryMode(t *testing.T) {
 func TestSearch_PackWithCodecAttachedToAudioCreatesNoGroup(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	// rls before v0.10.0 read "FLAC2.0x265" as episode 265 and searched for its season.
-	f.torrentClient.torrents = []torrentclient.Torrent{{Name: "Cells.at.Work.S01.1080p.BluRay.FLAC2.0x265-Main10p-CTR", Hash: "pack"}}
+	f.torrentClient.Torrents = []torrentclient.Torrent{{Name: "Cells.at.Work.S01.1080p.BluRay.FLAC2.0x265-Main10p-CTR", Hash: "pack"}}
 	report := f.runExact(t, true)
 	require.Empty(t, report.Failures)
 	assert.Equal(t, 1, report.ScannedTorrents)
@@ -492,7 +493,7 @@ func TestSearch_ExistingPackRespectsVariantAndFuzzySettings(t *testing.T) {
 			cfg := f.config.Snapshot()
 			cfg.FuzzyMatching = tt.fuzzy
 			f.config.Store(cfg)
-			f.torrentClient.torrents = append(f.torrentClient.torrents, torrentclient.Torrent{Name: tt.pack, Hash: "pack"})
+			f.torrentClient.Torrents = append(f.torrentClient.Torrents, torrentclient.Torrent{Name: tt.pack, Hash: "pack"})
 			response := f.postJSON(t, "/api/search", SearchRequest{DryRun: true})
 			require.Equal(t, 200, response.Code, response.Body.String())
 			var report searchReport
@@ -504,7 +505,7 @@ func TestSearch_ExistingPackRespectsVariantAndFuzzySettings(t *testing.T) {
 				require.Zero(t, report.CoveredEpisodeTorrents)
 				require.Equal(t, 2, report.Requests)
 			}
-			require.Zero(t, f.torrentClient.fileBatchCalls)
+			require.Zero(t, f.torrentClient.FileBatchCalls)
 			require.Zero(t, f.downloads)
 		})
 	}
@@ -513,7 +514,7 @@ func TestSearch_ExistingPackRespectsVariantAndFuzzySettings(t *testing.T) {
 func TestSearch_ExistingPackKeepsUncoveredVariantInSameSeason(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	otherPack := f.addOtherVariant(t)
-	f.torrentClient.torrents = append(f.torrentClient.torrents, torrentclient.Torrent{Name: f.releaseName, Hash: "pack"})
+	f.torrentClient.Torrents = append(f.torrentClient.Torrents, torrentclient.Torrent{Name: f.releaseName, Hash: "pack"})
 	report := f.runExact(t, true)
 	require.Equal(t, 1, report.Groups)
 	require.Equal(t, 2, report.Requests)
@@ -526,8 +527,8 @@ func TestSearch_ExistingPackKeepsUncoveredVariantInSameSeason(t *testing.T) {
 
 func TestSearch_ExistingPackDoesNotSuppressIndependentClient(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
-	other := &fakeTorrentClient{torrents: []torrentclient.Torrent{f.torrentClient.torrents[0]}}
-	f.torrentClient.torrents = append(f.torrentClient.torrents, torrentclient.Torrent{Name: f.releaseName, Hash: "pack"})
+	other := &torrentclienttest.Client{Torrents: []torrentclient.Torrent{f.torrentClient.Torrents[0]}}
+	f.torrentClient.Torrents = append(f.torrentClient.Torrents, torrentclient.Torrent{Name: f.releaseName, Hash: "pack"})
 	cfg := f.config.Snapshot()
 	otherCfg := cfg.Clients["default"].Clone()
 	otherCfg.Host = "http://independent:8080"
@@ -545,16 +546,16 @@ func TestSearch_ExistingPackDoesNotSuppressIndependentClient(t *testing.T) {
 		require.Equal(t, "other", outcome.ClientName)
 		require.Equal(t, "candidate", outcome.Status)
 	}
-	require.Zero(t, f.torrentClient.fileBatchCalls)
-	require.Zero(t, other.fileBatchCalls)
+	require.Zero(t, f.torrentClient.FileBatchCalls)
+	require.Zero(t, other.FileBatchCalls)
 }
 
 func TestSearch_RemovingExistingPackRestoresQuery(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
-	f.torrentClient.torrents = append(f.torrentClient.torrents, torrentclient.Torrent{Name: f.releaseName, Hash: "pack"})
+	f.torrentClient.Torrents = append(f.torrentClient.Torrents, torrentclient.Torrent{Name: f.releaseName, Hash: "pack"})
 	first := f.runExact(t, true)
 	require.Zero(t, first.Requests)
-	f.torrentClient.torrents = f.torrentClient.torrents[:1]
+	f.torrentClient.Torrents = f.torrentClient.Torrents[:1]
 	second := f.runExact(t, true)
 	require.Equal(t, 2, second.Requests)
 	require.Equal(t, "would_import", second.Outcomes[0].Status)
@@ -570,7 +571,7 @@ func TestSearch_LogsReleaseAndClientOfEachResult(t *testing.T) {
 	report := f.runExact(t, false)
 
 	require.Empty(t, report.Failures)
-	require.Equal(t, 2, f.torrentClient.importCalls)
+	require.Equal(t, 2, f.torrentClient.ImportCalls)
 	log.AssertNoDuplicateKeys(t)
 	events := log.Events(t)
 	releases := func(message string) []any {
@@ -609,7 +610,7 @@ func TestSearch_LogsSourceThatIsNotOnDisk(t *testing.T) {
 	cfg := f.config.Snapshot()
 	cfg.Search.IndexerIDs = []int{1}
 	f.config.Store(cfg)
-	source := filepath.Join(f.sourceDir, f.torrentClient.filesByHash["ep2"][0].Name)
+	source := filepath.Join(f.sourceDir, f.torrentClient.FilesByHash["ep2"][0].Name)
 	require.NoError(t, os.Remove(source))
 
 	report := f.runExact(t, true)

@@ -24,6 +24,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/logger/loggertest"
 	"github.com/nuxencs/seasonpackarr/internal/notification"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
+	"github.com/nuxencs/seasonpackarr/internal/torrentclient/torrentclienttest"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
 	"github.com/autobrr/go-torrent/bencode"
@@ -42,7 +43,7 @@ func TestCandidateEndpoint_LogsStructuredCompatibilityMismatch(t *testing.T) {
 
 	log := loggertest.New()
 	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.5, log: log})
-	f.torrentClient.torrents[0].Name = "Lifecycle.S01E01.1080p.BluRay.H.264-RlsGrp"
+	f.torrentClient.Torrents[0].Name = "Lifecycle.S01E01.1080p.BluRay.H.264-RlsGrp"
 	cfg := f.config.Snapshot()
 	cfg.FuzzyMatching.SimplifyWebCompare = true
 	f.config.Store(cfg)
@@ -117,9 +118,9 @@ func TestMatchEndpoint_LogsReasonWhenNoEpisodeIsReusable(t *testing.T) {
 	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0, log: log})
 	// The file is on disk with the size that the client declares, so the size
 	// differs only from the size in the torrent.
-	episodeFile := f.torrentClient.filesByHash["ep1"][0].Name
+	episodeFile := f.torrentClient.FilesByHash["ep1"][0].Name
 	require.NoError(t, os.WriteFile(filepath.Join(f.sourceDir, episodeFile), []byte("00"), 0o644))
-	f.torrentClient.filesByHash["ep1"][0].Size = 2
+	f.torrentClient.FilesByHash["ep1"][0].Size = 2
 
 	response := f.postJSON(t, "/api/match", f.packPayload())
 	require.Equal(t, domain.StatusFailedMatchToTorrentEps.Code(), response.Code)
@@ -172,7 +173,7 @@ func TestMatchEndpoint_DropsSourceThatIsNotOnDisk(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			log := newTraceLogger(t)
 			f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.5, log: log})
-			episodeFile := f.torrentClient.filesByHash["ep2"][0].Name
+			episodeFile := f.torrentClient.FilesByHash["ep2"][0].Name
 			source := filepath.Join(f.sourceDir, episodeFile)
 			tt.fault(t, source)
 
@@ -206,8 +207,8 @@ func TestMatchEndpoint_DropsSourceThatIsNotOnDisk(t *testing.T) {
 func TestMatchEndpoint_LogsErrorWhenSourceCheckFails(t *testing.T) {
 	log := newTraceLogger(t)
 	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0, log: log})
-	episodeFile := f.torrentClient.filesByHash["ep1"][0].Name
-	f.torrentClient.torrents[0].SavePath = filepath.Join(f.sourceDir, episodeFile)
+	episodeFile := f.torrentClient.FilesByHash["ep1"][0].Name
+	f.torrentClient.Torrents[0].SavePath = filepath.Join(f.sourceDir, episodeFile)
 
 	response := f.postJSON(t, "/api/match", f.packPayload())
 	require.Equal(t, domain.StatusFailedMatchToTorrentEps.Code(), response.Code, response.Body.String())
@@ -223,7 +224,7 @@ func TestMatchEndpoint_LogsErrorWhenSourceCheckFails(t *testing.T) {
 func TestMatchEndpoint_RejectsPackWhenNoSourceIsOnDisk(t *testing.T) {
 	log := newTraceLogger(t)
 	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0, log: log})
-	for _, files := range f.torrentClient.filesByHash {
+	for _, files := range f.torrentClient.FilesByHash {
 		require.NoError(t, os.Remove(filepath.Join(f.sourceDir, files[0].Name)))
 	}
 
@@ -233,7 +234,7 @@ func TestMatchEndpoint_RejectsPackWhenNoSourceIsOnDisk(t *testing.T) {
 	summary := log.Events(t).Require(t, "season pack import plan built")
 	assert.Equal(t, float64(0), summary["reusable_episodes"])
 	assert.Equal(t, float64(2), summary["total_episodes"])
-	assert.Zero(t, f.torrentClient.importCalls)
+	assert.Zero(t, f.torrentClient.ImportCalls)
 	for _, dir := range []string{f.sourceDir, f.importDir} {
 		entries, err := os.ReadDir(dir)
 		require.NoError(t, err)
@@ -246,12 +247,12 @@ func TestMatchEndpoint_RejectsPackWhenNoSourceIsOnDisk(t *testing.T) {
 func TestMatchEndpoint_SmartModeCountsOnlySourcesOnDisk(t *testing.T) {
 	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 4, clientEpisodes: 4, threshold: 0.75})
 	for _, hash := range []string{"ep3", "ep4"} {
-		require.NoError(t, os.Remove(filepath.Join(f.sourceDir, f.torrentClient.filesByHash[hash][0].Name)))
+		require.NoError(t, os.Remove(filepath.Join(f.sourceDir, f.torrentClient.FilesByHash[hash][0].Name)))
 	}
 
 	response := f.postJSON(t, "/api/match", f.packPayload())
 	require.Equal(t, domain.StatusBelowThreshold.Code(), response.Code, response.Body.String())
-	assert.Zero(t, f.torrentClient.importCalls)
+	assert.Zero(t, f.torrentClient.ImportCalls)
 	assert.NoDirExists(t, filepath.Join(f.importDir, f.releaseName))
 }
 
@@ -279,7 +280,7 @@ func TestImportEndpoint_LogsClientImportStageTiming(t *testing.T) {
 
 	log := loggertest.New()
 	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.75, log: log})
-	f.torrentClient.importReport = torrentclient.ImportReport{Stages: []torrentclient.ImportStageReport{
+	f.torrentClient.ImportReport = torrentclient.ImportReport{Stages: []torrentclient.ImportStageReport{
 		{Stage: torrentclient.ImportStageConfig, Duration: 2 * time.Millisecond},
 		{Stage: torrentclient.ImportStageAdd, Duration: 12 * time.Millisecond},
 		{Stage: torrentclient.ImportStageFind, Duration: 800 * time.Millisecond},
@@ -326,11 +327,11 @@ func TestImportEndpoint_LogsTotalTimingOnImportFailure(t *testing.T) {
 
 	log := loggertest.New()
 	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0, log: log})
-	f.torrentClient.importReport = torrentclient.ImportReport{Stages: []torrentclient.ImportStageReport{
+	f.torrentClient.ImportReport = torrentclient.ImportReport{Stages: []torrentclient.ImportStageReport{
 		{Stage: torrentclient.ImportStageConfig, Duration: time.Millisecond},
 		{Stage: torrentclient.ImportStageAdd, Duration: 12 * time.Millisecond},
 	}}
-	f.torrentClient.importErr = &torrentclient.ImportError{
+	f.torrentClient.ImportErr = &torrentclient.ImportError{
 		Stage: torrentclient.ImportStageAdd,
 		Err:   errors.New("client rejected torrent"),
 	}
@@ -359,7 +360,7 @@ func TestImportEndpoint_LogsFailedDestinationResolutionTiming(t *testing.T) {
 
 	matchResponse := f.postJSON(t, "/api/match", f.packPayload())
 	require.Equal(t, domain.StatusSuccessfulMatch.Code(), matchResponse.Code)
-	f.torrentClient.importRootErr = &torrentclient.ImportError{
+	f.torrentClient.ImportRootErr = &torrentclient.ImportError{
 		Stage: torrentclient.ImportStageConfig,
 		Err:   errors.New("destination unavailable"),
 	}
@@ -383,7 +384,7 @@ func TestImportEndpoint_LogsFailedPlanRebuildTiming(t *testing.T) {
 
 	log := loggertest.New()
 	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0, log: log})
-	f.torrentClient.filesByHash["ep1"][0].Size = 2
+	f.torrentClient.FilesByHash["ep1"][0].Size = 2
 
 	importResponse := f.postJSON(t, "/api/import", f.packPayload())
 	require.Equal(t, domain.StatusFailedMatchToTorrentEps.Code(), importResponse.Code)
@@ -427,8 +428,8 @@ func TestMatchEndpoint_NotifiesRejectionsAndErrors(t *testing.T) {
 			name: "release group mismatch",
 			opts: fixtureOptions{packEpisodes: 2, clientEpisodes: 2},
 			mutate: func(f *processorHTTPFixture) {
-				for i := range f.torrentClient.torrents {
-					f.torrentClient.torrents[i].Name = strings.Replace(f.torrentClient.torrents[i].Name, "-RlsGrp", "-OtherGrp", 1)
+				for i := range f.torrentClient.Torrents {
+					f.torrentClient.Torrents[i].Name = strings.Replace(f.torrentClient.Torrents[i].Name, "-RlsGrp", "-OtherGrp", 1)
 				}
 			},
 			want: domain.StatusNoMatches,
@@ -442,7 +443,7 @@ func TestMatchEndpoint_NotifiesRejectionsAndErrors(t *testing.T) {
 			name: "client inventory error",
 			opts: fixtureOptions{packEpisodes: 2, clientEpisodes: 2},
 			mutate: func(f *processorHTTPFixture) {
-				f.torrentClient.torrentsErr = errors.New("client offline")
+				f.torrentClient.TorrentsErr = errors.New("client offline")
 			},
 			want: domain.StatusGetTorrentsError,
 		},
@@ -474,22 +475,22 @@ func TestEndpoints_ImportReusesAcceptedPlan(t *testing.T) {
 		"clientname": "default",
 	})
 	require.Equal(t, domain.StatusSuccessfulMatch.Code(), candidate.Code)
-	require.Equal(t, 1, f.torrentClient.torrentCalls)
-	require.Zero(t, f.torrentClient.fileCalls)
-	require.Zero(t, f.torrentClient.importCalls)
+	require.Equal(t, 1, f.torrentClient.TorrentCalls)
+	require.Zero(t, f.torrentClient.FileCalls)
+	require.Zero(t, f.torrentClient.ImportCalls)
 
 	matchResponse := f.postJSON(t, "/api/match", f.packPayload())
 	require.Equal(t, domain.StatusSuccessfulMatch.Code(), matchResponse.Code)
-	require.Equal(t, 1, f.torrentClient.torrentCalls, "match must reuse the candidate inventory")
-	require.Equal(t, 2, f.torrentClient.fileCalls)
-	require.Zero(t, f.torrentClient.importCalls)
+	require.Equal(t, 1, f.torrentClient.TorrentCalls, "match must reuse the candidate inventory")
+	require.Equal(t, 2, f.torrentClient.FileCalls)
+	require.Zero(t, f.torrentClient.ImportCalls)
 	require.NoDirExists(t, filepath.Join(f.importDir, f.releaseName))
 
 	importResponse := f.postJSON(t, "/api/import", f.packPayload())
 	require.Equal(t, domain.StatusSuccessfulHardlink.Code(), importResponse.Code)
-	require.Equal(t, 1, f.torrentClient.torrentCalls, "import must not reread the inventory on a plan hit")
-	require.Equal(t, 2, f.torrentClient.fileCalls, "import must not reread file details on a plan hit")
-	require.Equal(t, 1, f.torrentClient.importCalls)
+	require.Equal(t, 1, f.torrentClient.TorrentCalls, "import must not reread the inventory on a plan hit")
+	require.Equal(t, 2, f.torrentClient.FileCalls, "import must not reread file details on a plan hit")
+	require.Equal(t, 1, f.torrentClient.ImportCalls)
 	for episode := 1; episode <= 2; episode++ {
 		episodeFile := fmt.Sprintf("Lifecycle.S01E%02d.1080p.WEB-DL.H.264-RlsGrp.mkv", episode)
 		require.FileExists(t, filepath.Join(f.importDir, f.releaseName, episodeFile))
@@ -514,17 +515,17 @@ func TestImportEndpoint_RefreshesPlanWhenSourceMoves(t *testing.T) {
 		filepath.Join(f.sourceDir, episodeFile),
 		filepath.Join(movedDir, episodeFile),
 	))
-	f.torrentClient.torrents[1].SavePath = movedDir
+	f.torrentClient.Torrents[1].SavePath = movedDir
 
 	importResponse := f.postJSON(t, "/api/import", f.packPayload())
 	require.Equal(t, domain.StatusSuccessfulHardlink.Code(), importResponse.Code, importResponse.Body.String())
-	require.Equal(t, 2, f.torrentClient.torrentCalls, "import must refresh the stale inventory once")
-	require.Equal(t, 4, f.torrentClient.fileCalls, "import must rebuild the stale plan once")
+	require.Equal(t, 2, f.torrentClient.TorrentCalls, "import must refresh the stale inventory once")
+	require.Equal(t, 4, f.torrentClient.FileCalls, "import must rebuild the stale plan once")
 	for episode := 1; episode <= 2; episode++ {
 		fileName := fmt.Sprintf("Lifecycle.S01E%02d.1080p.WEB-DL.H.264-RlsGrp.mkv", episode)
 		require.FileExists(t, filepath.Join(f.importDir, f.releaseName, fileName))
 	}
-	require.True(t, f.torrentClient.importCalled)
+	require.True(t, f.torrentClient.ImportCalled)
 
 	logs := log.Events(t)
 	missing := logs.RequireField(t, "hardlink source is missing", "source", filepath.Join(f.sourceDir, episodeFile))
@@ -558,20 +559,20 @@ func TestImportEndpoint_RefreshDropsSourceThatMovedAgain(t *testing.T) {
 		filepath.Join(f.sourceDir, episodeFile),
 		filepath.Join(movedDir, episodeFile),
 	))
-	f.torrentClient.torrents[1].SavePath = movedDir
-	f.torrentClient.afterGetFiles = func() {
+	f.torrentClient.Torrents[1].SavePath = movedDir
+	f.torrentClient.AfterGetFiles = func() {
 		require.NoError(t, os.Rename(
 			filepath.Join(movedDir, episodeFile),
 			filepath.Join(movedAgainDir, episodeFile),
 		))
-		f.torrentClient.afterGetFiles = nil
+		f.torrentClient.AfterGetFiles = nil
 	}
 
 	importResponse := f.postJSON(t, "/api/import", f.packPayload())
 	require.Equal(t, domain.StatusBelowThreshold.Code(), importResponse.Code, importResponse.Body.String())
-	require.Equal(t, 2, f.torrentClient.torrentCalls, "import must refresh the inventory only once")
-	require.Equal(t, 4, f.torrentClient.fileCalls, "import must rebuild the plan only once")
-	require.Zero(t, f.torrentClient.importCalls)
+	require.Equal(t, 2, f.torrentClient.TorrentCalls, "import must refresh the inventory only once")
+	require.Equal(t, 4, f.torrentClient.FileCalls, "import must rebuild the plan only once")
+	require.Zero(t, f.torrentClient.ImportCalls)
 
 	logs := log.Events(t)
 	dropped := logs.RequireField(t, "client episode file is not reusable", "source", filepath.Join(movedDir, episodeFile))
@@ -596,7 +597,7 @@ func TestImportEndpoint_RefreshDropsSourceThatMovedAgain(t *testing.T) {
 func TestImportEndpoint_RebuiltPlanDropsSourceThatIsNotOnDisk(t *testing.T) {
 	log := newTraceLogger(t)
 	f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.5, log: log})
-	partFile := f.torrentClient.filesByHash["ep2"][0].Name
+	partFile := f.torrentClient.FilesByHash["ep2"][0].Name
 	source := filepath.Join(f.sourceDir, partFile)
 	require.NoError(t, os.WriteFile(source, []byte("12345"), 0o644))
 
@@ -610,9 +611,9 @@ func TestImportEndpoint_RebuiltPlanDropsSourceThatIsNotOnDisk(t *testing.T) {
 	hardlinks := logs.Require(t, "hardlink stage completed")
 	assert.Equal(t, float64(1), hardlinks["planned_links"])
 	assert.Equal(t, float64(1), hardlinks["linked_episodes"])
-	assert.FileExists(t, filepath.Join(f.importDir, f.releaseName, f.torrentClient.filesByHash["ep1"][0].Name))
+	assert.FileExists(t, filepath.Join(f.importDir, f.releaseName, f.torrentClient.FilesByHash["ep1"][0].Name))
 	assert.NoFileExists(t, filepath.Join(f.importDir, f.releaseName, partFile))
-	assert.Equal(t, 1, f.torrentClient.importCalls)
+	assert.Equal(t, 1, f.torrentClient.ImportCalls)
 }
 
 func TestImportEndpoint_RejectsRefreshedPlanBelowThreshold(t *testing.T) {
@@ -626,13 +627,13 @@ func TestImportEndpoint_RejectsRefreshedPlanBelowThreshold(t *testing.T) {
 		filepath.Join(f.sourceDir, episodeFile),
 		filepath.Join(filepath.Dir(f.sourceDir), episodeFile),
 	))
-	f.torrentClient.torrents = f.torrentClient.torrents[:1]
+	f.torrentClient.Torrents = f.torrentClient.Torrents[:1]
 
 	importResponse := f.postJSON(t, "/api/import", f.packPayload())
 	require.Equal(t, domain.StatusBelowThreshold.Code(), importResponse.Code, importResponse.Body.String())
-	require.Equal(t, 2, f.torrentClient.torrentCalls)
-	require.Equal(t, 3, f.torrentClient.fileCalls)
-	require.Zero(t, f.torrentClient.importCalls)
+	require.Equal(t, 2, f.torrentClient.TorrentCalls)
+	require.Equal(t, 3, f.torrentClient.FileCalls)
+	require.Zero(t, f.torrentClient.ImportCalls)
 	require.FileExists(t, filepath.Join(
 		f.importDir,
 		f.releaseName,
@@ -645,7 +646,7 @@ func TestEndpoints_AcceptMP4EpisodesAndIgnoreExtraVideos(t *testing.T) {
 	episodeRelease := "Lifecycle.S01E01.1080p.WEB-DL.H.264-RlsGrp"
 	episodeFile := episodeRelease + ".mp4"
 	writeEpisode(t, filepath.Join(f.sourceDir, episodeFile))
-	f.torrentClient.filesByHash["ep1"] = []torrentclient.File{{Name: episodeFile, Size: 1}}
+	f.torrentClient.FilesByHash["ep1"] = []torrentclient.File{{Name: episodeFile, Size: 1}}
 
 	infoBytes, err := bencode.Marshal(metainfo.Info{
 		Name:        f.releaseName,
@@ -663,12 +664,12 @@ func TestEndpoints_AcceptMP4EpisodesAndIgnoreExtraVideos(t *testing.T) {
 
 	res := f.postJSON(t, "/api/match", f.packPayload())
 	require.Equal(t, domain.StatusSuccessfulMatch.Code(), res.Code)
-	require.Equal(t, 1, f.torrentClient.fileCalls)
-	require.Zero(t, f.torrentClient.importCalls)
+	require.Equal(t, 1, f.torrentClient.FileCalls)
+	require.Zero(t, f.torrentClient.ImportCalls)
 
 	res = f.postJSON(t, "/api/import", f.packPayload())
 	require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
-	require.Equal(t, 1, f.torrentClient.importCalls)
+	require.Equal(t, 1, f.torrentClient.ImportCalls)
 	require.FileExists(t, filepath.Join(f.importDir, f.releaseName, episodeFile))
 	require.NoFileExists(t, filepath.Join(f.importDir, f.releaseName, "Extras", "Interview.1080p.WEB-DL.mp4"))
 }
@@ -684,9 +685,9 @@ func TestEndpoints_FailuresDoNotMutateClientOrFilesystem(t *testing.T) {
 					res := f.postRaw(t, path, body, token)
 					require.Equal(t, stdhttp.StatusUnauthorized, res.Code)
 				}
-				require.Zero(t, f.torrentClient.torrentCalls)
-				require.Zero(t, f.torrentClient.fileCalls)
-				require.Zero(t, f.torrentClient.importCalls)
+				require.Zero(t, f.torrentClient.TorrentCalls)
+				require.Zero(t, f.torrentClient.FileCalls)
+				require.Zero(t, f.torrentClient.ImportCalls)
 				entries, err := os.ReadDir(f.importDir)
 				require.NoError(t, err)
 				require.Empty(t, entries)
@@ -698,8 +699,8 @@ func TestEndpoints_FailuresDoNotMutateClientOrFilesystem(t *testing.T) {
 		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		res := f.postRaw(t, "/api/match", []byte(`{"name":`), processorTestToken)
 		require.Equal(t, domain.StatusDecodingError.Code(), res.Code)
-		require.Zero(t, f.torrentClient.torrentCalls)
-		require.Zero(t, f.torrentClient.importCalls)
+		require.Zero(t, f.torrentClient.TorrentCalls)
+		require.Zero(t, f.torrentClient.ImportCalls)
 	})
 
 	t.Run("unknown client", func(t *testing.T) {
@@ -708,24 +709,24 @@ func TestEndpoints_FailuresDoNotMutateClientOrFilesystem(t *testing.T) {
 		payload["clientname"] = "missing"
 		res := f.postJSON(t, "/api/match", payload)
 		require.Equal(t, domain.StatusClientNotFound.Code(), res.Code)
-		require.Zero(t, f.torrentClient.torrentCalls)
-		require.Zero(t, f.torrentClient.importCalls)
+		require.Zero(t, f.torrentClient.TorrentCalls)
+		require.Zero(t, f.torrentClient.ImportCalls)
 	})
 
 	t.Run("match missing torrent bytes", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		res := f.postJSON(t, "/api/match", map[string]any{"name": f.releaseName, "clientname": "default"})
 		require.Equal(t, domain.StatusTorrentBytesError.Code(), res.Code)
-		require.Zero(t, f.torrentClient.torrentCalls)
-		require.Zero(t, f.torrentClient.importCalls)
+		require.Zero(t, f.torrentClient.TorrentCalls)
+		require.Zero(t, f.torrentClient.ImportCalls)
 	})
 
 	t.Run("import missing torrent bytes", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		res := f.postJSON(t, "/api/import", map[string]any{"name": f.releaseName, "clientname": "default"})
 		require.Equal(t, domain.StatusTorrentBytesError.Code(), res.Code)
-		require.Zero(t, f.torrentClient.torrentCalls)
-		require.Zero(t, f.torrentClient.importCalls)
+		require.Zero(t, f.torrentClient.TorrentCalls)
+		require.Zero(t, f.torrentClient.ImportCalls)
 	})
 
 	t.Run("invalid base64", func(t *testing.T) {
@@ -736,9 +737,9 @@ func TestEndpoints_FailuresDoNotMutateClientOrFilesystem(t *testing.T) {
 				payload["torrent"] = "%%%"
 				res := f.postJSON(t, path, payload)
 				require.Equal(t, domain.StatusDecodeTorrentBytesError.Code(), res.Code)
-				require.Zero(t, f.torrentClient.torrentCalls)
-				require.Zero(t, f.torrentClient.fileCalls)
-				require.Zero(t, f.torrentClient.importCalls)
+				require.Zero(t, f.torrentClient.TorrentCalls)
+				require.Zero(t, f.torrentClient.FileCalls)
+				require.Zero(t, f.torrentClient.ImportCalls)
 			})
 		}
 	})
@@ -749,9 +750,9 @@ func TestEndpoints_FailuresDoNotMutateClientOrFilesystem(t *testing.T) {
 		payload["torrent"] = base64.StdEncoding.EncodeToString([]byte("not-a-torrent"))
 		res := f.postJSON(t, "/api/match", payload)
 		require.Equal(t, domain.StatusParseTorrentInfoError.Code(), res.Code)
-		require.Equal(t, 1, f.torrentClient.torrentCalls)
-		require.Zero(t, f.torrentClient.fileCalls)
-		require.Zero(t, f.torrentClient.importCalls)
+		require.Equal(t, 1, f.torrentClient.TorrentCalls)
+		require.Zero(t, f.torrentClient.FileCalls)
+		require.Zero(t, f.torrentClient.ImportCalls)
 	})
 
 	t.Run("torrent without episode files", func(t *testing.T) {
@@ -769,15 +770,15 @@ func TestEndpoints_FailuresDoNotMutateClientOrFilesystem(t *testing.T) {
 
 		res := f.postJSON(t, "/api/match", payload)
 		require.Equal(t, domain.StatusGetEpisodesError.Code(), res.Code)
-		require.Zero(t, f.torrentClient.fileCalls)
-		require.Zero(t, f.torrentClient.importCalls)
+		require.Zero(t, f.torrentClient.FileCalls)
+		require.Zero(t, f.torrentClient.ImportCalls)
 	})
 
 	t.Run("below threshold", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 4, clientEpisodes: 2, threshold: 0.75})
 		res := f.postJSON(t, "/api/match", f.packPayload())
 		require.Equal(t, domain.StatusBelowThreshold.Code(), res.Code)
-		require.Zero(t, f.torrentClient.importCalls)
+		require.Zero(t, f.torrentClient.ImportCalls)
 		require.NoDirExists(t, filepath.Join(f.importDir, f.releaseName))
 	})
 }
@@ -858,8 +859,8 @@ func TestEndpoints_CheckRequestInOrder(t *testing.T) {
 					res := f.postJSON(t, path, payload)
 
 					assert.Equal(t, tt.want.Code(), res.Code, res.Body.String())
-					assert.Zero(t, f.torrentClient.torrentCalls)
-					assert.Zero(t, f.torrentClient.importCalls)
+					assert.Zero(t, f.torrentClient.TorrentCalls)
+					assert.Zero(t, f.torrentClient.ImportCalls)
 				})
 			}
 		})
@@ -907,7 +908,7 @@ func TestEndpoints_RejectTorrentPathsOutsidePackFolder(t *testing.T) {
 				res := f.postJSON(t, path, payload)
 
 				assert.Equal(t, domain.StatusParseTorrentInfoError.Code(), res.Code)
-				assert.Zero(t, f.torrentClient.importCalls)
+				assert.Zero(t, f.torrentClient.ImportCalls)
 				assert.NoFileExists(t, filepath.Join(filepath.Dir(f.importDir), tt.escaped))
 				entries, err := os.ReadDir(f.importDir)
 				require.NoError(t, err)
@@ -924,9 +925,9 @@ func TestEndpoints_RemovedWebhookRoutesReturnNotFound(t *testing.T) {
 			res := f.postJSON(t, path, f.packPayload())
 			require.Equal(t, stdhttp.StatusNotFound, res.Code)
 			require.Empty(t, res.Header().Get("Location"))
-			require.Zero(t, f.torrentClient.torrentCalls)
-			require.Zero(t, f.torrentClient.fileCalls)
-			require.Zero(t, f.torrentClient.importCalls)
+			require.Zero(t, f.torrentClient.TorrentCalls)
+			require.Zero(t, f.torrentClient.FileCalls)
+			require.Zero(t, f.torrentClient.ImportCalls)
 			entries, err := os.ReadDir(f.importDir)
 			require.NoError(t, err)
 			require.Empty(t, entries)
@@ -944,9 +945,9 @@ func TestImportEndpoint_RebuildsUnavailableOrInvalidPlans(t *testing.T) {
 		res := f.postJSON(t, "/api/import", f.packPayload())
 
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
-		require.Equal(t, 2, f.torrentClient.torrentCalls, "restart must rebuild the client inventory")
-		require.Equal(t, 2, f.torrentClient.fileCalls, "restart must rebuild the exact plan")
-		require.Equal(t, 1, f.torrentClient.importCalls)
+		require.Equal(t, 2, f.torrentClient.TorrentCalls, "restart must rebuild the client inventory")
+		require.Equal(t, 2, f.torrentClient.FileCalls, "restart must rebuild the exact plan")
+		require.Equal(t, 1, f.torrentClient.ImportCalls)
 	})
 
 	t.Run("expired", func(t *testing.T) {
@@ -963,9 +964,9 @@ func TestImportEndpoint_RebuildsUnavailableOrInvalidPlans(t *testing.T) {
 
 		res := f.postJSON(t, "/api/import", f.packPayload())
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
-		require.Equal(t, 1, f.torrentClient.torrentCalls, "an expired plan can still reuse the inventory cache")
-		require.Equal(t, 2, f.torrentClient.fileCalls, "an expired plan must rebuild file mappings")
-		require.Equal(t, 1, f.torrentClient.importCalls)
+		require.Equal(t, 1, f.torrentClient.TorrentCalls, "an expired plan can still reuse the inventory cache")
+		require.Equal(t, 2, f.torrentClient.FileCalls, "an expired plan must rebuild file mappings")
+		require.Equal(t, 1, f.torrentClient.ImportCalls)
 	})
 
 	t.Run("release name changed", func(t *testing.T) {
@@ -977,7 +978,7 @@ func TestImportEndpoint_RebuildsUnavailableOrInvalidPlans(t *testing.T) {
 		res := f.postJSON(t, "/api/import", payload)
 
 		require.Equal(t, domain.StatusNoMatches.Code(), res.Code)
-		require.Zero(t, f.torrentClient.importCalls, "a plan accepted for another release must not import")
+		require.Zero(t, f.torrentClient.ImportCalls, "a plan accepted for another release must not import")
 	})
 
 	t.Run("torrent identity changed", func(t *testing.T) {
@@ -991,8 +992,8 @@ func TestImportEndpoint_RebuildsUnavailableOrInvalidPlans(t *testing.T) {
 		res := f.postJSON(t, "/api/import", payload)
 
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
-		require.Equal(t, 2, f.torrentClient.fileCalls, "a different info hash must rebuild the exact plan")
-		require.Equal(t, 1, f.torrentClient.importCalls)
+		require.Equal(t, 2, f.torrentClient.FileCalls, "a different info hash must rebuild the exact plan")
+		require.Equal(t, 1, f.torrentClient.ImportCalls)
 	})
 
 	t.Run("fuzzy matching changed", func(t *testing.T) {
@@ -1005,9 +1006,9 @@ func TestImportEndpoint_RebuildsUnavailableOrInvalidPlans(t *testing.T) {
 		res := f.postJSON(t, "/api/import", f.packPayload())
 
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
-		require.Equal(t, 2, f.torrentClient.torrentCalls, "matching changes must refresh the inventory index")
-		require.Equal(t, 2, f.torrentClient.fileCalls, "matching changes must rebuild the exact plan")
-		require.Equal(t, 1, f.torrentClient.importCalls)
+		require.Equal(t, 2, f.torrentClient.TorrentCalls, "matching changes must refresh the inventory index")
+		require.Equal(t, 2, f.torrentClient.FileCalls, "matching changes must rebuild the exact plan")
+		require.Equal(t, 1, f.torrentClient.ImportCalls)
 	})
 
 	t.Run("client configuration changed", func(t *testing.T) {
@@ -1022,9 +1023,9 @@ func TestImportEndpoint_RebuildsUnavailableOrInvalidPlans(t *testing.T) {
 
 		res := f.postJSON(t, "/api/import", f.packPayload())
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
-		require.Equal(t, 2, f.torrentClient.torrentCalls, "client changes must refresh the inventory")
-		require.Equal(t, 2, f.torrentClient.fileCalls, "client changes must rebuild the exact plan")
-		require.Equal(t, 1, f.torrentClient.importCalls)
+		require.Equal(t, 2, f.torrentClient.TorrentCalls, "client changes must refresh the inventory")
+		require.Equal(t, 2, f.torrentClient.FileCalls, "client changes must rebuild the exact plan")
+		require.Equal(t, 1, f.torrentClient.ImportCalls)
 	})
 }
 
@@ -1032,19 +1033,19 @@ func TestImportEndpoint_MutationFailuresRemainSafeAndRetryable(t *testing.T) {
 	t.Run("import failure refreshes state for retry", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
-		f.torrentClient.importErr = errors.New("import failed")
+		f.torrentClient.ImportErr = errors.New("import failed")
 
 		first := f.postJSON(t, "/api/import", f.packPayload())
 		require.Equal(t, domain.StatusAddTorrentError.Code(), first.Code)
-		require.Equal(t, 1, f.torrentClient.importCalls)
+		require.Equal(t, 1, f.torrentClient.ImportCalls)
 		require.FileExists(t, filepath.Join(f.importDir, f.releaseName, "Lifecycle.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"))
 
-		f.torrentClient.importErr = nil
+		f.torrentClient.ImportErr = nil
 		second := f.postJSON(t, "/api/import", f.packPayload())
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), second.Code)
-		require.Equal(t, 2, f.torrentClient.torrentCalls, "retry must check whether the failed import added a pack")
-		require.Equal(t, 2, f.torrentClient.fileCalls, "retry must rebuild after a client mutation attempt")
-		require.Equal(t, 2, f.torrentClient.importCalls)
+		require.Equal(t, 2, f.torrentClient.TorrentCalls, "retry must check whether the failed import added a pack")
+		require.Equal(t, 2, f.torrentClient.FileCalls, "retry must rebuild after a client mutation attempt")
+		require.Equal(t, 2, f.torrentClient.ImportCalls)
 	})
 
 	t.Run("one conflicting target does not block safe links", func(t *testing.T) {
@@ -1058,7 +1059,7 @@ func TestImportEndpoint_MutationFailuresRemainSafeAndRetryable(t *testing.T) {
 
 		res := f.postJSON(t, "/api/import", f.packPayload())
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
-		require.Equal(t, 1, f.torrentClient.importCalls)
+		require.Equal(t, 1, f.torrentClient.ImportCalls)
 		contents, err := os.ReadFile(conflictingTarget)
 		require.NoError(t, err)
 		require.Equal(t, []byte("conflict"), contents, "an unrelated target must never be overwritten")
@@ -1079,7 +1080,7 @@ func TestImportEndpoint_MutationFailuresRemainSafeAndRetryable(t *testing.T) {
 
 		res := f.postJSON(t, "/api/import", f.packPayload())
 		require.Equal(t, domain.StatusBelowThreshold.Code(), res.Code)
-		require.Zero(t, f.torrentClient.importCalls)
+		require.Zero(t, f.torrentClient.ImportCalls)
 		existingSourceInfo, err := os.Stat(existingSource)
 		require.NoError(t, err)
 		existingTargetInfo, err := os.Stat(existingTarget)
@@ -1102,7 +1103,7 @@ func TestImportEndpoint_MutationFailuresRemainSafeAndRetryable(t *testing.T) {
 
 		res := f.postJSON(t, "/api/import", f.packPayload())
 		require.Equal(t, domain.StatusFailedHardlink.Code(), res.Code)
-		require.Zero(t, f.torrentClient.importCalls)
+		require.Zero(t, f.torrentClient.ImportCalls)
 		contents, err := os.ReadFile(conflictingTarget)
 		require.NoError(t, err)
 		require.Equal(t, []byte("conflict"), contents)
@@ -1114,8 +1115,8 @@ func TestCandidateEndpoint_ReturnsSuccessfulMatchWithoutFileReads(t *testing.T) 
 	gin.SetMode(gin.TestMode)
 
 	clientCfg := &domain.Client{Type: "qbittorrent", Import: domain.ImportPolicy{Category: "tv-hd"}}
-	torrentClient := &fakeTorrentClient{
-		torrents: []torrentclient.Torrent{
+	torrentClient := &torrentclienttest.Client{
+		Torrents: []torrentclient.Torrent{
 			{Name: "Candidate.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: "/data/tv"},
 		},
 	}
@@ -1129,7 +1130,7 @@ func TestCandidateEndpoint_ReturnsSuccessfulMatchWithoutFileReads(t *testing.T) 
 	router.ServeHTTP(res, req)
 
 	require.Equal(t, domain.StatusSuccessfulMatch.Code(), res.Code)
-	require.Zero(t, torrentClient.fileCalls)
+	require.Zero(t, torrentClient.FileCalls)
 }
 
 func TestEndpoints_LogNoClientSecretOnConnectionFailure(t *testing.T) {

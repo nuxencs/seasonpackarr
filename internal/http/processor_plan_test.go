@@ -16,6 +16,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/inventory"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
+	"github.com/nuxencs/seasonpackarr/internal/torrentclient/torrentclienttest"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
 	"github.com/stretchr/testify/require"
@@ -29,13 +30,13 @@ func TestMatchSeasonPack_UsesTorrentEpisodeCoverage(t *testing.T) {
 	require.NoError(t, err)
 
 	sourceDir := t.TempDir()
-	torrentClient := &fakeTorrentClient{filesByHash: make(map[string][]torrentclient.File)}
+	torrentClient := &torrentclienttest.Client{FilesByHash: make(map[string][]torrentclient.File)}
 	for episode := 1; episode <= 10; episode++ {
 		episodeName := fmt.Sprintf("Coverage.S01E%02d.1080p.WEB-DL.H.264-RlsGrp", episode)
 		hash := fmt.Sprintf("ep%d", episode)
 		writeEpisode(t, filepath.Join(sourceDir, episodeName+".mkv"))
-		torrentClient.torrents = append(torrentClient.torrents, torrentclient.Torrent{Name: episodeName, Hash: hash, SavePath: sourceDir})
-		torrentClient.filesByHash[hash] = []torrentclient.File{{Name: episodeName + ".mkv", Size: 1}}
+		torrentClient.Torrents = append(torrentClient.Torrents, torrentclient.Torrent{Name: episodeName, Hash: hash, SavePath: sourceDir})
+		torrentClient.FilesByHash[hash] = []torrentclient.File{{Name: episodeName + ".mkv", Size: 1}}
 	}
 
 	cfg := &fakeConfig{config: domain.Config{
@@ -55,8 +56,8 @@ func TestMatchSeasonPack_UsesTorrentEpisodeCoverage(t *testing.T) {
 	statusCode, err := p.matchSeasonPack(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
-	require.False(t, torrentClient.importCalled, "match evaluation must remain side-effect free")
-	require.Equal(t, 1, torrentClient.fileBatchCalls, "one plan must use one bulk file read")
+	require.False(t, torrentClient.ImportCalled, "match evaluation must remain side-effect free")
+	require.Equal(t, 1, torrentClient.FileBatchCalls, "one plan must use one bulk file read")
 }
 
 func TestMatchSeasonPack_RejectsCoverageBelowTorrentThreshold(t *testing.T) {
@@ -67,13 +68,13 @@ func TestMatchSeasonPack_RejectsCoverageBelowTorrentThreshold(t *testing.T) {
 	require.NoError(t, err)
 
 	sourceDir := t.TempDir()
-	torrentClient := &fakeTorrentClient{filesByHash: make(map[string][]torrentclient.File)}
+	torrentClient := &torrentclienttest.Client{FilesByHash: make(map[string][]torrentclient.File)}
 	for episode := 1; episode <= 2; episode++ {
 		episodeName := fmt.Sprintf("BelowThreshold.S01E%02d.1080p.WEB-DL.H.264-RlsGrp", episode)
 		hash := fmt.Sprintf("ep%d", episode)
 		writeEpisode(t, filepath.Join(sourceDir, episodeName+".mkv"))
-		torrentClient.torrents = append(torrentClient.torrents, torrentclient.Torrent{Name: episodeName, Hash: hash, SavePath: sourceDir})
-		torrentClient.filesByHash[hash] = []torrentclient.File{{Name: episodeName + ".mkv", Size: 1}}
+		torrentClient.Torrents = append(torrentClient.Torrents, torrentclient.Torrent{Name: episodeName, Hash: hash, SavePath: sourceDir})
+		torrentClient.FilesByHash[hash] = []torrentclient.File{{Name: episodeName + ".mkv", Size: 1}}
 	}
 
 	cfg := &fakeConfig{config: domain.Config{
@@ -93,7 +94,7 @@ func TestMatchSeasonPack_RejectsCoverageBelowTorrentThreshold(t *testing.T) {
 	statusCode, err := p.matchSeasonPack(t.Context())
 	require.EqualError(t, err, domain.StatusBelowThreshold.String())
 	require.Equal(t, domain.StatusBelowThreshold, statusCode)
-	require.False(t, torrentClient.importCalled)
+	require.False(t, torrentClient.ImportCalled)
 }
 
 // TestMatchSeasonPack_IsGateOnly locks in that /api/match is a pure match gate:
@@ -112,14 +113,14 @@ func TestMatchSeasonPack_IsGateOnly(t *testing.T) {
 	torrentBytes, err := torrents.TorrentFromRls("Series.S01.1080p.WEB-DL.H.264-RlsGrp", 1)
 	require.NoError(t, err)
 
-	torrentClient := &fakeTorrentClient{
-		torrents: []torrentclient.Torrent{
+	torrentClient := &torrentclienttest.Client{
+		Torrents: []torrentclient.Torrent{
 			{Name: "Series.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
 		},
-		filesByHash: map[string][]torrentclient.File{
+		FilesByHash: map[string][]torrentclient.File{
 			"ep1": {{Name: epName, Size: 1}},
 		},
-		importRoot: importDir,
+		ImportRoot: importDir,
 	}
 
 	p := newImportProcessor(newTestInventory(torrentClient))
@@ -132,7 +133,7 @@ func TestMatchSeasonPack_IsGateOnly(t *testing.T) {
 	statusCode, err := p.matchSeasonPack(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
-	require.False(t, torrentClient.importCalled, "gate must not import")
+	require.False(t, torrentClient.ImportCalled, "gate must not import")
 	require.NoFileExists(t, filepath.Join(importDir, "Series.S01.1080p.WEB-DL.H.264-RlsGrp", epName))
 }
 
@@ -144,13 +145,13 @@ func TestBuildImportPlan_CoverageCannotExceedTorrentEpisodeCount(t *testing.T) {
 	require.NoError(t, err)
 
 	sourceDir := t.TempDir()
-	torrentClient := &fakeTorrentClient{filesByHash: make(map[string][]torrentclient.File)}
+	torrentClient := &torrentclienttest.Client{FilesByHash: make(map[string][]torrentclient.File)}
 	for episode := 1; episode <= 10; episode++ {
 		episodeName := fmt.Sprintf("CappedCoverage.S01E%02d.1080p.WEB-DL.H.264-RlsGrp", episode)
 		hash := fmt.Sprintf("ep%d", episode)
 		writeEpisode(t, filepath.Join(sourceDir, episodeName+".mkv"))
-		torrentClient.torrents = append(torrentClient.torrents, torrentclient.Torrent{Name: episodeName, Hash: hash, SavePath: sourceDir})
-		torrentClient.filesByHash[hash] = []torrentclient.File{{Name: episodeName + ".mkv", Size: 1}}
+		torrentClient.Torrents = append(torrentClient.Torrents, torrentclient.Torrent{Name: episodeName, Hash: hash, SavePath: sourceDir})
+		torrentClient.FilesByHash[hash] = []torrentclient.File{{Name: episodeName + ".mkv", Size: 1}}
 	}
 	clientCfg := &domain.Client{Type: "qbittorrent", Import: domain.ImportPolicy{Category: "tv-hd"}}
 	cfg := &fakeConfig{config: domain.Config{Clients: map[string]*domain.Client{"default": clientCfg}}}
@@ -193,11 +194,11 @@ func TestStoreImportPlan_SweepsExpiredPlans(t *testing.T) {
 // break hardlinking silently. This test fails first.
 func TestEpisodeFileFromFiles_FollowsTorrentClientPathContract(t *testing.T) {
 	const savePath = "/data/torrents/tv"
-	torrentClient := &fakeTorrentClient{
-		torrents: []torrentclient.Torrent{
+	torrentClient := &torrentclienttest.Client{
+		Torrents: []torrentclient.Torrent{
 			{Hash: "abc123", Name: "Some.Show.S01.1080p", SavePath: savePath},
 		},
-		files: []torrentclient.File{
+		Files: []torrentclient.File{
 			{Name: "Some.Show.S01.1080p/Some.Show.S01E01.1080p.mkv", Size: 1_000_000},
 		},
 	}
@@ -210,31 +211,31 @@ func TestEpisodeFileFromFiles_FollowsTorrentClientPathContract(t *testing.T) {
 	require.NoError(t, results[0].Err)
 	episode, err := episodeFileFromFiles(results[0].Files, ts[0].SavePath)
 	require.NoError(t, err)
-	require.Equal(t, "abc123", torrentClient.gotHash)
+	require.Equal(t, "abc123", torrentClient.GotHash)
 	require.Equal(t, "/data/torrents/tv/Some.Show.S01.1080p/Some.Show.S01E01.1080p.mkv", episode.Path(), "hardlink source")
 }
 
 func TestEpisodeFileFromFiles_SelectsFirstValidEpisode(t *testing.T) {
-	torrentClient := &fakeTorrentClient{
-		files: []torrentclient.File{
+	torrentClient := &torrentclienttest.Client{
+		Files: []torrentclient.File{
 			{Name: "Some.Show.S01/poster.jpg", Size: 50},                  // not a video
 			{Name: "Some.Show.S01/Some.Show.S01E01.mkv", Size: 1_000_000}, // first valid
 			{Name: "Some.Show.S01/Some.Show.S01E02.mkv", Size: 1_100_000},
 		},
 	}
-	episode, err := episodeFileFromFiles(torrentClient.files, "")
+	episode, err := episodeFileFromFiles(torrentClient.Files, "")
 	require.NoError(t, err)
 	require.Equal(t, "Some.Show.S01/Some.Show.S01E01.mkv", episode.Path())
 }
 
 func TestEpisodeFileFromFiles_ErrorsWhenNoValidEpisode(t *testing.T) {
-	torrentClient := &fakeTorrentClient{
-		files: []torrentclient.File{
+	torrentClient := &torrentclienttest.Client{
+		Files: []torrentclient.File{
 			{Name: "Some.Show.S01/poster.jpg", Size: 50},
 			{Name: "Some.Show.S01/readme.txt", Size: 10},
 		},
 	}
-	_, err := episodeFileFromFiles(torrentClient.files, "")
+	_, err := episodeFileFromFiles(torrentClient.Files, "")
 	require.Error(t, err)
 }
 
@@ -242,11 +243,11 @@ func TestGetEpisodeFiles_KeepsSuccessfulBulkResults(t *testing.T) {
 	const episodeFile = "Show.S01E01.1080p.WEB-DL-GROUP.mkv"
 	sourceDir := t.TempDir()
 	writeEpisode(t, filepath.Join(sourceDir, episodeFile))
-	torrentClient := &fakeTorrentClient{
-		filesByHash: map[string][]torrentclient.File{
+	torrentClient := &torrentclienttest.Client{
+		FilesByHash: map[string][]torrentclient.File{
 			"one": {{Name: episodeFile, Size: 1}},
 		},
-		fileErrByHash: map[string]error{"two": errors.New("boom")},
+		FileErrByHash: map[string]error{"two": errors.New("boom")},
 	}
 	p := newTestProcessor(t, torrentClient)
 	candidates := []inventory.Entry{
@@ -257,7 +258,7 @@ func TestGetEpisodeFiles_KeepsSuccessfulBulkResults(t *testing.T) {
 	episodes := p.getEpisodeFiles(t.Context(), candidates)
 	require.Len(t, episodes, 1)
 	require.Equal(t, filepath.Join(sourceDir, episodeFile), episodes[0].Path())
-	require.Equal(t, 1, torrentClient.fileBatchCalls)
-	require.Equal(t, 2, torrentClient.fileCalls)
-	require.Equal(t, []string{"one", "two"}, torrentClient.gotHashes)
+	require.Equal(t, 1, torrentClient.FileBatchCalls)
+	require.Equal(t, 2, torrentClient.FileCalls)
+	require.Equal(t, []string{"one", "two"}, torrentClient.GotHashes)
 }

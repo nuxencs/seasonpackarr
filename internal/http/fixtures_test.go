@@ -26,10 +26,10 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/inventory"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/logger/loggertest"
-	"github.com/nuxencs/seasonpackarr/internal/placement"
 	"github.com/nuxencs/seasonpackarr/internal/prowlarr"
 	"github.com/nuxencs/seasonpackarr/internal/state"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
+	"github.com/nuxencs/seasonpackarr/internal/torrentclient/torrentclienttest"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
 	"github.com/puzpuzpuz/xsync/v3"
@@ -91,7 +91,7 @@ type processorHTTPFixture struct {
 	connector     *fakeConnector
 	statePath     string
 	handler       stdhttp.Handler
-	torrentClient *fakeTorrentClient
+	torrentClient *torrentclienttest.Client
 	config        *fakeConfig
 	releaseName   string
 	torrent       []byte
@@ -135,21 +135,21 @@ func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFix
 	torrentBytes, err := torrents.TorrentFromRls(releaseName, opts.packEpisodes)
 	require.NoError(t, err)
 
-	torrentClient := &fakeTorrentClient{
-		filesByHash: make(map[string][]torrentclient.File),
-		importRoot:  importDir,
+	torrentClient := &torrentclienttest.Client{
+		FilesByHash: make(map[string][]torrentclient.File),
+		ImportRoot:  importDir,
 	}
 	for episode := 1; episode <= opts.clientEpisodes; episode++ {
 		episodeRelease := fmt.Sprintf("Lifecycle.S01E%02d.1080p.WEB-DL.H.264-RlsGrp", episode)
 		episodeFile := episodeRelease + ".mkv"
 		hash := fmt.Sprintf("ep%d", episode)
 		writeEpisode(t, filepath.Join(sourceDir, episodeFile))
-		torrentClient.torrents = append(torrentClient.torrents, torrentclient.Torrent{
+		torrentClient.Torrents = append(torrentClient.Torrents, torrentclient.Torrent{
 			Name:     episodeRelease,
 			Hash:     hash,
 			SavePath: sourceDir,
 		})
-		torrentClient.filesByHash[hash] = []torrentclient.File{{Name: episodeFile, Size: 1}}
+		torrentClient.FilesByHash[hash] = []torrentclient.File{{Name: episodeFile, Size: 1}}
 	}
 
 	clientCfg := &domain.Client{
@@ -241,95 +241,6 @@ func (f processorHTTPFixture) packPayload() map[string]any {
 	}
 }
 
-// fakeTorrentClient is a configurable in-memory torrentclient.TorrentClient for
-// exercising the processor without a live torrent client.
-type fakeTorrentClient struct {
-	torrents       []torrentclient.Torrent
-	torrentsErr    error
-	getTorrents    func(context.Context) ([]torrentclient.Torrent, error)
-	torrentCalls   int
-	files          []torrentclient.File            // returned for any hash when filesByHash is nil
-	filesByHash    map[string][]torrentclient.File // per-hash file lists
-	filesErr       error
-	fileErrByHash  map[string]error
-	gotHash        string
-	gotHashes      []string
-	fileCalls      int
-	fileBatchCalls int
-	afterGetFiles  func()
-
-	importRoot          string
-	importRootErr       error
-	flatImport          bool
-	onImportDestination func()
-	importErr           error
-	importReport        torrentclient.ImportReport
-	importCalled        bool
-	importCalls         int
-	importReq           torrentclient.ImportRequest
-	importCtxErr        error
-}
-
-func (f *fakeTorrentClient) GetTorrents(ctx context.Context) ([]torrentclient.Torrent, error) {
-	f.torrentCalls++
-	if f.getTorrents != nil {
-		return f.getTorrents(ctx)
-	}
-	return f.torrents, f.torrentsErr
-}
-
-func (f *fakeTorrentClient) GetFiles(_ context.Context, hashes []string) []torrentclient.FileResult {
-	f.fileBatchCalls++
-	f.fileCalls += len(hashes)
-	f.gotHashes = append([]string(nil), hashes...)
-	if len(hashes) > 0 {
-		f.gotHash = hashes[0]
-	}
-
-	results := make([]torrentclient.FileResult, len(hashes))
-	for index, hash := range hashes {
-		results[index].Hash = hash
-		if f.filesErr != nil {
-			results[index].Err = f.filesErr
-			continue
-		}
-		if err := f.fileErrByHash[hash]; err != nil {
-			results[index].Err = err
-			continue
-		}
-		if f.filesByHash != nil {
-			results[index].Files = f.filesByHash[hash]
-			continue
-		}
-		results[index].Files = f.files
-	}
-	if f.afterGetFiles != nil {
-		f.afterGetFiles()
-	}
-	return results
-}
-
-func (f *fakeTorrentClient) ImportDestination(context.Context) (placement.Destination, error) {
-	if f.onImportDestination != nil {
-		f.onImportDestination()
-	}
-	if f.importRootErr != nil {
-		return placement.Destination{}, f.importRootErr
-	}
-	if f.flatImport {
-		return placement.FlatDestination(f.importRoot), nil
-	}
-	return placement.PackFolderDestination(f.importRoot), nil
-}
-
-func (f *fakeTorrentClient) Import(ctx context.Context, req torrentclient.ImportRequest) (torrentclient.ImportReport, error) {
-	f.importCalled = true
-	f.importCalls++
-	f.importReq = req
-	f.importCtxErr = ctx.Err()
-	return f.importReport, f.importErr
-}
-
 // fakeConnector gives the inventory store the fake adapter of each client
 // host that has one. It connects to each other host for real, so the
 // connection failure tests reach a real adapter.
@@ -395,7 +306,7 @@ func writeEpisode(t *testing.T, path string) {
 }
 
 type fakeSearchClient struct {
-	*fakeTorrentClient
+	*torrentclienttest.Client
 	importing chan struct{}
 	resume    chan struct{}
 }
@@ -409,13 +320,13 @@ func (f *fakeSearchClient) Import(ctx context.Context, req torrentclient.ImportR
 			return torrentclient.ImportReport{}, ctx.Err()
 		}
 	}
-	report, err := f.fakeTorrentClient.Import(ctx, req)
+	report, err := f.Client.Import(ctx, req)
 	if err == nil {
 		info, parseErr := torrents.ParseInfo(req.TorrentBytes)
 		if parseErr != nil {
 			return report, parseErr
 		}
-		f.torrents = append(f.torrents, torrentclient.Torrent{Name: info.Name(), Hash: req.LegacyHash, SavePath: req.SavePath})
+		f.Torrents = append(f.Torrents, torrentclient.Torrent{Name: info.Name(), Hash: req.LegacyHash, SavePath: req.SavePath})
 	}
 	return report, err
 }
@@ -494,7 +405,7 @@ func newSearchFixture(t *testing.T, opts fixtureOptions) *searchFixture {
 	cfg := f.config.Snapshot()
 	cfg.Search = domain.Search{ProwlarrURL: server.URL, APIKey: "prowlarr-test-key", RSSInterval: "0s", RequestInterval: "0s"}
 	f.config.Store(cfg)
-	f.connector.use("", &fakeSearchClient{fakeTorrentClient: f.torrentClient})
+	f.connector.use("", &fakeSearchClient{Client: f.torrentClient})
 	return f
 }
 
@@ -511,8 +422,8 @@ func (f *searchFixture) addOtherVariant(t *testing.T) string {
 	f.titles = append(f.titles, pack)
 	f.torrentByTitle = map[string][]byte{pack: data}
 	writeEpisode(t, filepath.Join(f.sourceDir, episode+".mkv"))
-	f.torrentClient.torrents = append(f.torrentClient.torrents, torrentclient.Torrent{Name: episode, Hash: "other", SavePath: f.sourceDir})
-	f.torrentClient.filesByHash["other"] = []torrentclient.File{{Name: episode + ".mkv", Size: 1}}
+	f.torrentClient.Torrents = append(f.torrentClient.Torrents, torrentclient.Torrent{Name: episode, Hash: "other", SavePath: f.sourceDir})
+	f.torrentClient.FilesByHash["other"] = []torrentclient.File{{Name: episode + ".mkv", Size: 1}}
 	return pack
 }
 

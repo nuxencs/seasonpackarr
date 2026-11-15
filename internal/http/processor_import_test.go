@@ -14,6 +14,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
+	"github.com/nuxencs/seasonpackarr/internal/torrentclient/torrentclienttest"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
 	"github.com/autobrr/go-torrent/bencode"
@@ -40,16 +41,16 @@ func TestImportSeasonPack_ReusesAcceptedPlanWithoutClientReads(t *testing.T) {
 	writeEpisode(t, filepath.Join(sourceDir, ep1))
 	writeEpisode(t, filepath.Join(sourceDir, ep2))
 
-	torrentClient := &fakeTorrentClient{
-		torrents: []torrentclient.Torrent{
+	torrentClient := &torrentclienttest.Client{
+		Torrents: []torrentclient.Torrent{
 			{Name: "PlanReuse.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
 			{Name: "PlanReuse.S01E02.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep2", SavePath: sourceDir},
 		},
-		filesByHash: map[string][]torrentclient.File{
+		FilesByHash: map[string][]torrentclient.File{
 			"ep1": {{Name: ep1, Size: 1}},
 			"ep2": {{Name: ep2, Size: 1}},
 		},
-		importRoot: importDir,
+		ImportRoot: importDir,
 	}
 	cfg := &fakeConfig{config: domain.Config{
 		Clients: map[string]*domain.Client{
@@ -65,16 +66,16 @@ func TestImportSeasonPack_ReusesAcceptedPlanWithoutClientReads(t *testing.T) {
 	statusCode, err := matchProcessor.matchSeasonPack(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulMatch, statusCode)
-	require.Equal(t, 1, torrentClient.torrentCalls)
-	require.Equal(t, 2, torrentClient.fileCalls)
+	require.Equal(t, 1, torrentClient.TorrentCalls)
+	require.Equal(t, 2, torrentClient.FileCalls)
 
 	importProcessor := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, inv, nil, nil)
 	importProcessor.req = &request{Name: releaseName, Torrent: encodedTorrent, ClientName: "default"}
 	statusCode, err = importProcessor.importSeasonPack(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
-	require.Equal(t, 1, torrentClient.torrentCalls, "import must reuse the accepted inventory")
-	require.Equal(t, 2, torrentClient.fileCalls, "import must reuse the accepted import plan")
+	require.Equal(t, 1, torrentClient.TorrentCalls, "import must reuse the accepted inventory")
+	require.Equal(t, 2, torrentClient.FileCalls, "import must reuse the accepted import plan")
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep1))
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep2))
 }
@@ -102,16 +103,16 @@ func TestImportSeasonPack_ImportsAndPassesResolvedRoot(t *testing.T) {
 	writeEpisode(t, filepath.Join(sourceDir, ep1))
 	writeEpisode(t, filepath.Join(sourceDir, ep2))
 
-	torrentClient := &fakeTorrentClient{
-		torrents: []torrentclient.Torrent{
+	torrentClient := &torrentclienttest.Client{
+		Torrents: []torrentclient.Torrent{
 			{Name: "ParseImport.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
 			{Name: "ParseImport.S01E02.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep2", SavePath: sourceDir},
 		},
-		filesByHash: map[string][]torrentclient.File{
+		FilesByHash: map[string][]torrentclient.File{
 			"ep1": {{Name: ep1, Size: 1}},
 			"ep2": {{Name: ep2, Size: 1}},
 		},
-		importRoot: importDir,
+		ImportRoot: importDir,
 	}
 
 	p := newImportProcessor(newTestInventory(torrentClient))
@@ -125,13 +126,13 @@ func TestImportSeasonPack_ImportsAndPassesResolvedRoot(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
 
-	require.True(t, torrentClient.importCalled)
-	require.Equal(t, infoHashes.Legacy, torrentClient.importReq.LegacyHash)
-	require.Equal(t, infoHashes.V2, torrentClient.importReq.V2Hash)
-	require.Equal(t, infoHashes.HasV1, torrentClient.importReq.HasV1)
-	require.Equal(t, importDir, torrentClient.importReq.SavePath)
-	require.NotEmpty(t, torrentClient.importReq.TorrentBytes)
-	require.True(t, torrentClient.importReq.DataComplete, "every torrent file is hardlinked with the expected size")
+	require.True(t, torrentClient.ImportCalled)
+	require.Equal(t, infoHashes.Legacy, torrentClient.ImportReq.LegacyHash)
+	require.Equal(t, infoHashes.V2, torrentClient.ImportReq.V2Hash)
+	require.Equal(t, infoHashes.HasV1, torrentClient.ImportReq.HasV1)
+	require.Equal(t, importDir, torrentClient.ImportReq.SavePath)
+	require.NotEmpty(t, torrentClient.ImportReq.TorrentBytes)
+	require.True(t, torrentClient.ImportReq.DataComplete, "every torrent file is hardlinked with the expected size")
 
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep1))
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep2))
@@ -155,14 +156,14 @@ func TestImportSeasonPack_ReportsPartialPackData(t *testing.T) {
 	ep1 := "PartialImport.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"
 	writeEpisode(t, filepath.Join(sourceDir, ep1))
 
-	torrentClient := &fakeTorrentClient{
-		torrents: []torrentclient.Torrent{
+	torrentClient := &torrentclienttest.Client{
+		Torrents: []torrentclient.Torrent{
 			{Name: "PartialImport.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
 		},
-		filesByHash: map[string][]torrentclient.File{
+		FilesByHash: map[string][]torrentclient.File{
 			"ep1": {{Name: ep1, Size: 1}},
 		},
-		importRoot: importDir,
+		ImportRoot: importDir,
 	}
 
 	p := newImportProcessor(newTestInventory(torrentClient))
@@ -175,8 +176,8 @@ func TestImportSeasonPack_ReportsPartialPackData(t *testing.T) {
 	statusCode, err := p.importSeasonPack(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
-	require.True(t, torrentClient.importCalled)
-	require.False(t, torrentClient.importReq.DataComplete)
+	require.True(t, torrentClient.ImportCalled)
+	require.False(t, torrentClient.ImportReq.DataComplete)
 }
 
 // TestImportSeasonPack_ClientImportIgnoresCallerCancel guards the production
@@ -200,15 +201,15 @@ func TestImportSeasonPack_ClientImportIgnoresCallerCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	torrentClient := &fakeTorrentClient{
-		torrents: []torrentclient.Torrent{
+	torrentClient := &torrentclienttest.Client{
+		Torrents: []torrentclient.Torrent{
 			{Name: "CancelImport.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
 		},
-		filesByHash: map[string][]torrentclient.File{
+		FilesByHash: map[string][]torrentclient.File{
 			"ep1": {{Name: ep1, Size: 1}},
 		},
-		importRoot:          importDir,
-		onImportDestination: cancel,
+		ImportRoot:          importDir,
+		OnImportDestination: cancel,
 	}
 
 	p := newImportProcessor(newTestInventory(torrentClient))
@@ -219,8 +220,8 @@ func TestImportSeasonPack_ClientImportIgnoresCallerCancel(t *testing.T) {
 	}
 
 	_, _ = p.importSeasonPack(ctx)
-	require.True(t, torrentClient.importCalled)
-	require.NoError(t, torrentClient.importCtxErr, "a caller disconnect must not cancel the client import")
+	require.True(t, torrentClient.ImportCalled)
+	require.NoError(t, torrentClient.ImportCtxErr, "a caller disconnect must not cancel the client import")
 }
 
 func TestImportSeasonPack_RejectsArchivePackWithSampleVideos(t *testing.T) {
@@ -249,14 +250,14 @@ func TestImportSeasonPack_RejectsArchivePackWithSampleVideos(t *testing.T) {
 	var torrent bytes.Buffer
 	require.NoError(t, (&metainfo.MetaInfo{InfoBytes: infoBytes}).Write(&torrent))
 
-	torrentClient := &fakeTorrentClient{
-		torrents: []torrentclient.Torrent{
+	torrentClient := &torrentclienttest.Client{
+		Torrents: []torrentclient.Torrent{
 			{Name: "ArchivePack.S01E01.1080p.WEB.h264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
 		},
-		filesByHash: map[string][]torrentclient.File{
+		FilesByHash: map[string][]torrentclient.File{
 			"ep1": {{Name: episodeName, Size: 1}},
 		},
-		importRoot: importDir,
+		ImportRoot: importDir,
 	}
 
 	p := newImportProcessor(newTestInventory(torrentClient))
@@ -269,7 +270,7 @@ func TestImportSeasonPack_RejectsArchivePackWithSampleVideos(t *testing.T) {
 	statusCode, err := p.importSeasonPack(t.Context())
 	require.EqualError(t, err, domain.StatusFailedMatchToTorrentEps.String())
 	require.Equal(t, domain.StatusFailedMatchToTorrentEps, statusCode)
-	require.False(t, torrentClient.importCalled, "rejected archive pack must not be imported")
+	require.False(t, torrentClient.ImportCalled, "rejected archive pack must not be imported")
 	require.NoFileExists(t, filepath.Join(importDir, releaseName, episodeName))
 }
 
@@ -289,15 +290,15 @@ func TestImportSeasonPack_UsesFlatImportDestination(t *testing.T) {
 	episodeName := "FlatImport.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"
 	writeEpisode(t, filepath.Join(sourceDir, episodeName))
 
-	torrentClient := &fakeTorrentClient{
-		torrents: []torrentclient.Torrent{
+	torrentClient := &torrentclienttest.Client{
+		Torrents: []torrentclient.Torrent{
 			{Name: "FlatImport.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
 		},
-		filesByHash: map[string][]torrentclient.File{
+		FilesByHash: map[string][]torrentclient.File{
 			"ep1": {{Name: episodeName, Size: 1}},
 		},
-		importRoot: importDir,
-		flatImport: true,
+		ImportRoot: importDir,
+		FlatImport: true,
 	}
 
 	p := newImportProcessor(newTestInventory(torrentClient))
@@ -333,14 +334,14 @@ func TestImportSeasonPack_RefusesRelativeImportRoot(t *testing.T) {
 	episodeName := "RelativeImport.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"
 	writeEpisode(t, filepath.Join(sourceDir, episodeName))
 
-	torrentClient := &fakeTorrentClient{
-		torrents: []torrentclient.Torrent{
+	torrentClient := &torrentclienttest.Client{
+		Torrents: []torrentclient.Torrent{
 			{Name: "RelativeImport.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
 		},
-		filesByHash: map[string][]torrentclient.File{
+		FilesByHash: map[string][]torrentclient.File{
 			"ep1": {{Name: episodeName, Size: 1}},
 		},
-		importRoot: "import",
+		ImportRoot: "import",
 	}
 
 	p := newImportProcessor(newTestInventory(torrentClient))
@@ -353,7 +354,7 @@ func TestImportSeasonPack_RefusesRelativeImportRoot(t *testing.T) {
 	statusCode, err := p.importSeasonPack(t.Context())
 	require.EqualError(t, err, domain.StatusFailedHardlink.String())
 	require.Equal(t, domain.StatusFailedHardlink, statusCode)
-	require.False(t, torrentClient.importCalled, "the client must not get a relative save path")
+	require.False(t, torrentClient.ImportCalled, "the client must not get a relative save path")
 	entries, err := os.ReadDir(workDir)
 	require.NoError(t, err)
 	require.Empty(t, entries, "nothing must appear below the working directory")
@@ -376,14 +377,14 @@ func TestImportSeasonPack_RetryReusesExistingHardlinks(t *testing.T) {
 	episodeName := "RetryImport.S01E01.1080p.WEB-DL.H.264-RlsGrp.mkv"
 	writeEpisode(t, filepath.Join(sourceDir, episodeName))
 
-	torrentClient := &fakeTorrentClient{
-		torrents: []torrentclient.Torrent{
+	torrentClient := &torrentclienttest.Client{
+		Torrents: []torrentclient.Torrent{
 			{Name: "RetryImport.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: sourceDir},
 		},
-		filesByHash: map[string][]torrentclient.File{
+		FilesByHash: map[string][]torrentclient.File{
 			"ep1": {{Name: episodeName, Size: 1}},
 		},
-		importRoot: importDir,
+		ImportRoot: importDir,
 	}
 
 	p := newImportProcessor(newTestInventory(torrentClient))
@@ -391,12 +392,12 @@ func TestImportSeasonPack_RetryReusesExistingHardlinks(t *testing.T) {
 
 	for attempt := range 2 {
 		p.req.Torrent = encodedTorrent
-		torrentClient.importCalled = false
+		torrentClient.ImportCalled = false
 
 		statusCode, err := p.importSeasonPack(t.Context())
 		require.NoError(t, err, "attempt %d", attempt+1)
 		require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
-		require.True(t, torrentClient.importCalled, "attempt %d must reach client import", attempt+1)
+		require.True(t, torrentClient.ImportCalled, "attempt %d must reach client import", attempt+1)
 	}
 }
 
@@ -424,20 +425,20 @@ func TestImportSeasonPack_SkipsCrossSeedDuplicates(t *testing.T) {
 		writeEpisode(t, filepath.Join(dir, ep2))
 	}
 
-	torrentClient := &fakeTorrentClient{
-		torrents: []torrentclient.Torrent{
+	torrentClient := &torrentclienttest.Client{
+		Torrents: []torrentclient.Torrent{
 			{Name: "CrossSeed.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1a", SavePath: sourceDir1},
 			{Name: "CrossSeed.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1b", SavePath: sourceDir2},
 			{Name: "CrossSeed.S01E02.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep2a", SavePath: sourceDir1},
 			{Name: "CrossSeed.S01E02.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep2b", SavePath: sourceDir2},
 		},
-		filesByHash: map[string][]torrentclient.File{
+		FilesByHash: map[string][]torrentclient.File{
 			"ep1a": {{Name: ep1, Size: 1}},
 			"ep1b": {{Name: ep1, Size: 1}},
 			"ep2a": {{Name: ep2, Size: 1}},
 			"ep2b": {{Name: ep2, Size: 1}},
 		},
-		importRoot: importDir,
+		ImportRoot: importDir,
 	}
 
 	p := newImportProcessor(newTestInventory(torrentClient))
@@ -453,5 +454,5 @@ func TestImportSeasonPack_SkipsCrossSeedDuplicates(t *testing.T) {
 
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep1))
 	require.FileExists(t, filepath.Join(importDir, releaseName, ep2))
-	require.True(t, torrentClient.importCalled)
+	require.True(t, torrentClient.ImportCalled)
 }

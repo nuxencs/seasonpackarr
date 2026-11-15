@@ -226,8 +226,10 @@ Preferred dependency direction:
    - the direction is `internal/torrentclient/` to `internal/placement/` to `internal/torrents/`.
      `internal/placement/` must not import `internal/torrentclient/`
 5. `internal/domain/` holds cross-package data shapes and status concepts
-6. test helper packages (`internal/logger/loggertest`, `internal/daemontest`)
-   import `testing`, so only `_test.go` files may import them
+6. test helper packages (`internal/logger/loggertest`, `internal/daemontest`,
+   `internal/torrentclient/torrentclienttest`) hold test doubles and test helpers
+   that must not reach the binary, and some import `testing`, so only `_test.go`
+   files may import them
 
 If a change starts pushing transport concerns into matching logic or pack placement, stop and re-check the boundary.
 

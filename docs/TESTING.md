@@ -24,6 +24,13 @@ so the glossary does not define them.
   point. HTTP endpoint tests live in `internal/http/processor_handlers_test.go`.
 - `fixtures_test.go` holds the fakes and fixtures that more than one test file
   of the package uses. A fake that one file uses stays in that file.
+- `internal/torrentclient/torrentclienttest` holds the fake torrent client
+  (`torrentclienttest.Client`) for tests that need a client and no real
+  daemon. The HTTP tests use it. A test sets its exported fields for the
+  torrents, the file results, and the import root, and reads its call counts
+  and the last import request. A variant that one package needs is a wrapper
+  in the test files of that package (`fakeSearchClient`, `fakeClosingClient`).
+  The inventory tests keep their own small fake.
 - `<file>_integration_test.go` holds tests against real external services.
   Their shared fixtures live in `fixtures_integration_test.go`. Helpers that
   every test against a real daemon uses live in `internal/daemontest`.
@@ -56,8 +63,10 @@ so the glossary does not define them.
   (`deluge requires savePath`, `contains HDR`). A named table is `tests`, and
   the loop variable is `tt`. A table written inline in the `range` needs no name.
   A map table names its key and value instead (`for name, mutate := range tests`).
-- Test doubles are `fake<Thing>` (`fakeTorrentClient`, `fakeQbitAPI`), and their
-  methods use the receiver `f`. Fixtures and recorded data keep descriptive
+- Test doubles are `fake<Thing>` (`fakeSearchClient`, `fakeQbitAPI`), and their
+  methods use the receiver `f`. A test double in a test helper package has a
+  short name without `fake`, because the package name gives its role
+  (`torrentclienttest.Client`). Fixtures and recorded data keep descriptive
   names (`searchFixture`, `capturedRequest`).
 - Common helper prefixes:
   - `new<Thing>`: builds a client, fixture, or fake
@@ -438,7 +447,8 @@ has a `full` input for the integration group.
 ## Coverage
 
 Packages without tests: `internal/api`, `internal/buildinfo`,
-`internal/daemontest`, `internal/logger`, `internal/logger/loggertest`.
+`internal/daemontest`, `internal/logger`, `internal/logger/loggertest`,
+`internal/torrentclient/torrentclienttest`.
 
 High-value regression targets:
 
