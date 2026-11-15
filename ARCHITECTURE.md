@@ -15,7 +15,7 @@
 2. `cmd/start.go` loads config, logger, notifications, and the SQLite store, creates the inventory module, then starts the HTTP server. Signal cancellation starts a bounded graceful shutdown. The command closes the store after server shutdown.
 3. `internal/http/server.go` builds `/api/healthz`, `/api/candidate`, `/api/match`, `/api/import`, and `/api/search`.
 4. `internal/http/webhook.go` holds the webhook handlers. A handler decodes the payload, gets the client handle of the request from `internal/inventory/`, calls one operation of the season pack processor, writes the response, and sends the notification.
-5. `internal/seasonpack/` is the season pack processor. It has three operations: the candidate check, the match, and the import. `candidate.go` holds the candidate check, which reads the inventory through the client handle. `match.go` parses the torrent bytes and builds the import plan with no side effects. `plan_cache.go` keeps the plan of an accepted match for the import. `import.go` uses that plan or builds it again, gets the destination (import root plus layout) from the client adapter, gives the planned links to `internal/placement/`, and imports the pack. `import_lock.go` holds the endpoint import locks. See [docs/design/season-pack-lifecycle.md](docs/design/season-pack-lifecycle.md) and [docs/design/qbittorrent-import-flow.md](docs/design/qbittorrent-import-flow.md).
+5. `internal/seasonpack/` is the season pack processor. It has three operations: the candidate check, the match, and the import. `candidate.go` holds the candidate check, which reads the inventory through the client handle. `match.go` parses the torrent bytes and, for an accepted match, builds the import plan with no side effects. `plan_cache.go` keeps the plan of an accepted match for the import. `import.go` uses that plan or builds it again, gets the destination (import root plus layout) from the client adapter, gives the planned links to `internal/placement/`, and imports the pack. `import_lock.go` holds the endpoint import locks. See [docs/design/season-pack-lifecycle.md](docs/design/season-pack-lifecycle.md) and [docs/design/qbittorrent-import-flow.md](docs/design/qbittorrent-import-flow.md).
 6. `internal/release/` decides whether a client episode and announced season pack are compatible.
 7. `internal/placement/` builds each hardlink target, makes the hardlinks, and answers whether the pack data is complete.
 8. `internal/notification/` sends notifications for notable events to each notification destination.
@@ -103,13 +103,14 @@
 - The inventory module keeps the parsed torrent names of each client endpoint and inventory scope separately from the inventory. An import discards the inventory, but the next scan parses only new names. A scan also reuses the names of the other scopes of its endpoint, so a name in two scopes is parsed once.
 - At startup, a server lifecycle task runs the startup read of the inventory module. It reads the inventory of each client once, so the first announce does not log in or parse every name. Clients of one endpoint share the parsed names. The task tries a client that is not ready up to four times, 10 seconds apart, then only logs a warning.
 - After each config reload, the server reload loop runs the clean-up of the inventory module. It drops the cached connection and inventory of each client that the config no longer has or configures differently, and the parsed names of endpoints and inventory scopes that no client uses. A scan that overlaps this clean-up adds no new parsed-name key, so it cannot restore a removed one. It closes the Deluge connection of a dropped client. A request that still holds that client connects again.
-- Only an accepted match produces an import plan. One function decides the coverage rule of smart mode, for the planned coverage of a plan build and for the achieved coverage after the hardlinks. A rejected match returns its coverage and keeps no plan.
+- Only an accepted match produces an import plan. One function decides the coverage rule of smart mode, for the planned coverage of a plan build and for the achieved coverage after the hardlinks. A rejected match keeps no plan. It returns its coverage when the torrent episodes were matched.
 - The processor keeps the import plan of an accepted match for 2 minutes, for both callers. No plan value crosses its interface. The import normally performs no second inventory or file-detail reads.
 - A kept plan is valid only for the same client name, torrent identity, release name, client configuration, and fuzzy matching settings. The import builds the plan again when it has no valid one.
 - The import has one path: take the endpoint import lock, do the candidate check again, take the kept plan or build it again, apply the coverage rule, make the hardlinks, check the achieved coverage, import into the client, and drop the inventories and plans of the endpoint. Imports to the same client type, host, and port run one at a time.
 - After each client import attempt, the import discards the inventories of that endpoint, including aliases, and drops the plans of that endpoint. One deferred call does this and then releases the endpoint import lock, so the order does not depend on two deferred calls. A failed attempt can have added the torrent. When a hardlink source is missing, the import drops the plan and discards the inventory of that one client. A search run discards the inventory of each client before its first read.
 - An inventory read that a discard overlaps returns its result to its caller, but does not store it.
-- Exact plans retain one compact reason for every unmatched torrent target.
+- Each plan build returns one compact reason for every unmatched torrent target,
+  for the log lines of the match.
   Torrent-client adapters return neutral stage timings for successful and failed
   imports. The season pack processor owns the operator-facing structured logs of
   the stages. The webhook handlers and discovery log only their own start,
@@ -220,7 +221,7 @@
 
 ### Cancellation And Shutdown
 
-- Each webhook passes its request context through planning and hardlinking.
+- Each webhook passes its request context through planning: the inventory read, the file-detail reads, the wait for the endpoint import lock, and the read of the import destination. The hardlink step takes no context and runs to its end.
 - The torrent-client import runs with that context detached from cancellation, so a caller disconnect cannot leave a half-imported torrent stopped. Each adapter bounds its own client calls with timeouts.
 - Client imports do not wait for the client's data check. The client checks the data and starts the torrent by itself, so a request finishes within seconds.
 - qBittorrent polling stops at its own timeouts. The upstream qBittorrent API is context-free, so an in-flight library call can finish only when its own HTTP behavior returns.

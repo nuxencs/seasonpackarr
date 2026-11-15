@@ -10,7 +10,7 @@ import endpoints (see the [autobrr setup](AUTOBRR.md)). The
 | Method | Path | Authentication | Body | Purpose |
 | --- | --- | --- | --- | --- |
 | `POST` | `/api/candidate` | API token | `name`, `clientname` | Candidate check of a release name. Downloads no torrent and changes nothing. |
-| `POST` | `/api/match` | API token | `name`, `torrent`, `clientname` | Match: builds an import plan from the torrent. Changes nothing. |
+| `POST` | `/api/match` | API token | `name`, `torrent`, `clientname` | Match: reads the torrent and accepts or rejects the season pack. An accepted match produces an import plan. Changes nothing. |
 | `POST` | `/api/import` | API token | `name`, `torrent`, `clientname` | Import: creates hardlinks and adds the season pack to the client. |
 | `POST` | `/api/search` | API token | See [Search](#search) | Runs a targeted Prowlarr search. |
 | `GET` | `/api/healthz/liveness` | None | None | Returns `200` with the text `OK` while the process runs. |
@@ -241,8 +241,8 @@ The `200` report contains these fields:
 - `outcomes[]`: one entry per result, with `clientname`, `title`, `indexerId`,
   `status`, `reason`, `reusableEpisodes`, and `totalEpisodes`. `status` is
   `candidate`, `would_import`, `imported`, `rejected`, or `failed`. The episode
-  counts are `null` until an import plan sets the number of targets. A plan
-  with no reusable files reports `0`.
+  counts are `null` when the result stops before seasonpackarr reads the
+  torrent. A season pack with no reusable episode reports `0`.
 - `failures[]`: discovery, client inventory, query, pagination, rate limit,
   database, and cancellation errors, with `clientname`, `query`, `indexerId`,
   and `reason` where they apply.

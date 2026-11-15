@@ -21,7 +21,7 @@ needed about 2 minutes 50 seconds. autobrr cancelled the request in the middle
 of the old recheck wait, and qBittorrent left the torrent stopped after its
 check until a manual start.
 
-The processor also calls `Import` with a context that the HTTP caller cannot
+The season pack processor also calls `Import` with a context that the HTTP caller cannot
 cancel, so a disconnect cannot interrupt a started client mutation. Each
 adapter bounds its own client calls.
 

@@ -7,8 +7,8 @@ The filter does three things:
 
 1. **Candidate check** (External entry 1): seasonpackarr checks the announce name. A rejection stops the filter before
    autobrr downloads the torrent file.
-2. **Match** (External entry 2): seasonpackarr reads the torrent and the episode files on disk and makes an import plan.
-   It changes no files and adds nothing to the client.
+2. **Match** (External entry 2): seasonpackarr reads the torrent and the episode files on disk and accepts or rejects
+   the season pack. An accepted match produces an import plan. The match changes no files and adds nothing to the client.
 3. **Import** (the Webhook action): seasonpackarr hardlinks the reusable episodes and adds the season pack to the client.
 
 There are two ways to set up the filter:
