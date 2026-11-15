@@ -196,7 +196,7 @@ func TestBuildDelugeSettings(t *testing.T) {
 func newListingDelugeAPI() *fakeDelugeAPI {
 	return &fakeDelugeAPI{
 		torrents: map[string]*deluge.TorrentStatus{
-			"bbbb": {Hash: "bbbb", Name: "Show.S01E02", DownloadLocation: "/downloads"},
+			"bbbb": {Hash: "bbbb", Name: "Show.S01E02", DownloadLocation: "/downloads/", SavePath: "/legacy-downloads"},
 			"aaaa": {
 				Hash:     "aaaa",
 				Name:     "Show.S01E01",
@@ -219,8 +219,8 @@ func TestDelugeGetTorrents(t *testing.T) {
 	torrents, err := client.GetTorrents(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []Torrent{
-		{Hash: "aaaa", Name: "Show.S01E01", SavePath: "/legacy-downloads"},
-		{Hash: "bbbb", Name: "Show.S01E02", SavePath: "/downloads"},
+		{Hash: "aaaa", Name: "Show.S01E01"},
+		{Hash: "bbbb", Name: "Show.S01E02"},
 	}, torrents)
 	require.Equal(t, 1, api.torrentCalls, "GetTorrents uses one status call")
 }
@@ -313,17 +313,20 @@ func TestDelugeGetFiles_ReturnsFilesPerRequestedHash(t *testing.T) {
 	api := newListingDelugeAPI()
 	client := newTestDelugeClient(api, domain.ImportPolicy{})
 
-	results := client.GetFiles(t.Context(), []string{"AAAA", "missing"})
-	require.Len(t, results, 2)
+	results := client.GetFiles(t.Context(), []string{"AAAA", "bbbb", "missing"})
+	require.Len(t, results, 3)
 	require.NoError(t, results[0].Err)
 	require.Equal(t, "AAAA", results[0].Hash)
+	assert.Equal(t, "/legacy-downloads", results[0].SavePath, "save_path is the fallback without download_location")
 	require.Equal(t, []File{
 		{Name: "Show.S01/Show.S01E01.mkv", Size: 100},
 		{Name: "Show.S01/Show.S01E02.mkv", Size: 200},
 	}, results[0].Files)
-	require.Error(t, results[1].Err)
+	require.NoError(t, results[1].Err)
+	assert.Equal(t, "/downloads", results[1].SavePath, "download_location wins over save_path")
+	require.Error(t, results[2].Err)
 	require.Equal(t, 1, api.torrentCalls, "GetFiles uses one status call for every hash")
-	require.Equal(t, []string{"AAAA", "missing"}, api.gotTorrentIDs)
+	require.Equal(t, []string{"AAAA", "bbbb", "missing"}, api.gotTorrentIDs)
 }
 
 func TestDelugeGetFiles_ExpandsWholeCallError(t *testing.T) {

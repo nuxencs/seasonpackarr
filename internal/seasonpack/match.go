@@ -234,7 +234,7 @@ func (c *call) readSources(ctx context.Context, candidates []inventory.Entry) ([
 			continue
 		}
 
-		episode, err := episodeFileFromFiles(result.Files, candidate.Torrent.SavePath)
+		episode, err := episodeFileFromFiles(result.Files, result.SavePath)
 		if err != nil {
 			c.log.Error().Err(err).Msgf("error getting file info: %s", candidate.Torrent.Name)
 			continue

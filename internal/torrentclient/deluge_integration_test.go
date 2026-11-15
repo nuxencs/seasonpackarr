@@ -33,6 +33,7 @@ type delugeTestAPI interface {
 	EnablePlugin(context.Context, string) error
 	GetEnabledPlugins(context.Context) ([]string, error)
 	GetListenPort(context.Context) (uint16, error)
+	MoveStorage(context.Context, []string, string) error
 	RemoveTorrent(context.Context, string, bool) (bool, error)
 }
 
@@ -51,8 +52,28 @@ func TestDelugeDaemon_ImportsCompletePack(t *testing.T) {
 	assert.InDelta(t, 100, status.Progress, 0.01, "complete pack progress")
 	assert.Equal(t, status.TotalSize, status.TotalDone, "complete pack bytes")
 	requireListedPack(t, c, pack, importDir)
-	requireFileReadLoad(t, c, pack.Hashes.Legacy)
+	requireFileReadLoad(t, c, pack.Hashes.Legacy, importDir)
 	requireDelugeLabel(t, c, pack.Hashes.Legacy, "seasonpackarr")
+}
+
+// TestDelugeDaemon_ReadsSavePathAfterMove: the adapter reads
+// download_location (Deluge 2) or save_path (Deluge 1) in the status call that
+// reads the files.
+func TestDelugeDaemon_ReadsSavePathAfterMove(t *testing.T) {
+	importDir := requireDaemon(t, envDelugeType)
+	c := newDelugeDaemonClient(t, importDir)
+	moved := daemontest.WriteCompletePack(t, importDir, daemontest.PackName(t, os.Getenv(envDelugeType), "moved"))
+	kept := daemontest.WriteCompletePack(t, importDir, daemontest.PackName(t, os.Getenv(envDelugeType), "kept"))
+	for _, pack := range []daemontest.Pack{moved, kept} {
+		importDelugePack(t, c, importRequest(pack, importDir, true))
+		waitDelugeChecked(t, c, pack.Hashes.Legacy)
+	}
+
+	requireSavePathAfterMove(t, c, moved, kept, importDir, func(hash, dir string) error {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return delugeDaemonAPI(t, c).MoveStorage(t.Context(), []string{hash}, dir)
+	})
 }
 
 func TestDelugeDaemon_ResumesPartialPack(t *testing.T) {

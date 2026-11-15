@@ -231,17 +231,9 @@ func (d *delugeClient) GetTorrents(ctx context.Context) ([]Torrent, error) {
 		if statusHash == "" {
 			statusHash = hash
 		}
-		savePath := status.DownloadLocation
-		if strings.TrimSpace(savePath) == "" {
-			savePath = status.SavePath
-		}
-		if strings.TrimSpace(savePath) != "" {
-			savePath = normalizePath(savePath)
-		}
 		torrents = append(torrents, Torrent{
-			Hash:     statusHash,
-			Name:     status.Name,
-			SavePath: savePath,
+			Hash: statusHash,
+			Name: status.Name,
 		})
 	}
 
@@ -314,9 +306,23 @@ func (d *delugeClient) GetFiles(ctx context.Context, hashes []string) []FileResu
 		for _, file := range status.Files {
 			files = append(files, File{Name: file.Path, Size: file.Size})
 		}
+		results[index].SavePath = delugeSavePath(status)
 		results[index].Files = files
 	}
 	return results
+}
+
+// delugeSavePath returns the directory of the torrent content: the
+// download_location of Deluge 2, else the save_path of Deluge 1.
+func delugeSavePath(status *deluge.TorrentStatus) string {
+	savePath := status.DownloadLocation
+	if strings.TrimSpace(savePath) == "" {
+		savePath = status.SavePath
+	}
+	if strings.TrimSpace(savePath) == "" {
+		return ""
+	}
+	return normalizePath(savePath)
 }
 
 func uniqueFoldedHashes(hashes []string) []string {

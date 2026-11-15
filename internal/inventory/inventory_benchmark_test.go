@@ -260,9 +260,8 @@ func inventoryBenchmarkTorrentsWithVariant(count, changedCount int, variant stri
 			group += variant
 		}
 		torrents[index] = torrentclient.Torrent{
-			Hash:     fmt.Sprintf("%040x", index),
-			Name:     fmt.Sprintf("Inventory.Show.%08x.S%02dE%02d.1080p.WEB-DL.DDP5.1.H.264-%s", title, season, episode, group),
-			SavePath: fmt.Sprintf("/data/tv/inventory-show-%08x/season-%02d", title, season),
+			Hash: fmt.Sprintf("%040x", index),
+			Name: fmt.Sprintf("Inventory.Show.%08x.S%02dE%02d.1080p.WEB-DL.DDP5.1.H.264-%s", title, season, episode, group),
 		}
 	}
 	return torrents

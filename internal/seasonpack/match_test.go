@@ -111,6 +111,37 @@ func TestMatch_RejectsPackWhenNoSourceIsOnDisk(t *testing.T) {
 	assert.Equal(t, "missing", dropped["reason"])
 }
 
+// The client moves episodes between the candidate check and the match. The
+// match finds each file at its new path, with no second inventory read.
+func TestMatch_FindsEpisodeMovedAfterCandidateCheck(t *testing.T) {
+	tests := []struct {
+		name  string
+		cfg   domain.Config
+		moved []int
+	}{
+		{name: "smart mode at 100 percent", cfg: newSmartConfig(1), moved: []int{2}},
+		{name: "no smart mode", cfg: newConfig(), moved: []int{1, 2}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pack := newPack(t, "Moved", 2, 2)
+			f := newFixture(pack.client)
+			client := f.client(t, "default", tt.cfg)
+			require.NoError(t, f.processor.Candidate(t.Context(), client, pack.name).Err)
+			for _, episode := range tt.moved {
+				pack.moveEpisode(t, episode)
+			}
+
+			outcome := f.processor.Match(t.Context(), client, pack.name, TorrentBytes(pack.torrent))
+
+			require.NoError(t, outcome.Err)
+			assert.Equal(t, domain.StatusSuccessfulMatch, outcome.Status)
+			assert.Equal(t, &Coverage{Reusable: 2, Total: 2}, outcome.Coverage)
+			assert.Equal(t, 1, pack.client.TorrentCalls, "the match must need no inventory refresh")
+		})
+	}
+}
+
 // The request checks of the match read no client.
 func TestMatch_ChecksRequestBeforeClientRead(t *testing.T) {
 	pack := newPack(t, "Checks", 1, 1)
@@ -235,17 +266,15 @@ func TestMatch_ReturnsErrorOfFailedFetch(t *testing.T) {
 
 // TestEpisodeFileFromFiles_FollowsTorrentClientPathContract locks in the load-bearing contract documented on
 // torrentclient.TorrentClient: the hardlink source the processor uses is
-// filepath.Join(Torrent.SavePath, <file name from GetFiles>). File names keep
-// their torrent-root-folder prefix and SavePath is the absolute on-disk download
-// dir, so the parsed episode path is the real file path. A future TorrentClient
-// implementation that returns a bare basename or a non-absolute SavePath would
-// break hardlinking silently. This test fails first.
+// filepath.Join(FileResult.SavePath, <file name from the same result>). File
+// names keep their torrent-root-folder prefix and SavePath is the absolute
+// on-disk download dir, so the parsed episode path is the real file path. A
+// future TorrentClient implementation that returns a bare basename or a
+// non-absolute SavePath would break hardlinking silently. This test fails first.
 func TestEpisodeFileFromFiles_FollowsTorrentClientPathContract(t *testing.T) {
-	const savePath = "/data/torrents/tv"
 	torrentClient := &torrentclienttest.Client{
-		Torrents: []torrentclient.Torrent{
-			{Hash: "abc123", Name: "Some.Show.S01.1080p", SavePath: savePath},
-		},
+		Torrents: []torrentclient.Torrent{{Hash: "abc123", Name: "Some.Show.S01.1080p"}},
+		SavePath: "/data/torrents/tv",
 		Files: []torrentclient.File{
 			{Name: "Some.Show.S01.1080p/Some.Show.S01E01.1080p.mkv", Size: 1_000_000},
 		},
@@ -257,7 +286,7 @@ func TestEpisodeFileFromFiles_FollowsTorrentClientPathContract(t *testing.T) {
 	results := torrentClient.GetFiles(t.Context(), []string{ts[0].Hash})
 	require.Len(t, results, 1)
 	require.NoError(t, results[0].Err)
-	episode, err := episodeFileFromFiles(results[0].Files, ts[0].SavePath)
+	episode, err := episodeFileFromFiles(results[0].Files, results[0].SavePath)
 	require.NoError(t, err)
 	require.Equal(t, "abc123", torrentClient.GotHash)
 	require.Equal(t, "/data/torrents/tv/Some.Show.S01.1080p/Some.Show.S01E01.1080p.mkv", episode.Path(), "hardlink source")

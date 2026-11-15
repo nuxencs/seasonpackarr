@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +28,9 @@ const (
 	qbitFileReadWorkers = 4
 	// qbitInventoryReadWorkers limits the parallel torrents/info reads of a scope with several include values.
 	qbitInventoryReadWorkers = 4
+	// qbitInfoHashesPerRead keeps the hash filter in the torrents/info URL near 4.3 KB
+	// for v1 hashes, below the 8 KB request-line limit of common reverse proxies.
+	qbitInfoHashesPerRead = 100
 )
 
 // qbitAPI is the subset of *qbittorrent.Client the adapter uses. It exists so
@@ -253,11 +257,7 @@ func (q *qbitClient) readInventory(ctx context.Context, filters []qbittorrent.To
 				}
 				seen[t.Hash] = true
 			}
-			torrents = append(torrents, Torrent{
-				Hash:     t.Hash,
-				Name:     t.Name,
-				SavePath: t.SavePath,
-			})
+			torrents = append(torrents, Torrent{Hash: t.Hash, Name: t.Name})
 		}
 	}
 	return torrents, nil
@@ -329,15 +329,33 @@ func qbitHasTag(tags string, match func(string) bool) bool {
 	return false
 }
 
+// GetFiles reads the save paths with torrents/info, one request for each chunk
+// of qbitInfoHashesPerRead hashes, because torrents/files has no path. Then it
+// reads the files of each found hash with a bounded worker pool.
 func (q *qbitClient) GetFiles(ctx context.Context, hashes []string) []FileResult {
 	results := make([]FileResult, len(hashes))
 	if len(hashes) == 0 {
 		return results
 	}
 
+	savePaths := q.readSavePaths(ctx, hashes)
+	var pending []int
+	for index, hash := range hashes {
+		read, ok := savePaths[strings.ToLower(hash)]
+		switch {
+		case !ok:
+			results[index] = FileResult{Hash: hash, Err: fmt.Errorf("qbittorrent: torrent not found: %s", hash)}
+		case read.err != nil:
+			results[index] = FileResult{Hash: hash, Err: read.err}
+		default:
+			results[index].SavePath = read.path
+			pending = append(pending, index)
+		}
+	}
+
 	jobs := make(chan int)
 	var workers sync.WaitGroup
-	for range min(qbitFileReadWorkers, len(hashes)) {
+	for range min(qbitFileReadWorkers, len(pending)) {
 		workers.Go(func() {
 			for {
 				select {
@@ -347,14 +365,14 @@ func (q *qbitClient) GetFiles(ctx context.Context, hashes []string) []FileResult
 					if !ok {
 						return
 					}
-					results[index] = q.getFiles(ctx, hashes[index])
+					results[index] = q.getFiles(ctx, hashes[index], results[index].SavePath)
 				}
 			}
 		})
 	}
 
 sendJobs:
-	for index := range hashes {
+	for _, index := range pending {
 		select {
 		case jobs <- index:
 		case <-ctx.Done():
@@ -371,7 +389,43 @@ sendJobs:
 	return results
 }
 
-func (q *qbitClient) getFiles(ctx context.Context, hash string) FileResult {
+// savePathRead is the save path of one hash, or the error of its failed request.
+type savePathRead struct {
+	path string
+	err  error
+}
+
+// readSavePaths returns the read of each found hash and of each hash in a failed
+// request, keyed by the lowercase hash. A failed request fails only its own chunk.
+func (q *qbitClient) readSavePaths(ctx context.Context, hashes []string) map[string]savePathRead {
+	reads := make(map[string]savePathRead, len(hashes))
+	for chunk := range slices.Chunk(uniqueFoldedHashes(hashes), qbitInfoHashesPerRead) {
+		torrents, err := q.readSavePathChunk(ctx, chunk)
+		if err != nil {
+			for _, hash := range chunk {
+				reads[strings.ToLower(hash)] = savePathRead{err: err}
+			}
+			continue
+		}
+		for _, t := range torrents {
+			reads[strings.ToLower(t.Hash)] = savePathRead{path: t.SavePath}
+		}
+	}
+	return reads
+}
+
+func (q *qbitClient) readSavePathChunk(ctx context.Context, hashes []string) ([]qbittorrent.Torrent, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	torrents, err := q.c.GetTorrents(qbittorrent.TorrentFilterOptions{Hashes: hashes})
+	if err != nil {
+		return nil, errtrace.WithStack(fmt.Errorf("failed to get save paths: %w", err))
+	}
+	return torrents, nil
+}
+
+func (q *qbitClient) getFiles(ctx context.Context, hash, savePath string) FileResult {
 	torrentFiles, err := q.c.GetFilesInformation(hash)
 	if err != nil {
 		return FileResult{Hash: hash, Err: errtrace.WithStack(fmt.Errorf("failed to get files: %w", err))}
@@ -384,7 +438,7 @@ func (q *qbitClient) getFiles(ctx context.Context, hash string) FileResult {
 	for _, file := range *torrentFiles {
 		files = append(files, File{Name: file.Name, Size: file.Size})
 	}
-	return FileResult{Hash: hash, Files: files}
+	return FileResult{Hash: hash, SavePath: savePath, Files: files}
 }
 
 // ImportDestination resolves the final import destination for this qBittorrent client.

@@ -135,6 +135,7 @@ func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFix
 
 	torrentClient := &torrentclienttest.Client{
 		FilesByHash: make(map[string][]torrentclient.File),
+		SavePath:    sourceDir,
 		ImportRoot:  importDir,
 	}
 	for episode := 1; episode <= opts.clientEpisodes; episode++ {
@@ -143,9 +144,8 @@ func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFix
 		hash := fmt.Sprintf("ep%d", episode)
 		writeEpisode(t, filepath.Join(sourceDir, episodeFile))
 		torrentClient.Torrents = append(torrentClient.Torrents, torrentclient.Torrent{
-			Name:     episodeRelease,
-			Hash:     hash,
-			SavePath: sourceDir,
+			Name: episodeRelease,
+			Hash: hash,
 		})
 		torrentClient.FilesByHash[hash] = []torrentclient.File{{Name: episodeFile, Size: 1}}
 	}
@@ -301,7 +301,11 @@ func (f *fakeSearchClient) Import(ctx context.Context, req torrentclient.ImportR
 		if parseErr != nil {
 			return report, parseErr
 		}
-		f.Torrents = append(f.Torrents, torrentclient.Torrent{Name: info.Name(), Hash: req.LegacyHash, SavePath: req.SavePath})
+		f.Torrents = append(f.Torrents, torrentclient.Torrent{Name: info.Name(), Hash: req.LegacyHash})
+		if f.SavePathByHash == nil {
+			f.SavePathByHash = make(map[string]string)
+		}
+		f.SavePathByHash[req.LegacyHash] = req.SavePath
 	}
 	return report, err
 }
@@ -397,7 +401,7 @@ func (f *searchFixture) addOtherVariant(t *testing.T) string {
 	f.titles = append(f.titles, pack)
 	f.torrentByTitle = map[string][]byte{pack: data}
 	writeEpisode(t, filepath.Join(f.sourceDir, episode+".mkv"))
-	f.torrentClient.Torrents = append(f.torrentClient.Torrents, torrentclient.Torrent{Name: episode, Hash: "other", SavePath: f.sourceDir})
+	f.torrentClient.Torrents = append(f.torrentClient.Torrents, torrentclient.Torrent{Name: episode, Hash: "other"})
 	f.torrentClient.FilesByHash["other"] = []torrentclient.File{{Name: episode + ".mkv", Size: 1}}
 	return pack
 }
