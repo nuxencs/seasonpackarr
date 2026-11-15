@@ -15,6 +15,7 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/errtrace"
+	"github.com/nuxencs/seasonpackarr/internal/placement"
 
 	"github.com/hashicorp/go-cleanhttp"
 	"github.com/hekmon/transmissionrpc/v3"
@@ -166,9 +167,9 @@ func (t *transmissionClient) GetFiles(ctx context.Context, hashes []string) []Fi
 
 // ImportDestination resolves the final import destination for this transmission client:
 // an explicit savePath wins, otherwise the session's default download dir.
-func (t *transmissionClient) ImportDestination(ctx context.Context) (ImportDestination, error) {
+func (t *transmissionClient) ImportDestination(ctx context.Context) (placement.Destination, error) {
 	if t.policy.SavePath != "" {
-		return NewRootedImportDestination(normalizePath(t.policy.SavePath)), nil
+		return placement.PackFolderDestination(normalizePath(t.policy.SavePath)), nil
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, transmissionTimeout)
@@ -176,15 +177,15 @@ func (t *transmissionClient) ImportDestination(ctx context.Context) (ImportDesti
 
 	args, err := t.c.SessionArgumentsGetAll(ctx)
 	if err != nil {
-		return ImportDestination{}, importErr(ImportStageConfig, errtrace.WithStack(fmt.Errorf("could not read transmission session: %w", err)))
+		return placement.Destination{}, importErr(ImportStageConfig, errtrace.WithStack(fmt.Errorf("could not read transmission session: %w", err)))
 	}
 
 	downloadDir := strings.TrimSpace(derefString(args.DownloadDir))
 	if downloadDir == "" {
-		return ImportDestination{}, importErr(ImportStageConfig, errors.New("transmission download dir is empty; set import.savePath"))
+		return placement.Destination{}, importErr(ImportStageConfig, errors.New("transmission download dir is empty; set import.savePath"))
 	}
 
-	return NewRootedImportDestination(normalizePath(downloadDir)), nil
+	return placement.PackFolderDestination(normalizePath(downloadDir)), nil
 }
 
 // Import adds the parsed season pack to transmission started, into the resolved

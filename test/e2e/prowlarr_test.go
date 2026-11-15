@@ -92,7 +92,7 @@ func (h *harness) createTorznabIndexer() error {
 // for it.
 func (h *harness) addRelease(t *testing.T, name string, torrent []byte) {
 	t.Helper()
-	info, err := torrents.Info(torrent)
+	info, err := torrents.ParseInfo(torrent)
 	require.NoError(t, err, "read the .torrent of %s", name)
 	file := name + ".torrent"
 	h.torrents.Store(file, torrent)

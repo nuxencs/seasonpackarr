@@ -16,6 +16,7 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/errtrace"
+	"github.com/nuxencs/seasonpackarr/internal/placement"
 )
 
 // Torrent is the neutral view of a torrent shared across client implementations.
@@ -54,9 +55,9 @@ type FileResult struct {
 // client on /api/import. The processor has already hardlinked the matched local
 // episodes into SavePath before Import is called.
 //
-// SavePath MUST equal ImportDestination.SavePath for the same client, so the
-// client adds the torrent pointing at the directory that already contains the
-// hardlinks. LegacyHash is the SHA-1 client identifier. V2Hash is the BEP 52
+// SavePath MUST equal the root of the destination that ImportDestination gave
+// for the same client, so the client adds the torrent pointing at the directory
+// that already contains the hardlinks. LegacyHash is the SHA-1 client identifier. V2Hash is the BEP 52
 // SHA-256 identity. HasV1 distinguishes hybrid torrents from pure v2 torrents.
 // DataComplete reports that every torrent file already exists at its import
 // target with the expected size, so a client may skip its full hash check.
@@ -67,34 +68,6 @@ type ImportRequest struct {
 	V2Hash       string
 	HasV1        bool
 	DataComplete bool
-}
-
-// ImportDestination describes both the client save path and the on-disk file
-// layout expected beneath it. Callers do not need to know which client-specific
-// option selected the layout.
-type ImportDestination struct {
-	root               string
-	includeTorrentRoot bool
-}
-
-func NewRootedImportDestination(root string) ImportDestination {
-	return ImportDestination{root: root, includeTorrentRoot: true}
-}
-
-func NewFlatImportDestination(root string) ImportDestination {
-	return ImportDestination{root: root}
-}
-
-func (d ImportDestination) SavePath() string {
-	return d.root
-}
-
-func (d ImportDestination) TargetPath(torrentName, torrentFilePath string) string {
-	if d.includeTorrentRoot {
-		return filepath.Join(d.root, torrentName, torrentFilePath)
-	}
-
-	return filepath.Join(d.root, torrentFilePath)
 }
 
 // ImportStage identifies which step of Import failed so the caller can map it
@@ -198,7 +171,7 @@ type TorrentClient interface {
 	// GetFiles returns exactly one result per input hash in input order. Each
 	// adapter owns its safe batching or concurrency strategy.
 	GetFiles(ctx context.Context, hashes []string) []FileResult
-	ImportDestination(ctx context.Context) (ImportDestination, error)
+	ImportDestination(ctx context.Context) (placement.Destination, error)
 	Import(ctx context.Context, req ImportRequest) (ImportReport, error)
 }
 

@@ -81,7 +81,8 @@ clients:
       # Final import destination. Used both as the hardlink root and as the client's save directory.
       # Optional for qBittorrent (follows its automatic-management and manual category-path preferences)
       # and for transmission (falls back to the session download dir). Required for Deluge.
-      # When set it must already exist. A qBittorrent client must configure either savePath or category.
+      # When set it must be an absolute path that already exists.
+      # A qBittorrent client must configure either savePath or category.
       #
       # Default: ""
       #

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nuxencs/seasonpackarr/internal/placement"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
 	"github.com/autobrr/go-torrent/bencode"
@@ -138,21 +139,35 @@ func SourceDir(importDir string) string {
 	return filepath.Join(importDir, "source")
 }
 
-// WriteLinkedPack writes the complete pack name into SourceDir(importDir).
-// Then it hardlinks every episode except the 1-based episode missing into the
-// import folder, like an import that reuses all other episodes.
+// WriteLinkedPack writes the complete pack name into SourceDir(importDir) as
+// the reusable episodes. Then it hardlinks every episode except the 1-based
+// episode missing into the pack folder below importDir, like an import that
+// reuses all other episodes. The placement module makes the hardlinks, so the
+// tests against a real daemon run the production link code. importDir is the
+// import root, so it must be an absolute path.
 func WriteLinkedPack(t *testing.T, importDir, name string, missing int) Pack {
 	t.Helper()
 	require.True(t, missing >= 1 && missing <= PackEpisodes, "missing=%d", missing)
 
 	pack := WriteCompletePack(t, SourceDir(importDir), name)
-	packDir := filepath.Join(importDir, name)
-	require.NoError(t, os.RemoveAll(packDir))
-	require.NoError(t, os.MkdirAll(packDir, 0o755))
+	// A rerun must start without the pack folder of an earlier run: its hardlinks
+	// are conflicts for the new source files, and its downloaded episode must go.
+	require.NoError(t, os.RemoveAll(filepath.Join(importDir, name)))
+
+	info, err := torrents.ParseInfo(pack.Torrent)
+	require.NoError(t, err)
+	links := make([]placement.PlannedLink, 0, PackEpisodes-1)
 	for index, file := range pack.Episodes {
 		if index+1 != missing {
-			require.NoError(t, os.Link(filepath.Join(SourceDir(importDir), name, file), filepath.Join(packDir, file)))
+			links = append(links, placement.PlannedLink{
+				Source:      filepath.Join(SourceDir(importDir), name, file),
+				TorrentPath: file,
+			})
 		}
+	}
+	outcomes := placement.New(info, placement.PackFolderDestination(importDir)).Link(links)
+	for index, outcome := range outcomes {
+		require.Equalf(t, placement.Linked, outcome.Status, "hardlink of %s: %v", links[index].TorrentPath, outcome.Err)
 	}
 	return pack
 }

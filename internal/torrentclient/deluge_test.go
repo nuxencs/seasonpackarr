@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/placement"
 
 	"github.com/autobrr/go-deluge"
 	"github.com/stretchr/testify/assert"
@@ -380,8 +381,7 @@ func TestDelugeImportDestination(t *testing.T) {
 	client := newTestDelugeClient(&fakeDelugeAPI{}, domain.ImportPolicy{SavePath: "/downloads/tv"})
 	destination, err := client.ImportDestination(t.Context())
 	require.NoError(t, err)
-	require.Equal(t, "/downloads/tv", destination.SavePath())
-	require.Equal(t, "/downloads/tv/Show.S01/Show.S01E01.mkv", destination.TargetPath("Show.S01", "Show.S01E01.mkv"))
+	require.Equal(t, placement.PackFolderDestination(normalizePath("/downloads/tv")), destination)
 
 	client.policy.SavePath = ""
 	_, err = client.ImportDestination(t.Context())

@@ -131,6 +131,37 @@ func TestOperationCommand_UsesRealTorrentIdentity(t *testing.T) {
 	require.Contains(t, stderr, "invalid torrent file")
 }
 
+// TestOperationCommand_AcceptsSingleFileTorrent: the service decides what a
+// single-file torrent gets (status 464), so the CLI must send it.
+func TestOperationCommand_AcceptsSingleFileTorrent(t *testing.T) {
+	isolateCLI(t)
+	const name = "Series.S01E01.1080p.WEB-DL-GRP.mkv"
+	info, err := bencode.Marshal(metainfo.Info{Name: name, PieceLength: 16384, Pieces: make([]byte, 20), Length: 1})
+	require.NoError(t, err)
+	var data bytes.Buffer
+	require.NoError(t, (&metainfo.MetaInfo{InfoBytes: info}).Write(&data))
+	path := filepath.Join(t.TempDir(), "episode.torrent")
+	require.NoError(t, os.WriteFile(path, data.Bytes(), 0o600))
+
+	for _, operation := range []string{"match", "import"} {
+		t.Run(operation, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body struct {
+					Name    string
+					Torrent []byte
+				}
+				assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+				assert.Equal(t, name, body.Name)
+				assert.Equal(t, data.Bytes(), body.Torrent)
+				w.WriteHeader(250)
+			}))
+			defer server.Close()
+			code, _, stderr := runCLI(t, operation, path, "--url", server.URL, "--client", "tv", "--json")
+			require.Equal(t, 0, code, stderr)
+		})
+	}
+}
+
 func TestOperationCommand_RejectsUnexpectedHTTP200(t *testing.T) {
 	isolateCLI(t)
 	path, _ := writeTorrent(t)

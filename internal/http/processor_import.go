@@ -5,15 +5,11 @@ package http
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"strings"
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
-	"github.com/nuxencs/seasonpackarr/internal/files"
+	"github.com/nuxencs/seasonpackarr/internal/placement"
 	"github.com/nuxencs/seasonpackarr/internal/release"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
@@ -107,7 +103,7 @@ func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.Sta
 		statusCode := torrentclient.ImportStatusCode(err)
 		return statusCode, fmt.Errorf("%s: %w", statusCode, err)
 	}
-	importRoot := importDestination.SavePath()
+	importRoot := importDestination.Root()
 	destinationEvent.
 		Str("import_root", importRoot).
 		Msg("import destination resolved")
@@ -153,7 +149,7 @@ func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.Sta
 	}
 
 	defer p.invalidateClientImports(*clientCfg)
-	dataComplete := packDataComplete(plan, importDestination)
+	dataComplete := placement.New(plan.info, importDestination).Complete()
 	clientImportStarted := time.Now()
 	// A caller disconnect must not interrupt a started client mutation and
 	// leave the torrent stopped. Each adapter bounds its own client calls.
@@ -186,51 +182,29 @@ func (p *processor) importSeasonPack(ctx context.Context) (statusCode domain.Sta
 	return domain.StatusSuccessfulHardlink, nil
 }
 
-// packDataComplete reports whether every torrent file already exists at its
-// import target with the expected size. Clients skip their full hash check only
-// for complete data, so any doubt reports the pack as partial. Season packs are
-// directory torrents; a single-file torrent always gets a normal client check.
-func packDataComplete(plan importPlan, importDestination torrentclient.ImportDestination) bool {
-	info, err := torrents.Info(plan.torrentBytes)
-	if err != nil || !info.IsDir() {
-		return false
-	}
-	for _, file := range info.UpvertedFiles() {
-		// BEP 47 padding files are never written to disk.
-		if strings.Contains(file.Attr, "p") {
-			continue
-		}
-		stat, err := os.Stat(importDestination.TargetPath(plan.packName, file.DisplayPath(&info)))
-		if err != nil || !stat.Mode().IsRegular() || stat.Size() != file.Length {
-			return false
-		}
-	}
-	return true
-}
-
 type hardlinkAttemptResult struct {
 	linkedCount   int
 	sourceMissing bool
 }
 
-func (p *processor) createPlanHardlinks(plan importPlan, importDestination torrentclient.ImportDestination) hardlinkAttemptResult {
+func (p *processor) createPlanHardlinks(plan importPlan, importDestination placement.Destination) hardlinkAttemptResult {
 	result := hardlinkAttemptResult{}
-	for _, link := range plan.links {
-		targetEpPath := importDestination.TargetPath(plan.packName, link.torrentEpPath)
-		if err := files.CreateHardlink(importDestination.SavePath(), link.clientEpPath, targetEpPath); err != nil {
-			if _, statErr := os.Stat(link.clientEpPath); errors.Is(statErr, fs.ErrNotExist) {
-				result.sourceMissing = true
-				p.log.Warn().
-					Err(err).
-					Str("source", link.clientEpPath).
-					Msg("hardlink source is missing")
-				continue
-			}
-			p.log.Error().Err(err).Msgf("error creating hardlink: %s", link.clientEpPath)
-			continue
+	outcomes := placement.New(plan.info, importDestination).Link(plan.links)
+	for index, outcome := range outcomes {
+		source := plan.links[index].Source
+		switch outcome.Status {
+		case placement.Linked:
+			p.log.Info().Msgf("created or reused hardlink: source(%s), target(%s)", source, outcome.Target)
+			result.linkedCount++
+		case placement.SourceMissing:
+			result.sourceMissing = true
+			p.log.Warn().
+				Err(outcome.Err).
+				Str("source", source).
+				Msg("hardlink source is missing")
+		default:
+			p.log.Error().Err(outcome.Err).Msgf("error creating hardlink: %s", source)
 		}
-		p.log.Info().Msgf("created or reused hardlink: source(%s), target(%s)", link.clientEpPath, targetEpPath)
-		result.linkedCount++
 	}
 	return result
 }

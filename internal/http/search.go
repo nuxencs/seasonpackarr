@@ -487,7 +487,7 @@ func (run *discoveryRun) evaluateResult(ctx context.Context, indexer prowlarr.In
 				data, downloadErr = run.runner.provider.Download(ctx, indexer.ID, result)
 				if downloadErr == nil {
 					run.report.TorrentDownloads++
-					if _, err := torrents.Info(data); err == nil {
+					if _, err := torrents.ParseInfo(data); err == nil {
 						if err := run.runner.state.PutMetadata(ctx, key, data, time.Now()); err != nil {
 							run.storageFailure(err)
 							return

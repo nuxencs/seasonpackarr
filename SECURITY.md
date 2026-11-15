@@ -12,7 +12,7 @@ Include:
 
 - the seasonpackarr version and how you run it (binary, Docker, or systemd)
 - the steps to reproduce the problem
-- the effect, for example unauthenticated API access or a hardlink outside the import folder
+- the effect, for example unauthenticated API access or a hardlink outside the import root
 
 You get an answer in the advisory. After a fix is released, the advisory becomes public.
 
@@ -21,7 +21,7 @@ You get an answer in the advisory. After a fix is released, the advisory becomes
 seasonpackarr is a self-hosted service. It has authenticated HTTP endpoints and it changes local files. These areas are in scope:
 
 - access to `/api/candidate`, `/api/match`, `/api/import`, or `/api/search` without a valid API token
-- hardlinks or files created outside the configured import folder
+- hardlinks or files created outside the configured import root
 - API tokens, API keys, or passwords in logs, notifications, or HTTP responses
 - tracker credentials in the database or in torrent download links that other local users can read
 

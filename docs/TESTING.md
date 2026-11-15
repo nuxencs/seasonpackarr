@@ -114,7 +114,7 @@ starts the daemons and runs them, locally and in the integration workflow.
   version does not support stay skips in strict mode.
 - `daemontest.PackName` names each pack after the test, so tests do not share pack
   folders. Deluge tests add the client type, because Deluge 1 and Deluge 2 runs
-  can share one import folder.
+  can share one import root.
 - Each client's `import<Client>Pack` helper registers the torrent removal with
   `t.Cleanup` before the import. The cleanup asserts with `daemontest.AssertRemoved` that
   the daemon no longer holds the torrent, so a run cannot leave a torrent
@@ -125,16 +125,23 @@ starts the daemons and runs them, locally and in the integration workflow.
   real download, for a missing first and a missing last episode.
   `daemontest.NewSeeder` controls the seeder daemon with go-qbittorrent
   directly, not through an adapter. `Seeder.Seed` writes the full pack into the
-  seed folder and seeds it. `daemontest.WriteLinkedPack` writes the source
-  episodes below the import folder and hardlinks all except the missing one
-  into the pack folder. After the import, `daemontest.PeerAddress` resolves the
-  client's host name and listen port to the `<ip>:<port>` address, and
+  seed folder and seeds it. `daemontest.WriteLinkedPack` writes the reusable
+  episodes below the import root. Then it parses the torrent of the pack with
+  `torrents.ParseInfo` and makes the hardlinks through the placement module
+  (`internal/placement`), so these tests run the production link code. The
+  destination has that import root and a pack folder below it, and the helper
+  links each reusable episode except the missing one to its hardlink target.
+  It fails the test when a link outcome is not `Linked`.
+  After the import, `daemontest.PeerAddress` resolves the client's host name
+  and listen port to the `<ip>:<port>` address, and
   `daemontest.WaitSeededDownload` connects the seeder to it with `addPeers`.
   `assertDownloadedPack` checks the file content, that reused episodes keep
   the inode of their source files, and that only the missing episode
   downloaded.
 
-The import folder must have the same path for the test process and the daemon.
+The import root must have the same path for the test process and the daemon.
+It must be an absolute path, because the placement module refuses a relative
+import root.
 
 | Client | Gate variable | Other variables |
 | --- | --- | --- |
@@ -144,7 +151,7 @@ The import folder must have the same path for the test process and the daemon.
 | Deluge | `SEASONPACKARR_TEST_DELUGE_TYPE` (`deluge-v1` or `deluge-v2`) | `_DELUGE_HOST` (`127.0.0.1`), `_DELUGE_PORT` (`58846`), `_DELUGE_USER` (`seasonpackarr`), `_DELUGE_PASS` (`integration`) |
 | Seeder (download tests) | `SEASONPACKARR_TEST_SEEDER_HOST` and `SEASONPACKARR_TEST_SEED_DIR` | `_SEEDER_USER`, `_SEEDER_PASS` |
 
-The seed folder must be on the same volume as the import folder. The seeder
+The seed folder must be on the same volume as the import root. The seeder
 must reach the client under test at the host name in the client's host
 setting, so the download tests need the harness network.
 
@@ -160,7 +167,8 @@ why the search test drives a real Prowlarr.
   request that `seasonpackarr search` sends. It checks only the client API, the
   `/data` filesystem, the autobrr release status or log, and the search report.
   It calls no other seasonpackarr endpoint. It uses `internal/daemontest`, which
-  hashes torrents with `internal/torrents`, only for setup and waits.
+  hashes torrents with `internal/torrents` and imports `internal/placement` for
+  its linked packs, only for setup and waits.
 - Names are `Test<Client>E2E_<Behavior>` for the announce flow and
   `TestSearchE2E_<Behavior>` for search. `Test<Client>E2E_Scenarios` runs
   every scenario against one client as subtests, in a fixed order.
@@ -329,7 +337,7 @@ The no-argument run, `all`, and `list [all]` stay integration-only.
   the entry when no test matches its pattern.
 - The tests run in a Go container that uses the Go image of the release
   `Dockerfile`. It shares one named volume at `/data` with the daemons, and
-  the import folder is `/data/import`. The tests and the daemons run as uid
+  the import root is `/data/import`. The tests and the daemons run as uid
   1000, so a daemon can write into the packs that the tests create.
 - Every entry starts with fresh containers and volumes, and the runner removes
   them after the entry, also when it fails. Only the Go cache volume

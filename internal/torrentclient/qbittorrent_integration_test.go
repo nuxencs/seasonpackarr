@@ -159,7 +159,7 @@ func TestQbitDaemon_ImportDestinationFollowsPreferences(t *testing.T) {
 
 			destination, err := c.ImportDestination(t.Context())
 			require.NoError(t, err)
-			require.Equal(t, normalizePath(tt.want), destination.SavePath())
+			require.Equal(t, normalizePath(tt.want), destination.Root())
 		})
 	}
 }

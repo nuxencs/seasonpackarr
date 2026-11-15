@@ -115,7 +115,7 @@ The `import` block of each client controls where a season pack goes and how seas
 
 | Setting | Meaning |
 | --- | --- |
-| `clients.<name>.import.savePath` | The final destination. seasonpackarr hardlinks the reusable episodes into the season pack folder in this directory and adds the torrent with this save path. When set, the directory must already exist, or startup fails. Optional for qBittorrent: without it, the destination follows the category and the qBittorrent automatic management and category path preferences. Optional for Transmission: without it, seasonpackarr uses the session download directory. Required for Deluge. |
+| `clients.<name>.import.savePath` | The final destination. seasonpackarr hardlinks the reusable episodes into the pack folder in this directory and adds the torrent with this save path. The path must be absolute. A relative path fails the import with status `440`, and seasonpackarr makes no hardlink. When set, the directory must already exist, or startup fails. Optional for qBittorrent: without it, the destination follows the category and the qBittorrent automatic management and category path preferences. Optional for Transmission: without it, seasonpackarr uses the session download directory. Required for Deluge. |
 | `clients.<name>.import.tags` | qBittorrent tags or Transmission labels for imported torrents. Deluge accepts at most one entry, as described in [Deluge](#deluge). There is no default: if you remove `tags`, imported torrents get no tag. The generated config sets `["seasonpackarr"]`. |
 
 ### qBittorrent-only fields
@@ -132,7 +132,7 @@ A qBittorrent client must set `savePath` or `category`.
 
 ### What happens during an import
 
-The season pack folder gets its name from the torrent, not from the announce. An announce can differ from the folder
+The pack folder gets its name from the torrent, not from the announce. An announce can differ from the folder
 name, for example `Show.S01.1080p.WEB-DL.DDPA5.1.H.264-RlsGrp` against the folder
 `Show.S01.1080p.WEB-DL.DDP5.1.H.264-RlsGrp`. A folder with the announce name would not match the torrent, and the client
 would download every file again.

@@ -16,7 +16,7 @@ Describe the normal path from webhook hit to hardlink creation and client import
 8. `internal/release/` keeps MKV and MP4 files that parse as episodes. It excludes samples, extra videos, and other non-episode files from coverage.
 9. Reusable source files map to distinct valid targets with the same container under configured fuzzy rules.
 10. Smart mode compares the exact reusable target count with the actual torrent episode count. `/api/match` caches an accepted side-effect-free plan.
-11. `/api/import` reuses that plan, or safely rebuilds it after a cache miss. It resolves the import destination and hardlinks matching files in the client-selected layout. If a planned source disappeared because the client moved it, the processor invalidates both caches, rebuilds the exact plan, and retries the idempotent links once.
+11. `/api/import` reuses that plan, or safely rebuilds it after a cache miss. It resolves the import root and hardlinks matching files in the client-selected layout. If a planned source disappeared because the client moved it, the processor invalidates both caches, rebuilds the exact plan, and retries the idempotent links once.
 12. Smart mode checks achieved coverage after hardlink creation. If it is below the threshold, the request does not import the torrent. Successful hardlinks remain for a safe retry. Automatic cleanup is intentionally deferred because the service cannot yet prove ownership of every file and directory it would remove.
 13. The torrent is added to the client, checked so the present files are recognised, and not left paused. See
     [qbittorrent-import-flow.md](qbittorrent-import-flow.md) for the complete-vs-partial

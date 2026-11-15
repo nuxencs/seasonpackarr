@@ -11,7 +11,7 @@ Get TV season packs without downloading the episodes you already have.
 </p>
 
 seasonpackarr finds season packs through [autobrr](https://github.com/autobrr/autobrr) announces or Prowlarr. It
-**hardlinks** the episodes that your torrent client already has into the season pack folder, then adds the pack to the
+**hardlinks** the episodes that your torrent client already has into the pack folder, then adds the pack to the
 client. The client downloads only the missing episodes.
 
 > [!IMPORTANT]

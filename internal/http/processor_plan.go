@@ -13,6 +13,7 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/inventory"
+	"github.com/nuxencs/seasonpackarr/internal/placement"
 	"github.com/nuxencs/seasonpackarr/internal/release"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
@@ -21,16 +22,11 @@ import (
 	"github.com/rs/zerolog"
 )
 
-type plannedLink struct {
-	clientEpPath  string
-	torrentEpPath string
-}
-
 type importPlan struct {
 	torrentBytes []byte
 	hashes       torrents.Hashes
-	packName     string
-	links        []plannedLink
+	info         torrents.Info
+	links        []placement.PlannedLink
 	unmatched    []release.EpisodeUnmatched
 	totalEps     int
 }
@@ -146,12 +142,12 @@ func (p *processor) buildImportPlanWithSources(ctx context.Context, clientName s
 		return importPlan{}, domain.StatusDecodeTorrentBytesError, fmt.Errorf("%s: %w", domain.StatusDecodeTorrentBytesError, err)
 	}
 
-	torrentInfo, err := torrents.Info(torrentBytes)
+	torrentInfo, err := torrents.ParseInfo(torrentBytes)
 	if err != nil {
 		return importPlan{}, domain.StatusParseTorrentInfoError, fmt.Errorf("%s: %w", domain.StatusParseTorrentInfoError, err)
 	}
 
-	torrentEps, err := torrents.Episodes(torrentInfo)
+	torrentEps, err := torrentInfo.Episodes()
 	if err != nil {
 		return importPlan{}, domain.StatusGetEpisodesError, fmt.Errorf("%s: %w", domain.StatusGetEpisodesError, err)
 	}
@@ -176,18 +172,18 @@ func (p *processor) buildImportPlanWithSources(ctx context.Context, clientName s
 	}
 	matchResult := matcher.Match(sources)
 
-	links := make([]plannedLink, 0, len(matchResult.Matches))
+	links := make([]placement.PlannedLink, 0, len(matchResult.Matches))
 	for _, match := range matchResult.Matches {
-		links = append(links, plannedLink{
-			clientEpPath:  match.ClientPath,
-			torrentEpPath: match.TorrentPath,
+		links = append(links, placement.PlannedLink{
+			Source:      match.ClientPath,
+			TorrentPath: match.TorrentPath,
 		})
 	}
 
 	plan := importPlan{
 		torrentBytes: torrentBytes,
 		hashes:       hashes,
-		packName:     torrentInfo.BestName(),
+		info:         torrentInfo,
 		links:        links,
 		unmatched:    matchResult.Unmatched,
 		totalEps:     len(eligibleEps),

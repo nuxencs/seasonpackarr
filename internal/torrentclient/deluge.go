@@ -16,6 +16,7 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/errtrace"
+	"github.com/nuxencs/seasonpackarr/internal/placement"
 
 	"github.com/autobrr/go-deluge"
 )
@@ -334,16 +335,16 @@ func uniqueFoldedHashes(hashes []string) []string {
 
 // ImportDestination uses an explicit path because go-deluge does not expose
 // Deluge's global download_location setting. Deluge stores multi-file torrent
-// paths below their torrent root, so the destination is rooted.
-func (d *delugeClient) ImportDestination(ctx context.Context) (ImportDestination, error) {
+// paths below their torrent root, so the destination has a pack folder.
+func (d *delugeClient) ImportDestination(ctx context.Context) (placement.Destination, error) {
 	if err := ctx.Err(); err != nil {
-		return ImportDestination{}, err
+		return placement.Destination{}, err
 	}
 	savePath := strings.TrimSpace(d.policy.SavePath)
 	if savePath == "" {
-		return ImportDestination{}, importErr(ImportStageConfig, errors.New("deluge requires import.savePath"))
+		return placement.Destination{}, importErr(ImportStageConfig, errors.New("deluge requires import.savePath"))
 	}
-	return NewRootedImportDestination(normalizePath(savePath)), nil
+	return placement.PackFolderDestination(normalizePath(savePath)), nil
 }
 
 // Import adds the pack stopped, applies its optional label, then resumes it.

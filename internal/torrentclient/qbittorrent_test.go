@@ -9,7 +9,6 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/placement"
 
 	"github.com/Masterminds/semver"
 	"github.com/autobrr/go-qbittorrent"
@@ -393,7 +393,7 @@ func TestQbitImportDestination_ResolvesPolicyAndDaemonPaths(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, tt.want, destination.SavePath())
+			require.Equal(t, placement.PackFolderDestination(tt.want), destination)
 		})
 	}
 }
@@ -406,10 +406,7 @@ func TestQbitImportDestination_UsesConfiguredContentLayout(t *testing.T) {
 
 	destination, err := q.ImportDestination(t.Context())
 	require.NoError(t, err)
-	require.Equal(t,
-		filepath.Join("/data/tv-hd", "Show.S01E01.mkv"),
-		destination.TargetPath("Show.S01", "Show.S01E01.mkv"),
-	)
+	require.Equal(t, placement.FlatDestination(normalizePath("/data/tv-hd")), destination)
 }
 
 func TestQbitImportDestination_UsesClientDefaultContentLayout(t *testing.T) {
@@ -419,10 +416,7 @@ func TestQbitImportDestination_UsesClientDefaultContentLayout(t *testing.T) {
 
 	destination, err := q.ImportDestination(t.Context())
 	require.NoError(t, err)
-	require.Equal(t,
-		filepath.Join("/data/tv-hd", "Show.S01E01.mkv"),
-		destination.TargetPath("Show.S01", "Show.S01E01.mkv"),
-	)
+	require.Equal(t, placement.FlatDestination(normalizePath("/data/tv-hd")), destination)
 }
 
 // TestQbitImport_RechecksMissingFilesWithoutWaiting guards the complete-pack

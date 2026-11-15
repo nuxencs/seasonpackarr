@@ -2,7 +2,7 @@
 
 ## System Summary
 
-`seasonpackarr` is a config-driven Go service with a small CLI surface. It finds season packs through authenticated autobrr webhook requests and through opt-in Prowlarr discovery (RSS monitoring and search). It filters releases against configured torrent clients, builds exact import plans from torrent contents, hardlinks reusable episode files into the expected season-pack folder, and imports the pack into the torrent client.
+`seasonpackarr` is a config-driven Go service with a small CLI surface. It finds season packs through authenticated autobrr webhook requests and through opt-in Prowlarr discovery (RSS monitoring and search). It filters releases against configured torrent clients, builds exact import plans from torrent contents, hardlinks reusable episode files into the expected pack folder, and imports the pack into the torrent client.
 
 ## Main Runtime Flow
 
@@ -14,9 +14,9 @@
    `setup filter` writes the autobrr filter through `internal/autobrr/`.
 2. `cmd/start.go` loads config, logger, notifications, and the SQLite store, creates the inventory module, then starts the HTTP server. Signal cancellation starts a bounded graceful shutdown. The command closes the store after server shutdown.
 3. `internal/http/server.go` builds `/api/healthz`, `/api/candidate`, `/api/match`, `/api/import`, and `/api/search`.
-4. `internal/http/processor_*.go` keeps each processing stage together. The handler file owns payload decode and responses. The candidate file owns announce-only matching. It gets the client handle and the inventory from `internal/inventory/`. The plan file parses torrent bytes and builds an exact side-effect-free plan. The import file reuses or rebuilds that plan, resolves the client import destination, hardlinks matched files, and imports the pack. See [docs/design/qbittorrent-import-flow.md](docs/design/qbittorrent-import-flow.md).
+4. `internal/http/processor_*.go` keeps each processing stage together. The handler file owns payload decode and responses. The candidate file owns announce-only matching. It gets the client handle and the inventory from `internal/inventory/`. The plan file parses torrent bytes and builds an exact side-effect-free plan. The import file reuses or rebuilds that plan, gets the destination (import root plus layout) from the client adapter, gives the planned links to `internal/placement/`, and imports the pack. See [docs/design/qbittorrent-import-flow.md](docs/design/qbittorrent-import-flow.md).
 5. `internal/release/` decides whether a client episode and announced season pack are compatible.
-6. `internal/files/` performs the hardlink operation.
+6. `internal/placement/` builds each hardlink target, makes the hardlinks, and answers whether the pack data is complete.
 7. `internal/notification/` sends notifications for notable events to each notification destination.
 
 ## Domains
@@ -76,6 +76,14 @@
 
 - Implemented in `internal/torrents/`
 - Concerns: decoding supplied torrent bytes, deriving torrent identity, and discovering pack files
+- `torrents.ParseInfo` returns the validated torrent info, `torrents.Info`. It rejects a torrent whose name is not one
+  folder or file name, or whose file path is absolute or leaves the pack folder. The type has no exported fields, so
+  only the parse can make a value with content, and no other package reads a name or a file path from the raw info of
+  the torrent library. It holds the torrent name, the files (path, size, and the BEP 47 padding mark), the total
+  length, and the episode list. It also covers a single-file torrent, for which the episode list gives an error.
+- The import plan holds the validated torrent info. The import gives it to the placement module, so the completeness
+  check does not parse the torrent again.
+- `torrents.InfoHashes` derives the torrent identity. It is a separate function, and the validated type holds no hashes.
 
 ### Pack Evaluation and Cache Reuse
 
@@ -150,11 +158,27 @@
 - See [schema documentation](docs/generated/db-schema.md) and
   [backup guidance](docs/INSTALL.md#application-data).
 
-### File Operations
+### Pack Placement
 
-- Implemented in `internal/files/`
-- Concern: create hardlinks safely into target pack directories
+- Implemented in `internal/placement/`
+- Concern: build each hardlink target, make the hardlinks, and answer whether the pack data is complete
 - Risk class: high, because pathing mistakes change user disk state
+- `placement.Destination` is an import root plus a layout: with a pack folder, or flat. The client adapter decides
+  both and returns the value from `ImportDestination`. The same value gives the hardlink targets, the completeness
+  check, and the save path of the client import.
+- `placement.New` binds a validated torrent info to a destination. The join of import root, pack folder, and file
+  path is private to the package.
+- `Link` takes the planned links (a source path plus the path of a file in the torrent) and returns one outcome for
+  each link in input order: linked, source missing, or failed with its error. It refuses a path that is not a file of
+  the torrent, and it links only a directory torrent. It opens the import root one time for each call and makes the
+  target folders through `os.Root`. When the import root cannot be made or opened, each link gets the same error.
+- `Complete` answers whether each file that is not a padding file is a regular file with the expected size at its
+  hardlink target. The comparison is size-only. It reads each hardlink target through `os.Root`, as `Link` does, so
+  a hardlink target behind a symlink that `os.Root` rejects is not complete. It makes nothing on disk.
+- The import root must be an absolute path. With a relative root, each link fails with an error that names the
+  root, `Complete` answers false, and the import returns status `440`.
+- The package has no logger and returns no status code. The HTTP processor owns the operator logs, the count of
+  linked episodes, the one refresh after a missing source, and the status mapping.
 
 ### Notifications
 
@@ -193,16 +217,18 @@
 Preferred dependency direction:
 
 1. `cmd/` may depend on `internal/*`
-2. `internal/http/` may orchestrate across config, notifications, release logic, torrents, inventories, and files
+2. `internal/http/` may orchestrate across config, notifications, release logic, torrents, inventories, and pack placement
 3. `internal/inventory/` owns the client connections, inventories, and parsed names. Other packages reach that state only through `inventory.Store` and its client handle
 4. leaf packages should stay narrow:
    - `internal/release/` should not know HTTP details
-   - `internal/files/` should not know webhook payloads
+   - `internal/placement/` should not know webhook payloads
+   - the direction is `internal/torrentclient/` to `internal/placement/` to `internal/torrents/`.
+     `internal/placement/` must not import `internal/torrentclient/`
 5. `internal/domain/` holds cross-package data shapes and status concepts
 6. test helper packages (`internal/logger/loggertest`, `internal/daemontest`)
    import `testing`, so only `_test.go` files may import them
 
-If a change starts pushing transport concerns into matching logic or file ops, stop and re-check the boundary.
+If a change starts pushing transport concerns into matching logic or pack placement, stop and re-check the boundary.
 
 ## External Dependencies
 

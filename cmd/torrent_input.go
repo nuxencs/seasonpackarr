@@ -20,9 +20,9 @@ func torrentInput(input string) (string, []byte, error) {
 	if err != nil {
 		return "", nil, fmt.Errorf("read torrent file: %w", err)
 	}
-	info, err := torrents.Info(data)
-	if err != nil || strings.TrimSpace(info.BestName()) == "" {
+	info, err := torrents.ParseInfo(data)
+	if err != nil || strings.TrimSpace(info.Name()) == "" {
 		return "", nil, fmt.Errorf("invalid torrent file %q; provide the original .torrent file from your tracker", input)
 	}
-	return info.BestName(), data, nil
+	return info.Name(), data, nil
 }
