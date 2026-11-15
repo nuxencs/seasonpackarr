@@ -24,7 +24,10 @@
 ### Configuration
 
 - Implemented in `internal/config/` and `internal/domain/config.go`
-- Concerns: defaults, config file discovery, strict key validation, validated immutable snapshots, dynamic reload, config rendering
+- Concerns: defaults, config file discovery, strict key validation, validated immutable snapshots, dynamic reload, the generated config file
+- Each setting declares its YAML name, its environment variable, and its default in tags on its field in
+  `internal/domain/config.go`. At package start, `internal/config/env.go` reads the tags into a key table. The defaults,
+  the environment overrides, and the unknown-variable warning use that table. A bad tag panics at package start.
 - Runtime readers acquire one snapshot per request or operation. Reload publishes a candidate only after file parsing,
   environment overrides, and validation succeed.
 - Durable contract surfaces: `config.yaml`, `schemas/config-schema.json`, [docs/CONFIGURATION.md](docs/CONFIGURATION.md)

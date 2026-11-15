@@ -4,6 +4,7 @@
 package domain
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -38,6 +39,11 @@ func newFullClient() Client {
 
 // clientFields returns each field of client that is not a struct, by its dotted name.
 func clientFields(client *Client) map[string]reflect.Value {
+	return leafFields(reflect.ValueOf(client).Elem())
+}
+
+// leafFields returns each field of the struct value that is not a struct, by its dotted name.
+func leafFields(value reflect.Value) map[string]reflect.Value {
 	fields := make(map[string]reflect.Value)
 	var collect func(value reflect.Value, prefix string)
 	collect = func(value reflect.Value, prefix string) {
@@ -50,28 +56,57 @@ func clientFields(client *Client) map[string]reflect.Value {
 			fields[name] = fieldValue
 		}
 	}
-	collect(reflect.ValueOf(client).Elem(), "")
+	collect(value, "")
 	return fields
 }
 
-// changeField gives a field a different value. It changes a list in place, so a copy that shares the list changes too.
+// changeField gives a field a different value. It changes a list, a map, and
+// the value behind a pointer in place, so a copy that shares them changes too.
 func changeField(t *testing.T, name string, field reflect.Value) {
 	t.Helper()
 
 	switch field.Kind() {
 	case reflect.String:
-		require.NotEmptyf(t, field.String(), "newFullClient must set %s", name)
+		require.NotEmptyf(t, field.String(), "the full value must set %s", name)
 		field.SetString(field.String() + "-changed")
 	case reflect.Int:
-		require.NotZerof(t, field.Int(), "newFullClient must set %s", name)
+		require.NotZerof(t, field.Int(), "the full value must set %s", name)
 		field.SetInt(field.Int() + 1)
+	case reflect.Bool:
+		require.Truef(t, field.Bool(), "the full value must set %s", name)
+		field.SetBool(false)
+	case reflect.Float32:
+		require.NotZerof(t, field.Float(), "the full value must set %s", name)
+		field.SetFloat(field.Float() + 1)
 	case reflect.Slice:
-		require.NotZerof(t, field.Len(), "newFullClient must set %s", name)
+		require.NotZerof(t, field.Len(), "the full value must set %s", name)
 		changeField(t, name+"[0]", field.Index(0))
+	case reflect.Map:
+		if field.Type().Key().Kind() != reflect.String || field.Type().Elem().Kind() != reflect.Pointer {
+			failUnknownKind(t, name, field)
+		}
+		require.NotZerof(t, field.Len(), "the full value must set %s", name)
+		for key, entry := range field.Seq2() {
+			changeField(t, fmt.Sprintf("%s[%v]", name, key), entry)
+		}
+		field.SetMapIndex(reflect.ValueOf("added").Convert(field.Type().Key()), reflect.Zero(field.Type().Elem()))
+	case reflect.Pointer:
+		if field.Type().Elem().Kind() != reflect.Struct {
+			failUnknownKind(t, name, field)
+		}
+		require.Falsef(t, field.IsNil(), "the full value must set %s", name)
+		for fieldName, value := range leafFields(field.Elem()) {
+			changeField(t, name+"."+fieldName, value)
+		}
 	default:
-		// A new kind of field needs a change here and a check in Client.Equal and Client.Clone.
-		require.Failf(t, "unknown field kind", "changeField cannot change %s (%s)", name, field.Kind())
+		failUnknownKind(t, name, field)
 	}
+}
+
+// failUnknownKind names the copies to check, because a field that changeField cannot change is not guarded.
+func failUnknownKind(t *testing.T, name string, field reflect.Value) {
+	t.Helper()
+	require.Failf(t, "unknown field kind", "changeField cannot change %s (%s): add the kind to changeField and check that Client.Equal, Client.Clone, and Config.Clone cover the field", name, field.Type())
 }
 
 func TestClientEqual_CoversEveryField(t *testing.T) {
@@ -137,4 +172,68 @@ func TestClientClone_SharesNoMemory(t *testing.T) {
 		changeField(t, name, field)
 	}
 	require.Equal(t, newFullClient(), base, "a change to the copy must not change the original")
+}
+
+// newFullConfig returns a config with a value in each field. Each call returns new lists, maps, and clients.
+func newFullConfig() Config {
+	client := newFullClient()
+	return Config{
+		Version:            "v1.0.0",
+		ConfigPath:         "/config",
+		DisableConfigFile:  true,
+		Host:               "0.0.0.0",
+		Port:               42069,
+		Clients:            map[string]*Client{"default": &client},
+		LogPath:            "/config/logs/seasonpackarr.log",
+		LogLevel:           "DEBUG",
+		LogMaxSize:         50,
+		LogMaxBackups:      3,
+		SmartMode:          true,
+		SmartModeThreshold: 0.75,
+		FuzzyMatching: FuzzyMatching{
+			SkipRepackCompare:  true,
+			SimplifyHdrCompare: true,
+			SimplifyWebCompare: true,
+			SkipYearCompare:    true,
+		},
+		APIToken: "api-token",
+		Notifications: Notifications{
+			NotificationLevel: []string{"MATCH", "ERROR"},
+			Discord:           "https://discord.example/webhook",
+			Shoutrrr:          []string{"ntfy://ntfy.example/topic"},
+		},
+		Search: Search{
+			IndexerIDs:      []int{1, 2},
+			ProwlarrURL:     "http://prowlarr:9696",
+			APIKey:          "prowlarr-api-key",
+			RSSInterval:     "15m",
+			RequestInterval: "2s",
+		},
+	}
+}
+
+// configFields returns each field of cfg that is not a struct, by its dotted name.
+func configFields(cfg *Config) map[string]reflect.Value {
+	return leafFields(reflect.ValueOf(cfg).Elem())
+}
+
+func TestConfigClone_SharesNoMemory(t *testing.T) {
+	base := newFullConfig()
+	require.Equal(t, newFullConfig(), base.Clone())
+
+	for name := range configFields(&base) {
+		t.Run(name, func(t *testing.T) {
+			original := newFullConfig()
+			clone := original.Clone()
+			changeField(t, name, configFields(&clone)[name])
+			require.Equal(t, newFullConfig(), original, "a change to the copy must not change the original")
+		})
+	}
+}
+
+func TestConfigClone_KeepsNilClientsAndAlwaysHasAClientMap(t *testing.T) {
+	assert.NotNil(t, Config{}.Clone().Clients, "the copy always has a client map")
+
+	clone := Config{Clients: map[string]*Client{"empty": nil}}.Clone()
+	assert.Equal(t, map[string]*Client{"empty": nil}, clone.Clients, "a nil client stays nil")
 }

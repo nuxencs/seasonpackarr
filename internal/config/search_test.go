@@ -98,12 +98,19 @@ func TestSearchConfig_RejectsInvalidSettings(t *testing.T) {
 }
 
 func TestSearchConfig_InvalidIndexerEnvironmentDoesNotBroadenSelection(t *testing.T) {
-	for _, value := range []string{"bad", "1,", "1,1", "-1", "999999999999999999999999999"} {
+	// The parse names the variable, and the validation names the key.
+	for value, want := range map[string]string{
+		"bad":                         "SEASONPACKARR__SEARCH_INDEXER_IDS",
+		" , ":                         "SEASONPACKARR__SEARCH_INDEXER_IDS",
+		"999999999999999999999999999": "SEASONPACKARR__SEARCH_INDEXER_IDS",
+		"1,1":                         "search.indexerIDs",
+		"-1":                          "search.indexerIDs",
+	} {
 		t.Run(value, func(t *testing.T) {
 			t.Setenv("SEASONPACKARR__SEARCH_INDEXER_IDS", value)
 			cfg := &AppConfig{configFile: writeTestConfig(t, "clients: {}\n")}
 			_, err := cfg.loadSnapshot()
-			require.ErrorContains(t, err, "search.indexerIDs")
+			require.ErrorContains(t, err, want)
 		})
 	}
 }

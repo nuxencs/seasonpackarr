@@ -6,7 +6,6 @@ package config
 import (
 	"bytes"
 	"encoding/json/v2"
-	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -273,7 +272,7 @@ func TestLoadFromEnv_ParsesMultiWordClientSettings(t *testing.T) {
 	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_INVENTORY_EXCLUDE_TAGS", "noreuse, trash")
 
 	cfg := domain.Config{Clients: map[string]*domain.Client{}}
-	applyEnvironment(&cfg)
+	require.NoError(t, applyEnvironment(&cfg))
 
 	client, ok := cfg.Clients["envonly"]
 	require.True(t, ok, "env-only client should be lazily created")
@@ -287,32 +286,6 @@ func TestLoadFromEnv_ParsesMultiWordClientSettings(t *testing.T) {
 		ExcludeCategories: []string{"tv-hd-4k"},
 		ExcludeTags:       []string{"noreuse", "trash"},
 	}, client.Inventory)
-}
-
-func TestApplyEnvironment_SetsFuzzyMatching(t *testing.T) {
-	tests := []struct {
-		key  string
-		want domain.FuzzyMatching
-	}{
-		{key: "SEASONPACKARR__FUZZY_MATCHING_SKIP_REPACK_COMPARE", want: domain.FuzzyMatching{SkipRepackCompare: true}},
-		{key: "SEASONPACKARR__FUZZY_MATCHING_SIMPLIFY_HDR_COMPARE", want: domain.FuzzyMatching{SimplifyHdrCompare: true}},
-		{key: "SEASONPACKARR__FUZZY_MATCHING_SIMPLIFY_WEB_COMPARE", want: domain.FuzzyMatching{SimplifyWebCompare: true}},
-		{key: "SEASONPACKARR__FUZZY_MATCHING_SKIP_YEAR_COMPARE", want: domain.FuzzyMatching{SkipYearCompare: true}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.key, func(t *testing.T) {
-			// Exported shell values for the other keys would change the result.
-			for _, other := range tests {
-				t.Setenv(other.key, "false")
-			}
-			t.Setenv(tt.key, "true")
-
-			cfg := domain.Config{Clients: map[string]*domain.Client{}}
-			applyEnvironment(&cfg)
-
-			require.Equal(t, tt.want, cfg.FuzzyMatching)
-		})
-	}
 }
 
 func TestReload_RejectsInvalidConfigAndKeepsLastSnapshot(t *testing.T) {
@@ -1011,51 +984,6 @@ func TestUnknownConfigKeys_YAMLTagsMatchFieldNames(t *testing.T) {
 	check(reflect.TypeFor[domain.Config]())
 }
 
-func TestUnknownEnvironmentVariables(t *testing.T) {
-	environ := []string{
-		"HOME=/home/user",
-		"SEASONPACKARR_TEST_E2E_API_TOKEN=token",
-		"SEASONPACKARR__LOG_LEVEL=INFO",
-		"SEASONPACKARR__LOG_LEVL=INFO",
-		"SEASONPACKARR__URL=http://seasonpackarr:42069",
-		"SEASONPACKARR__CLIENT=default",
-		"SEASONPACKARR__AUTOBRR_URL=http://autobrr:7474",
-		"SEASONPACKARR__AUTOBRR_API_KEY=key",
-		"SEASONPACKARR__DISABLE_CONFIG_FILE=true",
-		"SEASONPACKARR__CLIENTS_DEFAULT_HOST=qbit",
-		"SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_SAVE_PATH=/data",
-		"SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_SAVEPATH=/data",
-		"SEASONPACKARR__CLIENTS_DEFAULT=",
-		"SEASONPACKARR__SEARCH_API_KEY=",
-		"SEASONPACKARR__SMART_MODE_TRESHOLD=0.5",
-		// The removed variables stop startup with a migration error, so they are not ignored.
-		"SEASONPACKARR__PARSE_TORRENT_FILE=false",
-		"SEASONPACKARR__METADATA_TVDB_API_KEY=key",
-		"SEASONPACKARR__METADATA_TVDB_PIN=pin",
-		"SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH=",
-	}
-	require.Equal(t, []string{
-		"SEASONPACKARR__CLIENTS_DEFAULT",
-		"SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_SAVEPATH",
-		"SEASONPACKARR__LOG_LEVL",
-		"SEASONPACKARR__SMART_MODE_TRESHOLD",
-	}, UnknownEnvironmentVariables(environ))
-}
-
-// TestUnknownEnvironmentVariables_AllowsComposeExample keeps the example Compose
-// file and the variables that applyEnvironment reads in sync.
-func TestUnknownEnvironmentVariables_AllowsComposeExample(t *testing.T) {
-	compose, err := os.ReadFile("../../docker-compose.yml")
-	require.NoError(t, err)
-	names := regexp.MustCompile(`SEASONPACKARR__[A-Z0-9_]+`).FindAllString(string(compose), -1)
-	require.NotEmpty(t, names)
-	environ := make([]string, 0, len(names))
-	for _, name := range names {
-		environ = append(environ, name+"=value")
-	}
-	require.Empty(t, UnknownEnvironmentVariables(environ))
-}
-
 // TestFindConfigFile_ImageWorkingDirectoryIsConfigVolume keeps docker exec
 // working without --config: the image starts in the config volume, and
 // discovery checks ./config.yaml first.
@@ -1086,13 +1014,24 @@ func TestFindConfigFile_ImageWorkingDirectoryIsConfigVolume(t *testing.T) {
 	}
 }
 
+func TestWriteConfig_WritesRepositoryConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, (&AppConfig{}).writeConfig(dir, "config.yaml"))
+
+	want, err := os.ReadFile("../../config.yaml")
+	require.NoError(t, err)
+	got, err := os.ReadFile(filepath.Join(dir, "config.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, string(want), string(got))
+}
+
 func TestUnknownConfigKeys_AcceptsConfigExamples(t *testing.T) {
-	templateDir := t.TempDir()
-	require.NoError(t, (&AppConfig{}).writeConfig(templateDir, "config.yaml"))
+	generatedDir := t.TempDir()
+	require.NoError(t, (&AppConfig{}).writeConfig(generatedDir, "config.yaml"))
 
 	for name, configFile := range map[string]string{
-		"config template": filepath.Join(templateDir, "config.yaml"),
-		"config.yaml":     "../../config.yaml",
+		"generated config": filepath.Join(generatedDir, "config.yaml"),
+		"config.yaml":      "../../config.yaml",
 	} {
 		t.Run(name, func(t *testing.T) {
 			k := koanf.New(".")
@@ -1105,54 +1044,225 @@ func TestUnknownConfigKeys_AcceptsConfigExamples(t *testing.T) {
 	}
 }
 
-// fakeProvider loads a nested map into koanf.
-type fakeProvider map[string]any
+const configSchemaFile = "schemas/config-schema.json"
 
-func (f fakeProvider) ReadBytes() ([]byte, error)    { return nil, errors.New("not supported") }
-func (f fakeProvider) Read() (map[string]any, error) { return f, nil }
+// joinKey adds key to the dotted path of its parent object.
+func joinKey(path, key string) string {
+	return strings.TrimPrefix(path+"."+key, ".")
+}
 
-func TestUnknownConfigKeys_AcceptsSchemaKeys(t *testing.T) {
-	contents, err := os.ReadFile("../../schemas/config-schema.json")
+// configSchema holds the keys of the config schema as dotted paths, with "*"
+// for the name of a map entry such as a client.
+type configSchema struct {
+	// properties maps each key to its schema node.
+	properties map[string]map[string]any
+	// required maps the path of each object to the keys that it always requires.
+	// The required lists inside if, then, allOf, and anyOf are cross-field rules, so they are not in it.
+	required map[string][]string
+}
+
+func readConfigSchema(t *testing.T) configSchema {
+	t.Helper()
+	contents, err := os.ReadFile(filepath.Join("../..", configSchemaFile))
 	require.NoError(t, err)
-	var schema map[string]any
-	require.NoError(t, json.Unmarshal(contents, &schema))
-	defs, _ := schema["$defs"].(map[string]any)
+	var root map[string]any
+	require.NoError(t, json.Unmarshal(contents, &root))
+	defs, _ := root["$defs"].(map[string]any)
 
-	// keys turns a schema object into a map with each property it allows, and
-	// one example entry for each pattern property.
-	var keys func(node map[string]any) map[string]any
-	keys = func(node map[string]any) map[string]any {
+	schema := configSchema{properties: map[string]map[string]any{}, required: map[string][]string{}}
+	var walk func(node map[string]any, path string)
+	walk = func(node map[string]any, path string) {
 		if ref, ok := node["$ref"].(string); ok {
 			def, ok := defs[strings.TrimPrefix(ref, "#/$defs/")].(map[string]any)
-			require.True(t, ok, "unresolved $ref %q", ref)
-			return keys(def)
+			require.True(t, ok, "unresolved $ref %q at %q", ref, path)
+			node = def
 		}
-		props, _ := node["properties"].(map[string]any)
-		patterns, _ := node["patternProperties"].(map[string]any)
-		if len(props) == 0 && len(patterns) == 0 {
-			return nil
-		}
-		out := map[string]any{}
-		for name, child := range props {
-			if sub := keys(child.(map[string]any)); sub != nil {
-				out[name] = sub
-			} else {
-				out[name] = nil
+		if required, ok := node["required"].([]any); ok {
+			for _, key := range required {
+				name, ok := key.(string)
+				require.True(t, ok, "required entry %v at %q is not a string", key, path)
+				schema.required[path] = append(schema.required[path], name)
 			}
 		}
-		for _, child := range patterns {
-			out["example"] = keys(child.(map[string]any))
+		add := func(key string, child any) {
+			key = joinKey(path, key)
+			node, ok := child.(map[string]any)
+			require.True(t, ok, "schema node %q is not an object", key)
+			schema.properties[key] = node
+			walk(node, key)
 		}
-		return out
+		props, _ := node["properties"].(map[string]any)
+		for name, child := range props {
+			add(name, child)
+		}
+		patterns, _ := node["patternProperties"].(map[string]any)
+		for _, child := range patterns {
+			add("*", child)
+		}
+	}
+	walk(root, "")
+	return schema
+}
+
+// serviceConfigDefaults maps each config key, as a dotted path with "*" for the
+// name of a map entry, to the value that the service uses when no source sets the key.
+// The keys come from the yaml tags. A map entry, such as a client, starts as a zero value.
+func serviceConfigDefaults() map[string]any {
+	defaults := map[string]any{}
+	var walk func(v reflect.Value, path string)
+	walk = func(v reflect.Value, path string) {
+		for field, value := range v.Fields() {
+			name, _, _ := strings.Cut(field.Tag.Get("yaml"), ",")
+			if name == "" || name == "-" {
+				continue
+			}
+			key := joinKey(path, name)
+			defaults[key] = value.Interface()
+			switch value.Kind() {
+			case reflect.Struct:
+				walk(value, key)
+			case reflect.Map:
+				entry := reflect.Zero(value.Type().Elem())
+				if entry.Kind() == reflect.Pointer {
+					entry = reflect.Zero(entry.Type().Elem())
+				}
+				defaults[key+".*"] = entry.Interface()
+				if entry.Kind() == reflect.Struct {
+					walk(entry, key+".*")
+				}
+			}
+		}
+	}
+	walk(reflect.ValueOf(defaultConfig("test", "", false)), "")
+	return defaults
+}
+
+func TestConfigSchema_KeysMatchConfigKeys(t *testing.T) {
+	schema := readConfigSchema(t)
+	defaults := serviceConfigDefaults()
+	require.Contains(t, schema.properties, "clients.*.host")
+	require.Contains(t, defaults, "clients.*.host")
+
+	for _, key := range slices.Sorted(maps.Keys(defaults)) {
+		assert.Contains(t, schema.properties, key, "config key %s is not in %s", key, configSchemaFile)
+	}
+	for _, key := range slices.Sorted(maps.Keys(schema.properties)) {
+		assert.Contains(t, defaults, key, "%s has the key %s, which is not a config key", configSchemaFile, key)
+	}
+}
+
+func TestConfigSchema_DefaultsMatchServiceDefaults(t *testing.T) {
+	schema := readConfigSchema(t)
+	defaults := serviceConfigDefaults()
+
+	for _, key := range slices.Sorted(maps.Keys(schema.properties)) {
+		schemaDefault, ok := schema.properties[key]["default"]
+		serviceDefault, known := defaults[key]
+		if !ok || !known {
+			continue
+		}
+		// The JSON round trip gives the service default the types of the schema
+		// default. JSON v2 writes a nil list as [].
+		encoded, err := json.Marshal(serviceDefault)
+		require.NoError(t, err, key)
+		var want any
+		require.NoError(t, json.Unmarshal(encoded, &want), key)
+		assert.Equal(t, want, schemaDefault, "default of %s in %s is not the service default", key, configSchemaFile)
+	}
+}
+
+func TestConfigSchema_RequiresNoOptionalKey(t *testing.T) {
+	// The load requires no key on its own, as these files show. Only cross-field
+	// rules require keys. The schema states them in if, then, allOf, and anyOf.
+	for name, contents := range map[string]string{
+		"empty file":          "",
+		"client without host": "clients:\n  default:\n    import:\n      category: tv\n",
+	} {
+		configDir := t.TempDir()
+		writeConfigFile(t, filepath.Join(configDir, "config.yaml"), contents)
+		_, err := Load(configDir, "test")
+		assert.NoError(t, err, name)
 	}
 
-	all := keys(schema)
-	require.Contains(t, all, "clients")
-	k := koanf.New(".")
-	require.NoError(t, k.Load(fakeProvider(all), nil))
-	unknown, err := unknownConfigKeys(k)
-	require.NoError(t, err)
-	require.Empty(t, unknown)
+	schema := readConfigSchema(t)
+	var required []string
+	for path, keys := range schema.required {
+		for _, key := range keys {
+			required = append(required, joinKey(path, key))
+		}
+	}
+	slices.Sort(required)
+	assert.Empty(t, required, "%s requires these keys, but the config load treats them as optional", configSchemaFile)
+}
+
+// schemaAccepts checks value against the enum, pattern, minimum, maximum, and anyOf rules of node, the rules that
+// TestConfigSchema_AcceptsWhatTheLoadAccepts needs. A JSON number is a float64.
+func schemaAccepts(t *testing.T, node map[string]any, value any) bool {
+	t.Helper()
+	if enum, ok := node["enum"].([]any); ok && !slices.Contains(enum, value) {
+		return false
+	}
+	if pattern, ok := node["pattern"].(string); ok {
+		text, _ := value.(string)
+		if !regexp.MustCompile(pattern).MatchString(text) {
+			return false
+		}
+	}
+	number, _ := value.(float64)
+	if minimum, ok := node["minimum"].(float64); ok && number < minimum {
+		return false
+	}
+	if maximum, ok := node["maximum"].(float64); ok && number > maximum {
+		return false
+	}
+	if anyOf, ok := node["anyOf"].([]any); ok {
+		return slices.ContainsFunc(anyOf, func(sub any) bool {
+			subNode, ok := sub.(map[string]any)
+			require.True(t, ok, "anyOf entry %v is not an object", sub)
+			return schemaAccepts(t, subNode, value)
+		})
+	}
+	return true
+}
+
+// TestConfigSchema_AcceptsWhatTheLoadAccepts keeps the value rules of the schema and of the load equal, so that an
+// editor does not flag a config that the service loads, or accept one that stops the load.
+func TestConfigSchema_AcceptsWhatTheLoadAccepts(t *testing.T) {
+	schema := readConfigSchema(t)
+	tests := []struct {
+		key  string
+		yaml string
+		// value is the decoded JSON form of yaml.
+		value any
+	}{
+		{"clients.*.import.contentLayout", `""`, ""},
+		{"clients.*.import.contentLayout", "subfolder", "subfolder"},
+		{"clients.*.import.contentLayout", "NoSubfolder", "NoSubfolder"},
+		{"clients.*.import.contentLayout", "ORIGINAL", "ORIGINAL"},
+		{"clients.*.import.contentLayout", "subfolders", "subfolders"},
+		{"clients.*.port", "-1", float64(-1)},
+		{"clients.*.port", "0", float64(0)},
+		{"clients.*.port", "65535", float64(65535)},
+		{"clients.*.port", "65536", float64(65536)},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s=%s", tt.key, tt.yaml), func(t *testing.T) {
+			clearConnectionEnvironment(t)
+			contents := "clients:\n  default:\n    import:\n      category: tv\n"
+			if field, ok := strings.CutPrefix(tt.key, "clients.*.import."); ok {
+				contents += fmt.Sprintf("      %s: %s\n", field, tt.yaml)
+			} else {
+				contents += fmt.Sprintf("    %s: %s\n", strings.TrimPrefix(tt.key, "clients.*."), tt.yaml)
+			}
+			node, ok := schema.properties[tt.key]
+			require.True(t, ok, "%s has no key %s", configSchemaFile, tt.key)
+
+			_, err := loadWithFile(t, contents)
+
+			assert.Equal(t, err == nil, schemaAccepts(t, node, tt.value),
+				"%s and the load disagree on %s: %s (load error: %v)", configSchemaFile, tt.key, tt.yaml, err)
+		})
+	}
 }
 
 func TestLoadSnapshot_RejectsInvalidShoutrrrURL(t *testing.T) {

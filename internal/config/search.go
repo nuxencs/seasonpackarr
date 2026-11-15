@@ -5,8 +5,6 @@ package config
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
@@ -36,17 +34,4 @@ func validateSearch(search domain.Search) error {
 		return fmt.Errorf("search: %w", err)
 	}
 	return nil
-}
-
-func parseSearchIndexerIDs(value string) []int {
-	parts := strings.Split(value, ",")
-	ids := make([]int, len(parts))
-	for i, part := range parts {
-		id, err := strconv.Atoi(strings.TrimSpace(part))
-		if err == nil {
-			ids[i] = id
-		}
-		// Invalid entries remain zero so validation rejects the whole configuration.
-	}
-	return ids
 }

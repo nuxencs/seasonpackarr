@@ -54,6 +54,13 @@ services:
       # SEASONPACKARR__CLIENTS_DEFAULT_INVENTORY_INCLUDE_TAGS:
       # SEASONPACKARR__CLIENTS_DEFAULT_INVENTORY_EXCLUDE_CATEGORIES: movies
       # SEASONPACKARR__CLIENTS_DEFAULT_INVENTORY_EXCLUDE_TAGS:
+
+      # Prowlarr discovery (see docs/PROWLARR.md)
+      # SEASONPACKARR__SEARCH_PROWLARR_URL: http://prowlarr:9696
+      # SEASONPACKARR__SEARCH_API_KEY:
+      # SEASONPACKARR__SEARCH_INDEXER_IDS: # comma-separated IDs; empty selects all eligible indexers
+      # SEASONPACKARR__SEARCH_RSS_INTERVAL: 0s # set to 15m to enable RSS imports; minimum 10m
+      # SEASONPACKARR__SEARCH_REQUEST_INTERVAL: 10s # minimum 10s
     volumes:
       - ${DOCKERCONFDIR}/seasonpackarr:/config # location of the config file
       - /data/torrents:/data/torrents # your torrent data directory

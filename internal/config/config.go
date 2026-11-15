@@ -14,11 +14,9 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"text/template"
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
@@ -32,7 +30,8 @@ import (
 	"github.com/knadh/koanf/v2"
 )
 
-var configTemplate = `# yaml-language-server: $schema=https://raw.githubusercontent.com/nuxencs/seasonpackarr/develop/schemas/config-schema.json
+// defaultConfigFile is the file that the first start writes. It must equal config.yaml at the repository root (TestWriteConfig_WritesRepositoryConfigFile).
+const defaultConfigFile = `# yaml-language-server: $schema=https://raw.githubusercontent.com/nuxencs/seasonpackarr/develop/schemas/config-schema.json
 # config.yaml
 
 # Hostname / IP
@@ -40,7 +39,7 @@ var configTemplate = `# yaml-language-server: $schema=https://raw.githubusercont
 #
 # Default: "0.0.0.0"
 #
-host: "{{ .host }}"
+host: "0.0.0.0"
 
 # Port
 #
@@ -364,27 +363,6 @@ func (c *AppConfig) writeConfig(configPath string, configFile string) error {
 
 	// check if config exists, if not create it
 	if _, err := os.Stat(cfgPath); errors.Is(err, fs.ErrNotExist) {
-		// set default host
-		host := "0.0.0.0"
-
-		if _, err := os.Stat("/.dockerenv"); err == nil {
-			// docker creates a .dockerenv file at the root
-			// of the directory tree inside the container.
-			// if this file exists then the viewer is running
-			// from inside a docker container so return true
-			host = "0.0.0.0"
-		} else if _, err := os.Stat("/dev/.lxc-boot-id"); err == nil {
-			// lxc creates this file containing the uuid
-			// of the container in every boot.
-			// if this file exists then the viewer is running
-			// from inside a lxc container so return true
-			host = "0.0.0.0"
-		} else if b, err := os.ReadFile("/proc/1/cgroup"); err == nil {
-			if strings.Contains(string(b), "/docker") || strings.Contains(string(b), "/lxc") {
-				host = "0.0.0.0"
-			}
-		}
-
 		f, err := os.Create(cfgPath)
 		if err != nil { // perm 0666
 			// handle failed create
@@ -397,22 +375,7 @@ func (c *AppConfig) writeConfig(configPath string, configFile string) error {
 			}
 		}()
 
-		// setup text template to inject variables into
-		tmpl, err := template.New("config").Parse(configTemplate)
-		if err != nil {
-			return fmt.Errorf("could not create config template: %w", err)
-		}
-
-		tmplVars := map[string]string{
-			"host": host,
-		}
-
-		var buffer bytes.Buffer
-		if err = tmpl.Execute(&buffer, &tmplVars); err != nil {
-			return fmt.Errorf("could not write template output: %w", err)
-		}
-
-		if _, err = f.WriteString(buffer.String()); err != nil {
+		if _, err = f.WriteString(defaultConfigFile); err != nil {
 			log.Printf("error writing contents to file: %v %q", configPath, err)
 			return err
 		}
@@ -571,6 +534,10 @@ func validateClientConfig(clientName string, client *domain.Client) error {
 	if client.Type != "" && client.Type != "qbittorrent" && client.Type != "transmission" && client.Type != "deluge" && client.Type != "deluge-v1" && client.Type != "deluge-v2" {
 		return fmt.Errorf("type for client %q is invalid: %q - must be \"qbittorrent\", \"transmission\", \"deluge\", \"deluge-v1\" or \"deluge-v2\"", clientName, client.Type)
 	}
+	// 0 is the unset port, whose meaning depends on the client type, so only the values outside every port range stop the load.
+	if client.Port < 0 || client.Port > 65535 {
+		return fmt.Errorf("port for client %q (%sCLIENTS_%s_PORT) must be from 0 to 65535", clientName, envPrefix, strings.ToUpper(clientName))
+	}
 
 	// go-qbittorrent drops an empty filter value, which would read every torrent,
 	// and qBittorrent compares exact names, so " tv" would match no torrent.
@@ -674,210 +641,15 @@ func validDelugeLabel(label string) bool {
 	return true
 }
 
+// defaultConfig copies the declared defaults and adds the runtime fields and an empty client map.
 func defaultConfig(version, configFile string, disableConfigFile bool) domain.Config {
-	configPath := ""
+	cfg := configDefaults.Clone()
+	cfg.Version = version
 	if configFile != "" {
-		configPath = filepath.Dir(configFile)
+		cfg.ConfigPath = filepath.Dir(configFile)
 	}
-
-	return domain.Config{
-		Version:            version,
-		ConfigPath:         configPath,
-		DisableConfigFile:  disableConfigFile,
-		Host:               "0.0.0.0",
-		Port:               42069,
-		Clients:            make(map[string]*domain.Client),
-		LogLevel:           "DEBUG",
-		LogMaxSize:         50,
-		LogMaxBackups:      3,
-		SmartModeThreshold: 0.75,
-		Search:             domain.Search{RSSInterval: "0s", RequestInterval: "10s"},
-		Notifications: domain.Notifications{
-			NotificationLevel: []string{"MATCH", "ERROR"},
-		},
-	}
-}
-
-const envPrefix = "SEASONPACKARR__"
-
-func setBool(dst *bool, value string) {
-	if b, err := strconv.ParseBool(value); err == nil {
-		*dst = b
-	}
-}
-
-func setPositiveInt(dst *int, value string) {
-	if i, _ := strconv.ParseInt(value, 10, 32); i > 0 {
-		*dst = int(i)
-	}
-}
-
-// envSettings maps each service variable, without envPrefix, to the field that
-// it sets. UnknownEnvironmentVariables reads the same table.
-var envSettings = map[string]func(cfg *domain.Config, value string){
-	"DISABLE_CONFIG_FILE": func(cfg *domain.Config, v string) { setBool(&cfg.DisableConfigFile, v) },
-
-	"HOST": func(cfg *domain.Config, v string) { cfg.Host = v },
-	"PORT": func(cfg *domain.Config, v string) { setPositiveInt(&cfg.Port, v) },
-
-	"LOG_LEVEL":       func(cfg *domain.Config, v string) { cfg.LogLevel = v },
-	"LOG_PATH":        func(cfg *domain.Config, v string) { cfg.LogPath = v },
-	"LOG_MAX_SIZE":    func(cfg *domain.Config, v string) { setPositiveInt(&cfg.LogMaxSize, v) },
-	"LOG_MAX_BACKUPS": func(cfg *domain.Config, v string) { setPositiveInt(&cfg.LogMaxBackups, v) },
-
-	"SMART_MODE": func(cfg *domain.Config, v string) { setBool(&cfg.SmartMode, v) },
-	"SMART_MODE_THRESHOLD": func(cfg *domain.Config, v string) {
-		if f, _ := strconv.ParseFloat(v, 32); f > 0 {
-			cfg.SmartModeThreshold = float32(f)
-		}
-	},
-
-	"SEARCH_PROWLARR_URL":     func(cfg *domain.Config, v string) { cfg.Search.ProwlarrURL = v },
-	"SEARCH_API_KEY":          func(cfg *domain.Config, v string) { cfg.Search.APIKey = v },
-	"SEARCH_INDEXER_IDS":      func(cfg *domain.Config, v string) { cfg.Search.IndexerIDs = parseSearchIndexerIDs(v) },
-	"SEARCH_RSS_INTERVAL":     func(cfg *domain.Config, v string) { cfg.Search.RSSInterval = v },
-	"SEARCH_REQUEST_INTERVAL": func(cfg *domain.Config, v string) { cfg.Search.RequestInterval = v },
-
-	"API_TOKEN": func(cfg *domain.Config, v string) { cfg.APIToken = v },
-
-	"FUZZY_MATCHING_SKIP_REPACK_COMPARE":  func(cfg *domain.Config, v string) { setBool(&cfg.FuzzyMatching.SkipRepackCompare, v) },
-	"FUZZY_MATCHING_SIMPLIFY_HDR_COMPARE": func(cfg *domain.Config, v string) { setBool(&cfg.FuzzyMatching.SimplifyHdrCompare, v) },
-	"FUZZY_MATCHING_SIMPLIFY_WEB_COMPARE": func(cfg *domain.Config, v string) { setBool(&cfg.FuzzyMatching.SimplifyWebCompare, v) },
-	"FUZZY_MATCHING_SKIP_YEAR_COMPARE":    func(cfg *domain.Config, v string) { setBool(&cfg.FuzzyMatching.SkipYearCompare, v) },
-
-	"NOTIFICATIONS_DISCORD": func(cfg *domain.Config, v string) { cfg.Notifications.Discord = v },
-	// Whitespace separates the URLs, because a Shoutrrr URL can hold commas, such as Telegram chats=a,b.
-	"NOTIFICATIONS_SHOUTRRR": func(cfg *domain.Config, v string) { cfg.Notifications.Shoutrrr = strings.Fields(v) },
-	"NOTIFICATIONS_NOTIFICATION_LEVEL": func(cfg *domain.Config, v string) {
-		levels := strings.Split(v, ",")
-		for i, level := range levels {
-			levels[i] = strings.TrimSpace(level)
-		}
-		cfg.Notifications.NotificationLevel = levels
-	},
-}
-
-// clientEnvSettings maps each setting of a SEASONPACKARR__CLIENTS_<NAME>_<SETTING>
-// variable to the client field that it sets.
-var clientEnvSettings = map[string]func(client *domain.Client, value string){
-	"TYPE":                  func(c *domain.Client, v string) { c.Type = v },
-	"HOST":                  func(c *domain.Client, v string) { c.Host = v },
-	"PORT":                  func(c *domain.Client, v string) { setPositiveInt(&c.Port, v) },
-	"USERNAME":              func(c *domain.Client, v string) { c.Username = v },
-	"PASSWORD":              func(c *domain.Client, v string) { c.Password = v },
-	"APIKEY":                func(c *domain.Client, v string) { c.APIKey = v },
-	"IMPORT_SAVE_PATH":      func(c *domain.Client, v string) { c.Import.SavePath = v },
-	"IMPORT_CATEGORY":       func(c *domain.Client, v string) { c.Import.Category = v },
-	"IMPORT_DOWNLOAD_PATH":  func(c *domain.Client, v string) { c.Import.DownloadPath = v },
-	"IMPORT_CONTENT_LAYOUT": func(c *domain.Client, v string) { c.Import.ContentLayout = strings.ToLower(v) },
-	"IMPORT_TAGS":           func(c *domain.Client, v string) { c.Import.Tags = splitList(c.Import.Tags[:0], v) },
-	"INVENTORY_INCLUDE_CATEGORIES": func(c *domain.Client, v string) {
-		c.Inventory.IncludeCategories = splitList(c.Inventory.IncludeCategories[:0], v)
-	},
-	"INVENTORY_INCLUDE_TAGS": func(c *domain.Client, v string) { c.Inventory.IncludeTags = splitList(c.Inventory.IncludeTags[:0], v) },
-	"INVENTORY_EXCLUDE_CATEGORIES": func(c *domain.Client, v string) {
-		c.Inventory.ExcludeCategories = splitList(c.Inventory.ExcludeCategories[:0], v)
-	},
-	"INVENTORY_EXCLUDE_TAGS": func(c *domain.Client, v string) { c.Inventory.ExcludeTags = splitList(c.Inventory.ExcludeTags[:0], v) },
-}
-
-// splitList appends the non-empty, trimmed comma-separated values of v to dst.
-func splitList(dst []string, v string) []string {
-	for value := range strings.SplitSeq(v, ",") {
-		if value = strings.TrimSpace(value); value != "" {
-			dst = append(dst, value)
-		}
-	}
-	return dst
-}
-
-// cliEnvVariables are read by CLI commands in cmd, not by the service config.
-var cliEnvVariables = []string{"URL", "CLIENT", "AUTOBRR_URL", "AUTOBRR_API_KEY"}
-
-// cutClientEnvVariable splits CLIENTS_<NAME>_<SETTING> on the first underscore
-// after the prefix, so multi-word settings such as IMPORT_SAVE_PATH stay whole.
-func cutClientEnvVariable(name string) (clientName, setting string, ok bool) {
-	after, ok := strings.CutPrefix(name, "CLIENTS_")
-	if !ok {
-		return "", "", false
-	}
-	return strings.Cut(after, "_")
-}
-
-func applyEnvironment(cfg *domain.Config) {
-	for _, env := range os.Environ() {
-		key, value, _ := strings.Cut(env, "=")
-		name, ok := strings.CutPrefix(key, envPrefix)
-		if !ok || value == "" {
-			continue
-		}
-		if set, ok := envSettings[name]; ok {
-			set(cfg, value)
-		}
-
-		clientName, setting, ok := cutClientEnvVariable(name)
-		set, known := clientEnvSettings[setting]
-		// An unknown variable only logs a warning, so it must not add an empty client that fails validation.
-		if !ok || clientName == "" || !known {
-			continue
-		}
-		// The client is created here when absent, so clients defined only
-		// through environment variables work too.
-		clientName = strings.ToLower(clientName)
-		if cfg.Clients[clientName] == nil {
-			cfg.Clients[clientName] = &domain.Client{}
-		}
-		set(cfg.Clients[clientName], value)
-	}
-}
-
-// validateInventoryEnvironment rejects an inventory list variable whose value
-// has no entries, such as " " or ",". It would replace the scope of config.yaml
-// with an empty list, and an empty list reads every torrent.
-func validateInventoryEnvironment(environ []string) error {
-	for _, env := range environ {
-		key, value, _ := strings.Cut(env, "=")
-		name, ok := strings.CutPrefix(key, envPrefix)
-		if !ok || value == "" {
-			continue
-		}
-		clientName, setting, ok := cutClientEnvVariable(name)
-		if _, known := clientEnvSettings[setting]; ok && clientName != "" && known &&
-			strings.HasPrefix(setting, "INVENTORY_") && len(splitList(nil, value)) == 0 {
-			return fmt.Errorf("environment variable %s has no entries; set at least one value or remove the variable", key)
-		}
-	}
-	return nil
-}
-
-// UnknownEnvironmentVariables returns the sorted SEASONPACKARR__ variables in
-// environ ("KEY=value" entries) that neither the service config nor a CLI command
-// reads. It ignores the values, so an empty unknown variable is reported too.
-func UnknownEnvironmentVariables(environ []string) []string {
-	var unknown []string
-	for _, env := range environ {
-		key, _, _ := strings.Cut(env, "=")
-		name, ok := strings.CutPrefix(key, envPrefix)
-		if ok && !knownEnvironmentVariable(name) {
-			unknown = append(unknown, key)
-		}
-	}
-	slices.Sort(unknown)
-	return unknown
-}
-
-// knownEnvironmentVariable includes the removed variables, because
-// validateDeprecatedConfigInputs stops startup with a migration error for them.
-func knownEnvironmentVariable(name string) bool {
-	if _, ok := envSettings[name]; ok || slices.Contains(cliEnvVariables, name) {
-		return true
-	}
-	if slices.Contains([]string{deprecatedParseTorrentFileEnv, deprecatedMetadataTVDBAPIKeyEnv, deprecatedMetadataTVDBPINEnv}, envPrefix+name) {
-		return true
-	}
-	clientName, setting, ok := cutClientEnvVariable(name)
-	_, known := clientEnvSettings[setting]
-	return ok && clientName != "" && (known || setting == deprecatedPreImportPathEnv)
+	cfg.DisableConfigFile = disableConfigFile
+	return cfg
 }
 
 func (c *AppConfig) resolveConfigFile(configPath string) (string, error) {
@@ -937,15 +709,15 @@ func (c *AppConfig) loadSnapshot() (*domain.Config, error) {
 			c.configFile, strings.Join(unknown, ", "))
 	}
 
-	if err := validateInventoryEnvironment(os.Environ()); err != nil {
+	if err := applyEnvironment(&cfg); err != nil {
 		return nil, err
 	}
-	applyEnvironment(&cfg)
+	normalizeConfig(&cfg)
 	if err := validateConfig(cfg); err != nil {
 		return nil, fmt.Errorf("validating config file %s: %w", c.configFile, err)
 	}
 
-	snapshot := cloneConfig(cfg)
+	snapshot := cfg.Clone()
 	return &snapshot, nil
 }
 
@@ -973,7 +745,30 @@ func unknownConfigKeys(fileK *koanf.Koanf) ([]string, error) {
 	return keys, nil
 }
 
+// normalizeConfig runs after the file and the environment are merged, so both sources get the same result.
+func normalizeConfig(cfg *domain.Config) {
+	for _, client := range cfg.Clients {
+		if client != nil {
+			client.Import.ContentLayout = strings.ToLower(client.Import.ContentLayout)
+		}
+	}
+}
+
+// validateConfig runs after the merge, so its range rules cover the file and the environment.
 func validateConfig(cfg domain.Config) error {
+	if cfg.Port < 1 || cfg.Port > 65535 {
+		return errors.New("port (SEASONPACKARR__PORT) must be from 1 to 65535")
+	}
+	if cfg.LogMaxSize < 1 {
+		return errors.New("logMaxSize (SEASONPACKARR__LOG_MAX_SIZE) must be at least 1")
+	}
+	if cfg.LogMaxBackups < 0 {
+		return errors.New("logMaxBackups (SEASONPACKARR__LOG_MAX_BACKUPS) must be at least 0; 0 keeps all old log files")
+	}
+	// The negated form also rejects NaN, which every comparison fails.
+	if !(cfg.SmartModeThreshold > 0 && cfg.SmartModeThreshold <= 1) {
+		return errors.New("smartModeThreshold (SEASONPACKARR__SMART_MODE_THRESHOLD) must be greater than 0 and at most 1")
+	}
 	if err := validateSearch(cfg.Search); err != nil {
 		return err
 	}
@@ -1002,28 +797,12 @@ func validateNotifications(notifications domain.Notifications) error {
 	return nil
 }
 
-func cloneConfig(cfg domain.Config) domain.Config {
-	clone := cfg
-	clone.Search.IndexerIDs = slices.Clone(cfg.Search.IndexerIDs)
-	clone.Clients = make(map[string]*domain.Client, len(cfg.Clients))
-	for name, client := range cfg.Clients {
-		if client == nil {
-			clone.Clients[name] = nil
-			continue
-		}
-		clone.Clients[name] = new(client.Clone())
-	}
-	clone.Notifications.NotificationLevel = slices.Clone(cfg.Notifications.NotificationLevel)
-	clone.Notifications.Shoutrrr = slices.Clone(cfg.Notifications.Shoutrrr)
-	return clone
-}
-
 func (c *AppConfig) Snapshot() domain.Config {
 	snapshot := c.current.Load()
 	if snapshot == nil {
 		return domain.Config{}
 	}
-	return cloneConfig(*snapshot)
+	return snapshot.Clone()
 }
 
 func (c *AppConfig) reload() (*domain.Config, error) {
