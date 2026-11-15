@@ -29,7 +29,24 @@ func TestTransmissionDaemon_ImportsCompletePack(t *testing.T) {
 	tr := waitTransmissionChecked(t, c, pack.Hashes.Legacy)
 	assertTransmissionStarted(t, tr)
 	requireListedPack(t, c, pack, importDir)
-	requireFileReadLoad(t, c, pack.Hashes.Legacy)
+	requireFileReadLoad(t, c, pack.Hashes.Legacy, importDir)
+}
+
+// TestTransmissionDaemon_ReadsSavePathAfterMove: the adapter reads downloadDir
+// in the request that reads the files.
+func TestTransmissionDaemon_ReadsSavePathAfterMove(t *testing.T) {
+	importDir := requireDaemon(t, envTransmissionHost)
+	c := newTransmissionDaemonClient(t, domain.ImportPolicy{SavePath: importDir})
+	moved := daemontest.WriteCompletePack(t, importDir, daemontest.PackName(t, "moved"))
+	kept := daemontest.WriteCompletePack(t, importDir, daemontest.PackName(t, "kept"))
+	for _, pack := range []daemontest.Pack{moved, kept} {
+		importTransmissionPack(t, c, importRequest(pack, importDir, true))
+		assertTransmissionStarted(t, waitTransmissionChecked(t, c, pack.Hashes.Legacy))
+	}
+
+	requireSavePathAfterMove(t, c, moved, kept, importDir, func(hash, dir string) error {
+		return transmissionDaemonAPI(t, c).TorrentSetLocationHash(t.Context(), hash, dir, true)
+	})
 }
 
 func TestTransmissionDaemon_ResumesPartialPack(t *testing.T) {

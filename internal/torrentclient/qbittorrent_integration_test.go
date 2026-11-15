@@ -35,7 +35,7 @@ func TestQbitDaemon_ImportsCompletePack(t *testing.T) {
 	tor, active := waitQbitActive(t, c, pack.Hashes.Legacy)
 	assert.True(t, active, "import left the torrent in state %s, but it must start", tor.State)
 	requireListedPack(t, c, pack, importDir)
-	requireFileReadLoad(t, c, pack.Hashes.Legacy)
+	requireFileReadLoad(t, c, pack.Hashes.Legacy, importDir)
 }
 
 func TestQbitDaemon_ResumesPartialPack(t *testing.T) {
@@ -109,6 +109,24 @@ func TestQbitDaemon_DownloadsMissingEpisodes(t *testing.T) {
 			assertDownloadedPack(t, importDir, pack, tt.missing, tor.Downloaded)
 		})
 	}
+}
+
+// TestQbitDaemon_ReadsSavePathAfterMove: qBittorrent changes save_path when
+// the move job ends, and the adapter reads it from torrents/info.
+func TestQbitDaemon_ReadsSavePathAfterMove(t *testing.T) {
+	importDir := requireDaemon(t, envQbitHost)
+	c := newQbitDaemonClient(t, domain.ImportPolicy{SavePath: importDir})
+	moved := daemontest.WriteCompletePack(t, importDir, daemontest.PackName(t, "moved"))
+	kept := daemontest.WriteCompletePack(t, importDir, daemontest.PackName(t, "kept"))
+	for _, pack := range []daemontest.Pack{moved, kept} {
+		importQbitPack(t, c, importRequest(pack, importDir, true))
+		tor, active := waitQbitActive(t, c, pack.Hashes.Legacy)
+		require.True(t, active, "import left %s in state %s", pack.Name, tor.State)
+	}
+
+	requireSavePathAfterMove(t, c, moved, kept, importDir, func(hash, dir string) error {
+		return qbitDaemonAPI(t, c).SetLocationCtx(t.Context(), []string{hash}, dir)
+	})
 }
 
 func TestQbitDaemon_ImportDestinationFollowsPreferences(t *testing.T) {

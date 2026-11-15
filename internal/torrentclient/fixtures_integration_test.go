@@ -95,8 +95,9 @@ func requireListedPack(t *testing.T, client TorrentClient, pack daemontest.Pack,
 
 // requireFileReadLoad sends the adapter's multi-hash read shape to a real
 // daemon. One repeated hash isolates read batching and concurrency from
-// torrent setup cost. The unknown hash checks partial-result handling.
-func requireFileReadLoad(t *testing.T, client TorrentClient, hash string) {
+// torrent setup cost. The unknown hash checks partial-result handling. Each
+// result must have the save path, which qBittorrent gives only in torrents/info.
+func requireFileReadLoad(t *testing.T, client TorrentClient, hash, savePath string) {
 	t.Helper()
 
 	const readCount = 24
@@ -114,9 +115,59 @@ func requireFileReadLoad(t *testing.T, client TorrentClient, hash string) {
 		require.Equal(t, hash, results[index].Hash, "result %d", index)
 		require.NoError(t, results[index].Err, "result %d", index)
 		require.NotEmpty(t, results[index].Files, "result %d", index)
+		require.Equal(t, normalizePath(savePath), normalizePath(results[index].SavePath), "result %d", index)
 	}
 	require.Error(t, results[readCount].Err, "unknown hash must report an error")
 	t.Logf("GetFiles returned %d file lists and one unknown-hash error in %s", readCount, duration)
+}
+
+// requireSavePathAfterMove moves moved with the client's own move call and
+// requires that one file-detail read reports its new save path, and the old one
+// for kept. A client field that keeps the old path makes the match drop the
+// episode. The wait also needs the files at the joined path, because a client
+// can report a move before its data is there.
+func requireSavePathAfterMove(t *testing.T, client TorrentClient, moved, kept daemontest.Pack, importDir string, move func(hash, dir string) error) {
+	t.Helper()
+	movedDir := filepath.Join(importDir, "moved")
+	// A rerun must not move into data that an earlier run left behind.
+	require.NoError(t, os.RemoveAll(filepath.Join(movedDir, moved.Name)))
+	hashes := []string{moved.Hashes.Legacy, kept.Hashes.Legacy}
+
+	before := client.GetFiles(t.Context(), hashes)
+	require.Len(t, before, len(hashes))
+	for _, result := range before {
+		require.NoError(t, result.Err, "hash %s", result.Hash)
+		require.Equal(t, normalizePath(importDir), normalizePath(result.SavePath), "hash %s before the move", result.Hash)
+		require.Len(t, result.Files, daemontest.PackEpisodes, "hash %s", result.Hash)
+	}
+
+	require.NoError(t, move(moved.Hashes.Legacy, movedDir), "move %s", moved.Name)
+
+	after, followed := daemontest.WaitFor(t.Context(), func() []FileResult {
+		return client.GetFiles(t.Context(), hashes)
+	}, func(results []FileResult) bool {
+		return len(results) == len(hashes) && normalizePath(results[0].SavePath) == normalizePath(movedDir) && filesOnDisk(results)
+	})
+	require.True(t, followed, "the file-detail read does not report %s with its files on disk after the move: %+v", movedDir, after)
+	require.NoError(t, after[1].Err)
+	assert.Equal(t, normalizePath(importDir), normalizePath(after[1].SavePath), "the torrent that did not move keeps its save path")
+}
+
+// filesOnDisk reports whether each file of each result is a regular file with
+// its size at the joined path.
+func filesOnDisk(results []FileResult) bool {
+	for _, result := range results {
+		if result.Err != nil || len(result.Files) == 0 {
+			return false
+		}
+		for _, file := range result.Files {
+			info, err := os.Stat(filepath.Join(result.SavePath, file.Name))
+			if err != nil || !info.Mode().IsRegular() || info.Size() != file.Size {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // assertDownloadedPack asserts the final state of a download test. Every pack
