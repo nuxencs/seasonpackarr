@@ -18,6 +18,22 @@ Current comparison logic checks:
 
 - do not link when the pack file is not a real episode video
 - do not link when file sizes disagree for episode-to-pack matching
+- count only a client episode file that is on disk: a regular file with the
+  size that the client declares. The inventory has no download state, so the
+  client also lists an episode that it still downloads
+- apply the on-disk rule in each plan build: the match, the plan build of the
+  import after a cache miss, the refresh after a missing hardlink source, and a
+  search run
+- the on-disk rule is size-only. A file that the client preallocated to its
+  full size passes, and the data check of the client during the import finds
+  the missing pieces
+- known limit: the on-disk rule builds each path from the save path of the
+  inventory and the file names of the file-detail read. When the client moves
+  an episode between the two reads, the rule drops a file that is on disk at
+  its new path, and the match can return `445` or `230`. In the normal flow the
+  two reads are less than a second apart. The refresh after a missing hardlink
+  source covers only a move after the match
+  ([#364](https://github.com/nuxencs/seasonpackarr/issues/364))
 - path naming must reflect the pack folder users actually need, not just the announce title when parsing is enabled
 - if a planned source disappears before linking, refresh the client inventory
   and exact plan once before the import fails
@@ -79,8 +95,10 @@ diagnostic pass runs only for unmatched targets and must not change selection.
 
 Diagnostics use these classifications:
 
-- `source_episode_not_found`: no parsed client source has the same season and
-  episode identity
+- `source_episode_not_found`: no parsed client source on disk has the same
+  season and episode identity. A source that the on-disk rule dropped counts as
+  not found, and its own log line `client episode file is not reusable` gives
+  the reason
 - `compatibility_mismatch`: the closest same-episode source differs by size,
   container, resolution, or release group
 - `duplicate_torrent_target`: the torrent contains another target with the same

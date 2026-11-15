@@ -44,6 +44,27 @@ func TestStore_ReusesConnectionOfUnchangedConfig(t *testing.T) {
 	assert.Equal(t, 2, connector.connectCount(), "a changed config connects again")
 }
 
+// A stage reads its settings from the handle, so it cannot use the client of
+// one snapshot with the settings of another.
+func TestClient_GivesSnapshotThatItWasMadeFrom(t *testing.T) {
+	store := newTestStore(&fakeConnector{adapter: &fakeAdapter{}})
+	client := &domain.Client{Type: "qbittorrent", Host: "qbit"}
+	first := configWith(map[string]*domain.Client{"default": client})
+	first.SmartModeThreshold = 0.5
+	second := configWith(map[string]*domain.Client{"default": client})
+	second.SmartModeThreshold = 0.75
+	second.FuzzyMatching.SkipYearCompare = true
+
+	firstHandle, err := store.Client(t.Context(), "default", first)
+	require.NoError(t, err)
+	secondHandle, err := store.Client(t.Context(), "default", second)
+	require.NoError(t, err)
+
+	assert.Equal(t, "default", firstHandle.Name())
+	assert.Equal(t, first, firstHandle.Snapshot(), "a later snapshot does not change an earlier handle")
+	assert.Equal(t, second, secondHandle.Snapshot())
+}
+
 func torrentNames(entries iter.Seq[Entry]) []string {
 	var names []string
 	for e := range entries {

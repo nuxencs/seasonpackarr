@@ -11,15 +11,15 @@ One torrent that holds all episodes of one TV season.
 _Avoid_: Pack torrent, full season
 
 **Candidate check**:
-A check of a release name alone, done before any torrent download, that decides whether a release can be a useful season pack.
-_Avoid_: Quick check, pre-check, quick candidate check
+A check of a release name alone against the inventory, with no torrent bytes, that decides whether a release can be a useful season pack. The match and the import do it again.
+_Avoid_: Quick check, pre-check, quick candidate check, candidate gate
 
 **Match**:
-A check of the torrent and the episode files on disk that produces an import plan and changes nothing.
+A check of the torrent and the episode files on disk that accepts or rejects a season pack and changes nothing. An accepted match produces an import plan.
 _Avoid_: Exact torrent check, parse
 
 **Import plan**:
-The result of a match: which episode files to hardlink, where, and how the pack goes into the client.
+The result of an accepted match: which episode files to hardlink, where, and how the pack goes into the client.
 _Avoid_: Plan result
 
 **Import**:

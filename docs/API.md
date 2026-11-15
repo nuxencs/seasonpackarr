@@ -10,7 +10,7 @@ import endpoints (see the [autobrr setup](AUTOBRR.md)). The
 | Method | Path | Authentication | Body | Purpose |
 | --- | --- | --- | --- | --- |
 | `POST` | `/api/candidate` | API token | `name`, `clientname` | Candidate check of a release name. Downloads no torrent and changes nothing. |
-| `POST` | `/api/match` | API token | `name`, `torrent`, `clientname` | Match: builds an import plan from the torrent. Changes nothing. |
+| `POST` | `/api/match` | API token | `name`, `torrent`, `clientname` | Match: reads the torrent and accepts or rejects the season pack. An accepted match produces an import plan. Changes nothing. |
 | `POST` | `/api/import` | API token | `name`, `torrent`, `clientname` | Import: creates hardlinks and adds the season pack to the client. |
 | `POST` | `/api/search` | API token | See [Search](#search) | Runs a targeted Prowlarr search. |
 | `GET` | `/api/healthz/liveness` | None | None | Returns `200` with the text `OK` while the process runs. |
@@ -148,6 +148,26 @@ contain them. For per-episode diagnostics, read the
 `duplicate_torrent_target`) and `mismatches[].field` (`size`, `container`,
 `resolution`, or `release_group`) explain why an episode was not reused.
 
+The match and the import count only client episode files that are on disk. An
+episode file that the client lists is not reusable when it is not a regular
+file with the size that the client declares. Each such file gives one
+`client episode file is not reusable` log line at `INFO`:
+
+| Field | Value |
+| --- | --- |
+| `source` | The path of the client episode file |
+| `reason` | `missing`, `not_regular_file`, or `size_mismatch` |
+| `want_size`, `got_size` | Only for `size_mismatch`: the size that the client declares and the size on disk, in bytes |
+| `error` | Only for `missing`, when the file check failed for a cause other than a file that does not exist, for example a denied permission |
+
+A running episode download is a normal cause of `size_mismatch`. `missing`
+on each file usually shows that seasonpackarr and the client do not see the
+same paths. The torrent episode of such a file then shows
+`source_episode_not_found` in its own `torrent episode is not reusable` line.
+When no client episode file is left, the match returns `445`. A file that the
+client preallocated to its full size passes this check before its download
+completes.
+
 ## Notifications and logs
 
 - The candidate check sends no notifications.
@@ -158,6 +178,21 @@ contain them. For per-episode diagnostics, read the
 - Match sends a notification with the action label `Match` only for a
   rejection (`INFO`) or an error (`ERROR`). Import sends its rejections and
   errors with the label `Import`.
+- A search run and an RSS poll send one notification after each import
+  attempt, with the level of the import result. A result that is rejected or
+  that fails before the import sends no notification, and a dry run sends
+  none.
+- The action label shows what sent the notification:
+
+  | Action label | Sent for |
+  | --- | --- |
+  | `Match` | A rejection or an error of a match on `/api/match`. |
+  | `Import` | An accepted pack, a rejection, or an error of an import on `/api/import`. |
+  | `Search` | Each import attempt of a search run (`POST /api/search` or `seasonpackarr search`). |
+  | `RSS` | Each import attempt of an RSS poll. |
+
+  The `notification test` command sends its test notification with the label
+  `Test`.
 - The candidate check and match log expected rejections, such as a release
   group mismatch, at `INFO`. Configuration, decoding, client, filesystem, and
   import failures are logged at `ERROR`. The import logs every failure at
@@ -166,6 +201,9 @@ contain them. For per-episode diagnostics, read the
 - When a match does not use a torrent episode, the log shows why: a missing
   source episode, a duplicate target, or the closest client file and each field
   that did not match.
+- When a client episode file is not on disk as the client declares it, the log
+  line `client episode file is not reusable` shows the path and the reason.
+  The webhook endpoints and a search run log the same line.
 - Logs never include configured credentials or request tokens.
 
 ## Search
@@ -203,8 +241,8 @@ The `200` report contains these fields:
 - `outcomes[]`: one entry per result, with `clientname`, `title`, `indexerId`,
   `status`, `reason`, `reusableEpisodes`, and `totalEpisodes`. `status` is
   `candidate`, `would_import`, `imported`, `rejected`, or `failed`. The episode
-  counts are `null` until an import plan sets the number of targets. A plan
-  with no reusable files reports `0`.
+  counts are `null` when the result stops before seasonpackarr reads the
+  torrent. A season pack with no reusable episode reports `0`.
 - `failures[]`: discovery, client inventory, query, pagination, rate limit,
   database, and cancellation errors, with `clientname`, `query`, `indexerId`,
   and `reason` where they apply.

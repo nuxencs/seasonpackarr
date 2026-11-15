@@ -58,7 +58,7 @@ func TestCLI_CheckAndImportFromLocalConfig(t *testing.T) {
 			importCalls := func() int {
 				requests.Lock()
 				defer requests.Unlock()
-				return f.torrentClient.importCalls
+				return f.torrentClient.ImportCalls
 			}
 			u, err := url.Parse(server.URL)
 			require.NoError(t, err)
@@ -178,13 +178,13 @@ func TestCLI_SearchPreviewAndImport(t *testing.T) {
 		if mode == "discovery" {
 			require.Equal(t, "candidate", report.Outcomes[0].Status)
 			require.Zero(t, f.downloads)
-			require.Zero(t, f.torrentClient.fileCalls)
+			require.Zero(t, f.torrentClient.FileCalls)
 		} else if dryRun {
 			require.Equal(t, "would_import", report.Outcomes[0].Status)
-			require.Zero(t, f.torrentClient.importCalls)
+			require.Zero(t, f.torrentClient.ImportCalls)
 		} else {
 			require.Equal(t, "imported", report.Outcomes[0].Status)
-			require.Equal(t, 1, f.torrentClient.importCalls)
+			require.Equal(t, 1, f.torrentClient.ImportCalls)
 			require.Equal(t, 1, report.TorrentCacheHits)
 			require.Zero(t, report.TorrentDownloads)
 		}

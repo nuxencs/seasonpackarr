@@ -9,21 +9,66 @@ Describe the normal path from webhook hit to hardlink creation and client import
 1. Service starts through `cmd/start.go`. `signal.NotifyContext` converts termination signals into cancellation and starts a 15-second graceful shutdown.
 2. Config, logger, notification sender, and SQLite discovery state are initialized. The command closes the database after server shutdown.
 3. `internal/http/server.go` exposes authenticated `/api/candidate`, `/api/match`, and `/api/import`.
-4. A webhook request enters `internal/http/webhook.go`. Its context is passed through planning and torrent-client operations, so client disconnects and request cancellation stop context-aware work.
-5. `internal/http/processor_handlers.go` decodes the payload. The candidate, plan, and import processor files keep the three lifecycle stages separate.
-6. `/api/candidate` compares the announce with cached torrent summaries. It does not read torrent bytes or file details. At debug level, it logs each client release that caused the gate to pass.
-7. `/api/match` reuses the short-lived inventory, parses the announced torrent, and requests details only for candidate client torrents.
-8. `internal/release/` keeps MKV and MP4 files that parse as episodes. It excludes samples, extra videos, and other non-episode files from coverage.
-9. Reusable source files map to distinct valid targets with the same container under configured fuzzy rules.
-10. Smart mode compares the exact reusable target count with the actual torrent episode count. `/api/match` caches an accepted side-effect-free plan.
-11. `/api/import` reuses that plan, or safely rebuilds it after a cache miss. It resolves the import root and hardlinks matching files in the client-selected layout. If a planned source disappeared because the client moved it, the processor invalidates both caches, rebuilds the exact plan, and retries the idempotent links once.
+4. A webhook request enters `internal/http/webhook.go`. The handler passes the request context through planning and the torrent-client reads, so a caller disconnect or a request cancellation stops context-aware work. The import into the torrent client runs with that context detached from cancellation, so a caller disconnect cannot leave a torrent stopped.
+5. The handler decodes the payload and gets the client handle of the request from the inventory module. For the match and the import, it also decodes the torrent payload. Then it calls one operation of the season pack processor (`internal/seasonpack/`): the candidate check, the match, or the import. See [The season pack processor](#the-season-pack-processor).
+6. `/api/candidate` compares the announce with cached torrent summaries. It does not read torrent bytes or file details. At debug level, it logs each torrent of the inventory that is compatible with the announce.
+7. `/api/match` reuses the short-lived inventory, parses the announced torrent, and requests file details only for the torrents that the candidate check found compatible. Each plan build keeps only the client episode files that are on disk, see [matching-and-hardlinking.md](matching-and-hardlinking.md).
+8. `internal/release/` keeps MKV and MP4 files that parse as episodes. It excludes samples and each video that does not parse as an episode, such as an extra, from coverage.
+9. Each reusable episode maps to one distinct valid torrent episode target with the same size, container, season, episode, resolution, and release group. The fuzzy matching settings apply only to the candidate check, which selects the torrents of the inventory that supply the episode files.
+10. Smart mode compares the exact reusable target count with the actual torrent episode count. The match changes nothing on disk and nothing in the client. The processor keeps the import plan of an accepted match, and a rejected match keeps no plan.
+11. `/api/import` reuses that plan, or safely rebuilds it after a cache miss. It resolves the import root and hardlinks matching files in the client-selected layout. If a planned source disappeared because the client moved it, the processor drops the plan and discards the inventory of the client, rebuilds the exact plan, and retries the idempotent links once.
 12. Smart mode checks achieved coverage after hardlink creation. If it is below the threshold, the request does not import the torrent. Successful hardlinks remain for a safe retry. Automatic cleanup is intentionally deferred because the service cannot yet prove ownership of every file and directory it would remove.
 13. The torrent is added to the client, checked so the present files are recognised, and not left paused. See
     [qbittorrent-import-flow.md](qbittorrent-import-flow.md) for the complete-vs-partial
     client import flow with diagrams.
-14. Pack logs explain unmatched torrent targets. Parse logs report plan reuse,
+14. The log lines of the match explain unmatched torrent targets. The log lines of the import report plan reuse,
     hardlink work, client-import stage durations, and total duration.
     Notifications communicate the final outcome. They run in a server-owned task group. Shutdown waits for those tasks until its deadline, then cancels them.
+
+## The season pack processor
+
+One processor (`seasonpack.Processor`) owns the candidate check, the match, and
+the import. It has two callers: the webhook handlers and Prowlarr discovery.
+A caller cannot call a private step, so the order of the steps has one owner.
+
+- Each operation takes a client handle and a release name. The match also
+  takes a torrent, and the import takes torrent bytes. The client handle gives
+  the config snapshot that it was made from. A webhook handler makes one handle
+  for each request, and discovery keeps one handle for each client of a run.
+- Each operation returns one outcome: a status code, an error (nil for an
+  accepted season pack), and the coverage when the torrent episodes were
+  matched. The class of an outcome is accepted, rejected (a status below `400`,
+  or `445`), or failed. The handlers use it for the log level, and discovery
+  for the status of the search report.
+- The processor checks for an empty release name (`469`) and for empty torrent
+  bytes (`467`). The handler maps a client that the config does not have to
+  `472`, a client that cannot connect to `471`, and a torrent payload that it
+  cannot decode to `466`, before the processor call.
+- The match takes the torrent in one of two forms:
+  - Bytes in hand (a webhook request): the processor reads the torrent, then
+    the file details of the candidates. It logs a file-detail read error and
+    continues with the client episode files that it could read.
+  - A fetch on demand (discovery): the processor reads the client episode files
+    first. It calls the fetch only when each file-detail read worked and at
+    least one file is on disk. Else it returns a named error: "file-detail read
+    failed" with status `468`, or "no source on disk" with status `445`.
+    Discovery maps them to the two reason texts of the search report.
+- The two policies for a file-detail read error differ on purpose. An announce
+  comes once, and a lost season pack is worse than one episode download. A
+  fetch costs a tracker request, and a search result can be tried again in a
+  later run, so any doubt stops before the fetch.
+- Only an accepted match produces an import plan, and the processor keeps it
+  for 2 minutes. No plan value crosses the interface: discovery calls the match
+  and then the import, as autobrr does with two requests. A `verify` dry run
+  also keeps its plan for 2 minutes.
+- The import has one path: take the endpoint import lock, do the candidate
+  check again, take the kept plan or build it again, apply the coverage rule,
+  make the hardlinks, check the achieved coverage, import into the client, and
+  drop the inventories and plans of the endpoint before the lock is released.
+  One imported search result runs the candidate check 2 times: in the match and
+  in the import.
+- The processor has no notification sender. The handlers and discovery send
+  the notifications.
 
 ## Failure Classes
 
@@ -37,13 +82,15 @@ Describe the normal path from webhook hit to hardlink creation and client import
 
 ## Verification Notes
 
-Verified against code on 2026-08-28. The lifecycle is implementation-backed, not aspirational.
+Verified against code on 2026-11-15. The lifecycle is implementation-backed, not aspirational.
 
 ## Discovery and Concurrent Imports
 
-Prowlarr discovery supplies candidate titles and torrent bytes to the same exact
-planning and import path. One process serializes imports per configured client
-endpoint. Import checks the candidate gate again before it uses a cached plan.
+Prowlarr discovery calls the same three operations of the season pack processor
+with the release name of each result. The match gets a torrent fetch, and the
+import gets the fetched bytes. The torrent download never runs
+under the endpoint import lock. One process serializes imports per configured client
+endpoint. The import does the candidate check again before it uses a kept plan.
 Client mutation attempts invalidate cached inventories and plans for all aliases
 of that endpoint, even when the adapter returns an error. A retry must establish
 whether the earlier attempt already added the pack. An in-flight inventory scan
@@ -60,6 +107,9 @@ Operators debug with these logs and notifications. Keep them stable, and update
 - Match and import notifications use the action labels `Match` and `Import`.
   An accepted pack sends one `MATCH` notification, from the import. The match
   notifies only for rejections and errors.
+- Discovery sends one notification after each import attempt, with the action
+  label `Search` for a search run and `RSS` for an RSS poll. A result that is
+  rejected or that fails before the import sends none.
 - `/api/candidate` logs each release compatibility rejection as a structured
   event. The event reports the incompatible field, the original announced `want`
   value, the original client `got` value, and the client release. Fuzzy matching
@@ -70,12 +120,29 @@ Operators debug with these logs and notifications. Keep them stable, and update
   reports either a missing source episode, a duplicate torrent target, or the
   closest same-episode client source plus every incompatible safety field. Each
   incompatible field reports its torrent `want` and client `got` value.
+- Each client episode file that a plan build drops produces one `INFO` event
+  with the message `client episode file is not reusable`. The event reports the
+  `source` path and a `reason`: `missing`, `not_regular_file`, or
+  `size_mismatch`. A size mismatch also reports `want_size` (the size that the
+  client declares) and `got_size` (the size on disk). A `missing` event reports
+  the `error` when the file check failed for a cause other than a file that
+  does not exist. The level is `INFO`, because a running episode download is a
+  normal cause. The webhook endpoints and a search run log the same event. The
+  torrent episode of a dropped file reports a missing source episode in its own
+  event.
 - `/api/import` logs whether it reused or rebuilt the import plan. It also logs
   each successful or failed destination-resolution attempt at `INFO`, hardlink
   duration, each torrent-client import stage, total client-import duration, and
   total import duration. A missing hardlink source logs a static warning with a
   structured `source` path, followed by the bounded inventory and plan refresh
   result.
+- The season pack processor writes the stage lines, so an announce and a
+  search result produce the same lines for the same stage. The webhook
+  handlers add their start and result lines, and discovery its result and run
+  lines.
+- Each log line that the processor writes for the candidate check, the match,
+  and the import has the `release` and the `clientname` of its call, also in a search run or an RSS
+  poll. No line holds a key two times.
 - Torrent-client stages use the stable names `config`, `add`, `find`, `recheck`,
   and `resume`. A client omits stages that it does not perform. Deluge reports a
   torrent that does not leave its paused state under `resume`. The client-import
@@ -84,6 +151,7 @@ Operators debug with these logs and notifications. Keep them stable, and update
 - A successful `/api/import` means the client accepted the pack. The client
   checks the present data and starts the torrent after the response.
 - Logs never include configured credentials or request authentication tokens.
-- Expected candidate and match gate rejections use informational events.
+- Expected rejections by the candidate check and the match use informational
+  events.
   Configuration, decoding, client, filesystem, and import failures use error
   events.

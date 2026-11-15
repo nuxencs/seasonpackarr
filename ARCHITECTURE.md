@@ -14,10 +14,11 @@
    `setup filter` writes the autobrr filter through `internal/autobrr/`.
 2. `cmd/start.go` loads config, logger, notifications, and the SQLite store, creates the inventory module, then starts the HTTP server. Signal cancellation starts a bounded graceful shutdown. The command closes the store after server shutdown.
 3. `internal/http/server.go` builds `/api/healthz`, `/api/candidate`, `/api/match`, `/api/import`, and `/api/search`.
-4. `internal/http/processor_*.go` keeps each processing stage together. The handler file owns payload decode and responses. The candidate file owns announce-only matching. It gets the client handle and the inventory from `internal/inventory/`. The plan file parses torrent bytes and builds an exact side-effect-free plan. The import file reuses or rebuilds that plan, gets the destination (import root plus layout) from the client adapter, gives the planned links to `internal/placement/`, and imports the pack. See [docs/design/qbittorrent-import-flow.md](docs/design/qbittorrent-import-flow.md).
-5. `internal/release/` decides whether a client episode and announced season pack are compatible.
-6. `internal/placement/` builds each hardlink target, makes the hardlinks, and answers whether the pack data is complete.
-7. `internal/notification/` sends notifications for notable events to each notification destination.
+4. `internal/http/webhook.go` holds the webhook handlers. A handler decodes the payload, gets the client handle of the request from `internal/inventory/`, calls one operation of the season pack processor, writes the response, and sends the notification.
+5. `internal/seasonpack/` is the season pack processor. It has three operations: the candidate check, the match, and the import. `candidate.go` holds the candidate check, which reads the inventory through the client handle. `match.go` parses the torrent bytes and, for an accepted match, builds the import plan with no side effects. `plan_cache.go` keeps the plan of an accepted match for the import. `import.go` uses that plan or builds it again, gets the destination (import root plus layout) from the client adapter, gives the planned links to `internal/placement/`, and imports the pack. `import_lock.go` holds the endpoint import locks. See [docs/design/season-pack-lifecycle.md](docs/design/season-pack-lifecycle.md) and [docs/design/qbittorrent-import-flow.md](docs/design/qbittorrent-import-flow.md).
+6. `internal/release/` decides whether a client episode and announced season pack are compatible.
+7. `internal/placement/` builds each hardlink target, makes the hardlinks, and answers whether the pack data is complete.
+8. `internal/notification/` sends notifications for notable events to each notification destination.
 
 ## Domains
 
@@ -35,7 +36,7 @@
 ### HTTP/API
 
 - Implemented in `internal/http/`
-- Concerns: server lifecycle, middleware, auth, health, webhook handlers
+- Concerns: server lifecycle, middleware, auth, health, webhook handlers, Prowlarr discovery runs
 - External contract:
   - `POST /api/candidate`
   - `POST /api/match`
@@ -87,8 +88,14 @@
 
 ### Pack Evaluation and Cache Reuse
 
+- Implemented in `internal/seasonpack/`. One `seasonpack.Processor` owns the candidate check, the match, and the import. The server makes one processor from the inventory store and the logger. The webhook handlers and Prowlarr discovery are its two callers.
+- Each operation takes a client handle and a release name. The match also takes a torrent, and the import takes torrent bytes. The handle gives the config snapshot that it was made from, so a stage cannot use the client of one snapshot with the settings of another.
+- Each operation returns one outcome: a status code, an error (nil for an accepted season pack), and the coverage (reusable and total episodes) when the torrent episodes were matched. The outcome gives its class: accepted, rejected (a status below `400`, or `445`), or failed. The callers use the class for the log level and for the status of the search report.
+- The coverage rule, the plan build, the plan cache, the endpoint import lock, the drops after an import attempt, and the stage logs are private to the package. The processor makes one logger for each call, with the release name and the client name of that call. It sends no notification.
+- The match takes the torrent in one of two forms. With the bytes in hand (a webhook request), it reads the torrent first, logs a failed file-detail read, and continues with the client episode files that it could read. With a fetch on demand (discovery), it reads the client episode files first and calls the fetch only when each file-detail read worked and at least one file is on disk. Else it returns a named error with status `468` (file-detail read failed) or `445` (no source on disk). The policies differ on purpose: an announce comes once, and a search result can be tried again in a later run.
 - `/api/candidate` reads torrent summaries only. It does not need torrent bytes or file-detail calls.
 - `/api/match` parses the announced torrent, maps reusable source files to distinct valid torrent targets, and applies smart mode to exact torrent coverage.
+- Each plan build drops a client episode file that is not on disk as a regular file with the size that the client declares, and logs the reason. The webhook match, the import, and search use this one rule. See [docs/design/matching-and-hardlinking.md](docs/design/matching-and-hardlinking.md).
 - Exact plan matching parses each episode filename once and uses an indexed compatibility key instead of scanning every source-target pair.
 - Exact planning requests candidate file details once. Transmission and Deluge v2 batch hashes in one client call. Deluge v1 uses one session-state preflight and one bulk status call. qBittorrent uses a bounded four-worker adapter pool.
 - `internal/inventory/` owns the client connection, the inventory, and the parsed torrent names of each configured client. The candidate check, the match, the import, and search get their client handle and their inventory from it. An inventory is valid for 30 seconds, so the ordered candidate and match checks normally share one client scan.
@@ -96,14 +103,18 @@
 - The inventory module keeps the parsed torrent names of each client endpoint and inventory scope separately from the inventory. An import discards the inventory, but the next scan parses only new names. A scan also reuses the names of the other scopes of its endpoint, so a name in two scopes is parsed once.
 - At startup, a server lifecycle task runs the startup read of the inventory module. It reads the inventory of each client once, so the first announce does not log in or parse every name. Clients of one endpoint share the parsed names. The task tries a client that is not ready up to four times, 10 seconds apart, then only logs a warning.
 - After each config reload, the server reload loop runs the clean-up of the inventory module. It drops the cached connection and inventory of each client that the config no longer has or configures differently, and the parsed names of endpoints and inventory scopes that no client uses. A scan that overlaps this clean-up adds no new parsed-name key, so it cannot restore a removed one. It closes the Deluge connection of a dropped client. A request that still holds that client connects again.
-- Accepted import plans are cached for 2 minutes. `/api/import` normally performs no second inventory or file-detail reads.
-- Cache entries validate client configuration, matching settings, release name, and torrent identity. `/api/import` rebuilds safely on a cache miss.
-- Imports to the same client type, host, and port are serialized. The candidate gate is checked again before a cached plan is used.
-- After each client import attempt, the import code discards the inventories of that endpoint, including aliases, and drops the plans of that endpoint. It does this before it releases the endpoint import lock, because a failed attempt can have added the torrent. When a hardlink source is missing, the import code drops the plan and discards the inventory of that one client. A search run discards the inventory of each client before its first read.
+- Only an accepted match produces an import plan. One function decides the coverage rule of smart mode, for the planned coverage of a plan build and for the achieved coverage after the hardlinks. A rejected match keeps no plan. It returns its coverage when the torrent episodes were matched.
+- The processor keeps the import plan of an accepted match for 2 minutes, for both callers. No plan value crosses its interface. The import normally performs no second inventory or file-detail reads.
+- A kept plan is valid only for the same client name, torrent identity, release name, client configuration, and fuzzy matching settings. The import builds the plan again when it has no valid one.
+- The import has one path: take the endpoint import lock, do the candidate check again, take the kept plan or build it again, apply the coverage rule, make the hardlinks, check the achieved coverage, import into the client, and drop the inventories and plans of the endpoint. Imports to the same client type, host, and port run one at a time.
+- After each client import attempt, the import discards the inventories of that endpoint, including aliases, and drops the plans of that endpoint. One deferred call does this and then releases the endpoint import lock, so the order does not depend on two deferred calls. A failed attempt can have added the torrent. When a hardlink source is missing, the import drops the plan and discards the inventory of that one client. A search run discards the inventory of each client before its first read.
 - An inventory read that a discard overlaps returns its result to its caller, but does not store it.
-- Exact plans retain one compact reason for every unmatched torrent target.
+- Each plan build returns one compact reason for every unmatched torrent target,
+  for the log lines of the match.
   Torrent-client adapters return neutral stage timings for successful and failed
-  imports. The HTTP processor owns the operator-facing structured logs.
+  imports. The season pack processor owns the operator-facing structured logs of
+  the stages. The webhook handlers and discovery log only their own start,
+  result, and run lines.
 
 ### Prowlarr Discovery
 
@@ -111,8 +122,17 @@
   bounded HTTP reads, request spacing, and torrent proxy retrieval.
 - `internal/http/search.go` groups episode inventories by series/season,
   excludes variants already covered by a pack in each client, shares remaining
-  searches across years and clients, and feeds results through existing candidate,
-  exact-plan, and import processing. It accepts one pack per release variant.
+  searches across years and clients, and gives each result to the season pack
+  processor. It accepts one pack per release variant.
+- Discovery uses the candidate check for a dry run, the match with a fetch for
+  `verify`, and the match with a fetch followed by the import for an import.
+  The fetch reads the stored torrent cache or downloads the torrent through
+  Prowlarr, one time for each result. The download never runs under the
+  endpoint import lock. The import takes the plan of the match from the
+  processor, as for the two requests of an announce.
+- A run keeps one client handle for each client. The duplicate-variant rule of
+  a run, the stored torrent cache, the download counts, the pause rules, and the
+  report stay in `internal/http/search.go`.
 - `POST /api/search` and `cmd/search.go` expose search-only dry runs, exact previews, and imports. The
   request context owns a manual run; there is no persistent job queue.
 - `internal/http/search_schedule.go` polls RSS on an opt-in interval from the
@@ -177,7 +197,7 @@
   a hardlink target behind a symlink that `os.Root` rejects is not complete. It makes nothing on disk.
 - The import root must be an absolute path. With a relative root, each link fails with an error that names the
   root, `Complete` answers false, and the import returns status `440`.
-- The package has no logger and returns no status code. The HTTP processor owns the operator logs, the count of
+- The package has no logger and returns no status code. The season pack processor owns the operator logs, the count of
   linked episodes, the one refresh after a missing source, and the status mapping.
 
 ### Notifications
@@ -188,7 +208,9 @@
 - The HTTP server gets one `domain.Sender`. For each notification, it reads the current config snapshot, applies the
   global `notificationLevel`, and sends to all destinations at the same time. Each send has its own 30-second timeout,
   and a failure at one destination does not stop the others. `Send` joins one error for each failed destination, and
-  the processor logs each on its own line.
+  the HTTP package logs each on its own line.
+- The season pack processor sends no notification. The webhook handlers send `Match` and `Import`, and discovery sends
+  `Search` or `RSS` after each import attempt.
 - `internal/shoutrrrurl/` names a Shoutrrr destination by list position and scheme (`shoutrrr[1] (gotify)`),
   validates the URLs at config load, and removes the userinfo, path, and query of each configured URL from Shoutrrr
   error text. It is a separate package because `internal/config` validates the URLs and `internal/notification`
@@ -199,7 +221,7 @@
 
 ### Cancellation And Shutdown
 
-- Each webhook passes its request context through planning and hardlinking.
+- Each webhook passes its request context through planning: the inventory read, the file-detail reads, the wait for the endpoint import lock, and the read of the import destination. The hardlink step takes no context and runs to its end.
 - The torrent-client import runs with that context detached from cancellation, so a caller disconnect cannot leave a half-imported torrent stopped. Each adapter bounds its own client calls with timeouts.
 - Client imports do not wait for the client's data check. The client checks the data and starts the torrent by itself, so a request finishes within seconds.
 - qBittorrent polling stops at its own timeouts. The upstream qBittorrent API is context-free, so an in-flight library call can finish only when its own HTTP behavior returns.
@@ -217,16 +239,22 @@
 Preferred dependency direction:
 
 1. `cmd/` may depend on `internal/*`
-2. `internal/http/` may orchestrate across config, notifications, release logic, torrents, inventories, and pack placement
-3. `internal/inventory/` owns the client connections, inventories, and parsed names. Other packages reach that state only through `inventory.Store` and its client handle
-4. leaf packages should stay narrow:
+2. `internal/http/` may orchestrate across config, notifications, the season pack processor, inventories, and
+   Prowlarr discovery. Its only way into the stages is the three operations of `seasonpack.Processor`. It reads only
+   their outcome: no plan, no candidate list, and no source list
+3. `internal/seasonpack/` runs the stages across release logic, torrents, inventories, and pack placement. It must not
+   import `internal/http/`, and it knows no webhook payload, no notification, and no search report
+4. `internal/inventory/` owns the client connections, inventories, and parsed names. Other packages reach that state only through `inventory.Store` and its client handle
+5. leaf packages should stay narrow:
    - `internal/release/` should not know HTTP details
    - `internal/placement/` should not know webhook payloads
    - the direction is `internal/torrentclient/` to `internal/placement/` to `internal/torrents/`.
      `internal/placement/` must not import `internal/torrentclient/`
-5. `internal/domain/` holds cross-package data shapes and status concepts
-6. test helper packages (`internal/logger/loggertest`, `internal/daemontest`)
-   import `testing`, so only `_test.go` files may import them
+6. `internal/domain/` holds cross-package data shapes and status concepts
+7. test helper packages (`internal/logger/loggertest`, `internal/daemontest`,
+   `internal/torrentclient/torrentclienttest`) hold test doubles and test helpers
+   that must not reach the binary, and some import `testing`, so only `_test.go`
+   files may import them
 
 If a change starts pushing transport concerns into matching logic or pack placement, stop and re-check the boundary.
 

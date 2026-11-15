@@ -11,13 +11,14 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
+	"github.com/nuxencs/seasonpackarr/internal/torrentclient/torrentclienttest"
 
 	"github.com/stretchr/testify/require"
 )
 
 // fakeClosingClient records Close like the Deluge adapter, which holds a daemon connection.
 type fakeClosingClient struct {
-	*fakeTorrentClient
+	*torrentclienttest.Client
 	closeCalls atomic.Int32
 }
 
@@ -27,8 +28,8 @@ func (f *fakeClosingClient) Close() error {
 }
 
 func TestWatchConfigReloads_CleansUpAfterEachReload(t *testing.T) {
-	adapter := &fakeClosingClient{fakeTorrentClient: &fakeTorrentClient{
-		torrents: []torrentclient.Torrent{{Name: "Series.S01E01.1080p.WEB-DL-GRP", Hash: "ep1"}},
+	adapter := &fakeClosingClient{Client: &torrentclienttest.Client{
+		Torrents: []torrentclient.Torrent{{Name: "Series.S01E01.1080p.WEB-DL-GRP", Hash: "ep1"}},
 	}}
 	inv := newTestInventory(adapter)
 	client := &domain.Client{Type: "qbittorrent", Host: "qbittorrent"}

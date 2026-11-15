@@ -222,7 +222,7 @@ func (h *harness) ensureFilter(t *testing.T, clientName string) {
 	time.Sleep(time.Until(verified.Add(inventoryCacheTTL + time.Second)))
 }
 
-// inventoryCacheTTL is inventoryCacheTTL in internal/http/processor_candidate.go.
+// inventoryCacheTTL is validity in internal/inventory/inventory.go.
 const inventoryCacheTTL = 30 * time.Second
 
 // setupFilterResult is one result of seasonpackarr setup filter --json.

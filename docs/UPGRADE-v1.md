@@ -13,7 +13,8 @@ autobrr filter disabled until step 6.
 - **autobrr runs 2 checks.** The candidate check (`/api/candidate`) uses only the
   announce name, before autobrr downloads the torrent file. The match
   (`/api/match`) runs only when the candidate check passes. It reads the torrent
-  and builds an import plan, but changes nothing.
+  and accepts or rejects the season pack, but changes nothing. An accepted match
+  produces an import plan.
 - **seasonpackarr adds the torrent to the client.** The import (`/api/import`)
   creates the hardlinks and then adds the season pack to the torrent client.
   autobrr must not add the same torrent with a separate client action.

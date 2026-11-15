@@ -161,6 +161,10 @@ To import the accepted packs, run the search without flags:
 seasonpackarr search
 ```
 
+Each import attempt sends one notification with the action label `Search`. An
+RSS poll uses the label `RSS`. See
+[Notifications and logs](API.md#notifications-and-logs).
+
 RSS monitoring runs only on its configured interval and always evaluates imports
 for all clients. The CLI and API run searches across the configured searchable
 indexers. The preview flags apply only to searches.
@@ -227,11 +231,12 @@ added a stopped torrent; inspect the client before retrying.
    here and reports `candidate` with unknown coverage.
 7. For exact preview and import, read the compatible episode file details.
    Require at least one accessible regular file with a positive size that equals
-   the client's declared size. Exclude unavailable or size-mismatched files from
-   the plan. A client file-detail request failure stops that result before
+   the client's declared size. Do not use unavailable or size-mismatched files as
+   sources. The log line `client episode file is not reusable` names each
+   excluded file and the reason. A client file-detail request failure stops that result before
    metadata retrieval. File size alone does not prove completion or valid pieces.
 8. Reuse valid cached metadata for this indexer and result identity, or download
-   the torrent through Prowlarr. Build an exact plan using available source files.
+   the torrent through Prowlarr. Map each torrent episode to an available source file.
    The file list, sizes, and distinct valid episode targets determine coverage;
    release titles and total torrent size cannot establish it.
 9. Apply current smart-mode settings. With smart mode disabled, at least one

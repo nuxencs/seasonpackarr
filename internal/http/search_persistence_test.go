@@ -20,7 +20,7 @@ func TestSearch_MetadataSurvivesRestartButDecisionsDoNot(t *testing.T) {
 	cfg := f.config.Snapshot()
 	cfg.Search.IndexerIDs = []int{1}
 	f.config.Store(cfg)
-	path := filepath.Join(f.sourceDir, f.torrentClient.filesByHash["ep2"][0].Name)
+	path := filepath.Join(f.sourceDir, f.torrentClient.FilesByHash["ep2"][0].Name)
 	require.NoError(t, os.Rename(path, path+"-moved"))
 	first := f.runExact(t, true)
 	require.Equal(t, "rejected", first.Outcomes[0].Status)
@@ -32,7 +32,7 @@ func TestSearch_MetadataSurvivesRestartButDecisionsDoNot(t *testing.T) {
 	require.Equal(t, "would_import", next.Outcomes[0].Status)
 	require.Equal(t, 1, next.TorrentCacheHits)
 	require.Zero(t, next.TorrentDownloads)
-	require.Zero(t, f.torrentClient.importCalls)
+	require.Zero(t, f.torrentClient.ImportCalls)
 }
 
 func TestSearch_DatabaseFailureStopsDiscovery(t *testing.T) {
@@ -43,7 +43,7 @@ func TestSearch_DatabaseFailureStopsDiscovery(t *testing.T) {
 	require.JSONEq(t, `{"error":"could not access database; check service logs"}`, response.Body.String())
 	require.Zero(t, f.discoveryCalls)
 	require.Zero(t, f.downloads)
-	require.Zero(t, f.torrentClient.importCalls)
+	require.Zero(t, f.torrentClient.ImportCalls)
 }
 
 func TestSearch_MetadataFailureDoesNotImport(t *testing.T) {
@@ -73,7 +73,7 @@ func TestSearch_MetadataFailureDoesNotImport(t *testing.T) {
 			} else {
 				require.Equal(t, 1, f.downloads)
 			}
-			require.Zero(t, f.torrentClient.importCalls)
+			require.Zero(t, f.torrentClient.ImportCalls)
 		})
 	}
 }

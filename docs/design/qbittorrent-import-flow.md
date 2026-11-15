@@ -21,7 +21,7 @@ needed about 2 minutes 50 seconds. autobrr cancelled the request in the middle
 of the old recheck wait, and qBittorrent left the torrent stopped after its
 check until a manual start.
 
-The processor also calls `Import` with a context that the HTTP caller cannot
+The season pack processor also calls `Import` with a context that the HTTP caller cannot
 cancel, so a disconnect cannot interrupt a started client mutation. Each
 adapter bounds its own client calls.
 
@@ -38,7 +38,7 @@ so it gets a normal check instead, as it did with the old recheck flow.
 
 ```mermaid
 flowchart TD
-    A["POST /api/import<br/>processor.importSeasonPack"] --> B["load accepted plan<br/>or rebuild on cache miss"]
+    A["POST /api/import<br/>seasonpack.Processor.Import"] --> B["load accepted plan<br/>or rebuild on cache miss"]
     B --> C["ImportDestination()<br/>import root + layout with a pack folder or flat"]
     C --> D["hardlink planned episodes<br/>in the resolved client layout"]
     D --> E["DataComplete = every torrent file<br/>exists with the expected size"]
