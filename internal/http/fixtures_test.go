@@ -32,7 +32,6 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient/torrentclienttest"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
-	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -123,7 +122,6 @@ func newTraceLogger(t *testing.T) *loggertest.Logger {
 
 func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFixture {
 	t.Helper()
-	resetProcessorGlobals()
 
 	tempDir := t.TempDir()
 	sourceDir := filepath.Join(tempDir, "source")
@@ -277,29 +275,6 @@ func newTestInventory(adapter torrentclient.TorrentClient) *inventory.Store {
 	}, logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}))
 }
 
-// newTestProcessor returns a processor that is connected to adapter as the default client.
-func newTestProcessor(t *testing.T, adapter torrentclient.TorrentClient) *processor {
-	t.Helper()
-	p := newImportProcessor(newTestInventory(adapter))
-	p.req = &request{ClientName: "default"}
-	_, err := p.connect(t.Context(), "default", p.cfg.Snapshot())
-	require.NoError(t, err)
-	return p
-}
-
-func resetProcessorGlobals() {
-	planMap = xsync.NewMapOf[importPlanCacheKey, cachedImportPlan]()
-}
-
-func newImportProcessor(inv *inventory.Store) *processor {
-	cfg := &fakeConfig{config: domain.Config{
-		Clients: map[string]*domain.Client{
-			"default": {Type: "qbittorrent", Import: domain.ImportPolicy{Category: "tv-hd"}},
-		},
-	}}
-	return newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, inv, nil, nil)
-}
-
 func writeEpisode(t *testing.T, path string) {
 	t.Helper()
 	require.NoError(t, os.WriteFile(path, []byte("0"), 0o644))
@@ -436,7 +411,9 @@ func (f *searchFixture) runExact(t *testing.T, dryRun bool) searchReport {
 	return report
 }
 
-func (f *searchFixture) restart(t *testing.T) {
+// restart replaces the server with a new one on the same config and database.
+// The new server has no import plans.
+func (f *processorHTTPFixture) restart(t *testing.T) {
 	t.Helper()
 	require.NoError(t, f.search.state.Close())
 	store, err := state.Open(t.Context(), f.statePath, zerolog.Nop())
@@ -557,5 +534,4 @@ func (f processorHTTPFixture) useClient(config domain.Client) {
 	config.Import = cfg.Clients["default"].Import
 	cfg.Clients = map[string]*domain.Client{"default": &config}
 	f.config.Store(cfg)
-	resetProcessorGlobals()
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/errtrace"
 	"github.com/nuxencs/seasonpackarr/internal/inventory"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
+	"github.com/nuxencs/seasonpackarr/internal/seasonpack"
 	"github.com/nuxencs/seasonpackarr/internal/state"
 
 	"github.com/gin-contrib/requestid"
@@ -26,12 +27,15 @@ import (
 var ErrServerClosed = http.ErrServerClosed
 
 type Server struct {
-	log    logger.Logger
-	cfg    config.Provider
-	noti   domain.Sender
-	inv    *inventory.Store
-	tasks  *taskGroup
-	search *searchRunner
+	log   logger.Logger
+	cfg   config.Provider
+	inv   *inventory.Store
+	tasks *taskGroup
+	noti  *notifier
+	// processor runs the stages for the webhook handlers and for search, so
+	// both share its import plans and its endpoint import locks.
+	processor *seasonpack.Processor
+	search    *searchRunner
 	// lifecycleTasks holds the search schedule, the startup inventory read, and
 	// the cache clean-up after config reloads. Shutdown cancels them first, so
 	// they cannot hold the HTTP drain.
@@ -46,13 +50,16 @@ type Server struct {
 // and can be nil when the config file is disabled.
 func NewServer(log logger.Logger, config config.Provider, notification domain.Sender, store *state.Store, inv *inventory.Store, reloads <-chan struct{}) *Server {
 	tasks := newTaskGroup()
+	noti := &notifier{sender: notification, tasks: tasks}
+	processor := seasonpack.New(log, inv)
 	return &Server{
 		log:            log,
 		cfg:            config,
-		noti:           notification,
 		inv:            inv,
 		tasks:          tasks,
-		search:         &searchRunner{log: log, cfg: config, inv: inv, noti: notification, tasks: tasks, state: store},
+		noti:           noti,
+		processor:      processor,
+		search:         &searchRunner{log: log, cfg: config, inv: inv, processor: processor, noti: noti, state: store},
 		lifecycleTasks: newTaskGroup(),
 		reloads:        reloads,
 	}
@@ -139,7 +146,7 @@ func (s *Server) Handler() http.Handler {
 
 		api.Use(s.AuthMiddleware())
 		{
-			newWebhookHandler(s.log, s.cfg, s.inv, s.noti, s.tasks).Routes(api.Group("/"))
+			newWebhookHandler(s.log, s.cfg, s.inv, s.processor, s.noti).Routes(api.Group("/"))
 			api.POST("/search", s.search.handler)
 		}
 	}

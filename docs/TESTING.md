@@ -21,12 +21,22 @@ so the glossary does not define them.
   aspect: `<file>_<aspect>_test.go` (`search_cooldown_test.go`,
   `client_rss_test.go`, `inventory_benchmark_test.go`).
 - Tests that drive several files through one entry point live with the entry
-  point. HTTP endpoint tests live in `internal/http/processor_handlers_test.go`.
+  point. HTTP endpoint tests live in `internal/http/webhook_test.go`.
+- The tests of the candidate check, the match, and the import live in
+  `internal/seasonpack/` (`candidate_test.go`, `match_test.go`,
+  `import_test.go`). They call the three operations of the season pack
+  processor with a real torrent, a real temporary directory, and the fake
+  torrent client, and assert only what a caller can see: the outcome, the calls
+  that the fake client received, the files on disk, and the log lines. No test
+  builds a plan by hand, reads the plan cache, or sets an expiry time. The plan
+  expiry test and the endpoint import lock test use `testing/synctest`. The
+  tests of the pure private helpers (`TestEpisodeFileFromFiles_`,
+  `TestCandidateMismatchField`) are in the same files.
 - `fixtures_test.go` holds the fakes and fixtures that more than one test file
   of the package uses. A fake that one file uses stays in that file.
 - `internal/torrentclient/torrentclienttest` holds the fake torrent client
   (`torrentclienttest.Client`) for tests that need a client and no real
-  daemon. The HTTP tests use it. A test sets its exported fields for the
+  daemon. The HTTP tests and the season pack processor tests use it. A test sets its exported fields for the
   torrents, the file results, and the import root, and reads its call counts
   and the last import request. A variant that one package needs is a wrapper
   in the test files of that package (`fakeSearchClient`, `fakeClosingClient`).
@@ -52,7 +62,8 @@ so the glossary does not define them.
   - the function under test (`TestEpisodeFileFromFiles_`), or a short type
     name plus the method (`TestQbitImport_` for `qbitClient.Import`). When a
     package has one main type, the method alone is enough
-    (`TestImportSeasonPack_` for `processor.importSeasonPack`).
+    (`TestCandidate_`, `TestMatch_`, and `TestImport_` for the three operations
+    of `seasonpack.Processor`).
   - a type, when the test covers behavior across several of its methods
     (`TestClient_`, `TestStore_`, `TestAPIClient_`)
   - `<Name>Command` for a CLI command (`TestOperationCommand_`)

@@ -23,6 +23,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/logger/loggertest"
 	"github.com/nuxencs/seasonpackarr/internal/notification"
+	"github.com/nuxencs/seasonpackarr/internal/seasonpack"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient/torrentclienttest"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
@@ -30,7 +31,6 @@ import (
 	"github.com/autobrr/go-torrent/bencode"
 	"github.com/autobrr/go-torrent/metainfo"
 	"github.com/gin-gonic/gin"
-	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -940,8 +940,7 @@ func TestImportEndpoint_RebuildsUnavailableOrInvalidPlans(t *testing.T) {
 		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
-		planMap = xsync.NewMapOf[importPlanCacheKey, cachedImportPlan]()
-		f.inventory.DiscardClient("default")
+		f.restart(t)
 		res := f.postJSON(t, "/api/import", f.packPayload())
 
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
@@ -950,24 +949,8 @@ func TestImportEndpoint_RebuildsUnavailableOrInvalidPlans(t *testing.T) {
 		require.Equal(t, 1, f.torrentClient.ImportCalls)
 	})
 
-	t.Run("expired", func(t *testing.T) {
-		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
-		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
-
-		hashes, err := torrents.InfoHashes(f.torrent)
-		require.NoError(t, err)
-		key := importPlanKey("default", hashes)
-		cached, ok := planMap.Load(key)
-		require.True(t, ok)
-		cached.expiresAt = time.Now().Add(-time.Second)
-		planMap.Store(key, cached)
-
-		res := f.postJSON(t, "/api/import", f.packPayload())
-		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
-		require.Equal(t, 1, f.torrentClient.TorrentCalls, "an expired plan can still reuse the inventory cache")
-		require.Equal(t, 2, f.torrentClient.FileCalls, "an expired plan must rebuild file mappings")
-		require.Equal(t, 1, f.torrentClient.ImportCalls)
-	})
+	// The processor tests cover a plan that is older than 2 minutes
+	// (TestImport_BuildsPlanAgainAfterTwoMinutes).
 
 	t.Run("release name changed", func(t *testing.T) {
 		f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
@@ -1111,7 +1094,6 @@ func TestImportEndpoint_MutationFailuresRemainSafeAndRetryable(t *testing.T) {
 }
 
 func TestCandidateEndpoint_ReturnsSuccessfulMatchWithoutFileReads(t *testing.T) {
-	resetProcessorGlobals()
 	gin.SetMode(gin.TestMode)
 
 	clientCfg := &domain.Client{Type: "qbittorrent", Import: domain.ImportPolicy{Category: "tv-hd"}}
@@ -1122,7 +1104,9 @@ func TestCandidateEndpoint_ReturnsSuccessfulMatchWithoutFileReads(t *testing.T) 
 	}
 	cfg := &fakeConfig{config: domain.Config{Clients: map[string]*domain.Client{"default": clientCfg}}}
 	router := gin.New()
-	newWebhookHandler(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, newTestInventory(torrentClient), nil, newTaskGroup()).Routes(router.Group("/api"))
+	log := logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"})
+	inv := newTestInventory(torrentClient)
+	newWebhookHandler(log, cfg, inv, seasonpack.New(log, inv), &notifier{tasks: newTaskGroup()}).Routes(router.Group("/api"))
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/candidate", bytes.NewBufferString(`{"name":"Candidate.S01.1080p.WEB-DL.H.264-RlsGrp","clientname":"default"}`))
 	req.Header.Set("Content-Type", "application/json")

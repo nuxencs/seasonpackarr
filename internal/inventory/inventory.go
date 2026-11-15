@@ -106,11 +106,12 @@ func New(connect ConnectFunc, log logger.Logger) *Store {
 
 // Client is a connected client of one config snapshot.
 type Client struct {
-	store   *Store
-	name    string
-	config  domain.Client
-	fuzzy   domain.FuzzyMatching
-	adapter torrentclient.TorrentClient
+	store    *Store
+	name     string
+	snapshot domain.Config
+	config   domain.Client
+	fuzzy    domain.FuzzyMatching
+	adapter  torrentclient.TorrentClient
 }
 
 // Client returns a connected handle for the client name in cfg. It uses the
@@ -138,12 +139,25 @@ func (s *Store) Client(ctx context.Context, name string, cfg domain.Config) (*Cl
 	}
 
 	return &Client{
-		store:   s,
-		name:    name,
-		config:  cached.config,
-		fuzzy:   cfg.FuzzyMatching,
-		adapter: cached.adapter,
+		store:    s,
+		name:     name,
+		snapshot: cfg,
+		config:   cached.config,
+		fuzzy:    cfg.FuzzyMatching,
+		adapter:  cached.adapter,
 	}, nil
+}
+
+// Name returns the client name in the config.
+func (c *Client) Name() string {
+	return c.name
+}
+
+// Snapshot returns the config snapshot that the handle was made from, so a
+// caller uses the settings that belong to this connection. Callers must not
+// change it.
+func (c *Client) Snapshot() domain.Config {
+	return c.snapshot
 }
 
 // Adapter returns the torrent client adapter, for file reads and the import.

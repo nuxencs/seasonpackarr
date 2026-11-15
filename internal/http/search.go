@@ -24,6 +24,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/prowlarr"
 	"github.com/nuxencs/seasonpackarr/internal/release"
+	"github.com/nuxencs/seasonpackarr/internal/seasonpack"
 	"github.com/nuxencs/seasonpackarr/internal/state"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
@@ -80,8 +81,8 @@ type searchRunner struct {
 	cfg         config.Provider
 	inv         *inventory.Store
 	log         logger.Logger
-	noti        domain.Sender
-	tasks       *taskGroup
+	processor   *seasonpack.Processor
+	noti        *notifier
 	running     atomic.Bool
 	cooldowns   map[int]time.Time
 	state       *state.Store
@@ -93,19 +94,17 @@ type searchRunner struct {
 // discoveryRun holds state shared by one manual search or RSS poll. The runner
 // retains the connection. Durable state is loaded from SQLite for each run.
 type discoveryRun struct {
-	runner        *searchRunner
-	request       SearchRequest
-	report        *searchReport
-	processors    map[string]*processor
+	runner  *searchRunner
+	request SearchRequest
+	report  *searchReport
+	// clients holds one handle for each client that the run could read. Each
+	// handle has the config snapshot of the run, so a config reload during the
+	// run changes no matching rule, no import rule, and no adapter.
+	clients       map[string]*inventory.Client
 	selected      map[string][]rls.Release
 	unavailable   map[int]bool
 	storageFailed bool
 }
-
-// A run uses one immutable config snapshot, including matching and import rules.
-type searchConfig struct{ value domain.Config }
-
-func (s searchConfig) Snapshot() domain.Config { return s.value }
 
 func (r *searchRunner) handler(c *gin.Context) {
 	var req *SearchRequest
@@ -193,15 +192,13 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 		r.log.Info().Bool("rss", rss).Bool("dry_run", req.DryRun).Bool("verify", req.Verify).Int("torrent_downloads", report.TorrentDownloads).Int("torrent_cache_hits", report.TorrentCacheHits).Int("covered_episode_torrents", report.CoveredEpisodeTorrents).Int("groups", report.Groups).Int("search_requests", report.Requests).Int("outcomes", len(report.Outcomes)).Int("failures", len(report.Failures)).Int64("duration_ms", time.Since(started).Milliseconds()).Msg("Prowlarr run completed")
 	}()
 
-	processors := make(map[string]*processor, len(clients))
+	handles := make(map[string]*inventory.Client, len(clients))
 	groups := make(map[seasonSearchKey]*seasonSearch)
 	for _, name := range clients {
 		if ctx.Err() != nil {
 			break
 		}
-		p := newProcessor(r.log, searchConfig{snapshot}, r.inv, r.noti, r.tasks)
-		p.req = &request{ClientName: name}
-		client, err := p.connect(ctx, name, snapshot)
+		client, err := r.inv.Client(ctx, name, snapshot)
 		if err != nil {
 			report.Failures = append(report.Failures, searchFailure{ClientName: name, Reason: "could not connect to torrent client"})
 			continue
@@ -213,7 +210,7 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 			report.Failures = append(report.Failures, searchFailure{ClientName: name, Reason: "could not read torrent client inventory"})
 			continue
 		}
-		processors[name] = p
+		handles[name] = client
 		for entries := range clientInventory.TitleGroups() {
 			// Inventory buckets already apply the title, season, and year rules.
 			// Collect packs once so episode-only seasons do not need pairwise scans.
@@ -301,7 +298,7 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 		runner:      r,
 		request:     req,
 		report:      &report,
-		processors:  processors,
+		clients:     handles,
 		selected:    make(map[string][]rls.Release),
 		unavailable: make(map[int]bool),
 	}
@@ -318,7 +315,7 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 			return report, nil
 		}
 		// Do not consume releases for clients absent from this inventory scan.
-		persist := len(processors) == len(clients)
+		persist := len(handles) == len(clients)
 		feeds.Prune(indexers, time.Now())
 		if !run.saveFeeds(ctx, feeds, persist) {
 			return report, nil
@@ -413,14 +410,14 @@ func (run *discoveryRun) searchGroup(ctx context.Context, indexer prowlarr.Index
 }
 
 func (run *discoveryRun) evaluateResult(ctx context.Context, indexer prowlarr.Indexer, result prowlarr.Result, group *seasonSearch) {
-	var data []byte
-	var downloadErr error
+	processor := run.runner.processor
+	torrent := resultTorrent{run: run, indexer: indexer, result: result}
 	for _, name := range slices.Sorted(maps.Keys(group.clients)) {
 		if ctx.Err() != nil || run.storageFailed {
 			return
 		}
-		p := run.processors[name].forResult(result.Title)
-		snapshot := p.cfg.Snapshot()
+		client := run.clients[name]
+		snapshot := client.Snapshot()
 		parsed := rls.ParseString(result.Title)
 		outcome := searchOutcome{ClientName: name, Title: result.Title, IndexerID: indexer.ID, Status: "rejected"}
 		duplicate := false
@@ -443,79 +440,40 @@ func (run *discoveryRun) evaluateResult(ctx context.Context, indexer prowlarr.In
 			run.report.Outcomes = append(run.report.Outcomes, outcome)
 			continue
 		}
-		candidates, status, err := p.findCandidates(ctx, name, snapshot)
-		if err != nil {
-			outcome.Reason = status.String()
-			if !isExpectedGateRejection(status) {
-				outcome.Status = "failed"
-			}
-			run.report.Outcomes = append(run.report.Outcomes, outcome)
-			continue
-		}
 		if run.request.DryRun && !run.request.Verify {
-			outcome.Status = "candidate"
-			outcome.Reason = "release checks passed; exact coverage not verified"
-			run.report.Outcomes = append(run.report.Outcomes, outcome)
-			continue
-		}
-		sources, err := p.getEpisodeFilesChecked(ctx, candidates)
-		if err != nil {
-			outcome.Status = "failed"
-			outcome.Reason = "could not read episode file details from torrent client"
-			run.report.Outcomes = append(run.report.Outcomes, outcome)
-			continue
-		}
-		if len(sources) == 0 {
-			outcome.Reason = "no accessible episode files with the declared size"
-			run.report.Outcomes = append(run.report.Outcomes, outcome)
-			continue
-		}
-		if data == nil && downloadErr == nil {
-			key := state.MetadataKey(indexer.ID, result)
-			var stateErr error
-			data, stateErr = run.runner.state.Metadata(ctx, key, time.Now())
-			if stateErr != nil {
-				run.storageFailure(stateErr)
-				return
-			}
-			if data != nil {
-				run.report.TorrentCacheHits++
+			if checked := processor.Candidate(ctx, client, result.Title); checked.Err != nil {
+				outcome.reportError(checked)
 			} else {
-				data, downloadErr = run.runner.provider.Download(ctx, indexer.ID, result)
-				if downloadErr == nil {
-					run.report.TorrentDownloads++
-					if _, err := torrents.ParseInfo(data); err == nil {
-						if err := run.runner.state.PutMetadata(ctx, key, data, time.Now()); err != nil {
-							run.storageFailure(err)
-							return
-						}
-					}
-				}
+				outcome.Status = "candidate"
+				outcome.Reason = "release checks passed; exact coverage not verified"
 			}
-		}
-		if downloadErr != nil {
-			if err := run.runner.recordCooldown(ctx, indexer.ID, downloadErr); err != nil {
-				run.storageFailure(err)
-			}
-			outcome.Status = "failed"
-			outcome.Reason = downloadErr.Error()
 			run.report.Outcomes = append(run.report.Outcomes, outcome)
 			continue
 		}
-		p.req.Torrent, _ = json.Marshal(data)
-		plan, status, err := p.buildImportPlanWithSources(ctx, name, snapshot, sources)
-		if plan.totalEps > 0 {
-			outcome.ReusableEpisodes = new(len(plan.links))
-			outcome.TotalEpisodes = new(plan.totalEps)
+		matched := processor.Match(ctx, client, result.Title, seasonpack.TorrentFetch(torrent.fetch))
+		if torrent.storageErr != nil {
+			run.storageFailure(torrent.storageErr)
+			return
 		}
-		if err == nil && !plan.meetsPlannedCoverageThreshold(snapshot) {
-			status = domain.StatusBelowThreshold
-			err = status.Error()
+		if matched.Coverage != nil {
+			outcome.ReusableEpisodes = new(matched.Coverage.Reusable)
+			outcome.TotalEpisodes = new(matched.Coverage.Total)
 		}
-		if err != nil {
-			outcome.Reason = status.String()
-			if !isExpectedGateRejection(status) {
+		if matched.Err != nil {
+			switch {
+			case errors.Is(matched.Err, seasonpack.ErrFileDetailRead):
 				outcome.Status = "failed"
+				outcome.Reason = "could not read episode file details from torrent client"
+			case errors.Is(matched.Err, seasonpack.ErrNoSourceOnDisk):
+				outcome.Reason = "no accessible episode files with the declared size"
+			case torrent.downloadErr != nil && errors.Is(matched.Err, torrent.downloadErr):
+				if err := run.runner.recordCooldown(ctx, indexer.ID, torrent.downloadErr); err != nil {
+					run.storageFailure(err)
+				}
+				outcome.Status = "failed"
+				outcome.Reason = torrent.downloadErr.Error()
+			default:
+				outcome.reportError(matched)
 			}
 			run.report.Outcomes = append(run.report.Outcomes, outcome)
 			continue
@@ -524,14 +482,11 @@ func (run *discoveryRun) evaluateResult(ctx context.Context, indexer prowlarr.In
 			outcome.Status = "would_import"
 			run.selected[name] = append(run.selected[name], parsed)
 		} else {
-			p.storeImportPlan(name, *snapshot.Clients[name], snapshot.FuzzyMatching, plan)
-			status, err = p.runImport(ctx, name)
-			if err != nil {
-				outcome.Status = "failed"
-				outcome.Reason = status.String()
-				if isExpectedGateRejection(status) {
-					outcome.Status = "rejected"
-				}
+			// The import takes the plan of the match from the processor, as for
+			// the two requests of an announce.
+			imported := processor.Import(ctx, client, result.Title, torrent.data)
+			if imported.Err != nil {
+				outcome.reportError(imported)
 			} else {
 				outcome.Status = "imported"
 			}
@@ -542,10 +497,71 @@ func (run *discoveryRun) evaluateResult(ctx context.Context, indexer prowlarr.In
 			if run.report.RSS {
 				action = "RSS"
 			}
-			p.sendNotification(status, action, err)
+			log := run.runner.log.With().Str("module", "processor").Str("release", result.Title).Str("clientname", name).Logger()
+			run.runner.noti.send(log, imported.Status, domain.NotificationPayload{
+				ReleaseName: result.Title,
+				Client:      name,
+				Action:      action,
+				Error:       imported.Err,
+			})
 		}
 		run.report.Outcomes = append(run.report.Outcomes, outcome)
 	}
+}
+
+// reportError reports a processor outcome that has an error: the status text
+// as the reason, and "rejected" or "failed" from the class of the outcome.
+func (o *searchOutcome) reportError(result seasonpack.Outcome) {
+	o.Reason = result.Status.String()
+	o.Status = "failed"
+	if result.Class() == seasonpack.Rejected {
+		o.Status = "rejected"
+	}
+}
+
+// resultTorrent gets the torrent of one search result for the match. The
+// clients of the result share it, so the run reads the stored torrent cache or
+// downloads the torrent one time.
+type resultTorrent struct {
+	run     *discoveryRun
+	indexer prowlarr.Indexer
+	result  prowlarr.Result
+
+	data        []byte
+	downloadErr error
+	// storageErr is a database failure, which stops the run.
+	storageErr error
+}
+
+// fetch is the seasonpack.FetchFunc of the result. The match calls it only
+// when the client has an episode file on disk, so a result that cannot be
+// used costs no tracker request.
+func (rt *resultTorrent) fetch(ctx context.Context) ([]byte, error) {
+	runner := rt.run.runner
+	if rt.data == nil && rt.downloadErr == nil {
+		key := state.MetadataKey(rt.indexer.ID, rt.result)
+		rt.data, rt.storageErr = runner.state.Metadata(ctx, key, time.Now())
+		if rt.storageErr != nil {
+			return nil, rt.storageErr
+		}
+		if rt.data != nil {
+			rt.run.report.TorrentCacheHits++
+		} else {
+			rt.data, rt.downloadErr = runner.provider.Download(ctx, rt.indexer.ID, rt.result)
+			if rt.downloadErr == nil {
+				rt.run.report.TorrentDownloads++
+				if _, err := torrents.ParseInfo(rt.data); err == nil {
+					if rt.storageErr = runner.state.PutMetadata(ctx, key, rt.data, time.Now()); rt.storageErr != nil {
+						return nil, rt.storageErr
+					}
+				}
+			}
+		}
+	}
+	if rt.downloadErr != nil {
+		return nil, rt.downloadErr
+	}
+	return rt.data, nil
 }
 
 func (r *searchRunner) recordCooldown(ctx context.Context, indexerID int, err error) error {
@@ -567,13 +583,4 @@ func (r *searchRunner) stateError(err error) error {
 func (run *discoveryRun) storageFailure(err error) {
 	run.storageFailed = true
 	run.report.Failures = append(run.report.Failures, searchFailure{Reason: run.runner.stateError(err).Error()})
-}
-
-// forResult returns a copy of p with its own request and logger for one release,
-// so no log field and no torrent of this evaluation reaches the next one.
-func (p *processor) forResult(releaseName string) *processor {
-	evaluation := *p
-	evaluation.req = &request{Name: releaseName, ClientName: p.req.ClientName}
-	evaluation.log = p.log.With().Str("release", releaseName).Str("clientname", p.req.ClientName).Logger()
-	return &evaluation
 }

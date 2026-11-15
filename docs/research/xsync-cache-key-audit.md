@@ -81,7 +81,7 @@ These figures are microbenchmarks, not a latency guarantee. Hardware, Go release
 ## Sources
 
 - [`go.mod`](../../go.mod): pinned xsync version and Go language version
-- [`internal/http/processor_plan.go`](../../internal/http/processor_plan.go): current key type and cache operations
+- [`internal/seasonpack/plan_cache.go`](../../internal/seasonpack/plan_cache.go): current key type and cache operations
 - [`internal/torrents/torrents.go`](../../internal/torrents/torrents.go): hash key fields
 - [xsync v3.5.1 `mapof.go`](https://github.com/puzpuzpuz/xsync/blob/v3.5.1/mapof.go)
 - [xsync v3.5.1 `util_hash.go`](https://github.com/puzpuzpuz/xsync/blob/v3.5.1/util_hash.go)

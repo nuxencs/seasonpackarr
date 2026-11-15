@@ -38,7 +38,7 @@ so it gets a normal check instead, as it did with the old recheck flow.
 
 ```mermaid
 flowchart TD
-    A["POST /api/import<br/>processor.importSeasonPack"] --> B["load accepted plan<br/>or rebuild on cache miss"]
+    A["POST /api/import<br/>seasonpack.Processor.Import"] --> B["load accepted plan<br/>or rebuild on cache miss"]
     B --> C["ImportDestination()<br/>import root + layout with a pack folder or flat"]
     C --> D["hardlink planned episodes<br/>in the resolved client layout"]
     D --> E["DataComplete = every torrent file<br/>exists with the expected size"]
