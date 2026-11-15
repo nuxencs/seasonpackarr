@@ -125,16 +125,23 @@ starts the daemons and runs them, locally and in the integration workflow.
   real download, for a missing first and a missing last episode.
   `daemontest.NewSeeder` controls the seeder daemon with go-qbittorrent
   directly, not through an adapter. `Seeder.Seed` writes the full pack into the
-  seed folder and seeds it. `daemontest.WriteLinkedPack` writes the source
-  episodes below the import folder and hardlinks all except the missing one
-  into the pack folder. After the import, `daemontest.PeerAddress` resolves the
-  client's host name and listen port to the `<ip>:<port>` address, and
+  seed folder and seeds it. `daemontest.WriteLinkedPack` writes the reusable
+  episodes below the import folder. Then it parses the torrent of the pack with
+  `torrents.ParseInfo` and makes the hardlinks through the placement module
+  (`internal/placement`), so these tests run the production link code. The
+  destination has the import folder as its import root and a pack folder below
+  it, and the helper links each reusable episode except the missing one to its
+  hardlink target. It fails the test when a link outcome is not `Linked`.
+  After the import, `daemontest.PeerAddress` resolves the client's host name
+  and listen port to the `<ip>:<port>` address, and
   `daemontest.WaitSeededDownload` connects the seeder to it with `addPeers`.
   `assertDownloadedPack` checks the file content, that reused episodes keep
   the inode of their source files, and that only the missing episode
   downloaded.
 
 The import folder must have the same path for the test process and the daemon.
+It must be an absolute path, because the placement module refuses a relative
+import root.
 
 | Client | Gate variable | Other variables |
 | --- | --- | --- |
@@ -160,7 +167,8 @@ why the search test drives a real Prowlarr.
   request that `seasonpackarr search` sends. It checks only the client API, the
   `/data` filesystem, the autobrr release status or log, and the search report.
   It calls no other seasonpackarr endpoint. It uses `internal/daemontest`, which
-  hashes torrents with `internal/torrents`, only for setup and waits.
+  hashes torrents with `internal/torrents` and imports `internal/placement` for
+  its linked packs, only for setup and waits.
 - Names are `Test<Client>E2E_<Behavior>` for the announce flow and
   `TestSearchE2E_<Behavior>` for search. `Test<Client>E2E_Scenarios` runs
   every scenario against one client as subtests, in a fixed order.
