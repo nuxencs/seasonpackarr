@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/inventory"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/logger/loggertest"
 	"github.com/nuxencs/seasonpackarr/internal/prowlarr"
@@ -85,6 +86,8 @@ func (f *fakeConfig) Store(config domain.Config) {
 
 type processorHTTPFixture struct {
 	search        *searchRunner
+	inventory     *inventory.Store
+	connector     *fakeConnector
 	statePath     string
 	handler       stdhttp.Handler
 	torrentClient *fakeTorrentClient
@@ -161,7 +164,8 @@ func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFix
 		SmartModeThreshold: opts.threshold,
 		APIToken:           processorTestToken,
 	}}
-	clientMap.Store("default", cachedTorrentClient{config: cloneClientConfig(*clientCfg), client: torrentClient})
+	connector := &fakeConnector{}
+	connector.use("", torrentClient)
 
 	statePath := filepath.Join(tempDir, "seasonpackarr.db")
 	store, err := state.Open(t.Context(), statePath, zerolog.Nop())
@@ -176,9 +180,12 @@ func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFix
 	if opts.noti != nil {
 		noti = opts.noti
 	}
-	server := NewServer(log, cfg, noti, store, nil)
+	inv := inventory.New(connector.connect, log)
+	server := NewServer(log, cfg, noti, store, inv, nil)
 	return processorHTTPFixture{
 		search:        server.search,
+		inventory:     inv,
+		connector:     connector,
 		statePath:     statePath,
 		handler:       server.Handler(),
 		torrentClient: torrentClient,
@@ -322,29 +329,63 @@ func (f *fakeTorrentClient) Import(ctx context.Context, req torrentclient.Import
 	return f.importReport, f.importErr
 }
 
-func newTestProcessor(client torrentclient.TorrentClient) *processor {
-	return &processor{req: &request{Client: client}}
+// fakeConnector gives the inventory store the fake adapter of each client
+// host that has one. It connects to each other host for real, so the
+// connection failure tests reach a real adapter.
+type fakeConnector struct {
+	mu       sync.Mutex
+	adapters map[string]torrentclient.TorrentClient
 }
 
-// storeTestClient makes getClient return client for name without a login.
-func storeTestClient(name string, cfg *domain.Client, client torrentclient.TorrentClient) {
-	clientMap.Store(name, cachedTorrentClient{config: cloneClientConfig(*cfg), client: client})
+// use sets the adapter of host. The store connects once for each client
+// config, so call it before the first request to a client on host.
+func (f *fakeConnector) use(host string, adapter torrentclient.TorrentClient) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.adapters == nil {
+		f.adapters = make(map[string]torrentclient.TorrentClient)
+	}
+	f.adapters[host] = adapter
+}
+
+func (f *fakeConnector) connect(ctx context.Context, client *domain.Client) (torrentclient.TorrentClient, error) {
+	f.mu.Lock()
+	adapter, ok := f.adapters[client.Host]
+	f.mu.Unlock()
+	if ok {
+		return adapter, nil
+	}
+	return torrentclient.New(ctx, client)
+}
+
+// newTestInventory returns a store that gives adapter for each client config.
+func newTestInventory(adapter torrentclient.TorrentClient) *inventory.Store {
+	return inventory.New(func(context.Context, *domain.Client) (torrentclient.TorrentClient, error) {
+		return adapter, nil
+	}, logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}))
+}
+
+// newTestProcessor returns a processor that is connected to adapter as the default client.
+func newTestProcessor(t *testing.T, adapter torrentclient.TorrentClient) *processor {
+	t.Helper()
+	p := newImportProcessor(newTestInventory(adapter))
+	p.req = &request{ClientName: "default"}
+	_, err := p.connect(t.Context(), "default", p.cfg.Snapshot())
+	require.NoError(t, err)
+	return p
 }
 
 func resetProcessorGlobals() {
-	clientMap = xsync.NewMapOf[string, cachedTorrentClient]()
-	entryMap = xsync.NewMapOf[string, *entryCache]()
-	parsedReleaseMap = xsync.NewMapOf[parsedNamesKey, parsedReleases]()
 	planMap = xsync.NewMapOf[importPlanCacheKey, cachedImportPlan]()
 }
 
-func newImportProcessor() *processor {
+func newImportProcessor(inv *inventory.Store) *processor {
 	cfg := &fakeConfig{config: domain.Config{
 		Clients: map[string]*domain.Client{
 			"default": {Type: "qbittorrent", Import: domain.ImportPolicy{Category: "tv-hd"}},
 		},
 	}}
-	return newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil, nil)
+	return newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, inv, nil, nil)
 }
 
 func writeEpisode(t *testing.T, path string) {
@@ -452,7 +493,7 @@ func newSearchFixture(t *testing.T, opts fixtureOptions) *searchFixture {
 	cfg := f.config.Snapshot()
 	cfg.Search = domain.Search{ProwlarrURL: server.URL, APIKey: "prowlarr-test-key", RSSInterval: "0s", RequestInterval: "0s"}
 	f.config.Store(cfg)
-	clientMap.Store("default", cachedTorrentClient{config: *cfg.Clients["default"], client: &fakeSearchClient{fakeTorrentClient: f.torrentClient}})
+	f.connector.use("", &fakeSearchClient{fakeTorrentClient: f.torrentClient})
 	return f
 }
 
@@ -471,7 +512,9 @@ func (f *searchFixture) restart(t *testing.T) {
 	store, err := state.Open(t.Context(), f.statePath, zerolog.Nop())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
-	server := NewServer(f.search.log, f.config, f.notifications, store, nil)
+	// A restart starts with no connections and no inventories.
+	f.inventory = inventory.New(f.connector.connect, f.search.log)
+	server := NewServer(f.search.log, f.config, f.notifications, store, f.inventory, nil)
 	f.search, f.handler, f.tasks = server.search, server.Handler(), server.tasks
 }
 

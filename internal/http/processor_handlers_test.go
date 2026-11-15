@@ -699,8 +699,7 @@ func TestImportEndpoint_RebuildsUnavailableOrInvalidPlans(t *testing.T) {
 		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
 		planMap = xsync.NewMapOf[importPlanCacheKey, cachedImportPlan]()
-		entryMap = xsync.NewMapOf[string, *entryCache]()
-		parsedReleaseMap = xsync.NewMapOf[parsedNamesKey, parsedReleases]()
+		f.inventory.DiscardClient("default")
 		res := f.postJSON(t, "/api/import", f.packPayload())
 
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
@@ -775,11 +774,10 @@ func TestImportEndpoint_RebuildsUnavailableOrInvalidPlans(t *testing.T) {
 		require.Equal(t, domain.StatusSuccessfulMatch.Code(), f.postJSON(t, "/api/match", f.packPayload()).Code)
 
 		changed := f.config.Snapshot()
-		changedClient := cloneClientConfig(*changed.Clients["default"])
+		changedClient := changed.Clients["default"].Clone()
 		changedClient.Import.Category = "changed"
 		changed.Clients = map[string]*domain.Client{"default": &changedClient}
 		f.config.Store(changed)
-		clientMap.Store("default", cachedTorrentClient{config: cloneClientConfig(changedClient), client: f.torrentClient})
 
 		res := f.postJSON(t, "/api/import", f.packPayload())
 		require.Equal(t, domain.StatusSuccessfulHardlink.Code(), res.Code)
@@ -880,11 +878,9 @@ func TestCandidateEndpoint_ReturnsSuccessfulMatchWithoutFileReads(t *testing.T) 
 			{Name: "Candidate.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "ep1", SavePath: "/data/tv"},
 		},
 	}
-	clientMap.Store("default", cachedTorrentClient{config: cloneClientConfig(*clientCfg), client: torrentClient})
-
 	cfg := &fakeConfig{config: domain.Config{Clients: map[string]*domain.Client{"default": clientCfg}}}
 	router := gin.New()
-	newWebhookHandler(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil, newTaskGroup()).Routes(router.Group("/api"))
+	newWebhookHandler(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, newTestInventory(torrentClient), nil, newTaskGroup()).Routes(router.Group("/api"))
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/candidate", bytes.NewBufferString(`{"name":"Candidate.S01.1080p.WEB-DL.H.264-RlsGrp","clientname":"default"}`))
 	req.Header.Set("Content-Type", "application/json")

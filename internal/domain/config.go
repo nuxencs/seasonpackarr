@@ -21,6 +21,30 @@ type Client struct {
 	Inventory InventoryScope `yaml:"inventory"`
 }
 
+// Clone copies the lists, so the copy shares no memory with c.
+func (c Client) Clone() Client {
+	clone := c
+	clone.Import.Tags = slices.Clone(c.Import.Tags)
+	clone.Inventory = c.Inventory.Clone()
+	return clone
+}
+
+// Equal reports whether both client configs have the same value in each field. Nil and empty lists are equal.
+func (c Client) Equal(other Client) bool {
+	return c.Type == other.Type &&
+		c.Host == other.Host &&
+		c.Port == other.Port &&
+		c.Username == other.Username &&
+		c.Password == other.Password &&
+		c.APIKey == other.APIKey &&
+		c.Import.SavePath == other.Import.SavePath &&
+		slices.Equal(c.Import.Tags, other.Import.Tags) &&
+		c.Import.Category == other.Import.Category &&
+		c.Import.DownloadPath == other.Import.DownloadPath &&
+		c.Import.ContentLayout == other.Import.ContentLayout &&
+		c.Inventory.Equal(other.Inventory)
+}
+
 // InventoryScope selects the torrents of the inventory. A torrent is in the
 // scope when it has an include category or an include tag, or when the scope
 // has no includes, and it has no exclude category and no exclude tag. An

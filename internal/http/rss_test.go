@@ -279,12 +279,12 @@ func TestRSS_UnavailableClientDoesNotLoseFeedEntries(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 1, threshold: 1})
 	cfg := f.config.Snapshot()
 	cfg.Search.IndexerIDs = []int{1}
-	otherCfg := cloneClientConfig(*cfg.Clients["default"])
+	otherCfg := cfg.Clients["default"].Clone()
 	otherCfg.Host = "http://independent:8080"
 	cfg.Clients["other"] = &otherCfg
 	f.config.Store(cfg)
 	other := &fakeTorrentClient{torrents: []torrentclient.Torrent{{Name: "Other.Show.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "other"}}}
-	clientMap.Store("other", cachedTorrentClient{config: otherCfg, client: other})
+	f.connector.use(otherCfg.Host, other)
 	f.pages, f.pageSize = true, 1
 	f.titles = []string{"Old.S01.1080p.WEB-DL.H.264-RlsGrp"}
 	f.runRSS(t)

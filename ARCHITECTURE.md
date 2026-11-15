@@ -12,9 +12,9 @@
    commands. CLI configuration reads are side-effect free and
    share file discovery and environment overrides with the service.
    `setup filter` writes the autobrr filter through `internal/autobrr/`.
-2. `cmd/start.go` loads config, logger, notifications, and the SQLite store, then starts the HTTP server. Signal cancellation starts a bounded graceful shutdown. The command closes the store after server shutdown.
+2. `cmd/start.go` loads config, logger, notifications, and the SQLite store, creates the inventory module, then starts the HTTP server. Signal cancellation starts a bounded graceful shutdown. The command closes the store after server shutdown.
 3. `internal/http/server.go` builds `/api/healthz`, `/api/candidate`, `/api/match`, `/api/import`, and `/api/search`.
-4. `internal/http/processor_*.go` keeps each processing stage together. The handler file owns payload decode and responses. The candidate file owns announce-only matching and inventory caching. The plan file parses torrent bytes and builds an exact side-effect-free plan. The import file reuses or rebuilds that plan, resolves the client import destination, hardlinks matched files, and imports the pack. See [docs/design/qbittorrent-import-flow.md](docs/design/qbittorrent-import-flow.md).
+4. `internal/http/processor_*.go` keeps each processing stage together. The handler file owns payload decode and responses. The candidate file owns announce-only matching. It gets the client handle and the inventory from `internal/inventory/`. The plan file parses torrent bytes and builds an exact side-effect-free plan. The import file reuses or rebuilds that plan, resolves the client import destination, hardlinks matched files, and imports the pack. See [docs/design/qbittorrent-import-flow.md](docs/design/qbittorrent-import-flow.md).
 5. `internal/release/` decides whether a client episode and announced season pack are compatible.
 6. `internal/files/` performs the hardlink operation.
 7. `internal/notification/` sends notifications for notable events to each notification destination.
@@ -80,16 +80,16 @@
 - `/api/match` parses the announced torrent, maps reusable source files to distinct valid torrent targets, and applies smart mode to exact torrent coverage.
 - Exact plan matching parses each episode filename once and uses an indexed compatibility key instead of scanning every source-target pair.
 - Exact planning requests candidate file details once. Transmission and Deluge v2 batch hashes in one client call. Deluge v1 uses one session-state preflight and one bulk status call. qBittorrent uses a bounded four-worker adapter pool.
-- Client inventory is cached for 30 seconds, so the ordered candidate and match checks normally share one client scan.
+- `internal/inventory/` owns the client connection, the inventory, and the parsed torrent names of each configured client. The candidate check, the match, the import, and search get their client handle and their inventory from it. An inventory is valid for 30 seconds, so the ordered candidate and match checks normally share one client scan.
 - A qBittorrent inventory scope makes the scan read only the include values: one `torrents/info` request for each include category and include tag, up to four in parallel, merged by hash in a fixed order. `torrents/info` has no exclude filter, so the adapter drops the excludes after the read, and a scope with excludes only reads every torrent. qBittorrent 4.3 has no tag filter, so there a scope with include tags adds one unfiltered read, and the adapter keeps the torrents with an include tag. `BenchmarkQbitGetTorrents` compares the read shapes. The lookup of the added torrent during the import ignores the scope.
-- seasonpackarr keeps the parsed torrent names of each client endpoint and inventory scope separately from the inventory. An import drops the inventory, but the next scan parses only new names. A scan also reuses the names of the other scopes of its endpoint, so a name in two scopes is parsed once.
-- At startup, a background task reads the inventory of each client once, so the first announce does not log in or parse every name. Clients of one endpoint share the parsed names. The task tries a client that is not ready up to four times, 10 seconds apart, then only logs a warning.
-- After each config reload, seasonpackarr drops the cached connection and inventory of each client that the config no longer has or configures differently, and the parsed names of endpoints and inventory scopes that no client uses. A scan that overlaps this clean-up adds no new parsed-name key, so it cannot restore a removed one. It closes the Deluge connection of a dropped client. A request that still holds that client connects again.
+- The inventory module keeps the parsed torrent names of each client endpoint and inventory scope separately from the inventory. An import discards the inventory, but the next scan parses only new names. A scan also reuses the names of the other scopes of its endpoint, so a name in two scopes is parsed once.
+- At startup, a server lifecycle task runs the startup read of the inventory module. It reads the inventory of each client once, so the first announce does not log in or parse every name. Clients of one endpoint share the parsed names. The task tries a client that is not ready up to four times, 10 seconds apart, then only logs a warning.
+- After each config reload, the server reload loop runs the clean-up of the inventory module. It drops the cached connection and inventory of each client that the config no longer has or configures differently, and the parsed names of endpoints and inventory scopes that no client uses. A scan that overlaps this clean-up adds no new parsed-name key, so it cannot restore a removed one. It closes the Deluge connection of a dropped client. A request that still holds that client connects again.
 - Accepted import plans are cached for 2 minutes. `/api/import` normally performs no second inventory or file-detail reads.
 - Cache entries validate client configuration, matching settings, release name, and torrent identity. `/api/import` rebuilds safely on a cache miss.
 - Imports to the same client type, host, and port are serialized. The candidate gate is checked again before a cached plan is used.
-- Every client import attempt invalidates plans and inventories for that endpoint, including aliases. A failed attempt may already have added the torrent.
-- An inventory scan invalidated during an import cannot publish its older data back into the cache.
+- After each client import attempt, the import code discards the inventories of that endpoint, including aliases, and drops the plans of that endpoint. It does this before it releases the endpoint import lock, because a failed attempt can have added the torrent. When a hardlink source is missing, the import code drops the plan and discards the inventory of that one client. A search run discards the inventory of each client before its first read.
+- An inventory read that a discard overlaps returns its result to its caller, but does not store it.
 - Exact plans retain one compact reason for every unmatched torrent target.
   Torrent-client adapters return neutral stage timings for successful and failed
   imports. The HTTP processor owns the operator-facing structured logs.
@@ -190,12 +190,13 @@
 Preferred dependency direction:
 
 1. `cmd/` may depend on `internal/*`
-2. `internal/http/` may orchestrate across config, notifications, release logic, torrents, and files
-3. leaf packages should stay narrow:
+2. `internal/http/` may orchestrate across config, notifications, release logic, torrents, inventories, and files
+3. `internal/inventory/` owns the client connections, inventories, and parsed names. Other packages reach that state only through `inventory.Store` and its client handle
+4. leaf packages should stay narrow:
    - `internal/release/` should not know HTTP details
    - `internal/files/` should not know webhook payloads
-4. `internal/domain/` holds cross-package data shapes and status concepts
-5. test helper packages (`internal/logger/loggertest`, `internal/daemontest`)
+5. `internal/domain/` holds cross-package data shapes and status concepts
+6. test helper packages (`internal/logger/loggertest`, `internal/daemontest`)
    import `testing`, so only `_test.go` files may import them
 
 If a change starts pushing transport concerns into matching logic or file ops, stop and re-check the boundary.

@@ -8,28 +8,23 @@ import (
 	"sync"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 )
 
-type (
-	importClientKey struct {
-		Type, Host string
-		Port       int
-	}
-	importLock struct {
-		token chan struct{}
-		users int
-	}
-)
+type importLock struct {
+	token chan struct{}
+	users int
+}
 
 var importLocks = struct {
 	sync.Mutex
-	values map[importClientKey]*importLock
-}{values: make(map[importClientKey]*importLock)}
+	values map[torrentclient.Endpoint]*importLock
+}{values: make(map[torrentclient.Endpoint]*importLock)}
 
 // lockImport serializes imports to a client endpoint, including configurations
 // that share that endpoint. Waiting respects request or worker cancellation.
 func lockImport(ctx context.Context, client domain.Client) (func(), error) {
-	key := importEndpoint(client)
+	key := torrentclient.EndpointOf(client)
 	importLocks.Lock()
 	lock := importLocks.values[key]
 	if lock == nil {
@@ -60,34 +55,15 @@ func lockImport(ctx context.Context, client domain.Client) (func(), error) {
 	}
 }
 
-func importEndpoint(client domain.Client) importClientKey {
-	clientType := client.Type
-	if clientType == "" {
-		clientType = "qbittorrent"
-	}
-	if clientType == "deluge" {
-		clientType = "deluge-v2"
-	}
-	return importClientKey{Type: clientType, Host: client.Host, Port: client.Port}
-}
-
-// A client may add a torrent before reporting a verification/resume failure.
-// Drop all plans and inventories for aliases before another import can proceed.
-func invalidateClientImports(client domain.Client) {
-	entryMap.Range(func(name string, cached *entryCache) bool {
-		if sameImportEndpoint(client, cached.clientConfig) {
-			entryMap.Delete(name)
-		}
-		return true
-	})
+// A client may add a torrent before it reports a verification or resume
+// failure, so the import runs this before it releases the endpoint import lock.
+func (p *processor) invalidateClientImports(client domain.Client) {
+	endpoint := torrentclient.EndpointOf(client)
+	p.inv.DiscardEndpoint(endpoint)
 	planMap.Range(func(key importPlanCacheKey, cached cachedImportPlan) bool {
-		if sameImportEndpoint(client, cached.clientConfig) {
+		if torrentclient.EndpointOf(cached.clientConfig) == endpoint {
 			planMap.Delete(key)
 		}
 		return true
 	})
-}
-
-func sameImportEndpoint(a, b domain.Client) bool {
-	return importEndpoint(a) == importEndpoint(b)
 }

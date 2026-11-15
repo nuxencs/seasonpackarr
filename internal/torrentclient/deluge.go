@@ -70,7 +70,7 @@ func newDelugeClient(ctx context.Context, client *domain.Client) (*delugeClient,
 
 	var c delugeAPI
 	var label delugeLabelPluginFactory
-	switch client.Type {
+	switch canonicalType(client.Type) {
 	case "deluge-v1":
 		raw := deluge.NewV1(settings)
 		c = raw
@@ -80,7 +80,7 @@ func newDelugeClient(ctx context.Context, client *domain.Client) (*delugeClient,
 		label = func(ctx context.Context) (delugeLabelAPI, error) {
 			return raw.LabelPlugin(ctx)
 		}
-	case "deluge", "deluge-v2":
+	case "deluge-v2":
 		raw := deluge.NewV2(settings)
 		c = raw
 		label = func(ctx context.Context) (delugeLabelAPI, error) {

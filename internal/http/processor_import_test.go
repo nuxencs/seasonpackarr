@@ -58,8 +58,9 @@ func TestImportSeasonPack_ReusesAcceptedPlanWithoutClientReads(t *testing.T) {
 		SmartMode:          true,
 		SmartModeThreshold: 0.75,
 	}}
-	matchProcessor := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil, nil)
-	matchProcessor.req = &request{Name: releaseName, Torrent: encodedTorrent, Client: torrentClient, ClientName: "default"}
+	inv := newTestInventory(torrentClient)
+	matchProcessor := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, inv, nil, nil)
+	matchProcessor.req = &request{Name: releaseName, Torrent: encodedTorrent, ClientName: "default"}
 
 	statusCode, err := matchProcessor.matchSeasonPack(t.Context())
 	require.NoError(t, err)
@@ -67,8 +68,8 @@ func TestImportSeasonPack_ReusesAcceptedPlanWithoutClientReads(t *testing.T) {
 	require.Equal(t, 1, torrentClient.torrentCalls)
 	require.Equal(t, 2, torrentClient.fileCalls)
 
-	importProcessor := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, nil, nil)
-	importProcessor.req = &request{Name: releaseName, Torrent: encodedTorrent, Client: torrentClient, ClientName: "default"}
+	importProcessor := newProcessor(logger.New(&domain.Config{LogLevel: "ERROR", Version: "test"}), cfg, inv, nil, nil)
+	importProcessor.req = &request{Name: releaseName, Torrent: encodedTorrent, ClientName: "default"}
 	statusCode, err = importProcessor.importSeasonPack(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, domain.StatusSuccessfulHardlink, statusCode)
@@ -113,11 +114,10 @@ func TestImportSeasonPack_ImportsAndPassesResolvedRoot(t *testing.T) {
 		importRoot: importDir,
 	}
 
-	p := newImportProcessor()
+	p := newImportProcessor(newTestInventory(torrentClient))
 	p.req = &request{
 		Name:       releaseName,
 		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
-		Client:     torrentClient,
 		ClientName: "default",
 	}
 
@@ -165,11 +165,10 @@ func TestImportSeasonPack_ReportsPartialPackData(t *testing.T) {
 		importRoot: importDir,
 	}
 
-	p := newImportProcessor()
+	p := newImportProcessor(newTestInventory(torrentClient))
 	p.req = &request{
 		Name:       releaseName,
 		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
-		Client:     torrentClient,
 		ClientName: "default",
 	}
 
@@ -212,11 +211,10 @@ func TestImportSeasonPack_ClientImportIgnoresCallerCancel(t *testing.T) {
 		onImportDestination: cancel,
 	}
 
-	p := newImportProcessor()
+	p := newImportProcessor(newTestInventory(torrentClient))
 	p.req = &request{
 		Name:       releaseName,
 		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
-		Client:     torrentClient,
 		ClientName: "default",
 	}
 
@@ -261,11 +259,10 @@ func TestImportSeasonPack_RejectsArchivePackWithSampleVideos(t *testing.T) {
 		importRoot: importDir,
 	}
 
-	p := newImportProcessor()
+	p := newImportProcessor(newTestInventory(torrentClient))
 	p.req = &request{
 		Name:       releaseName,
 		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrent.Bytes())),
-		Client:     torrentClient,
 		ClientName: "default",
 	}
 
@@ -303,11 +300,10 @@ func TestImportSeasonPack_UsesFlatImportDestination(t *testing.T) {
 		flatImport: true,
 	}
 
-	p := newImportProcessor()
+	p := newImportProcessor(newTestInventory(torrentClient))
 	p.req = &request{
 		Name:       releaseName,
 		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
-		Client:     torrentClient,
 		ClientName: "default",
 	}
 
@@ -345,8 +341,8 @@ func TestImportSeasonPack_RetryReusesExistingHardlinks(t *testing.T) {
 		importRoot: importDir,
 	}
 
-	p := newImportProcessor()
-	p.req = &request{Name: releaseName, Client: torrentClient, ClientName: "default"}
+	p := newImportProcessor(newTestInventory(torrentClient))
+	p.req = &request{Name: releaseName, ClientName: "default"}
 
 	for attempt := range 2 {
 		p.req.Torrent = encodedTorrent
@@ -399,11 +395,10 @@ func TestImportSeasonPack_SkipsCrossSeedDuplicates(t *testing.T) {
 		importRoot: importDir,
 	}
 
-	p := newImportProcessor()
+	p := newImportProcessor(newTestInventory(torrentClient))
 	p.req = &request{
 		Name:       releaseName,
 		Torrent:    []byte(base64.StdEncoding.EncodeToString(torrentBytes)),
-		Client:     torrentClient,
 		ClientName: "default",
 	}
 

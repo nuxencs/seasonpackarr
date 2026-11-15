@@ -49,7 +49,7 @@ func TestRSSSchedule_PollsRSSAndCancels(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	f.beforeSearch = cancel
-	runner := &searchRunner{cfg: f.config, log: logger.New(&domain.Config{LogLevel: "ERROR"}), state: f.search.state}
+	runner := &searchRunner{cfg: f.config, log: logger.New(&domain.Config{LogLevel: "ERROR"}), inv: f.inventory, state: f.search.state}
 	done := make(chan struct{})
 	go func() { runner.schedule(ctx); close(done) }()
 	select {

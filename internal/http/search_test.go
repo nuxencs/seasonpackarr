@@ -133,8 +133,7 @@ func TestSearch_AuthAndOverlappingRuns(t *testing.T) {
 func TestSearch_ConcurrentWebhookCannotAddAnotherVariantCopy(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	importing, resume := make(chan struct{}), make(chan struct{})
-	cfg := f.config.Snapshot()
-	clientMap.Store("default", cachedTorrentClient{config: *cfg.Clients["default"], client: &fakeSearchClient{fakeTorrentClient: f.torrentClient, importing: importing, resume: resume}})
+	f.connector.use("", &fakeSearchClient{fakeTorrentClient: f.torrentClient, importing: importing, resume: resume})
 	first := make(chan *httptest.ResponseRecorder, 1)
 	searchBody := encodeJSON(t, map[string]any{"dryRun": false})
 	go func() { first <- f.postRaw(t, "/api/search", searchBody, processorTestToken) }()
@@ -205,11 +204,10 @@ func TestSearch_PaginationFindsPackAfterRejectedResult(t *testing.T) {
 func TestSearch_PreviewDeduplicatesClientAliases(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	cfg := f.config.Snapshot()
-	alias := cloneClientConfig(*cfg.Clients["default"])
+	alias := cfg.Clients["default"].Clone()
 	alias.Import.Category = "other-category"
 	cfg.Clients["alias"] = &alias
 	f.config.Store(cfg)
-	clientMap.Store("alias", cachedTorrentClient{config: alias, client: f.torrentClient})
 	report := f.runExact(t, true)
 	accepted := 0
 	for _, outcome := range report.Outcomes {
@@ -527,11 +525,11 @@ func TestSearch_ExistingPackDoesNotSuppressIndependentClient(t *testing.T) {
 	other := &fakeTorrentClient{torrents: []torrentclient.Torrent{f.torrentClient.torrents[0]}}
 	f.torrentClient.torrents = append(f.torrentClient.torrents, torrentclient.Torrent{Name: f.releaseName, Hash: "pack"})
 	cfg := f.config.Snapshot()
-	otherCfg := cloneClientConfig(*cfg.Clients["default"])
+	otherCfg := cfg.Clients["default"].Clone()
 	otherCfg.Host = "http://independent:8080"
 	cfg.Clients["other"] = &otherCfg
 	f.config.Store(cfg)
-	clientMap.Store("other", cachedTorrentClient{config: otherCfg, client: other})
+	f.connector.use(otherCfg.Host, other)
 	response := f.postJSON(t, "/api/search", SearchRequest{DryRun: true})
 	require.Equal(t, 200, response.Code, response.Body.String())
 	var report searchReport
