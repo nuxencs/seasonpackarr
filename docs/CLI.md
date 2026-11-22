@@ -74,7 +74,7 @@ folder name. Match and import still require the original `.torrent` file.
 
 | Command | Required input | Effect |
 | --- | --- | --- |
-| `candidate` | Quoted release name | Runs a candidate check; does not request torrent metadata |
+| `candidate` | Quoted release name | Runs a candidate check; does not request torrent bytes |
 | `match` | Real `.torrent` file | Runs a match; does not create hardlinks or import |
 | `import` | Real `.torrent` file | Creates hardlinks and imports the pack |
 | `search --dry-run` | None | Searches Prowlarr and runs candidate checks |
@@ -321,7 +321,7 @@ An unexpected HTTP 200 response, such as a proxy login page, returns exit code
 | `1` | Invalid input, configuration, connection, authentication, or operation failure |
 | `2` | Candidate, match, or import rejected the pack, including an existing pack |
 
-Search rejections and empty results are normal outcomes and return `0`. Tracker,
+Search rejections and searches without listings are normal outcomes and return `0`. Tracker,
 client, or import failures return `1`, including partial failures. Search stays
 connected until completion. Ctrl+C cancels its request. Cancellation of an import
 can leave hardlinks or an added torrent; inspect the client before retrying.

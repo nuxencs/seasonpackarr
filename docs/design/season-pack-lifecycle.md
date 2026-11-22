@@ -55,7 +55,7 @@ A caller cannot call a private step, so the order of the steps has one owner.
     Discovery maps them to the two reason texts of the search report.
 - The two policies for a file-detail read error differ on purpose. An announce
   comes once, and a lost season pack is worse than one episode download. A
-  fetch costs a tracker request, and a search result can be tried again in a
+  fetch costs a tracker request, and a listing can be tried again in a
   later run, so any doubt stops before the fetch.
 - Only an accepted match produces an import plan, and the processor keeps it
   for 2 minutes. No plan value crosses the interface: discovery calls the match
@@ -65,7 +65,7 @@ A caller cannot call a private step, so the order of the steps has one owner.
   check again, take the kept plan or build it again, apply the coverage rule,
   make the hardlinks, check the achieved coverage, import into the client, and
   drop the inventories and plans of the endpoint before the lock is released.
-  One imported search result runs the candidate check 2 times: in the match and
+  One imported listing runs the candidate check 2 times: in the match and
   in the import.
 - The processor has no notification sender. The handlers and discovery send
   the notifications.
@@ -137,8 +137,8 @@ Operators debug with these logs and notifications. Keep them stable, and update
   structured `source` path, followed by the bounded inventory and plan refresh
   result.
 - The season pack processor writes the stage lines, so an announce and a
-  search result produce the same lines for the same stage. The webhook
-  handlers add their start and result lines, and discovery its result and run
+  listing produce the same lines for the same stage. The webhook
+  handlers add their start and result lines, and discovery its outcome and run
   lines.
 - Each log line that the processor writes for the candidate check, the match,
   and the import has the `release` and the `clientname` of its call, also in a search run or an RSS

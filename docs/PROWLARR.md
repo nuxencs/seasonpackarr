@@ -100,7 +100,7 @@ season, or external ID. TV category `5000` is used when advertised. This reads a
 feed through Prowlarr; it does not send a grab to Prowlarr's download clients.
 
 The first poll reads one page, up to 100 items or the indexer's lower page limit.
-Later polls start at the newest page and can page back until a result overlaps
+Later polls start at the newest page and can page back until a listing overlaps
 with the previous poll. Paging stops after ten pages, a short or repeated page,
 or on a non-paginating indexer. A missing overlap reports a possible gap and
 recommends a search. After a reported gap, the newest page becomes
@@ -109,8 +109,8 @@ next attempt. When a client inventory is unavailable, the poll uses isolated
 feed state so it cannot consume entries on behalf of that client. RSS cannot
 guarantee historical coverage.
 
-Results must parse as season packs for an uncovered series/season in the client.
-Year compatibility is checked against the episodes before metadata retrieval. The same variant, source-file, exact-coverage, and duplicate checks listed
+Listings must parse as season packs for an uncovered series/season in the client.
+seasonpackarr checks year compatibility against the episodes before the torrent download. The same variant, source-file, exact-coverage, and duplicate checks listed
 below then apply. RSS respects indexer priority and feed order. One indexer failure
 does not prevent other indexers from running. No eligible episode groups means no
 Prowlarr requests.
@@ -119,15 +119,15 @@ The process retains relevant pack listings for seven days, bounded to 1024 entri
 and 4 MiB of titles and links. Oldest entries are evicted first. Each poll checks
 retained packs against current inventory, local files, and matching settings,
 even if a pack has left the feed. A pack rejected for low coverage can pass once
-more episodes finish. Valid cached torrent bytes avoid another metadata download.
+more episodes finish. A valid cached torrent avoids another torrent download.
 There is no permanent "seen means rejected" decision.
 
 Feed checkpoints and retained listings are stored in SQLite and survive restarts.
-A checkpoint and its retained listings are saved together before result evaluation.
+A checkpoint and its retained listings are saved together before seasonpackarr evaluates the listings.
 Changing the Prowlarr URL or API key resets them on the next discovery run. Disabled
 or unselected indexers are removed from feed state after successful RSS indexer
 selection. Retained links are refreshed
-when the same result appears again, without extending the retention deadline.
+when the same listing appears again, without extending the retention deadline.
 Use a search for releases outside the feed and retention window.
 
 ## Search
@@ -139,19 +139,19 @@ seasonpackarr search --dry-run
 ```
 
 This dry run queries the selected trackers and runs candidate checks. It does
-not request per-torrent file details or download torrent metadata. Passing results
+not request per-torrent file details or download torrents. Passing listings
 have status `candidate`, with unknown exact coverage. Alternatives can appear
 across trackers because no exact selection has been made. Tracker search limits
 still apply.
 
-To run a match for each result, add `--verify`:
+To run a match for each listing, add `--verify`:
 
 ```sh
 seasonpackarr search --dry-run --verify
 ```
 
-This preview checks local source files, downloads or reuses torrent metadata,
-and applies [smart mode](CONFIGURATION.md#smart-mode). It reports `would_import` for accepted results.
+This preview checks local source files, downloads each torrent or reads it from the torrent cache,
+and applies [smart mode](CONFIGURATION.md#smart-mode). It reports `would_import` for accepted listings.
 Neither preview mode creates hardlinks, adds torrents, or sends notifications.
 `--verify` requires `--dry-run`. An import always runs a match first.
 
@@ -180,7 +180,7 @@ to seasonpackarr, not Prowlarr. See the [CLI guide](CLI.md#connection-settings).
 
 The CLI prints a readable summary. Add `--json` to get the complete API report
 with scan counts, logical search group count, search request
-count, completed torrent downloads, metadata cache hits, per-result outcomes,
+count, completed torrent downloads, torrent cache hits, per-listing outcomes,
 and operation failures. `requests` counts targeted feed requests, excluding
 indexer discovery and torrent downloads. Automatic RSS logs include `rss: true`.
 `coveredEpisodeTorrents` counts episode torrent entries
@@ -188,7 +188,7 @@ excluded because a compatible pack already exists. `episodeTorrents` includes
 these entries; `groups` counts only groups that still need a search. Counts are
 per client and include duplicate episode torrents, not distinct episodes.
 The CLI exits with a failure code
-if a tracker, client, or result failed. Normal match rejections are not command
+if a tracker, client, or listing failed. Normal match rejections are not command
 failures. Logs contain the same outcomes for automatic runs.
 
 ### Cancel a search
@@ -225,7 +225,7 @@ added a stopped torrent; inspect the client before retrying.
    Request TV category `5000` when
    advertised; omit the category filter for trackers without a TV category.
    Indexers without either query capability are reported as failures.
-6. Check results in feed order against existing release rules. Reject an
+6. Check listings in feed order against existing release rules. Reject an
    equivalent pack already in the client or already selected for that endpoint.
    Require at least one compatible episode torrent. Search-only dry run stops
    here and reports `candidate` with unknown coverage.
@@ -233,9 +233,9 @@ added a stopped torrent; inspect the client before retrying.
    Require at least one accessible regular file with a positive size that equals
    the client's declared size. Do not use unavailable or size-mismatched files as
    sources. The log line `client episode file is not reusable` names each
-   excluded file and the reason. A client file-detail request failure stops that result before
-   metadata retrieval. File size alone does not prove completion or valid pieces.
-8. Reuse valid cached metadata for this indexer and result identity, or download
+   excluded file and the reason. A client file-detail request failure stops that listing before
+   the torrent download. File size alone does not prove completion or valid pieces.
+8. Reuse a valid cached torrent for this indexer and listing identity, or download
    the torrent through Prowlarr. Map each torrent episode to an available source file.
    The file list, sizes, and distinct valid episode targets determine coverage;
    release titles and total torrent size cannot establish it.
@@ -262,29 +262,29 @@ This prevents a client verification or resume failure from triggering another
 tracker copy. A later run checks the client again. If the pack was added but is
 stopped, recover it in the torrent client.
 
-## Metadata reuse
+## Torrent cache
 
-SQLite keeps valid torrent metadata for up to seven days, limited to 64 MiB
+The torrent cache in SQLite keeps valid torrents for up to seven days, limited to 64 MiB
 and 1024 entries. The least recently used entries are removed when needed.
 Restarting the service preserves the cache. Changing the Prowlarr URL or API key
 clears it on the next discovery run.
-Keys include the indexer ID, result GUID (or download link when no GUID exists),
-and release title. Different tracker results do not share cached bytes.
+Keys include the indexer ID, the listing GUID (or download link when no GUID exists),
+and release title. Different tracker listings do not share a cached torrent.
 
 Rejected exact matches are cached too. Later runs recheck current inventory,
 local files, matching settings, and coverage against those bytes. New episodes or
 a lower threshold can make a previous rejection pass without another torrent
 download. Dry runs without `--verify` do not read or populate this cache. Invalid torrent
 responses are not cached. Cache expiry or eviction can cause another download.
-A tracker that replaces metadata under the same result identity can remain stale
-until expiry or a connection change. The cache assumes stable tracker result identities.
+A tracker that replaces the torrent under the same listing identity can remain stale
+until expiry or a connection change. The cache assumes stable listing identities.
 
 ## Discovery state
 
 seasonpackarr keeps discovery state in its SQLite database: RSS checkpoints,
-retained listings, cooldowns, and cached torrent metadata. See
+retained listings, cooldowns, and the torrent cache. See
 [Application data](INSTALL.md#application-data) for the database location,
-backups, and startup errors. Cached metadata and retained links can contain
+backups, and startup errors. Cached torrents and retained links can contain
 tracker credentials, so protect database backups as you protect `config.yaml`.
 
 A database failure during discovery stops further work in that run. It appears
@@ -300,11 +300,11 @@ report fields.
 ## Limits
 
 - Requests to Prowlarr time out after two minutes and accept at most 32 MiB.
-- Searches request up to 100 results per page, reduced to the indexer's advertised
+- Searches request up to 100 listings per page, reduced to the indexer's advertised
   maximum. Each group/indexer pair has a ten-page budget. A repeated full page or
   exhausted budget produces an explicit incomplete-results failure.
 - Non-paginating indexers receive one request. Prowlarr may itself hide a tracker
-  failure as an empty feed. Check Prowlarr logs when empty results are unexpected.
+  failure as an empty feed. Check Prowlarr logs when empty feeds are unexpected.
 - Downloads must use the corresponding Prowlarr torrent proxy. Direct tracker
   links, magnet links, and redirects are rejected. Disable tracker redirect and
   prefer-magnet settings in Prowlarr when they prevent torrent-byte retrieval.
@@ -315,4 +315,4 @@ report fields.
   are serialized with webhook imports. Matching stays free of client mutations.
 
 The Prowlarr API facts behind these limits are in the
-[Prowlarr API audit](research/prowlarr-backfill-api.md).
+[Prowlarr API audit](research/prowlarr-discovery-api.md).

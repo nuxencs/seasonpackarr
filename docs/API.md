@@ -216,8 +216,8 @@ monitoring. The body is one JSON object. Unknown fields are rejected.
 ```
 
 - `clientname`: one client to scan. Omit it to scan all configured clients.
-- `dryRun`: when `true`, report results without importing. Default `false`.
-- `verify`: when `true`, also download torrent metadata and check exact reuse.
+- `dryRun`: when `true`, report the outcomes without importing. Default `false`.
+- `verify`: when `true`, also download the torrents and check exact reuse.
   Requires `dryRun: true`. Default `false`.
 
 | Status | Meaning |
@@ -235,13 +235,13 @@ The `200` report contains these fields:
   inventory counts. See [Search output](PROWLARR.md#search-output).
 - `requests`: targeted feed requests. Indexer discovery and torrent downloads
   are not counted.
-- `torrentDownloads`: completed metadata downloads. A failed download appears
-  as a failed outcome. `torrentCacheHits`: metadata reads from the cache that
-  saved a download.
-- `outcomes[]`: one entry per result, with `clientname`, `title`, `indexerId`,
+- `torrentDownloads`: completed torrent downloads. A failed download appears
+  as a failed outcome. `torrentCacheHits`: torrent reads from the torrent cache
+  that saved a download.
+- `outcomes[]`: one entry per evaluated listing, with `clientname`, `title`, `indexerId`,
   `status`, `reason`, `reusableEpisodes`, and `totalEpisodes`. `status` is
   `candidate`, `would_import`, `imported`, `rejected`, or `failed`. The episode
-  counts are `null` when the result stops before seasonpackarr reads the
+  counts are `null` when the evaluation stops before seasonpackarr reads the
   torrent. A season pack with no reusable episode reports `0`.
 - `failures[]`: discovery, client inventory, query, pagination, rate limit,
   database, and cancellation errors, with `clientname`, `query`, `indexerId`,

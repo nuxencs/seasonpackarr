@@ -1,4 +1,4 @@
-# Prowlarr Backfill API Audit
+# Prowlarr Discovery API Audit
 
 Inspected local clone: `~/dev/oss/Prowlarr`.
 Revision: `647f0dcc8d86448409fc06db5fa071d99b7aaba0`.
