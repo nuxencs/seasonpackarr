@@ -30,6 +30,21 @@ code of the real binary.
   `prowlarr_test`. It proves that code outside the package can give the client
   an in-process transport through `prowlarr.New`. The other client tests stay
   in the package.
+- The tests of the discovery source live in `internal/discovery/`
+  (`source_test.go` for `Begin` and `End`, `run_test.go` for the run methods).
+  They are in the external test package `discovery_test`, so they call only
+  `Begin` and the methods of the run. The fixture in `fixtures_test.go` gives
+  the source a real SQLite file in a temporary directory. It also gives the
+  source an in-process fake Prowlarr (`fakeProwlarr`) as its HTTP transport.
+  The tests need no torrent client, no pack, and no config provider. A
+  restart is: close the store, open it again, and make a new source
+  (`restart`). A database failure test closes the store. No test calls
+  another store method, reads a cooldown map, or sets a deadline. A test
+  asserts only what a caller can see: the indexers, the failures, `Err`, the
+  requests that the fake Prowlarr received, and the log lines. A test that
+  waits for a deadline runs in a `testing/synctest` bubble and moves the
+  virtual clock with `time.Sleep`. Examples are the end of a cooldown and the
+  request spacing.
 - Tests that drive several files through one entry point live with the entry
   point. HTTP endpoint tests live in `internal/http/webhook_test.go`.
 - The tests of the candidate check, the match, and the import live in
