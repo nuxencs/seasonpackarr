@@ -29,16 +29,16 @@ func (f *fakeClosingClient) Close() error {
 	return nil
 }
 
-// levelLogger records each log level change as an event, so a test sees it in order with the other events.
-type levelLogger struct{ *loggertest.Logger }
+// fakeLevelLogger records each log level change as an event, so a test sees it in order with the other events.
+type fakeLevelLogger struct{ *loggertest.Logger }
 
-func (l levelLogger) SetLogLevel(level string) { l.Info().Str("level", level).Msg("log level set") }
+func (f fakeLevelLogger) SetLogLevel(level string) { f.Info().Str("level", level).Msg("log level set") }
 
 func TestReloadParties_SetsLevelThenWarnsThenCleansUp(t *testing.T) {
 	previous := zerolog.GlobalLevel()
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	t.Cleanup(func() { zerolog.SetGlobalLevel(previous) })
-	log := levelLogger{loggertest.New()}
+	log := fakeLevelLogger{loggertest.New()}
 	inv := inventory.New(func(context.Context, *domain.Client) (torrentclient.TorrentClient, error) {
 		return &torrentclienttest.Client{}, nil
 	}, log)
