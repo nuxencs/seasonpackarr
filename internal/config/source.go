@@ -58,11 +58,11 @@ type source struct {
 // no default location has a config file. The returned source is then valid without a config file.
 func newSource(in Input) (source, error) {
 	env := environment(in.Environ)
-	src := source{
-		// Only this check decides whether a load reads the config file. Nothing reads domain.Config.DisableConfigFile.
-		disabled: env.get(envPrefix+"DISABLE_CONFIG_FILE") == "true",
-		env:      env,
+	disabled, err := configFileDisabled(env)
+	if err != nil {
+		return source{}, err
 	}
+	src := source{disabled: disabled, env: env}
 	switch {
 	case src.disabled:
 	case in.ConfigDir != "":
@@ -75,6 +75,19 @@ func newSource(in Input) (source, error) {
 		src.configFile = configFile
 	}
 	return src, nil
+}
+
+// configFileDisabled is the one read of DISABLE_CONFIG_FILE. An empty value is unset, as for each other variable.
+func configFileDisabled(env environment) (bool, error) {
+	value := env.get(envPrefix + disableConfigFileEnv)
+	if value == "" {
+		return false, nil
+	}
+	disabled, err := parseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("environment variable %s%s %w", envPrefix, disableConfigFileEnv, err)
+	}
+	return disabled, nil
 }
 
 func findConfigFile(env environment) (string, error) {

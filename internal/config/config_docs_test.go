@@ -29,9 +29,11 @@ const composeExampleFile = "docker-compose.yml"
 // failure message shows the whole name.
 var envVariablePattern = regexp.MustCompile(envPrefix + `(?:[A-Z0-9_]|<[A-Za-z]+>)+`)
 
-// declaredEnvironmentVariables returns each variable of the key tables, with clientName as the client name.
+// declaredEnvironmentVariables returns each variable of the key tables and the environment-only key, with clientName
+// as the client name.
 func declaredEnvironmentVariables(clientName string) []string {
-	names := make([]string, 0, len(configEnvKeys)+len(clientEnvKeys))
+	names := make([]string, 0, len(configEnvKeys)+len(clientEnvKeys)+1)
+	names = append(names, envPrefix+disableConfigFileEnv)
 	for _, key := range configEnvKeys {
 		names = append(names, envPrefix+key.name)
 	}

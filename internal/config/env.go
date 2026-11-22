@@ -237,6 +237,9 @@ func parseIntList(entries iter.Seq[string]) ([]int, error) {
 // cliEnvVariables are read by CLI commands in cmd, not by the service config.
 var cliEnvVariables = []string{"URL", "CLIENT", "AUTOBRR_URL", "AUTOBRR_API_KEY"}
 
+// disableConfigFileEnv has no config field, so the key tables do not know it. configFileDisabled reads it.
+const disableConfigFileEnv = "DISABLE_CONFIG_FILE"
+
 // cutClientEnvVariable splits CLIENTS_<NAME>_<SETTING> on the first underscore
 // after the prefix, so multi-word settings such as IMPORT_SAVE_PATH stay whole.
 func cutClientEnvVariable(name string) (clientName, setting string, ok bool) {
@@ -308,7 +311,7 @@ func UnknownEnvironmentVariables(environ []string) []string {
 // knownEnvironmentVariable includes the removed variables, because
 // validateDeprecatedConfigInputs stops startup with a migration error for them.
 func knownEnvironmentVariable(name string) bool {
-	if _, ok := envSettings[name]; ok || slices.Contains(cliEnvVariables, name) {
+	if _, ok := envSettings[name]; ok || name == disableConfigFileEnv || slices.Contains(cliEnvVariables, name) {
 		return true
 	}
 	if slices.Contains([]string{deprecatedParseTorrentFileEnv, deprecatedMetadataTVDBAPIKeyEnv, deprecatedMetadataTVDBPINEnv}, envPrefix+name) {

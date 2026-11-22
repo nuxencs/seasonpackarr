@@ -6,6 +6,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -124,4 +125,59 @@ func TestReload_RejectsEmptyFileBecauseItIsAWriteInProgress(t *testing.T) {
 
 	require.ErrorContains(t, err, "is empty")
 	assert.Equal(t, 4242, cfg.Snapshot().Port)
+}
+
+// TestDisableConfigFile_UsesTheBooleanRule: the variable accepts each boolean form of the other variables, for each
+// entry point, and an empty value is the same as an unset variable.
+func TestDisableConfigFile_UsesTheBooleanRule(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    string
+		disabled bool
+	}{
+		{name: "true", value: "true", disabled: true},
+		{name: "uppercase true", value: "TRUE", disabled: true},
+		{name: "one", value: "1", disabled: true},
+		{name: "false", value: "false"},
+		{name: "zero", value: "0"},
+		{name: "empty", value: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// The file sets a port that differs from the default, so each result shows whether the load read it.
+			dir := filepath.Dir(writeTestConfig(t, "port: 4242\nclients: {}\n"))
+			in := Input{ConfigDir: dir, Environ: []string{"SEASONPACKARR__DISABLE_CONFIG_FILE=" + tt.value}, Version: "test"}
+			wantPort := 4242
+			if tt.disabled {
+				wantPort = 42069
+			}
+
+			cfg, err := Load(in)
+			require.NoError(t, err)
+			assert.Equal(t, wantPort, cfg.Port, "Load")
+
+			app, err := New(in)
+			require.NoError(t, err)
+			assert.Equal(t, wantPort, app.Snapshot().Port, "New")
+
+			settings, err := ReadConnectionSettings(in)
+			require.NoError(t, err)
+			assert.Equal(t, strconv.Itoa(wantPort), settings.Port, "ReadConnectionSettings")
+		})
+	}
+}
+
+func TestDisableConfigFile_RejectsAValueThatIsNotABoolean(t *testing.T) {
+	dir := filepath.Dir(writeTestConfig(t, "clients: {}\n"))
+	in := Input{ConfigDir: dir, Environ: []string{"SEASONPACKARR__DISABLE_CONFIG_FILE=yes"}, Version: "test"}
+	const want = "environment variable SEASONPACKARR__DISABLE_CONFIG_FILE is not a boolean"
+
+	_, err := Load(in)
+	assert.ErrorContains(t, err, want, "Load")
+
+	_, err = New(in)
+	assert.ErrorContains(t, err, want, "New")
+
+	_, err = ReadConnectionSettings(in)
+	assert.ErrorContains(t, err, want, "ReadConnectionSettings")
 }
