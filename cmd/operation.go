@@ -16,8 +16,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newOperationCommand(operation string) *cobra.Command {
-	options := &connectionOptions{}
+func newOperationCommand(operation string, environ []string) *cobra.Command {
+	options := &connectionOptions{environ: environ}
 	var releaseName string
 	argument, short, details := "<file.torrent>", "", ""
 	switch operation {

@@ -187,10 +187,9 @@ type Search struct {
 // Clone, Client.Equal, and Client.Clone stay hand-written, so a new field must be added there too.
 type Config struct {
 	// The runtime sets these fields. The yaml "-" tags keep config.yaml from setting
-	// them, so the config load rejects them as unknown keys. DISABLE_CONFIG_FILE is an environment-only key.
+	// them, so the config load rejects them as unknown keys.
 	Version            string             `yaml:"-" koanf:"-" env:"-"`
 	ConfigPath         string             `yaml:"-" koanf:"-" env:"-"`
-	DisableConfigFile  bool               `yaml:"-" koanf:"-" env:"DISABLE_CONFIG_FILE"`
 	Host               string             `yaml:"host" env:"HOST" default:"0.0.0.0"`
 	Port               int                `yaml:"port" env:"PORT" default:"42069"`
 	Clients            map[string]*Client `yaml:"clients"`

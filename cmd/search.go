@@ -14,8 +14,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newSearchCommand() *cobra.Command {
-	options := &connectionOptions{}
+func newSearchCommand(environ []string) *cobra.Command {
+	options := &connectionOptions{environ: environ}
 	var dryRun, verify bool
 	cmd := &cobra.Command{
 		Use:     "search",

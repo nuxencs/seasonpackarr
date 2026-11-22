@@ -180,7 +180,6 @@ func newFullConfig() Config {
 	return Config{
 		Version:            "v1.0.0",
 		ConfigPath:         "/config",
-		DisableConfigFile:  true,
 		Host:               "0.0.0.0",
 		Port:               42069,
 		Clients:            map[string]*Client{"default": &client},

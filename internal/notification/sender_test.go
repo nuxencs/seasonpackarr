@@ -332,8 +332,6 @@ func TestSender_FollowsConfigReload(t *testing.T) {
 // TestSender_KeepsDestinationsAfterRejectedReload uses the real config watcher,
 // so the old destination must still get notifications after an invalid edit.
 func TestSender_KeepsDestinationsAfterRejectedReload(t *testing.T) {
-	t.Setenv("SEASONPACKARR__DISABLE_CONFIG_FILE", "")
-	t.Setenv("SEASONPACKARR__NOTIFICATIONS_SHOUTRRR", "")
 	destination := newFakeDestination(t, http.StatusOK)
 	dir := t.TempDir()
 	configFile := filepath.Join(dir, "config.yaml")
@@ -343,9 +341,10 @@ func TestSender_KeepsDestinationsAfterRejectedReload(t *testing.T) {
 		require.NoError(t, os.WriteFile(configFile, []byte(contents), 0o600))
 	}
 	writeConfig(destination.genericURL("/before", ""))
-	cfg := config.New(dir, "test")
+	cfg, err := config.New(config.Input{ConfigDir: dir, Version: "test"})
+	require.NoError(t, err)
 	log := loggertest.New()
-	_, err := cfg.DynamicReload(log)
+	_, err = cfg.DynamicReload(log)
 	require.NoError(t, err)
 	sender := NewSender(log, cfg)
 

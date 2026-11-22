@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strings"
 
@@ -18,18 +17,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newSetupCommand() *cobra.Command {
+func newSetupCommand(environ []string) *cobra.Command {
 	setup := &cobra.Command{
 		Use:     "setup",
 		GroupID: "tools",
 		Short:   "Set up other services to work with seasonpackarr",
 		Args:    cobra.NoArgs,
 	}
-	setup.AddCommand(newSetupFilterCommand())
+	setup.AddCommand(newSetupFilterCommand(environ))
 	return setup
 }
 
 type setupFilterOptions struct {
+	// environ is the environment in os.Environ form.
+	environ                            []string
 	configDir, client, token           string
 	autobrrURL, autobrrKey, webhookURL string
 	filterID                           int
@@ -58,8 +59,8 @@ type filterChanges struct {
 	Actions  []autobrr.Action   `json:"actions"`
 }
 
-func newSetupFilterCommand() *cobra.Command {
-	o := &setupFilterOptions{}
+func newSetupFilterCommand(environ []string) *cobra.Command {
+	o := &setupFilterOptions{environ: environ}
 	cmd := &cobra.Command{
 		Use:   "filter",
 		Short: "Create or update the seasonpackarr filter in autobrr",
@@ -117,7 +118,7 @@ func (o *setupFilterOptions) run(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	settings, err := config.ReadConnectionSettings(o.configDir)
+	settings, err := config.ReadConnectionSettings(config.Input{ConfigDir: o.configDir, Environ: o.environ})
 	if err != nil {
 		return err
 	}
@@ -125,7 +126,7 @@ func (o *setupFilterOptions) run(cmd *cobra.Command) error {
 	if cmd.Flags().Changed("api") {
 		token = o.token
 	}
-	client := os.Getenv("SEASONPACKARR__CLIENT")
+	client := getenv(o.environ, "SEASONPACKARR__CLIENT")
 	if cmd.Flags().Changed("client") {
 		client = o.client
 	}
@@ -161,7 +162,7 @@ func (o *setupFilterOptions) run(cmd *cobra.Command) error {
 	var api *autobrr.Client
 	// A dry run of an update reads the filter to show the actions that the update removes.
 	if !o.dryRun || o.filterID != 0 {
-		autobrrURL := os.Getenv("SEASONPACKARR__AUTOBRR_URL")
+		autobrrURL := getenv(o.environ, "SEASONPACKARR__AUTOBRR_URL")
 		if cmd.Flags().Changed("autobrr-url") {
 			autobrrURL = o.autobrrURL
 		}
@@ -171,7 +172,7 @@ func (o *setupFilterOptions) run(cmd *cobra.Command) error {
 		if autobrrURL, err = parseBaseURL("autobrr URL", autobrrURL); err != nil {
 			return err
 		}
-		key := os.Getenv("SEASONPACKARR__AUTOBRR_API_KEY")
+		key := getenv(o.environ, "SEASONPACKARR__AUTOBRR_API_KEY")
 		if cmd.Flags().Changed("autobrr-api-key") {
 			key = o.autobrrKey
 		}

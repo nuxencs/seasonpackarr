@@ -38,7 +38,7 @@ func TestSearchCommand_PreviewRequestAndFailureExit(t *testing.T) {
 				fmt.Fprint(w, tt.response)
 			}))
 			defer server.Close()
-			cmd := newSearchCommand()
+			cmd := newSearchCommand(nil)
 			var output bytes.Buffer
 			cmd.SetOut(&output)
 			cmd.SetErr(&output)
@@ -55,7 +55,7 @@ func TestSearchCommand_PreviewRequestAndFailureExit(t *testing.T) {
 }
 
 func TestSearchCommand_VerifyRequiresDryRun(t *testing.T) {
-	cmd := newSearchCommand()
+	cmd := newSearchCommand(nil)
 	cmd.SetArgs([]string{"--verify"})
 	require.ErrorContains(t, cmd.ExecuteContext(t.Context()), "--verify requires --dry-run")
 }

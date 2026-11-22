@@ -445,7 +445,10 @@ The commands that call the running service, such as `candidate` and `setup filte
 and the client names. A bad server-only variable, for example `SEASONPACKARR__SMART_MODE=yes`, does not stop them.
 
 To run without `config.yaml`, set `SEASONPACKARR__DISABLE_CONFIG_FILE=true` and configure everything with environment
-variables. The database then moves, see [Database location](INSTALL.md#database-location).
+variables. The database then moves, see [Database location](INSTALL.md#database-location). This variable accepts the
+same values as all other boolean variables. `true` and `1` disable `config.yaml`. `false`, `0`, and an empty value read
+`config.yaml`. Other forms, such as `TRUE`, `t`, and `f`, also work. A different value, such as `yes`, stops the start
+and each command that reads the config. The error names the variable.
 
 ## Config reload
 

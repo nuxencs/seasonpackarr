@@ -192,7 +192,7 @@ func TestCLI_SearchPreviewAndImport(t *testing.T) {
 }
 
 // TestCLI_StartLogsNoSecretForInvalidConfig reads the process output, because
-// start reports a config load error before the service logger exists.
+// start returns a config load error before the service logger exists.
 func TestCLI_StartLogsNoSecretForInvalidConfig(t *testing.T) {
 	binary := buildCLI(t)
 	secrets := map[string]string{

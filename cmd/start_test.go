@@ -84,3 +84,41 @@ func TestCLI_EnvironmentVariablesAreKnown(t *testing.T) {
 	require.NotEmpty(t, environ)
 	assert.Empty(t, config.UnknownEnvironmentVariables(environ))
 }
+
+func TestStartCommand_ReturnsConfigLoadError(t *testing.T) {
+	tests := map[string]struct {
+		files map[string]string
+		want  string
+	}{
+		"invalid config": {
+			files: map[string]string{"config.yaml": "port: not-a-port\n"},
+			want:  "Error: decoding config file ",
+		},
+		"legacy config.toml": {
+			files: map[string]string{"config.yaml": "clients: {}\n", "config.toml": ""},
+			want:  "Error: A legacy 'config.toml' file has been detected.",
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			isolateCLI(t)
+			t.Setenv("SEASONPACKARR__DISABLE_CONFIG_FILE", "")
+			t.Setenv("SEASONPACKARR__UNKNOWN_SETTING", "value")
+			dir := t.TempDir()
+			for file, contents := range tt.files {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, file), []byte(contents), 0o600))
+			}
+
+			code, stdout, stderr := runCLI(t, "start", "--config", dir)
+
+			assert.Equal(t, 1, code)
+			assert.Empty(t, stdout)
+			// An unknown variable can explain the load error, so start prints it before the error.
+			warning, errLine, ok := strings.Cut(stderr, "\n")
+			require.True(t, ok, stderr)
+			assert.Equal(t, "warning: unknown environment variable SEASONPACKARR__UNKNOWN_SETTING; seasonpackarr ignores it", warning)
+			assert.True(t, strings.HasPrefix(errLine, tt.want), stderr)
+			assert.Equal(t, 1, strings.Count(stderr, "warning:"), stderr)
+		})
+	}
+}

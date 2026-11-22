@@ -12,15 +12,16 @@ import (
 func BenchmarkLoad(b *testing.B) {
 	configDir := b.TempDir()
 	writeConfigFile(b, filepath.Join(configDir, "config.yaml"), defaultConfigFile)
-	clearConnectionEnvironment(b)
-	b.Setenv("SEASONPACKARR__PORT", "4242")
-	b.Setenv("SEASONPACKARR__SMART_MODE", "true")
-	b.Setenv("SEASONPACKARR__NOTIFICATIONS_NOTIFICATION_LEVEL", "MATCH,INFO")
-	b.Setenv("SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_TAGS", "a,b")
-	b.Setenv("SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_SAVE_PATH", configDir)
+	in := Input{ConfigDir: configDir, Version: "test", Environ: []string{
+		"SEASONPACKARR__PORT=4242",
+		"SEASONPACKARR__SMART_MODE=true",
+		"SEASONPACKARR__NOTIFICATIONS_NOTIFICATION_LEVEL=MATCH,INFO",
+		"SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_TAGS=a,b",
+		"SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_SAVE_PATH=" + configDir,
+	}}
 
 	for b.Loop() {
-		if _, err := Load(configDir, "test"); err != nil {
+		if _, err := Load(in); err != nil {
 			b.Fatal(err)
 		}
 	}
