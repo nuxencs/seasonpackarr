@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -92,4 +93,16 @@ func TestExecute_OnlyStartCreatesConfigFile(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, string(want), string(got))
 	})
+}
+
+// TestGetenv_MatchesNamesAsTheSystemDoes: Windows environment names have no case, so a lookup there ignores it.
+func TestGetenv_MatchesNamesAsTheSystemDoes(t *testing.T) {
+	environ := []string{"Xdg_Data_Home=mixed", "XDG_DATA_HOME=exact"}
+	want := "exact"
+	if runtime.GOOS == "windows" {
+		want = "mixed"
+	}
+
+	assert.Equal(t, want, getenv(environ, "XDG_DATA_HOME"))
+	assert.Empty(t, getenv(environ, "XDG_CONFIG_HOME"))
 }
