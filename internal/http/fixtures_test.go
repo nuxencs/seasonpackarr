@@ -22,6 +22,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/nuxencs/seasonpackarr/internal/discovery"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/inventory"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
@@ -85,10 +86,12 @@ func (f *fakeConfig) Store(config domain.Config) {
 }
 
 type processorHTTPFixture struct {
-	search        *searchRunner
-	inventory     *inventory.Store
-	connector     *fakeConnector
-	statePath     string
+	search    *searchRunner
+	inventory *inventory.Store
+	connector *fakeConnector
+	statePath string
+	// store is the database of the server. A database-failure test closes it.
+	store         *state.Store
 	handler       stdhttp.Handler
 	torrentClient *torrentclienttest.Client
 	config        *fakeConfig
@@ -180,12 +183,13 @@ func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFix
 		noti = opts.noti
 	}
 	inv := inventory.New(connector.connect, log)
-	server := NewServer(log, cfg, noti, store, inv)
+	server := NewServer(log, cfg, noti, discovery.New(store, log, nil), inv)
 	return processorHTTPFixture{
 		search:        server.search,
 		inventory:     inv,
 		connector:     connector,
 		statePath:     statePath,
+		store:         store,
 		handler:       server.Handler(),
 		torrentClient: torrentClient,
 		config:        cfg,
@@ -419,13 +423,14 @@ func (f *searchFixture) runExact(t *testing.T, dryRun bool) searchReport {
 // The new server has no import plans.
 func (f *processorHTTPFixture) restart(t *testing.T) {
 	t.Helper()
-	require.NoError(t, f.search.state.Close())
+	require.NoError(t, f.store.Close())
 	store, err := state.Open(t.Context(), f.statePath, zerolog.Nop())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
-	// A restart starts with no connections and no inventories.
+	f.store = store
+	// A restart starts with no client connections, no inventories, and no Prowlarr connection.
 	f.inventory = inventory.New(f.connector.connect, f.search.log)
-	server := NewServer(f.search.log, f.config, f.notifications, store, f.inventory)
+	server := NewServer(f.search.log, f.config, f.notifications, discovery.New(store, f.search.log, nil), f.inventory)
 	f.search, f.handler, f.tasks = server.search, server.Handler(), server.tasks
 }
 

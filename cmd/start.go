@@ -14,6 +14,7 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/buildinfo"
 	"github.com/nuxencs/seasonpackarr/internal/config"
+	"github.com/nuxencs/seasonpackarr/internal/discovery"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/http"
 	"github.com/nuxencs/seasonpackarr/internal/inventory"
@@ -90,7 +91,9 @@ func newStartCommand(environ []string) *cobra.Command {
 					log.Error().Err(err).Msg("could not close database")
 				}
 			}()
-			srv := http.NewServer(log, cfg, noti, store, inv)
+			// A nil transport selects the default HTTP transport.
+			source := discovery.New(store, log, nil)
+			srv := http.NewServer(log, cfg, noti, source, inv)
 
 			if err := runServer(ctx, srv); err != nil {
 				return err

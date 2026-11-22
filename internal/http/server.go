@@ -13,12 +13,12 @@ import (
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/config"
+	"github.com/nuxencs/seasonpackarr/internal/discovery"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/errtrace"
 	"github.com/nuxencs/seasonpackarr/internal/inventory"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/seasonpack"
-	"github.com/nuxencs/seasonpackarr/internal/state"
 
 	"github.com/gin-contrib/requestid"
 	"github.com/gin-gonic/gin"
@@ -44,8 +44,8 @@ type Server struct {
 }
 
 // NewServer creates the server. inv holds the client inventories that the
-// webhooks and search share.
-func NewServer(log logger.Logger, config config.Provider, notification domain.Sender, store *state.Store, inv *inventory.Store) *Server {
+// webhooks and search share. source is the Prowlarr discovery source of search.
+func NewServer(log logger.Logger, config config.Provider, notification domain.Sender, source *discovery.Source, inv *inventory.Store) *Server {
 	tasks := newTaskGroup()
 	noti := &notifier{sender: notification, tasks: tasks}
 	processor := seasonpack.New(log, inv)
@@ -56,7 +56,7 @@ func NewServer(log logger.Logger, config config.Provider, notification domain.Se
 		tasks:          tasks,
 		noti:           noti,
 		processor:      processor,
-		search:         &searchRunner{log: log, cfg: config, inv: inv, processor: processor, noti: noti, state: store},
+		search:         &searchRunner{log: log, cfg: config, inv: inv, processor: processor, noti: noti, source: source},
 		lifecycleTasks: newTaskGroup(),
 	}
 }

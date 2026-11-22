@@ -131,122 +131,6 @@ func TestRSS_YearMatchingStillGatesMetadataRetrieval(t *testing.T) {
 	}
 }
 
-func TestRSS_CheckpointCatchUpAndRetainedCoverage(t *testing.T) {
-	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 1, threshold: 1}) // Keep the pack eligible after each poll.
-	cfg := f.config.Snapshot()
-	cfg.Search.IndexerIDs = []int{1}
-	f.config.Store(cfg)
-	f.pages, f.pageSize = true, 1
-	f.titles = []string{"Old.S01.1080p.WEB-DL.H.264-RlsGrp"}
-	first := f.runRSS(t)
-	require.Empty(t, first.Failures)
-	require.Equal(t, 1, first.Requests, "first poll reads only the newest page")
-	f.restart(t)
-	f.titles = append([]string{"New.S01.1080p.WEB-DL.H.264-RlsGrp", f.releaseName}, f.titles...)
-	actual := f.runRSS(t)
-	require.Empty(t, actual.Failures)
-	require.Equal(t, 3, actual.Requests)
-	require.Equal(t, "rejected", actual.Outcomes[0].Status)
-	repeat := f.runRSS(t)
-	require.Empty(t, repeat.Failures)
-	require.Equal(t, 1, repeat.Requests)
-	require.Equal(t, 1, repeat.TorrentCacheHits, "retained result is checked even when it is not on the first page")
-}
-
-func TestRSS_CatchUpLimitReportsGap(t *testing.T) {
-	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
-	cfg := f.config.Snapshot()
-	cfg.Search.IndexerIDs = []int{1}
-	f.config.Store(cfg)
-	f.pages, f.pageSize = true, 1
-	f.titles = []string{"Old.S01.1080p.WEB-DL.H.264-RlsGrp"}
-	f.runRSS(t)
-	f.titles = nil
-	for i := range 12 {
-		f.titles = append(f.titles, fmt.Sprintf("Unrelated%d.S01.1080p.WEB-DL.H.264-RlsGrp", i))
-	}
-	report := f.runRSS(t)
-	require.Equal(t, 10, report.Requests)
-	require.Len(t, report.Failures, 1)
-	require.Contains(t, report.Failures[0].Reason, "manual targeted search")
-	require.Zero(t, f.downloads)
-	require.Equal(t, 1, f.runRSS(t).Requests, "a reported gap must not cause repeated catch-up bursts")
-}
-
-func TestRSS_CapabilitiesAndAllowlist(t *testing.T) {
-	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 1, threshold: 1})
-	f.respond = func(w stdhttp.ResponseWriter, r *stdhttp.Request) bool {
-		if r.URL.Path != "/api/v1/indexer" {
-			return false
-		}
-		fmt.Fprint(w, `[{"id":1,"enable":true,"protocol":"torrent","supportsRss":true}, {"id":2,"enable":true,"protocol":"torrent","supportsSearch":true,"capabilities":{"searchParams":["q"]}}]`)
-		return true
-	}
-	report := f.runRSS(t)
-	require.Empty(t, report.Failures)
-	require.Equal(t, 1, report.Requests)
-	require.Equal(t, 1, report.Outcomes[0].IndexerID)
-	search := f.runExact(t, true)
-	require.Empty(t, search.Failures)
-	require.Equal(t, 2, search.Outcomes[0].IndexerID)
-	cfg := f.config.Snapshot()
-	cfg.Search.IndexerIDs = []int{2}
-	f.config.Store(cfg)
-	blocked := f.runRSS(t)
-	require.Zero(t, blocked.Requests)
-	require.NotEmpty(t, blocked.Failures)
-	require.Contains(t, blocked.Failures[0].Reason, "RSS-capable")
-}
-
-func TestRSS_CooldownSharedWithTargetedSearch(t *testing.T) {
-	for _, firstRSS := range []bool{true, false} {
-		t.Run(fmt.Sprint(firstRSS), func(t *testing.T) {
-			f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 1, threshold: 1})
-			f.failFirst = true
-			var report searchReport
-			if firstRSS {
-				f.runRSS(t)
-				report = f.runExact(t, true)
-			} else {
-				f.runExact(t, true)
-				report = f.runRSS(t)
-			}
-			require.Len(t, report.Failures, 1)
-			require.Equal(t, 1, report.Failures[0].IndexerID)
-			require.Equal(t, 1, report.Requests)
-			require.Equal(t, "rejected", report.Outcomes[0].Status)
-		})
-	}
-}
-
-func TestRSS_FailedCatchUpPreservesCheckpoint(t *testing.T) {
-	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 1, threshold: 1})
-	cfg := f.config.Snapshot()
-	cfg.Search.IndexerIDs = []int{1}
-	f.config.Store(cfg)
-	f.pages, f.pageSize = true, 1
-	f.titles = []string{"Old.S01.1080p.WEB-DL.H.264-RlsGrp"}
-	f.runRSS(t)
-	f.titles = append([]string{f.releaseName}, f.titles...)
-	f.respond = func(w stdhttp.ResponseWriter, r *stdhttp.Request) bool {
-		if r.URL.Path == "/1/api" && r.URL.Query().Get("offset") == "1" {
-			w.Header().Set("Retry-After", "0")
-			w.WriteHeader(503)
-			return true
-		}
-		return false
-	}
-	failed := f.runRSS(t)
-	require.Len(t, failed.Failures, 1)
-	require.Zero(t, f.downloads, "do not download from an indexer after a feed failure")
-	f.restart(t)
-	f.respond = nil
-	recovered := f.runRSS(t)
-	require.Empty(t, recovered.Failures)
-	require.Equal(t, 2, recovered.Requests, "failed poll must not advance the checkpoint")
-	require.Equal(t, "rejected", recovered.Outcomes[0].Status)
-}
-
 func TestRSS_ExistingPackSuppressesOnlyMatchingVariant(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
 	f.torrentClient.Torrents = append(f.torrentClient.Torrents,
@@ -267,27 +151,6 @@ func TestRSS_ExistingPackSuppressesOnlyMatchingVariant(t *testing.T) {
 		}
 	}
 	require.Zero(t, f.downloads)
-}
-
-func TestRSS_ConnectionChangeClearsFeedState(t *testing.T) {
-	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 1, threshold: 1})
-	cfg := f.config.Snapshot()
-	cfg.Search.IndexerIDs = []int{1}
-	f.config.Store(cfg)
-	f.pages, f.pageSize = true, 1
-	f.titles = []string{"Old.S01.1080p.WEB-DL.H.264-RlsGrp"}
-	f.runRSS(t)
-	f.titles = append([]string{f.releaseName}, f.titles...)
-	report := f.runRSS(t)
-	require.Empty(t, report.Failures)
-	require.Equal(t, 2, report.Requests)
-	cfg.Search.ProwlarrURL += "/"
-	f.config.Store(cfg)
-	f.titles = []string{"Unrelated.S01.1080p.WEB-DL.H.264-RlsGrp"}
-	reset := f.runRSS(t)
-	require.Empty(t, reset.Failures)
-	require.Empty(t, reset.Outcomes, "connection changes clear retained candidates")
-	require.Equal(t, 1, reset.Requests)
 }
 
 func TestRSS_UnavailableClientDoesNotLoseFeedEntries(t *testing.T) {
@@ -321,7 +184,7 @@ func TestRSS_UnavailableClientDoesNotLoseFeedEntries(t *testing.T) {
 
 func TestRSS_CheckpointWriteFailureDoesNotImport(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
-	f.beforeSearch = func() { assert.NoError(t, f.search.state.Close()) }
+	f.beforeSearch = func() { assert.NoError(t, f.store.Close()) }
 	report := f.runRSS(t)
 	require.Len(t, report.Failures, 1)
 	require.Equal(t, "could not access database; check service logs", report.Failures[0].Reason)

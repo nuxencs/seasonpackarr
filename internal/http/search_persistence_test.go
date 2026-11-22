@@ -37,7 +37,7 @@ func TestSearch_MetadataSurvivesRestartButDecisionsDoNot(t *testing.T) {
 
 func TestSearch_DatabaseFailureStopsDiscovery(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
-	require.NoError(t, f.search.state.Close())
+	require.NoError(t, f.store.Close())
 	response := f.postJSON(t, "/api/search", map[string]any{"dryRun": false})
 	require.Equal(t, 500, response.Code)
 	require.JSONEq(t, `{"error":"could not access database; check service logs"}`, response.Body.String())
@@ -52,11 +52,11 @@ func TestSearch_MetadataFailureDoesNotImport(t *testing.T) {
 			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
 			f.pages, f.pageSize = true, 1
 			if stage == "read" {
-				f.beforeSearch = func() { assert.NoError(t, f.search.state.Close()) }
+				f.beforeSearch = func() { assert.NoError(t, f.store.Close()) }
 			} else {
 				f.respond = func(_ stdhttp.ResponseWriter, r *stdhttp.Request) bool {
 					if strings.HasSuffix(r.URL.Path, "/download") {
-						assert.NoError(t, f.search.state.Close())
+						assert.NoError(t, f.store.Close())
 					}
 					return false
 				}
@@ -76,4 +76,31 @@ func TestSearch_MetadataFailureDoesNotImport(t *testing.T) {
 			require.Zero(t, f.torrentClient.ImportCalls)
 		})
 	}
+}
+
+func TestSearch_CooldownWriteFailureKeepsDownloadOutcome(t *testing.T) {
+	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
+	cfg := f.config.Snapshot()
+	cfg.Search.IndexerIDs = []int{1}
+	f.config.Store(cfg)
+	f.respond = func(w stdhttp.ResponseWriter, r *stdhttp.Request) bool {
+		if r.URL.Path != "/1/download" {
+			return false
+		}
+		// The store fails when the run stores the cooldown of this download.
+		assert.NoError(t, f.store.Close())
+		w.Header().Set("Retry-After", "7200")
+		w.WriteHeader(429)
+		return true
+	}
+	response := f.postJSON(t, "/api/search", map[string]any{"dryRun": false})
+	require.Equal(t, 200, response.Code)
+	var report searchReport
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &report))
+	require.Len(t, report.Failures, 1)
+	require.Equal(t, "could not access database; check service logs", report.Failures[0].Reason)
+	require.Len(t, report.Outcomes, 1, "the failed download must keep its outcome")
+	require.Equal(t, "failed", report.Outcomes[0].Status)
+	require.Equal(t, "Prowlarr returned HTTP 429; indexer is rate limited", report.Outcomes[0].Reason)
+	require.Zero(t, f.torrentClient.ImportCalls)
 }
