@@ -43,8 +43,8 @@ type Indexer struct {
 	} `json:"capabilities"`
 }
 
-// Result retains the opaque proxy URL only for retrieving the torrent.
-type Result struct {
+// Release retains the opaque proxy URL only for retrieving the torrent.
+type Release struct {
 	Title     string `xml:"title"`
 	GUID      string `xml:"guid"`
 	Link      string `xml:"link"`
@@ -138,8 +138,8 @@ func (c *Client) Indexers(ctx context.Context) ([]Indexer, error) {
 
 // SearchPage prefers a structured TV season search, falling back to a text
 // search when supported. Prowlarr's feed has no total count; callers stop on
-// a short page, repeated results, or their page budget.
-func (c *Client) SearchPage(ctx context.Context, indexer Indexer, q Query, offset int) ([]Result, int, error) {
+// a short page, repeated releases, or their page budget.
+func (c *Client) SearchPage(ctx context.Context, indexer Indexer, q Query, offset int) ([]Release, int, error) {
 	params, limit := feedParams(indexer, offset)
 	if slices.Contains(indexer.Capabilities.TvSearchParams, "q") && slices.Contains(indexer.Capabilities.TvSearchParams, "season") {
 		params.Set("t", "tvsearch")
@@ -155,7 +155,7 @@ func (c *Client) SearchPage(ctx context.Context, indexer Indexer, q Query, offse
 }
 
 // RSSPage requests recent releases without a title, season, or external ID.
-func (c *Client) RSSPage(ctx context.Context, indexer Indexer, offset int) ([]Result, int, error) {
+func (c *Client) RSSPage(ctx context.Context, indexer Indexer, offset int) ([]Release, int, error) {
 	params, limit := feedParams(indexer, offset)
 	params.Set("t", "search")
 	if !indexer.SupportsRSS {
@@ -181,7 +181,7 @@ func feedParams(indexer Indexer, offset int) (url.Values, int) {
 	return params, limit
 }
 
-func (c *Client) feed(ctx context.Context, indexerID int, params url.Values, limit int) ([]Result, int, error) {
+func (c *Client) feed(ctx context.Context, indexerID int, params url.Values, limit int) ([]Release, int, error) {
 	data, err := c.get(ctx, c.endpoint(fmt.Sprintf("/%d/api", indexerID), params))
 	if err != nil {
 		return nil, limit, err
@@ -190,7 +190,7 @@ func (c *Client) feed(ctx context.Context, indexerID int, params url.Values, lim
 		XMLName xml.Name
 		Code    string `xml:"code,attr"`
 		Channel *struct {
-			Items []Result `xml:"item"`
+			Items []Release `xml:"item"`
 		} `xml:"channel"`
 	}
 	if err := xml.Unmarshal(data, &feed); err != nil {
@@ -209,15 +209,15 @@ func (c *Client) feed(ctx context.Context, indexerID int, params url.Values, lim
 // The caller must serialize this with requests.
 func (c *Client) SetRequestInterval(interval time.Duration) { c.interval = interval }
 
-func (c *Client) Download(ctx context.Context, indexerID int, result Result) ([]byte, error) {
-	raw := cmp.Or(result.Enclosure.URL, result.Link)
+func (c *Client) Download(ctx context.Context, indexerID int, release Release) ([]byte, error) {
+	raw := cmp.Or(release.Enclosure.URL, release.Link)
 	u, err := url.Parse(raw)
 	if err != nil || raw == "" {
 		return nil, errors.New("result has no valid torrent download URL")
 	}
 	u = c.base.ResolveReference(u)
 	// Accept only this indexer's Prowlarr proxy route. Never send the API key
-	// to an origin or endpoint supplied by a search result.
+	// to an origin or endpoint that the feed supplies.
 	expected := strings.TrimRight(c.base.Path, "/") + fmt.Sprintf("/%d/download", indexerID)
 	apiExpected := strings.TrimRight(c.base.Path, "/") + fmt.Sprintf("/api/v1/indexer/%d/download", indexerID)
 	if u.Scheme != c.base.Scheme || !strings.EqualFold(u.Host, c.base.Host) || u.User != nil || (u.Path != expected && u.Path != apiExpected) {

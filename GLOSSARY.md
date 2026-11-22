@@ -103,6 +103,9 @@ _Avoid_: RSS candidate
 The stored torrent bytes of listings, so a later discovery run does not download them again.
 _Avoid_: Metadata, metadata cache
 
+**Outcome**:
+The evaluation of one listing in the report of a discovery run, with its status: `candidate`, `would_import`, `imported`, `rejected`, or `failed`.
+
 ### Notifications
 
 **Notification**:

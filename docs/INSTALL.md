@@ -166,7 +166,7 @@ restart does not continue an interrupted import.
 - Use local storage, not an NFS or SMB share.
 - Run only one seasonpackarr instance for each database.
 - On Unix, only the owner can open the database. On Windows, restrict the directory to the service account.
-- Torrent metadata in the database can contain tracker credentials. Protect database backups as you protect
+- The torrent cache and the retained listings in the database can contain tracker credentials. Protect database backups as you protect
   `config.yaml`.
 
 SQLite uses write-ahead logging (WAL). While seasonpackarr runs, `seasonpackarr.db-wal` and `seasonpackarr.db-shm` exist

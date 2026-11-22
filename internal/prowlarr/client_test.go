@@ -42,11 +42,11 @@ func TestClient_IndexersAndSeasonQueries(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, indexers, 2)
 	require.Equal(t, 1, indexers[0].ID)
-	results, limit, err := client.SearchPage(t.Context(), indexers[0], Query{Title: "Example", Season: 2}, 50)
+	releases, limit, err := client.SearchPage(t.Context(), indexers[0], Query{Title: "Example", Season: 2}, 50)
 	require.NoError(t, err)
 	require.Equal(t, 25, limit)
-	require.Len(t, results, 1)
-	require.Equal(t, "one", results[0].GUID)
+	require.Len(t, releases, 1)
+	require.Equal(t, "one", releases[0].GUID)
 }
 
 func TestClient_TextFallbackAndInvalidFeeds(t *testing.T) {
@@ -97,16 +97,16 @@ func TestClient_DownloadProxyBoundary(t *testing.T) {
 	defer server.Close()
 	client, err := New(server.URL+"/base", "key", 0, nil)
 	require.NoError(t, err)
-	data, err := client.Download(t.Context(), 1, Result{Link: server.URL + "/base/1/download?apikey=secret&link=opaque&file=t"})
+	data, err := client.Download(t.Context(), 1, Release{Link: server.URL + "/base/1/download?apikey=secret&link=opaque&file=t"})
 	require.NoError(t, err)
 	require.Equal(t, "torrent bytes", string(data))
 	for _, link := range []string{"magnet:?xt=urn:btih:secret", "https://tracker.invalid/download?passkey=secret", server.URL + "/base/2/download", server.URL + "/api/v1/config"} {
-		_, err := client.Download(t.Context(), 1, Result{Link: link})
+		_, err := client.Download(t.Context(), 1, Release{Link: link})
 		require.Error(t, err)
 		require.NotContains(t, err.Error(), "secret")
 	}
 	require.Equal(t, 1, requests)
-	_, err = client.Download(t.Context(), 1, Result{Link: server.URL + "/base/1/download?link=redirect"})
+	_, err = client.Download(t.Context(), 1, Release{Link: server.URL + "/base/1/download?link=redirect"})
 	require.ErrorContains(t, err, "HTTP 302")
 	require.NotContains(t, err.Error(), "secret")
 }

@@ -61,7 +61,7 @@ func TestRSS_ImportsOneVariantAcrossTrackersAndManualSearch(t *testing.T) {
 	require.Equal(t, "imported", report.Outcomes[0].Status)
 	require.Equal(t, "rejected", report.Outcomes[1].Status)
 	require.Equal(t, 1, f.torrentClient.ImportCalls)
-	require.Equal(t, 1, f.downloads, "verified preview metadata is shared with RSS imports")
+	require.Equal(t, 1, f.downloads, "the RSS import uses the cached torrent of the verified preview")
 	for _, next := range []searchReport{f.runRSS(t), f.runExact(t, false)} {
 		require.Zero(t, next.Requests)
 		require.Zero(t, next.TorrentDownloads)
@@ -106,7 +106,7 @@ func TestRSS_RetainedPackRechecksCoverageAfterLeavingFeed(t *testing.T) {
 	require.Equal(t, 1, f.torrentClient.ImportCalls)
 }
 
-func TestRSS_YearMatchingStillGatesMetadataRetrieval(t *testing.T) {
+func TestRSS_YearMatchingStillGatesTorrentDownload(t *testing.T) {
 	for _, skipYear := range []bool{false, true} {
 		t.Run(fmt.Sprint(skipYear), func(t *testing.T) {
 			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})

@@ -134,7 +134,7 @@
 - Each operation takes a client handle and a release name. The match also takes a torrent, and the import takes torrent bytes. The handle gives the config snapshot that it was made from, so a stage cannot use the client of one snapshot with the settings of another.
 - Each operation returns one outcome: a status code, an error (nil for an accepted season pack), and the coverage (reusable and total episodes) when the torrent episodes were matched. The outcome gives its class: accepted, rejected (a status below `400`, or `445`), or failed. The callers use the class for the log level and for the status of the search report.
 - The coverage rule, the plan build, the plan cache, the endpoint import lock, the drops after an import attempt, and the stage logs are private to the package. The processor makes one logger for each call, with the release name and the client name of that call. It sends no notification.
-- The match takes the torrent in one of two forms. With the bytes in hand (a webhook request), it reads the torrent first, logs a failed file-detail read, and continues with the client episode files that it could read. With a fetch on demand (discovery), it reads the client episode files first and calls the fetch only when each file-detail read worked and at least one file is on disk. Else it returns a named error with status `468` (file-detail read failed) or `445` (no source on disk). The policies differ on purpose: an announce comes once, and a search result can be tried again in a later run.
+- The match takes the torrent in one of two forms. With the bytes in hand (a webhook request), it reads the torrent first, logs a failed file-detail read, and continues with the client episode files that it could read. With a fetch on demand (discovery), it reads the client episode files first and calls the fetch only when each file-detail read worked and at least one file is on disk. Else it returns a named error with status `468` (file-detail read failed) or `445` (no source on disk). The policies differ on purpose: an announce comes once, and a listing can be tried again in a later run.
 - `/api/candidate` reads torrent summaries only. It does not need torrent bytes or file-detail calls.
 - `/api/match` parses the announced torrent, maps reusable source files to distinct valid torrent targets, and applies smart mode to exact torrent coverage.
 - Each plan build drops a client episode file that is not on disk as a regular file with the size that the client declares, and logs the reason. The webhook match, the import, and search use this one rule. See [docs/design/matching-and-hardlinking.md](docs/design/matching-and-hardlinking.md).
@@ -200,7 +200,7 @@
   plan of the match from the processor, as for the two requests of an announce.
 - A run keeps one client handle for each client. The groups from the inventory,
   the duplicate-variant rule of a run, the dry-run, verify, and import modes,
-  the report, the notifications, and the run and result lines of the log stay
+  the report, the notifications, and the run and outcome lines of the log stay
   in `internal/http/search.go`. The report gets the client failures of the
   run, then the failures of the source, then a canceled context.
 - `POST /api/search` and `cmd/search.go` expose search-only dry runs, exact previews, and imports. The
@@ -212,26 +212,26 @@
   from the groups. The source reads recent feeds once per indexer and pages back
   to the previous poll when possible. `internal/state/rss.go` retains bounded relevant
   listings for later coverage checks. SQLite preserves feed state across restarts.
-  Checkpoints and candidates commit together before evaluation. Runs with an
+  Checkpoints and retained listings commit together before evaluation. Runs with an
   unavailable client discard their feed working set instead of advancing it.
   Only the scheduler can start an RSS poll. Manual CLI/API requests always use targeted search.
-- `internal/state/metadata.go` bounds durable metadata reuse to seven days,
+- `internal/state/torrent_cache.go` bounds the torrent cache to seven days,
   64 MiB, and 1024 entries. Exact runs check local sources before retrieval
   and rebuild decisions from current inputs.
 - Each run keeps one config snapshot and applies the configured indexer allowlist.
   RSS selects RSS-capable indexers; targeted search selects searchable indexers.
   Both modes share one connection whose request spacing survives across runs.
 - SQLite retains retry deadlines across runs and restarts. HTTP 429, temporary HTTP
-  errors, and transport failures pause the affected indexer. Discovery failures
-  pause the whole Prowlarr connection. Connection changes reset discovery state
-  atomically. Requests are not retried automatically.
+  errors, and transport failures start a cooldown for the affected indexer.
+  Discovery failures start a cooldown for the whole Prowlarr connection.
+  Connection changes reset discovery state atomically. Requests are not retried automatically.
 - See [Prowlarr discovery](docs/PROWLARR.md) for operator
-  behavior and [the API audit](docs/research/prowlarr-backfill-api.md) for source contracts.
+  behavior and [the API audit](docs/research/prowlarr-discovery-api.md) for source contracts.
 
 ### Database
 
 - `internal/state/` owns the embedded SQLite driver, schema migrations, expiry,
-  metadata eviction, and atomic RSS snapshots. There is no alternative backend.
+  torrent cache eviction, and atomic RSS snapshots. There is no alternative backend.
 - `cmd/start.go` creates `seasonpackarr.db` beside the active config. Environment-only
   setups use the explicit config directory or the user data directory.
 - The application owns one SQL connection with WAL journaling, SQLite-managed
@@ -243,7 +243,7 @@
   corrupt or newer databases. A storage failure stops discovery, not a fallback
   to volatile storage.
 - Prowlarr connection identity is an HMAC-SHA-256 fingerprint of the URL, keyed
-  by the API key. Cached torrent bytes and result links remain sensitive data.
+  by the API key. Cached torrent bytes and listing links remain sensitive data.
 - Configuration, client inventory, coverage decisions, and exact import plans are
   not persisted. There is no durable job queue or multi-process scheduler.
 - See [schema documentation](docs/generated/db-schema.md) and

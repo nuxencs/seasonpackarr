@@ -93,7 +93,7 @@ func TestSearch_FailedTrackerDoesNotBlockOthers(t *testing.T) {
 	require.Equal(t, 2, report.Outcomes[0].IndexerID)
 }
 
-func TestSearch_RejectsIncompatibleResultsBeforeDownload(t *testing.T) {
+func TestSearch_RejectsIncompatibleListingsBeforeDownload(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	f.titles = []string{"Other.S01.1080p.WEB-DL.H.264-RlsGrp", "Lifecycle.S02.1080p.WEB-DL.H.264-RlsGrp", "Lifecycle.S01.2160p.WEB-DL.H.265-RlsGrp", "Lifecycle.S01.1080p.WEB-DL.H.264-OtherGrp"}
 	report := f.runExact(t, true)
@@ -181,7 +181,7 @@ func TestSearch_GroupIdentityAndUnrelatedTorrents(t *testing.T) {
 	}, f.queries)
 }
 
-func TestSearch_PaginationFindsPackAfterRejectedResult(t *testing.T) {
+func TestSearch_PaginationFindsPackAfterRejectedListing(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	f.pages = true
 	f.pageSize = 1
@@ -269,7 +269,7 @@ func TestSearch_QueryOmitsYearButMatchingRespectsSettings(t *testing.T) {
 	}
 }
 
-func TestSearch_DryRunDoesNotRetrieveFilesOrMetadata(t *testing.T) {
+func TestSearch_DryRunDoesNotRetrieveFilesOrTorrents(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 10, clientEpisodes: 1, threshold: 0.75})
 	// Even an inaccessible source must not turn discovery into exact verification.
 	require.NoError(t, os.Rename(f.sourceDir, f.sourceDir+"-moved"))
@@ -289,7 +289,7 @@ func TestSearch_DryRunDoesNotRetrieveFilesOrMetadata(t *testing.T) {
 	require.Zero(t, f.torrentClient.ImportCalls)
 }
 
-func TestSearch_PreflightStopsBeforeMetadata(t *testing.T) {
+func TestSearch_PreflightStopsBeforeTorrentDownload(t *testing.T) {
 	for _, mode := range []string{"missing", "empty", "wrong size", "directory", "client error"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
@@ -321,7 +321,7 @@ func TestSearch_PreflightStopsBeforeMetadata(t *testing.T) {
 	}
 }
 
-func TestSearch_MetadataReuseRechecksSourcesAndSettings(t *testing.T) {
+func TestSearch_CachedTorrentRechecksSourcesAndSettings(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.75})
 	cfg := f.config.Snapshot()
 	cfg.Search.IndexerIDs = []int{1}
@@ -333,7 +333,7 @@ func TestSearch_MetadataReuseRechecksSourcesAndSettings(t *testing.T) {
 	require.Equal(t, new(1), first.Outcomes[0].ReusableEpisodes)
 	require.Equal(t, 1, first.TorrentDownloads)
 	require.Equal(t, 1, f.torrentClient.FileBatchCalls)
-	// Lowering the threshold must re-evaluate cached metadata.
+	// Lowering the threshold must re-evaluate the cached torrent.
 	cfg.SmartModeThreshold = 0.5
 	f.config.Store(cfg)
 	second := f.runExact(t, true)
@@ -349,7 +349,7 @@ func TestSearch_MetadataReuseRechecksSourcesAndSettings(t *testing.T) {
 	require.Equal(t, new(2), third.Outcomes[0].ReusableEpisodes)
 	require.Equal(t, 1, third.TorrentCacheHits)
 	require.Equal(t, 1, f.downloads)
-	// A removed source is checked even when metadata is cached.
+	// A removed source is checked even when the torrent is cached.
 	require.NoError(t, os.Rename(f.sourceDir, f.sourceDir+"-moved"))
 	fourth := f.runExact(t, true)
 	require.Equal(t, "rejected", fourth.Outcomes[0].Status)
@@ -492,7 +492,7 @@ func TestSearch_RemovingExistingPackRestoresQuery(t *testing.T) {
 
 // One run evaluates each release variant for the client. Each stage line must
 // name the release that it is about, also before and after another import.
-func TestSearch_LogsReleaseAndClientOfEachResult(t *testing.T) {
+func TestSearch_LogsReleaseAndClientOfEachListing(t *testing.T) {
 	log := newTraceLogger(t)
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75, log: log})
 	otherPack := f.addOtherVariant(t)
@@ -532,7 +532,7 @@ func TestSearch_LogsReleaseAndClientOfEachResult(t *testing.T) {
 }
 
 // A search run drops a source that is not on disk with the log line of the
-// webhook match, and the line names the release and the client of its result.
+// webhook match, and the line names the release and the client of its listing.
 func TestSearch_LogsSourceThatIsNotOnDisk(t *testing.T) {
 	log := newTraceLogger(t)
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.5, log: log})

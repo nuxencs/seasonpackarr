@@ -23,7 +23,7 @@ func newOperationCommand(operation string, environ []string) *cobra.Command {
 	switch operation {
 	case "candidate":
 		argument = "<release>"
-		short = "Check release-name compatibility without torrent metadata"
+		short = "Check release-name compatibility without the torrent"
 		details = "This is a quick candidate check. Use match with a real torrent file to check exact reuse."
 	case "match":
 		short = "Check exact reuse from a torrent file without importing"

@@ -17,7 +17,7 @@ import (
 type Listing struct {
 	run       *Run
 	indexerID int
-	result    prowlarr.Result
+	release   prowlarr.Release
 
 	// fetched is true after the first download, including a failed download.
 	// The listing keeps the bytes and the error of it.
@@ -27,14 +27,14 @@ type Listing struct {
 }
 
 // Title is the release name of the listing.
-func (l *Listing) Title() string { return l.result.Title }
+func (l *Listing) Title() string { return l.release.Title }
 
 // IndexerID is the id of the indexer that offers the listing.
 func (l *Listing) IndexerID() int { return l.indexerID }
 
 // Torrent returns the torrent bytes of the listing. It reads the torrent cache,
 // else it downloads the torrent through Prowlarr. It downloads one time for
-// the listing and keeps the result, also a failure. Only bytes that parse as a
+// the listing and keeps the bytes or the failure. Only bytes that parse as a
 // torrent go into the torrent cache, but other bytes still go to the caller.
 //
 // A failed download matches ErrDownload and has the text of the failure. A
@@ -49,8 +49,8 @@ func (l *Listing) Torrent(ctx context.Context) ([]byte, error) {
 	if l.fetched {
 		return l.data, l.err
 	}
-	key := state.MetadataKey(l.indexerID, l.result)
-	data, err := r.source.store.Metadata(ctx, key, time.Now())
+	key := state.TorrentCacheKey(l.indexerID, l.release)
+	data, err := r.source.store.CachedTorrent(ctx, key, time.Now())
 	if err != nil {
 		r.databaseFailure(err)
 		return nil, r.err
@@ -60,7 +60,7 @@ func (l *Listing) Torrent(ctx context.Context) ([]byte, error) {
 		l.fetched, l.data = true, data
 		return data, nil
 	}
-	data, err = r.source.client.Download(ctx, l.indexerID, l.result)
+	data, err = r.source.client.Download(ctx, l.indexerID, l.release)
 	l.fetched = true
 	if err != nil {
 		l.err = err
@@ -74,7 +74,7 @@ func (l *Listing) Torrent(ctx context.Context) ([]byte, error) {
 	r.stats.Downloads++
 	l.data = data
 	if _, err := torrents.ParseInfo(data); err == nil {
-		if err := r.source.store.PutMetadata(ctx, key, data, time.Now()); err != nil {
+		if err := r.source.store.PutCachedTorrent(ctx, key, data, time.Now()); err != nil {
 			r.databaseFailure(err)
 			return nil, r.err
 		}

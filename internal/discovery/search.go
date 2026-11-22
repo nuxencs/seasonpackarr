@@ -30,7 +30,7 @@ func (r *Run) Search(ctx context.Context, indexer Indexer, query Query) iter.Seq
 				return
 			}
 			r.stats.FeedPages++
-			results, limit, err := r.source.client.SearchPage(ctx, indexer.prowlarr, prowlarr.Query(query), offset)
+			releases, limit, err := r.source.client.SearchPage(ctx, indexer.prowlarr, prowlarr.Query(query), offset)
 			if err != nil {
 				fail(err.Error())
 				// Rule 3: do not send a request to this indexer for each query.
@@ -39,17 +39,17 @@ func (r *Run) Search(ctx context.Context, indexer Indexer, query Query) iter.Seq
 				return
 			}
 			fresh := 0
-			for _, result := range results {
+			for _, release := range releases {
 				if !r.usable(ctx, indexer.ID) {
 					return
 				}
-				id := cmp.Or(result.GUID, result.Link, result.Enclosure.URL, result.Title)
+				id := cmp.Or(release.GUID, release.Link, release.Enclosure.URL, release.Title)
 				if seen[id] {
 					continue
 				}
 				seen[id] = true
 				fresh++
-				if !yield(&Listing{run: r, indexerID: indexer.ID, result: result}) {
+				if !yield(&Listing{run: r, indexerID: indexer.ID, release: release}) {
 					return
 				}
 				// A download of the last listing of the last page can take the
@@ -58,14 +58,14 @@ func (r *Run) Search(ctx context.Context, indexer Indexer, query Query) iter.Seq
 					return
 				}
 			}
-			if !indexer.prowlarr.SupportsPagination || len(results) < limit {
+			if !indexer.prowlarr.SupportsPagination || len(releases) < limit {
 				return
 			}
 			if fresh == 0 {
 				fail("indexer repeated a page; remaining results may be incomplete")
 				return
 			}
-			offset += len(results)
+			offset += len(releases)
 		}
 		fail("search reached the 10-page limit; remaining results may be incomplete")
 	}

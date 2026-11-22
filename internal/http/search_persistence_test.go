@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSearch_MetadataSurvivesRestartButDecisionsDoNot(t *testing.T) {
+func TestSearch_TorrentCacheSurvivesRestartButDecisionsDoNot(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 1})
 	cfg := f.config.Snapshot()
 	cfg.Search.IndexerIDs = []int{1}
@@ -46,7 +46,7 @@ func TestSearch_DatabaseFailureStopsDiscovery(t *testing.T) {
 	require.Zero(t, f.torrentClient.ImportCalls)
 }
 
-func TestSearch_MetadataFailureDoesNotImport(t *testing.T) {
+func TestSearch_TorrentCacheFailureDoesNotImport(t *testing.T) {
 	for _, stage := range []string{"read", "write"} {
 		t.Run(stage, func(t *testing.T) {
 			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})

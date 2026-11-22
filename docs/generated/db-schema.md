@@ -14,16 +14,16 @@ No database server or SQLite CLI is required at runtime.
 | Table | Purpose |
 | --- | --- |
 | `connection` | One fingerprint of the Prowlarr URL and API key. A change atomically clears discovery state. |
-| `cooldowns` | Retry deadlines. Indexer `0` denotes the whole connection. |
-| `metadata` | Validated torrent bytes, expiry, and last access for bounded LRU eviction. |
-| `rss_checkpoints` | At most one page of result identities per eligible indexer. |
-| `rss_candidates` | Bounded retained result JSON, expiry, and original insertion order. |
+| `cooldowns` | The cooldowns: retry deadlines. Indexer `0` denotes the whole connection. |
+| `metadata` | The torrent cache: validated torrent bytes, expiry, and last access for bounded LRU eviction. |
+| `rss_checkpoints` | The checkpoints: at most one page of listing identities per eligible indexer. |
+| `rss_candidates` | The retained listings: bounded listing JSON, expiry, and original insertion order. |
 
-Timestamps use Unix nanoseconds. Result identities hash the GUID (or download
-link) and title. Indexer IDs keep tracker results separate. RSS results without
-another identity use the title hash. Candidate JSON contains only the fields in
-`prowlarr.Result`, not acceptance decisions. Checkpoints and candidates are saved
-in one transaction before imports start.
+Timestamps use Unix nanoseconds. Listing identities hash the GUID (or download
+link) and title. Indexer IDs keep tracker listings separate. RSS listings without
+another identity use the title hash. Listing JSON contains only the fields in
+`prowlarr.Release`, not acceptance decisions. Checkpoints and retained listings
+are saved in one transaction before imports start.
 
 The store does not contain config, client inventory, exact plans, or import jobs.
 See [operator guidance](../INSTALL.md#application-data)

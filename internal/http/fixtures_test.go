@@ -355,8 +355,8 @@ func newSearchFixture(t *testing.T, opts fixtureOptions) *searchFixture {
 				return
 			}
 			feed := struct {
-				XMLName xml.Name          `xml:"rss"`
-				Items   []prowlarr.Result `xml:"channel>item"`
+				XMLName xml.Name           `xml:"rss"`
+				Items   []prowlarr.Release `xml:"channel>item"`
 			}{}
 			id := strings.Split(r.URL.Path, "/")[1]
 			for i, title := range f.titles {
@@ -367,7 +367,7 @@ func newSearchFixture(t *testing.T, opts fixtureOptions) *searchFixture {
 						continue
 					}
 				}
-				feed.Items = append(feed.Items, prowlarr.Result{Title: title, GUID: fmt.Sprintf("%s-%s", id, title), Link: fmt.Sprintf("http://%s/%s/download?link=%d&file=t", r.Host, id, i)})
+				feed.Items = append(feed.Items, prowlarr.Release{Title: title, GUID: fmt.Sprintf("%s-%s", id, title), Link: fmt.Sprintf("http://%s/%s/download?link=%d&file=t", r.Host, id, i)})
 			}
 			assert.NoError(t, xml.NewEncoder(w).Encode(feed))
 			return
