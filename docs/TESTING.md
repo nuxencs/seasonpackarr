@@ -59,12 +59,14 @@ code of the real binary.
   port: it listens on port 0, reads the port, closes the listener, and writes
   that port into its config. Another process can take the port before `start`
   listens. The tests accept this short window, so the server gets no listener
-  input for tests. The tests cover four cases:
+  input for tests. The tests cover five cases:
   - An invalid config returns an error, and the port stays closed until
     `start` returns.
   - A valid config serves an authenticated endpoint.
   - A changed `apiToken` in the file is accepted after the reload.
   - A canceled context shuts down the service.
+  - Without a config file and a config directory, the database goes below the
+    `XDG_DATA_HOME` of the passed environment.
 
   The reload case also requires that the reload drops the client connection
   of the startup inventory read. Thus it fails when `start` does not watch the

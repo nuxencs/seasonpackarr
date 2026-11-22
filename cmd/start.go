@@ -77,7 +77,7 @@ func newStartCommand(environ []string) *cobra.Command {
 			// init notification sender
 			noti := notification.NewSender(log, cfg)
 
-			path, err := state.Path(cmp.Or(snapshot.ConfigPath, configPath))
+			path, err := state.Path(cmp.Or(snapshot.ConfigPath, configPath), func(key string) string { return getenv(environ, key) })
 			if err != nil {
 				return err
 			}
