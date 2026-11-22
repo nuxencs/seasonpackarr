@@ -14,6 +14,7 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/buildinfo"
 	"github.com/nuxencs/seasonpackarr/internal/config"
+	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/http"
 	"github.com/nuxencs/seasonpackarr/internal/inventory"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
@@ -67,9 +68,9 @@ func newStartCommand(environ []string) *cobra.Command {
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
 			defer stop()
 
+			inv := inventory.New(torrentclient.New, log)
 			// The watch stops with the signal context.
-			reloads, err := cfg.Watch(ctx, log)
-			if err != nil {
+			if err := cfg.Watch(ctx, log, reloadParties(log, inv)...); err != nil {
 				return fmt.Errorf("failed to start config reload watcher: %w", err)
 			}
 
@@ -89,7 +90,7 @@ func newStartCommand(environ []string) *cobra.Command {
 					log.Error().Err(err).Msg("could not close database")
 				}
 			}()
-			srv := http.NewServer(log, cfg, noti, store, inventory.New(torrentclient.New, log), reloads)
+			srv := http.NewServer(log, cfg, noti, store, inv)
 
 			if err := runServer(ctx, srv); err != nil {
 				return err
@@ -99,6 +100,29 @@ func newStartCommand(environ []string) *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&configPath, "config", "c", "", "configuration directory (creates config.yaml if missing)")
 	return cmd
+}
+
+// reloadParties returns the parties of a config reload in call order. No party runs at the start, so the start
+// command sets the first log level and logs the first inventory scope warnings itself.
+func reloadParties(log logger.Logger, inv *inventory.Store) []func(domain.Config) {
+	return []func(domain.Config){
+		func(reloaded domain.Config) { log.SetLogLevel(reloaded.LogLevel) },
+		func(reloaded domain.Config) { config.LogInventoryScopeWarnings(log, reloaded) },
+		cleanUpInventory(log, inv),
+	}
+}
+
+// cleanUpInventory returns the reload party that drops the inventories of clients that the new snapshot removed or changed.
+func cleanUpInventory(log logger.Logger, inv *inventory.Store) func(domain.Config) {
+	return func(reloaded domain.Config) {
+		dropped, err := inv.CleanUp(reloaded)
+		if len(dropped) > 0 {
+			log.Debug().Strs("clients", dropped).Msg("dropped caches of removed or changed clients")
+		}
+		if err != nil {
+			log.Warn().Err(err).Msg("could not close a removed torrent client")
+		}
+	}
 }
 
 func runServer(ctx context.Context, srv managedServer) error {

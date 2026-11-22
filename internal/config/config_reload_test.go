@@ -13,6 +13,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/logger/loggertest"
 
@@ -37,7 +38,8 @@ clients:
       category: after
 `
 
-// reloadLoop runs reloadOnChange of cfg in a synctest bubble. Its reloaded buffer is larger than any test needs, so no published reload is lost.
+// reloadLoop runs reloadOnChange of cfg in a synctest bubble. Its last party counts reloads in a buffer that is larger
+// than any test needs, so no reload is lost.
 type reloadLoop struct {
 	changes  chan struct{}
 	reloaded chan struct{}
@@ -45,13 +47,14 @@ type reloadLoop struct {
 	done     chan struct{}
 }
 
-func startReloadLoop(t *testing.T, cfg *AppConfig, log *loggertest.Logger) *reloadLoop {
+func startReloadLoop(t *testing.T, cfg *AppConfig, log *loggertest.Logger, parties ...func(domain.Config)) *reloadLoop {
 	t.Helper()
 	ctx, stop := context.WithCancel(t.Context())
 	l := &reloadLoop{changes: make(chan struct{}), reloaded: make(chan struct{}, 16), stop: stop, done: make(chan struct{})}
+	parties = append(parties, func(domain.Config) { l.reloaded <- struct{}{} })
 	go func() {
 		defer close(l.done)
-		cfg.reloadOnChange(ctx, log, l.changes, l.reloaded)
+		cfg.reloadOnChange(ctx, log, l.changes, parties)
 	}()
 	return l
 }
@@ -59,7 +62,7 @@ func startReloadLoop(t *testing.T, cfg *AppConfig, log *loggertest.Logger) *relo
 // changed sends the "file changed" signal that the file watcher sends.
 func (l *reloadLoop) changed() { l.changes <- struct{}{} }
 
-// reloads waits until the loop is idle and returns the number of reloads published since the last call.
+// reloads waits until the loop is idle and returns the number of accepted reloads since the last call.
 func (l *reloadLoop) reloads() int {
 	synctest.Wait()
 	n := len(l.reloaded)
@@ -255,19 +258,27 @@ func TestReloadOnChange_KeepsSnapshotAndLogsNoSecretOnRejectedReload(t *testing.
 	}
 }
 
-func TestReloadOnChange_WarnsWhenInventoryScopeMissesImport(t *testing.T) {
+func TestReloadOnChange_CallsPartiesInOrderWithOwnSnapshot(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		cfg, configFile := newTestAppConfig(t, configWithSecrets())
-		log := loggertest.New()
-		loop := startReloadLoop(t, cfg, log)
+		cfg, configFile := newTestAppConfig(t, beforeConfig)
+		var calls []string
+		first := func(snapshot domain.Config) {
+			calls = append(calls, "first:"+snapshot.Clients["default"].Import.Category)
+			snapshot.Clients["default"].Import.Category = "changed by first"
+			snapshot.LogLevel = "TRACE"
+		}
+		second := func(snapshot domain.Config) {
+			calls = append(calls, "second:"+snapshot.Clients["default"].Import.Category+":"+snapshot.LogLevel)
+		}
+		loop := startReloadLoop(t, cfg, loggertest.New(), first, second)
 
-		writeConfigFile(t, configFile, configWithSecrets("    import:\n", "    inventory:\n      includeCategories: [tv-hd-completed]\n    import:\n"))
+		writeConfigFile(t, configFile, afterConfig)
 		loop.changed()
 		time.Sleep(configReloadDebounceDelay)
 
-		assert.Equal(t, 1, loop.reloads())
-		assert.Contains(t, log.String(), "inventory scope does not select new packs")
-		assert.NotContains(t, log.String(), "config reload rejected")
+		require.Equal(t, 1, loop.reloads())
+		assert.Equal(t, []string{"first:after", "second:after:DEBUG"}, calls)
+		assert.Equal(t, "after", cfg.Snapshot().Clients["default"].Import.Category)
 	})
 }
 
@@ -275,10 +286,27 @@ func TestWatch_ReturnsWatcherSetUpError(t *testing.T) {
 	cfg, configFile := newTestAppConfig(t, beforeConfig)
 	require.NoError(t, os.Remove(configFile))
 
-	reloads, err := cfg.Watch(t.Context(), loggertest.New())
+	err := cfg.Watch(t.Context(), loggertest.New(), func(domain.Config) { t.Error("a party ran without a reload") })
 
 	require.ErrorContains(t, err, "watching config file "+configFile)
-	assert.Nil(t, reloads)
+}
+
+func TestWatch_DisabledConfigFileStartsNothing(t *testing.T) {
+	cfg, err := New(Input{ConfigDir: t.TempDir(), Environ: []string{"SEASONPACKARR__DISABLE_CONFIG_FILE=true"}, Version: "test"})
+	require.NoError(t, err)
+
+	// The config directory has no config.yaml, so a watch that started would fail to set up its watcher.
+	err = cfg.Watch(t.Context(), loggertest.New(), func(domain.Config) { t.Error("a party ran without a config file") })
+
+	require.NoError(t, err)
+}
+
+// watchReloads starts cfg.Watch with one party that signals each accepted reload on the returned channel.
+func watchReloads(t *testing.T, cfg *AppConfig, log logger.Logger) <-chan struct{} {
+	t.Helper()
+	reloads := make(chan struct{}, 16)
+	require.NoError(t, cfg.Watch(t.Context(), log, func(domain.Config) { reloads <- struct{}{} }))
+	return reloads
 }
 
 // requireReload fails the test when no reload of a real file system event arrives in time.
@@ -299,8 +327,7 @@ func TestWatch_PublishesSnapshotForConcurrentReaders(t *testing.T) {
 
 	cfg, configFile := newTestAppConfig(t, beforeConfig)
 	snapshot := cfg.Snapshot()
-	reloads, err := cfg.Watch(t.Context(), logger.New(&snapshot))
-	require.NoError(t, err)
+	reloads := watchReloads(t, cfg, logger.New(&snapshot))
 
 	readerResult := make(chan error, 1)
 	go func() {
@@ -332,8 +359,7 @@ func TestWatch_PublishesSnapshotForConcurrentReaders(t *testing.T) {
 func TestWatch_SurvivesRenameAndRecreateSave(t *testing.T) {
 	cfg, configFile := newTestAppConfig(t, beforeConfig)
 	log := loggertest.New()
-	reloads, err := cfg.Watch(t.Context(), log)
-	require.NoError(t, err)
+	reloads := watchReloads(t, cfg, log)
 
 	require.NoError(t, os.Rename(configFile, configFile+".backup"))
 	require.Eventually(t, func() bool {
@@ -365,8 +391,7 @@ func TestWatch_FollowsReplacedConfigSymlink(t *testing.T) {
 
 	cfg, err := New(Input{ConfigDir: configDir, Version: "test"})
 	require.NoError(t, err)
-	reloads, err := cfg.Watch(t.Context(), loggertest.New())
-	require.NoError(t, err)
+	reloads := watchReloads(t, cfg, loggertest.New())
 
 	require.NoError(t, os.Rename(nextSymlink, configFile))
 	writeConfigFile(t, secondTarget, afterConfig)

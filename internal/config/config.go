@@ -776,20 +776,21 @@ func (c *AppConfig) reload() (*domain.Config, error) {
 const configReloadDebounceDelay = 100 * time.Millisecond
 
 // Watch reloads the config after each change of the config file until ctx ends. It returns after the file watcher is set up.
+// After each accepted reload, it calls each party in argument order with its own copy of the new snapshot. The parties
+// run on the reload goroutine, one reload at a time. A rejected reload calls no party, and no party runs at the start.
 // After ctx ends, no new reload starts. A reload in progress can finish, and Watch does not wait for it.
-// With the config file disabled, Watch starts nothing and returns a nil channel.
-func (c *AppConfig) Watch(ctx context.Context, log logger.Logger) (<-chan struct{}, error) {
+// With the config file disabled, Watch starts nothing.
+func (c *AppConfig) Watch(ctx context.Context, log logger.Logger, parties ...func(domain.Config)) error {
 	if c.source.disabled {
-		return nil, nil
+		return nil
 	}
 
 	changes, err := watchConfigFile(ctx, log, c.source.configFile)
 	if err != nil {
-		return nil, fmt.Errorf("watching config file %s: %w", c.source.configFile, err)
+		return fmt.Errorf("watching config file %s: %w", c.source.configFile, err)
 	}
-	reloaded := make(chan struct{}, 1)
-	go c.reloadOnChange(ctx, log, changes, reloaded)
-	return reloaded, nil
+	go c.reloadOnChange(ctx, log, changes, parties)
+	return nil
 }
 
 // watchConfigFile reports each change of configFile on the returned channel until ctx ends, then closes the watcher.
@@ -869,7 +870,7 @@ func watchConfigFile(ctx context.Context, log logger.Logger, configFile string) 
 // reloadOnChange reloads the config when no change signal arrived for configReloadDebounceDelay, until ctx ends.
 // Editors and bind mounts can emit several write events for one save. The quiet period prevents a transient rejection
 // of a truncate-first write. It also prevents duplicate reloads from an event burst. Reloads run one at a time here.
-func (c *AppConfig) reloadOnChange(ctx context.Context, log logger.Logger, changes <-chan struct{}, reloaded chan<- struct{}) {
+func (c *AppConfig) reloadOnChange(ctx context.Context, log logger.Logger, changes <-chan struct{}, parties []func(domain.Config)) {
 	timer := time.NewTimer(configReloadDebounceDelay)
 	timer.Stop()
 	defer timer.Stop()
@@ -889,12 +890,9 @@ func (c *AppConfig) reloadOnChange(ctx context.Context, log logger.Logger, chang
 				log.Error().Err(err).Msg("config reload rejected; keeping previous config")
 				continue
 			}
-
-			log.SetLogLevel(snapshot.LogLevel)
-			LogInventoryScopeWarnings(log, *snapshot)
-			select {
-			case reloaded <- struct{}{}:
-			default:
+			// A copy per party keeps a change by one party out of the next party and the stored snapshot.
+			for _, party := range parties {
+				party(snapshot.Clone())
 			}
 			log.Debug().Msg("config file reloaded")
 		}

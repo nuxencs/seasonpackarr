@@ -36,19 +36,16 @@ type Server struct {
 	// both share its import plans and its endpoint import locks.
 	processor *seasonpack.Processor
 	search    *searchRunner
-	// lifecycleTasks holds the search schedule, the startup inventory read, and
-	// the cache clean-up after config reloads. Shutdown cancels them first, so
-	// they cannot hold the HTTP drain.
+	// lifecycleTasks holds the search schedule and the startup inventory read.
+	// Shutdown cancels them first, so they cannot hold the HTTP drain.
 	lifecycleTasks *taskGroup
-	reloads        <-chan struct{}
 
 	httpServer http.Server
 }
 
 // NewServer creates the server. inv holds the client inventories that the
-// webhooks and search share. reloads signals each successful config reload,
-// and can be nil when the config file is disabled.
-func NewServer(log logger.Logger, config config.Provider, notification domain.Sender, store *state.Store, inv *inventory.Store, reloads <-chan struct{}) *Server {
+// webhooks and search share.
+func NewServer(log logger.Logger, config config.Provider, notification domain.Sender, store *state.Store, inv *inventory.Store) *Server {
 	tasks := newTaskGroup()
 	noti := &notifier{sender: notification, tasks: tasks}
 	processor := seasonpack.New(log, inv)
@@ -61,7 +58,6 @@ func NewServer(log logger.Logger, config config.Provider, notification domain.Se
 		processor:      processor,
 		search:         &searchRunner{log: log, cfg: config, inv: inv, processor: processor, noti: noti, state: store},
 		lifecycleTasks: newTaskGroup(),
-		reloads:        reloads,
 	}
 }
 
@@ -73,9 +69,6 @@ func (s *Server) Open(ctx context.Context) error {
 	})
 	s.lifecycleTasks.Go(func(warmCtx context.Context) {
 		s.inv.ReadAtStartup(warmCtx, s.cfg)
-	})
-	s.lifecycleTasks.Go(func(reloadCtx context.Context) {
-		watchConfigReloads(reloadCtx, s.log, s.cfg, s.inv, s.reloads)
 	})
 	defer s.lifecycleTasks.cancel()
 	var err error
