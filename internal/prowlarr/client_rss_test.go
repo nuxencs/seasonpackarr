@@ -33,7 +33,7 @@ func TestClient_RSSWithoutSearchCapability(t *testing.T) {
 		fmt.Fprint(w, `<rss><channel><item><title>Example.S01</title><guid>one</guid></item></channel></rss>`)
 	}))
 	defer server.Close()
-	client, err := New(server.URL+"/base", "test-key", 0)
+	client, err := New(server.URL+"/base", "test-key", 0, nil)
 	require.NoError(t, err)
 	indexers, err := client.Indexers(t.Context())
 	require.NoError(t, err)
@@ -49,13 +49,12 @@ func TestClient_RSSWithoutSearchCapability(t *testing.T) {
 
 func TestClient_SpacingSurvivesIntervalReload(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		client, err := New("http://prowlarr.invalid", "key", 10*time.Second)
-		require.NoError(t, err)
 		var times []time.Time
-		client.http.Transport = fakeTransport(func(*http.Request) (*http.Response, error) {
+		client, err := New("http://prowlarr.invalid", "key", 10*time.Second, fakeTransport(func(*http.Request) (*http.Response, error) {
 			times = append(times, time.Now())
 			return &http.Response{StatusCode: 204, Body: http.NoBody, Header: make(http.Header)}, nil
-		})
+		}))
+		require.NoError(t, err)
 		client.Indexers(t.Context()) // An HTTP failure still consumes the request slot.
 		client.SetRequestInterval(20 * time.Second)
 		client.RSSPage(t.Context(), Indexer{ID: 1, SupportsRSS: true}, 0)

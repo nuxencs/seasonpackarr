@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nuxencs/seasonpackarr/internal/state"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,7 +42,7 @@ func TestSearch_CooldownsAcrossRuns(t *testing.T) {
 				require.Contains(t, report.Failures[0].Reason, "cooldown")
 				id := 1
 				if endpoint == "/api/v1/indexer" {
-					id = 0
+					id = state.ProwlarrCooldownID
 				}
 				require.WithinDuration(t, time.Now().Add(2*time.Hour), f.search.cooldowns[id], 2*time.Second)
 				f.restart(t)

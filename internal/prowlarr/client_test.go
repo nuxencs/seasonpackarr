@@ -36,7 +36,7 @@ func TestClient_IndexersAndSeasonQueries(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	client, err := New(server.URL+"/prowlarr", "test-key", 0)
+	client, err := New(server.URL+"/prowlarr", "test-key", 0, nil)
 	require.NoError(t, err)
 	indexers, err := client.Indexers(t.Context())
 	require.NoError(t, err)
@@ -67,7 +67,7 @@ func TestClient_TextFallbackAndInvalidFeeds(t *testing.T) {
 				fmt.Fprint(w, tt.body)
 			}))
 			defer server.Close()
-			client, err := New(server.URL, "secret-key", 0)
+			client, err := New(server.URL, "secret-key", 0, nil)
 			require.NoError(t, err)
 			indexer := Indexer{ID: 1}
 			indexer.Capabilities.SearchParams = []string{"q"}
@@ -95,7 +95,7 @@ func TestClient_DownloadProxyBoundary(t *testing.T) {
 		fmt.Fprint(w, "torrent bytes")
 	}))
 	defer server.Close()
-	client, err := New(server.URL+"/base", "key", 0)
+	client, err := New(server.URL+"/base", "key", 0, nil)
 	require.NoError(t, err)
 	data, err := client.Download(t.Context(), 1, Result{Link: server.URL + "/base/1/download?apikey=secret&link=opaque&file=t"})
 	require.NoError(t, err)
@@ -112,7 +112,7 @@ func TestClient_DownloadProxyBoundary(t *testing.T) {
 }
 
 func TestClient_CancellationInterruptsSpacing(t *testing.T) {
-	client, err := New("http://127.0.0.1:1", "key", time.Hour)
+	client, err := New("http://127.0.0.1:1", "key", time.Hour, nil)
 	require.NoError(t, err)
 	client.lastRequest = time.Now()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -128,7 +128,7 @@ func TestClient_RateLimitDeadline(t *testing.T) {
 		fmt.Fprint(w, "secret-key")
 	}))
 	defer server.Close()
-	client, err := New(server.URL, "key", 0)
+	client, err := New(server.URL, "key", 0, nil)
 	require.NoError(t, err)
 	_, err = client.Indexers(t.Context())
 	var limited *CooldownError

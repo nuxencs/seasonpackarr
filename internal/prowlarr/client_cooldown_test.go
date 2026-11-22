@@ -29,7 +29,7 @@ func TestClient_CooldownResponses(t *testing.T) {
 						fmt.Fprint(w, "secret-key")
 					}))
 					t.Cleanup(server.Close)
-					client, err := New(server.URL, "secret-key", 0)
+					client, err := New(server.URL, "secret-key", 0, nil)
 					require.NoError(t, err)
 					_, err = client.Indexers(t.Context())
 					failure, ok := errors.AsType[*CooldownError](err)
@@ -75,9 +75,8 @@ func TestClient_CooldownTransportAndCancellation(t *testing.T) {
 		{name: "canceled", canceled: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			client, err := New("http://prowlarr.invalid", "key", 0)
+			client, err := New("http://prowlarr.invalid", "key", 0, tt.transport)
 			require.NoError(t, err)
-			client.http.Transport = tt.transport
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			if tt.canceled {

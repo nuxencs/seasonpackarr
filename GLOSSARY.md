@@ -77,6 +77,32 @@ _Avoid_: RSS backfill
 A targeted Prowlarr search for season packs, started on demand or by an external scheduler.
 _Avoid_: Backfill, manual backfill
 
+**Discovery run**:
+One search or one RSS poll, from its start to its report. Only one is active at a time.
+_Avoid_: Job, scan
+
+**Indexer**:
+One tracker that Prowlarr exposes for search or RSS monitoring.
+
+**Listing**:
+One release that an indexer offers, from a search or an RSS feed.
+_Avoid_: Result, RSS candidate
+
+**Cooldown**:
+The time after a failure during which seasonpackarr sends no request to one indexer, or to Prowlarr as a whole.
+_Avoid_: Pause, backoff
+
+**Checkpoint**:
+The newest listings of the last RSS poll of one indexer. The next poll reads back to them.
+
+**Retained listing**:
+A listing that RSS monitoring keeps, so later polls can check its coverage again.
+_Avoid_: RSS candidate
+
+**Torrent cache**:
+The stored torrent bytes of listings, so a later discovery run does not download them again.
+_Avoid_: Metadata, metadata cache
+
 ### Notifications
 
 **Notification**:
