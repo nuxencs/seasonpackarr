@@ -15,6 +15,12 @@ so the glossary does not define them.
   boundaries. It starts one import at the user's entry point, an announce into
   autobrr or a search request, and checks only what a user can see.
 
+The *in-process `start` test* (`cmd/start_wiring_test.go`) sits below the CLI
+test. It runs `start` in the test process through `execute`, the entry function
+of the CLI, and checks the wiring order of `start`: load, logger, watch,
+database, server. The CLI test keeps one smoke case of `start` for the exit
+code of the real binary.
+
 ## Files
 
 - `<file>_test.go` tests the code in `<file>.go`. A large set can split by
@@ -47,6 +53,26 @@ so the glossary does not define them.
 - `internal/http/cli_test.go` holds the CLI tests. They build the binary
   with `buildCLI` and run it against the HTTP fixtures. They need no external
   service and run in the default suite.
+- `cmd/start_wiring_test.go` holds the in-process `start` tests
+  (`TestStartCommand_`). Each test gives `execute` a temporary config
+  directory and the environment as a literal list. It reserves a free loopback
+  port: it listens on port 0, reads the port, closes the listener, and writes
+  that port into its config. Another process can take the port before `start`
+  listens. The tests accept this short window, so the server gets no listener
+  input for tests. The tests cover four cases:
+  - An invalid config returns an error, and the port stays closed until
+    `start` returns.
+  - A valid config serves an authenticated endpoint.
+  - A changed `apiToken` in the file is accepted after the reload.
+  - A canceled context shuts down the service.
+
+  The reload case also requires that the reload drops the client connection
+  of the startup inventory read. Thus it fails when `start` does not watch the
+  config file. It also fails when the clean-up party does not get the
+  inventory of the server. These tests use real sockets and real file system
+  events, so they poll with a short bound and do not use `testing/synctest`.
+  They read the service log from the `logPath` file, not through
+  `loggertest`.
 - `test/e2e/` holds the end-to-end tests. `harness_test.go` serves the
   `.torrent` files and sets up autobrr. `prowlarr_test.go` sets up Prowlarr and
   serves the fake Torznab feed. `scenarios_test.go` holds the scenarios and the
@@ -108,7 +134,8 @@ so the glossary does not define them.
   `AssertNoSecrets` that no event holds the sentinel in any field. It first
   requires the event of that failure, so the test cannot pass on a path that
   logs nothing. `start` returns a config load error before the service logger
-  exists, so its CLI test asserts on the process output instead.
+  exists, so its in-process test asserts on the error output of `execute`
+  instead.
 - Config tests call `config.Load`, `config.New`, or `config.ReadConnectionSettings`
   with a `config.Input` that holds a temporary directory and the environment as a
   literal list. They change no process environment variable and build no
