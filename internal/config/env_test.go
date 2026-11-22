@@ -5,9 +5,11 @@ package config
 
 import (
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/envname"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -67,7 +69,7 @@ func TestApplyEnvironment_SetsFuzzyMatching(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {
 			cfg := domain.Config{Clients: map[string]*domain.Client{}}
-			require.NoError(t, applyEnvironment(&cfg, environment{tt.key + "=true"}))
+			require.NoError(t, applyEnvironment(&cfg, newEnvironment([]string{tt.key + "=true"})))
 
 			require.Equal(t, tt.want, cfg.FuzzyMatching)
 		})
@@ -103,4 +105,62 @@ func TestUnknownEnvironmentVariables(t *testing.T) {
 		"SEASONPACKARR__LOG_LEVL",
 		"SEASONPACKARR__SMART_MODE_TRESHOLD",
 	}, UnknownEnvironmentVariables(environ))
+}
+
+// TestEnvironment_MatchesNamesAsWindowsDoes runs the Windows rule on each system: a variable that the shell keeps with
+// another case is the same variable, as for os.LookupEnv. The messages of a set or unknown variable keep its case.
+func TestEnvironment_MatchesNamesAsWindowsDoes(t *testing.T) {
+	env := windowsEnvironment(
+		"Home=/home/user",
+		"Seasonpackarr__Host=127.0.0.1",
+		"seasonpackarr__port=8080",
+		"Seasonpackarr__Clients_Mixed_Host=qbit",
+		"Seasonpackarr__Clients_Mixed_Import_Save_Path=/data",
+		"Seasonpackarr__Log_Levl=INFO",
+		"Seasonpackarr__Url=http://seasonpackarr:42069",
+		"Seasonpackarr__Disable_Config_File=true",
+	)
+
+	assert.Equal(t, "/home/user", env.get("HOME"))
+	disabled, err := configFileDisabled(env)
+	require.NoError(t, err)
+	assert.True(t, disabled)
+
+	cfg := domain.Config{Clients: map[string]*domain.Client{}}
+	require.NoError(t, applyEnvironment(&cfg, env))
+	assert.Equal(t, "127.0.0.1", cfg.Host)
+	assert.Equal(t, 8080, cfg.Port)
+	require.Contains(t, cfg.Clients, "mixed")
+	assert.Equal(t, "qbit", cfg.Clients["mixed"].Host)
+	assert.Equal(t, "/data", cfg.Clients["mixed"].Import.SavePath)
+
+	assert.Equal(t, []string{"Seasonpackarr__Log_Levl"}, env.unknownVariables())
+
+	assert.ErrorContains(t, applyEnvironment(&domain.Config{}, windowsEnvironment("Seasonpackarr__Port=fast")), "Seasonpackarr__Port")
+
+	for _, removed := range []string{
+		"Seasonpackarr__Parse_Torrent_File=false",
+		"Seasonpackarr__Metadata_Tvdb_Api_Key=key",
+		"Seasonpackarr__Clients_Mixed_PreImportPath=/data",
+	} {
+		err := validateDeprecatedConfigInputs(nil, windowsEnvironment(removed))
+		assert.ErrorContains(t, err, "deprecated environment variable detected", removed)
+	}
+}
+
+// windowsEnvironment returns entries as an environment with the Windows name rule.
+func windowsEnvironment(entries ...string) environment {
+	return environment{entries: entries, rule: envname.IgnoreCase}
+}
+
+// TestLoad_MatchesEnvironmentNamesAsTheSystemDoes: the load uses the rule of os.LookupEnv on the current system.
+func TestLoad_MatchesEnvironmentNamesAsTheSystemDoes(t *testing.T) {
+	cfg, err := Load(Input{Environ: []string{"SEASONPACKARR__DISABLE_CONFIG_FILE=true", "Seasonpackarr__Host=127.0.0.1"}})
+	require.NoError(t, err)
+
+	want := configDefaults.Host
+	if runtime.GOOS == "windows" {
+		want = "127.0.0.1"
+	}
+	assert.Equal(t, want, cfg.Host)
 }

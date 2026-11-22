@@ -392,6 +392,9 @@ Each setting has an environment variable with the `SEASONPACKARR__` prefix. Envi
 `config.yaml`. The repository's [`docker-compose.yml`](../docker-compose.yml) lists all of them. The variables that few
 setups need are commented-out lines.
 
+Variable names follow the rule of the operating system. On Windows, names have no case, so `Seasonpackarr__Host` also
+sets `host`. On other systems, write the names in upper case, as this guide shows them.
+
 - Top-level settings: `SEASONPACKARR__HOST`, `SEASONPACKARR__PORT`, `SEASONPACKARR__API_TOKEN`,
   `SEASONPACKARR__LOG_LEVEL`, `SEASONPACKARR__LOG_PATH`, `SEASONPACKARR__LOG_MAX_SIZE`, `SEASONPACKARR__LOG_MAX_BACKUPS`,
   `SEASONPACKARR__SMART_MODE`, `SEASONPACKARR__SMART_MODE_THRESHOLD`.
