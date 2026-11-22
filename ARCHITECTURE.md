@@ -12,7 +12,8 @@
    commands. CLI configuration reads are side-effect free and
    share file discovery and environment overrides with the service.
    `cmd.Execute` reads the process environment one time and passes it to each
-   command as a value.
+   command as a value. `start` passes it to `state.Path` too, which derives the
+   default database directory from it.
    `setup filter` writes the autobrr filter through `internal/autobrr/`.
 2. `cmd/start.go` loads config, logger, notifications, and the SQLite store, creates the inventory module, then starts the HTTP server. Signal cancellation starts a bounded graceful shutdown. The command closes the store after server shutdown.
 3. `internal/http/server.go` builds `/api/healthz`, `/api/candidate`, `/api/match`, `/api/import`, and `/api/search`.

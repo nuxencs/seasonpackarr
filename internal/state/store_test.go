@@ -13,6 +13,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/prowlarr"
 
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -136,17 +137,42 @@ func TestStore_StartupPrunesExpiredState(t *testing.T) {
 }
 
 func TestPath(t *testing.T) {
-	t.Setenv("XDG_DATA_HOME", filepath.Join(t.TempDir(), "data"))
-	path, err := Path("config")
-	require.NoError(t, err)
-	require.Equal(t, filepath.Join("config", "seasonpackarr.db"), path)
-	path, err = Path("")
-	require.NoError(t, err)
-	require.Equal(t, filepath.Join(os.Getenv("XDG_DATA_HOME"), "seasonpackarr", "seasonpackarr.db"), path)
-	t.Setenv("XDG_DATA_HOME", "")
-	home, err := os.UserHomeDir()
-	require.NoError(t, err)
-	path, err = Path("")
-	require.NoError(t, err)
-	require.Equal(t, filepath.Join(home, ".local", "share", "seasonpackarr", "seasonpackarr.db"), path)
+	homeKey := "HOME"
+	if runtime.GOOS == "windows" {
+		homeKey = "USERPROFILE"
+	}
+	home := filepath.Join("users", "tester")
+	data := filepath.Join("xdg", "data")
+	for name, tt := range map[string]struct {
+		configDir string
+		environ   map[string]string
+		want      string
+		wantErr   string
+	}{
+		"config directory": {
+			configDir: "config",
+			environ:   map[string]string{"XDG_DATA_HOME": data, homeKey: home},
+			want:      filepath.Join("config", "seasonpackarr.db"),
+		},
+		"XDG_DATA_HOME": {
+			environ: map[string]string{"XDG_DATA_HOME": data, homeKey: home},
+			want:    filepath.Join(data, "seasonpackarr", "seasonpackarr.db"),
+		},
+		"home directory": {
+			environ: map[string]string{homeKey: home},
+			want:    filepath.Join(home, ".local", "share", "seasonpackarr", "seasonpackarr.db"),
+		},
+		"no home directory": {wantErr: "locate application data directory: environment variable " + homeKey + " is not set"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			path, err := Path(tt.configDir, func(key string) string { return tt.environ[key] })
+
+			if tt.wantErr != "" {
+				require.EqualError(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, path)
+		})
+	}
 }

@@ -102,15 +102,20 @@ type startRun struct {
 }
 
 // launchStart runs start with dir as its config directory and environ as its environment, and returns at once.
+// With an empty dir, start gets no --config flag.
 func launchStart(t *testing.T, dir string, port int, environ []string) *startRun {
 	t.Helper()
 	keepLogLevel(t)
+	args := []string{"start"}
+	if dir != "" {
+		args = append(args, "--config", dir)
+	}
 	ctx, cancel := context.WithCancel(t.Context())
 	run := &startRun{port: port, cancel: cancel, finished: make(chan struct{})}
 	go func() {
 		defer close(run.finished)
 		var stdout, stderr bytes.Buffer
-		run.code = execute(ctx, []string{"start", "--config", dir}, environ, &stdout, &stderr)
+		run.code = execute(ctx, args, environ, &stdout, &stderr)
 		run.stdout, run.stderr = stdout.String(), stderr.String()
 	}()
 	t.Cleanup(func() {
@@ -124,14 +129,20 @@ func launchStart(t *testing.T, dir string, port int, environ []string) *startRun
 func runStart(t *testing.T, dir string, port int) *startRun {
 	t.Helper()
 	run := launchStart(t, dir, port, nil)
+	run.requireServes(t)
+	return run
+}
+
+// requireServes waits until start serves on its port.
+func (r *startRun) requireServes(t *testing.T) {
+	t.Helper()
 	require.True(t, waitFor(conditionWait, func() bool {
 		// The result fields are safe to read only after finished closed.
-		if run.returned() {
-			require.FailNow(t, "start returned before it served", "exit code %d: %s", run.code, run.stderr)
+		if r.returned() {
+			require.FailNow(t, "start returned before it served", "exit code %d: %s", r.code, r.stderr)
 		}
-		return run.live(t)
+		return r.live(t)
 	}), "start did not serve")
-	return run
 }
 
 func (r *startRun) returned() bool {
@@ -340,6 +351,25 @@ func TestStartCommand_ServesAuthenticatedEndpoint(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, run.post(t, "wrong-token"))
 	assert.Equal(t, domain.StatusDecodingError.Code(), run.post(t, startTestToken))
 	assert.FileExists(t, filepath.Join(dir, "seasonpackarr.db"))
+}
+
+// TestStartCommand_KeepsDatabaseInDataDirectoryOfItsEnvironment: without a config file and a config directory, the
+// database goes below the XDG_DATA_HOME that start received, not below the one of the test process.
+func TestStartCommand_KeepsDatabaseInDataDirectoryOfItsEnvironment(t *testing.T) {
+	dataHome := t.TempDir()
+	port := reservePort(t)
+
+	run := launchStart(t, "", port, []string{
+		"SEASONPACKARR__DISABLE_CONFIG_FILE=true",
+		"SEASONPACKARR__HOST=127.0.0.1",
+		fmt.Sprintf("SEASONPACKARR__PORT=%d", port),
+		"SEASONPACKARR__API_TOKEN=" + startTestToken,
+		"SEASONPACKARR__LOG_PATH=" + filepath.Join(t.TempDir(), "seasonpackarr.log"),
+		"XDG_DATA_HOME=" + dataHome,
+	})
+	run.requireServes(t)
+
+	assert.FileExists(t, filepath.Join(dataHome, "seasonpackarr", "seasonpackarr.db"))
 }
 
 // TestStartCommand_AppliesReloadedConfig fails when start does not watch the config file, or when the reload does

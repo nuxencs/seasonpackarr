@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -33,11 +34,12 @@ type Store struct {
 
 // Path keeps state beside the active config, or in the user data directory for
 // environment-only installations without an explicit --config directory.
-func Path(configDir string) (string, error) {
+// getenv reads the environment of the caller, so Path reads no process environment.
+func Path(configDir string, getenv func(string) string) (string, error) {
 	if configDir == "" {
-		base := os.Getenv("XDG_DATA_HOME")
+		base := getenv("XDG_DATA_HOME")
 		if base == "" {
-			home, err := os.UserHomeDir()
+			home, err := homeDir(getenv)
 			if err != nil {
 				return "", fmt.Errorf("locate application data directory: %w", err)
 			}
@@ -46,6 +48,18 @@ func Path(configDir string) (string, error) {
 		configDir = filepath.Join(base, "seasonpackarr")
 	}
 	return filepath.Join(configDir, "seasonpackarr.db"), nil
+}
+
+// homeDir applies the rule of os.UserHomeDir for the release targets to the environment of the caller.
+func homeDir(getenv func(string) string) (string, error) {
+	key := "HOME"
+	if runtime.GOOS == "windows" {
+		key = "USERPROFILE"
+	}
+	if home := getenv(key); home != "" {
+		return home, nil
+	}
+	return "", fmt.Errorf("environment variable %s is not set", key)
 }
 
 // Open creates or migrates a private database. An unreadable, corrupt, or newer

@@ -174,7 +174,7 @@ func TestReloadOnChange_KeepsSnapshotWhileConfigWriteIsIncomplete(t *testing.T) 
 		loop.changed()
 		time.Sleep(configReloadDebounceDelay)
 		require.Equal(t, 0, loop.reloads())
-		assert.Contains(t, log.String(), "config reload rejected; keeping previous config")
+		assert.Contains(t, log.String(), reloadRejected)
 		assert.Equal(t, "before", cfg.Snapshot().Clients["default"].Import.Category)
 
 		writeConfigFile(t, configFile, afterConfig)
@@ -251,7 +251,7 @@ func TestReloadOnChange_KeepsSnapshotAndLogsNoSecretOnRejectedReload(t *testing.
 				assert.Equal(t, 0, loop.reloads())
 				assert.Equal(t, before, cfg.Snapshot())
 				// The reload must be rejected and logged, or the secret check proves nothing.
-				require.Contains(t, log.String(), "config reload rejected; keeping previous config")
+				require.Contains(t, log.String(), reloadRejected)
 				log.AssertNoSecrets(t, configSecrets)
 			})
 		})
@@ -363,7 +363,7 @@ func TestWatch_SurvivesRenameAndRecreateSave(t *testing.T) {
 
 	require.NoError(t, os.Rename(configFile, configFile+".backup"))
 	require.Eventually(t, func() bool {
-		return strings.Contains(log.String(), "config reload rejected; keeping previous config")
+		return strings.Contains(log.String(), reloadRejected)
 	}, 3*time.Second, 10*time.Millisecond, log.String())
 
 	writeConfigFile(t, configFile, strings.Replace(beforeConfig, "before", "after-first-save", 1))

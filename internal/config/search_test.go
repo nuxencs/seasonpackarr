@@ -43,17 +43,17 @@ func TestSearchConfig_IntervalLimits(t *testing.T) {
 			t.Run("file", func(t *testing.T) {
 				cfg, file := newTestAppConfig(t, connection)
 				before := cfg.Snapshot()
-				writeConfigFile(t, file, connection+fmt.Sprintf("  rssInterval: %s\n  requestInterval: %s\n", tt.interval, tt.spacing))
+				rejection := reloadWithFile(t, cfg, file, connection+fmt.Sprintf("  rssInterval: %s\n  requestInterval: %s\n", tt.interval, tt.spacing))
 				_, loadErr := loadFile(file)
-				next, reloadErr := cfg.reload()
 				if tt.wantErr != "" {
 					require.ErrorContains(t, loadErr, tt.wantErr)
-					require.ErrorContains(t, reloadErr, tt.wantErr)
+					require.Contains(t, rejection, tt.wantErr)
 					require.Equal(t, before, cfg.Snapshot(), "invalid reload must preserve active config")
 					return
 				}
 				require.NoError(t, loadErr)
-				require.NoError(t, reloadErr)
+				require.Empty(t, rejection)
+				next := cfg.Snapshot()
 				require.Equal(t, tt.interval, next.Search.RSSInterval)
 				require.Equal(t, tt.spacing, next.Search.RequestInterval)
 			})
@@ -84,14 +84,10 @@ func TestSearchConfig_DefaultsEnvironmentAndReload(t *testing.T) {
 	require.Equal(t, []int{2, 5}, cfg.Snapshot().Search.IndexerIDs)
 
 	// The reload applies the environment of New again, so it overrides the file.
-	writeConfigFile(t, file, "clients: {}\nsearch:\n  rssInterval: 1h\n")
-	_, err = cfg.reload()
-	require.NoError(t, err)
+	require.Empty(t, reloadWithFile(t, cfg, file, "clients: {}\nsearch:\n  rssInterval: 1h\n"))
 	require.Equal(t, "12h", cfg.Snapshot().Search.RSSInterval)
 
-	writeConfigFile(t, file, "clients: {}\nport: 0\n")
-	_, err = cfg.reload()
-	require.Error(t, err)
+	require.NotEmpty(t, reloadWithFile(t, cfg, file, "clients: {}\nport: 0\n"))
 	require.Equal(t, "12h", cfg.Snapshot().Search.RSSInterval)
 }
 
