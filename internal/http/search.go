@@ -4,7 +4,6 @@
 package http
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,29 +12,20 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/config"
+	"github.com/nuxencs/seasonpackarr/internal/discovery"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
-	"github.com/nuxencs/seasonpackarr/internal/errtrace"
 	"github.com/nuxencs/seasonpackarr/internal/format"
 	"github.com/nuxencs/seasonpackarr/internal/inventory"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
-	"github.com/nuxencs/seasonpackarr/internal/prowlarr"
 	"github.com/nuxencs/seasonpackarr/internal/release"
 	"github.com/nuxencs/seasonpackarr/internal/seasonpack"
-	"github.com/nuxencs/seasonpackarr/internal/state"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
-	"github.com/nuxencs/seasonpackarr/internal/torrents"
 
 	"github.com/autobrr/rls"
 	"github.com/gin-gonic/gin"
-)
-
-var (
-	errSearchRunning = errors.New("a Prowlarr discovery run is already active")
-	errDatabase      = errors.New("could not access database; check service logs")
 )
 
 // SearchRequest selects one configured client or all clients when empty.
@@ -78,32 +68,26 @@ type searchReport struct {
 }
 
 type searchRunner struct {
-	cfg         config.Provider
-	inv         *inventory.Store
-	log         logger.Logger
-	processor   *seasonpack.Processor
-	noti        *notifier
-	running     atomic.Bool
-	cooldowns   map[int]time.Time
-	state       *state.Store
-	provider    *prowlarr.Client
-	prowlarrURL string
-	prowlarrKey string
+	cfg       config.Provider
+	inv       *inventory.Store
+	log       logger.Logger
+	processor *seasonpack.Processor
+	noti      *notifier
+	source    *discovery.Source
 }
 
-// discoveryRun holds state shared by one manual search or RSS poll. The runner
-// retains the connection. Durable state is loaded from SQLite for each run.
+// discoveryRun holds the state of one manual search or RSS poll that is not
+// the state of the source: the clients, the selected variants, and the report.
 type discoveryRun struct {
 	runner  *searchRunner
+	source  *discovery.Run
 	request SearchRequest
 	report  *searchReport
 	// clients holds one handle for each client that the run could read. Each
 	// handle has the config snapshot of the run, so a config reload during the
 	// run changes no matching rule, no import rule, and no adapter.
-	clients       map[string]*inventory.Client
-	selected      map[string][]rls.Release
-	unavailable   map[int]bool
-	storageFailed bool
+	clients  map[string]*inventory.Client
+	selected map[string][]rls.Release
 }
 
 func (r *searchRunner) handler(c *gin.Context) {
@@ -121,9 +105,9 @@ func (r *searchRunner) handler(c *gin.Context) {
 	report, err := r.run(c.Request.Context(), *req)
 	if err != nil {
 		status := http.StatusBadRequest
-		if errors.Is(err, errSearchRunning) {
+		if errors.Is(err, discovery.ErrRunActive) {
 			status = http.StatusConflict
-		} else if errors.Is(err, errDatabase) {
+		} else if errors.Is(err, discovery.ErrDatabase) {
 			status = http.StatusInternalServerError
 		}
 		c.JSON(status, gin.H{"error": err.Error()})
@@ -146,34 +130,16 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 	if req.Verify && !req.DryRun {
 		return report, errors.New("verify requires dryRun")
 	}
-	if !r.running.CompareAndSwap(false, true) {
-		return report, errSearchRunning
-	}
-	defer r.running.Store(false)
 	snapshot := r.cfg.Snapshot()
-	spacing, err := time.ParseDuration(snapshot.Search.RequestInterval)
-	if err != nil || spacing < 0 {
-		return report, errors.New("invalid search.requestInterval")
+	kind := discovery.KindSearch
+	if rss {
+		kind = discovery.KindRSS
 	}
-	if r.provider == nil || r.prowlarrURL != snapshot.Search.ProwlarrURL || r.prowlarrKey != snapshot.Search.APIKey {
-		provider, err := prowlarr.New(snapshot.Search.ProwlarrURL, snapshot.Search.APIKey, spacing, nil)
-		if err != nil {
-			return report, err
-		}
-		r.provider = provider
-		r.prowlarrURL = snapshot.Search.ProwlarrURL
-		r.prowlarrKey = snapshot.Search.APIKey
-	}
-	provider := r.provider
-	provider.SetRequestInterval(spacing)
-	if err := r.state.UseConnection(ctx, snapshot.Search.ProwlarrURL, snapshot.Search.APIKey); err != nil {
-		return report, r.stateError(err)
-	}
-	// New failures remain in this working set even when Retry-After has elapsed.
-	r.cooldowns, err = r.state.Cooldowns(ctx, time.Now())
+	source, err := r.source.Begin(ctx, snapshot.Search, kind)
 	if err != nil {
-		return report, r.stateError(err)
+		return report, err
 	}
+	defer source.End()
 	clients := slices.Sorted(maps.Keys(snapshot.Clients))
 	if req.ClientName != "" {
 		if _, ok := snapshot.Clients[req.ClientName]; !ok {
@@ -238,7 +204,7 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 				// Years affect compatibility, but never the outgoing query identity.
 				key := seasonSearchKey{Title: rls.MustNormalize(parsed.Title), Season: parsed.Series}
 				group := groups[key]
-				query := prowlarr.Query{Title: parsed.Title, Season: key.Season}
+				query := discovery.Query{Title: parsed.Title, Season: key.Season}
 				if group == nil {
 					group = &seasonSearch{query: query, clients: make(map[string]bool)}
 					groups[key] = group
@@ -254,95 +220,38 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 	ordered := slices.Collect(maps.Values(groups))
 	slices.SortFunc(ordered, func(a, b *seasonSearch) int { return strings.Compare(a.query.String(), b.query.String()) })
 	report.Groups = len(ordered)
-	if len(ordered) == 0 {
-		if ctx.Err() != nil {
-			report.Failures = append(report.Failures, searchFailure{Reason: ctx.Err().Error()})
-		}
-		return report, nil
-	}
-	if until := r.cooldowns[state.ProwlarrCooldownID]; time.Now().Before(until) {
-		report.Failures = append(report.Failures, searchFailure{Reason: "Prowlarr cooldown is still active"})
-		return report, nil
-	}
-	indexers, err := provider.Indexers(ctx)
-	if err != nil {
-		if stateErr := r.recordCooldown(ctx, state.ProwlarrCooldownID, err); stateErr != nil {
-			report.Failures = append(report.Failures, searchFailure{Reason: r.stateError(stateErr).Error()})
-		}
-		report.Failures = append(report.Failures, searchFailure{Reason: err.Error()})
-		return report, nil
-	}
-	capability := "searchable"
-	if rss {
-		capability = "RSS-capable"
-	}
-	indexers = slices.DeleteFunc(indexers, func(indexer prowlarr.Indexer) bool {
-		if rss {
-			return !indexer.SupportsRSS
-		}
-		return !indexer.SupportsSearch
-	})
-	if len(snapshot.Search.IndexerIDs) > 0 {
-		for _, id := range snapshot.Search.IndexerIDs {
-			if !slices.ContainsFunc(indexers, func(indexer prowlarr.Indexer) bool { return indexer.ID == id }) {
-				report.Failures = append(report.Failures, searchFailure{IndexerID: id, Reason: "selected indexer is missing, disabled, or not a " + capability + " torrent indexer"})
-			}
-		}
-		indexers = slices.DeleteFunc(indexers, func(indexer prowlarr.Indexer) bool { return !slices.Contains(snapshot.Search.IndexerIDs, indexer.ID) })
-	}
-	if len(indexers) == 0 {
-		report.Failures = append(report.Failures, searchFailure{Reason: "no enabled " + capability + " torrent indexers in Prowlarr"})
-		return report, nil
-	}
 	run := discoveryRun{
-		runner:      r,
-		request:     req,
-		report:      &report,
-		clients:     handles,
-		selected:    make(map[string][]rls.Release),
-		unavailable: make(map[int]bool),
+		runner:   r,
+		source:   source,
+		request:  req,
+		report:   &report,
+		clients:  handles,
+		selected: make(map[string][]rls.Release),
 	}
-	for _, indexer := range indexers {
-		if until := r.cooldowns[indexer.ID]; time.Now().Before(until) {
-			run.unavailable[indexer.ID] = true
-			report.Failures = append(report.Failures, searchFailure{IndexerID: indexer.ID, Reason: "indexer cooldown or Retry-After deadline has not elapsed"})
+	// With no groups, the run sends no request to Prowlarr.
+	if len(ordered) > 0 {
+		indexers := source.Indexers(ctx)
+		if rss {
+			// Do not consume listings for clients absent from this inventory scan.
+			if len(handles) != len(clients) {
+				source.ClientUnreadable()
+			}
+			run.pollRSS(ctx, indexers, groups)
+		} else {
+			for _, group := range ordered {
+				for _, indexer := range indexers {
+					for listing := range source.Search(ctx, indexer, group.query) {
+						run.evaluateListing(ctx, listing, group)
+					}
+				}
+			}
 		}
 	}
-	if rss {
-		feeds, err := r.state.Feeds(ctx)
-		if err != nil {
-			run.storageFailure(err)
-			return report, nil
-		}
-		// Do not consume releases for clients absent from this inventory scan.
-		persist := len(handles) == len(clients)
-		feeds.Prune(indexers, time.Now())
-		if !run.saveFeeds(ctx, feeds, persist) {
-			return report, nil
-		}
-		for _, indexer := range indexers {
-			if ctx.Err() != nil || run.storageFailed {
-				break
-			}
-			if !run.unavailable[indexer.ID] {
-				run.pollRSS(ctx, indexer, groups, feeds, persist)
-			}
-		}
-	} else {
-		for _, group := range ordered {
-			for _, indexer := range indexers {
-				if ctx.Err() != nil || run.storageFailed {
-					break
-				}
-				if run.unavailable[indexer.ID] {
-					continue
-				}
-				run.searchGroup(ctx, indexer, group)
-			}
-			if ctx.Err() != nil || run.storageFailed {
-				break
-			}
-		}
+	stats := source.Stats()
+	report.Requests, report.TorrentDownloads, report.TorrentCacheHits = stats.FeedPages, stats.Downloads, stats.CacheHits
+	// The client failures come first, as they happen before the first call to Prowlarr.
+	for _, failure := range source.Failures() {
+		report.Failures = append(report.Failures, searchFailure{Query: failure.Query, IndexerID: failure.IndexerID, Reason: failure.Reason})
 	}
 	if ctx.Err() != nil {
 		report.Failures = append(report.Failures, searchFailure{Reason: ctx.Err().Error()})
@@ -356,70 +265,24 @@ type (
 		Season int
 	}
 	seasonSearch struct {
-		query   prowlarr.Query
+		query   discovery.Query
 		clients map[string]bool
 	}
 )
 
-func (run *discoveryRun) searchGroup(ctx context.Context, indexer prowlarr.Indexer, group *seasonSearch) {
-	seen := make(map[string]bool)
-	offset := 0
-	const maxPages = 10
-	for range maxPages {
-		if ctx.Err() != nil || run.storageFailed {
-			return
-		}
-		run.report.Requests++
-		results, limit, err := run.runner.provider.SearchPage(ctx, indexer, group.query, offset)
-		if err != nil {
-			run.report.Failures = append(run.report.Failures, searchFailure{Query: group.query.String(), IndexerID: indexer.ID, Reason: err.Error()})
-			// Do not hammer an unavailable or rate-limited indexer for every season.
-			run.unavailable[indexer.ID] = true
-			if stateErr := run.runner.recordCooldown(ctx, indexer.ID, err); stateErr != nil {
-				run.storageFailure(stateErr)
-			}
-			return
-		}
-		fresh := 0
-		for _, result := range results {
-			if ctx.Err() != nil || run.storageFailed {
-				return
-			}
-			id := cmp.Or(result.GUID, result.Link, result.Enclosure.URL, result.Title)
-			if seen[id] {
-				continue
-			}
-			seen[id] = true
-			fresh++
-			run.evaluateResult(ctx, indexer, result, group)
-			if _, failed := run.runner.cooldowns[indexer.ID]; failed {
-				run.unavailable[indexer.ID] = true
-				return
-			}
-		}
-		if !indexer.SupportsPagination || len(results) < limit {
-			return
-		}
-		if fresh == 0 {
-			run.report.Failures = append(run.report.Failures, searchFailure{Query: group.query.String(), IndexerID: indexer.ID, Reason: "indexer repeated a page; remaining results may be incomplete"})
-			return
-		}
-		offset += len(results)
-	}
-	run.report.Failures = append(run.report.Failures, searchFailure{Query: group.query.String(), IndexerID: indexer.ID, Reason: "search reached the 10-page limit; remaining results may be incomplete"})
-}
-
-func (run *discoveryRun) evaluateResult(ctx context.Context, indexer prowlarr.Indexer, result prowlarr.Result, group *seasonSearch) {
+// evaluateListing checks the listing for each client of its group, then
+// imports it or reports what the import would do.
+func (run *discoveryRun) evaluateListing(ctx context.Context, listing *discovery.Listing, group *seasonSearch) {
 	processor := run.runner.processor
-	torrent := resultTorrent{run: run, indexer: indexer, result: result}
+	title := listing.Title()
 	for _, name := range slices.Sorted(maps.Keys(group.clients)) {
-		if ctx.Err() != nil || run.storageFailed {
+		if ctx.Err() != nil || run.source.Err() != nil {
 			return
 		}
 		client := run.clients[name]
 		snapshot := client.Snapshot()
-		parsed := rls.ParseString(result.Title)
-		outcome := searchOutcome{ClientName: name, Title: result.Title, IndexerID: indexer.ID, Status: "rejected"}
+		parsed := rls.ParseString(title)
+		outcome := searchOutcome{ClientName: name, Title: title, IndexerID: listing.IndexerID(), Status: "rejected"}
 		duplicate := false
 		for selectedClient, acceptedReleases := range run.selected {
 			if torrentclient.EndpointOf(*snapshot.Clients[name]) != torrentclient.EndpointOf(*snapshot.Clients[selectedClient]) {
@@ -441,7 +304,7 @@ func (run *discoveryRun) evaluateResult(ctx context.Context, indexer prowlarr.In
 			continue
 		}
 		if run.request.DryRun && !run.request.Verify {
-			if checked := processor.Candidate(ctx, client, result.Title); checked.Err != nil {
+			if checked := processor.Candidate(ctx, client, title); checked.Err != nil {
 				outcome.reportError(checked)
 			} else {
 				outcome.Status = "candidate"
@@ -450,9 +313,19 @@ func (run *discoveryRun) evaluateResult(ctx context.Context, indexer prowlarr.In
 			run.report.Outcomes = append(run.report.Outcomes, outcome)
 			continue
 		}
-		matched := processor.Match(ctx, client, result.Title, seasonpack.TorrentFetch(torrent.fetch))
-		if torrent.storageErr != nil {
-			run.storageFailure(torrent.storageErr)
+		// The match fetches only with a client episode file on disk. The closure
+		// keeps the result for the reason of a failed download and for the import.
+		var (
+			torrent  []byte
+			fetchErr error
+		)
+		matched := processor.Match(ctx, client, title, seasonpack.TorrentFetch(func(ctx context.Context) ([]byte, error) {
+			torrent, fetchErr = listing.Torrent(ctx)
+			return torrent, fetchErr
+		}))
+		// A database failure stops the run, and the source has its failure entry.
+		// A failed download keeps its outcome, also when its cooldown was not stored.
+		if run.source.Err() != nil && !errors.Is(fetchErr, discovery.ErrDownload) {
 			return
 		}
 		if matched.Coverage != nil {
@@ -466,12 +339,9 @@ func (run *discoveryRun) evaluateResult(ctx context.Context, indexer prowlarr.In
 				outcome.Reason = "could not read episode file details from torrent client"
 			case errors.Is(matched.Err, seasonpack.ErrNoSourceOnDisk):
 				outcome.Reason = "no accessible episode files with the declared size"
-			case torrent.downloadErr != nil && errors.Is(matched.Err, torrent.downloadErr):
-				if err := run.runner.recordCooldown(ctx, indexer.ID, torrent.downloadErr); err != nil {
-					run.storageFailure(err)
-				}
+			case fetchErr != nil && errors.Is(matched.Err, fetchErr):
 				outcome.Status = "failed"
-				outcome.Reason = torrent.downloadErr.Error()
+				outcome.Reason = fetchErr.Error()
 			default:
 				outcome.reportError(matched)
 			}
@@ -484,7 +354,7 @@ func (run *discoveryRun) evaluateResult(ctx context.Context, indexer prowlarr.In
 		} else {
 			// The import takes the plan of the match from the processor, as for
 			// the two requests of an announce.
-			imported := processor.Import(ctx, client, result.Title, torrent.data)
+			imported := processor.Import(ctx, client, title, torrent)
 			if imported.Err != nil {
 				outcome.reportError(imported)
 			} else {
@@ -497,9 +367,9 @@ func (run *discoveryRun) evaluateResult(ctx context.Context, indexer prowlarr.In
 			if run.report.RSS {
 				action = "RSS"
 			}
-			log := run.runner.log.With().Str("module", "processor").Str("release", result.Title).Str("clientname", name).Logger()
+			log := run.runner.log.With().Str("module", "processor").Str("release", title).Str("clientname", name).Logger()
 			run.runner.noti.send(log, imported.Status, domain.NotificationPayload{
-				ReleaseName: result.Title,
+				ReleaseName: title,
 				Client:      name,
 				Action:      action,
 				Error:       imported.Err,
@@ -517,70 +387,4 @@ func (o *searchOutcome) reportError(result seasonpack.Outcome) {
 	if result.Class() == seasonpack.Rejected {
 		o.Status = "rejected"
 	}
-}
-
-// resultTorrent gets the torrent of one search result for the match. The
-// clients of the result share it, so the run reads the stored torrent cache or
-// downloads the torrent one time.
-type resultTorrent struct {
-	run     *discoveryRun
-	indexer prowlarr.Indexer
-	result  prowlarr.Result
-
-	data        []byte
-	downloadErr error
-	// storageErr is a database failure, which stops the run.
-	storageErr error
-}
-
-// fetch is the seasonpack.FetchFunc of the result. The match calls it only
-// when the client has an episode file on disk, so a result that cannot be
-// used costs no tracker request.
-func (rt *resultTorrent) fetch(ctx context.Context) ([]byte, error) {
-	runner := rt.run.runner
-	if rt.data == nil && rt.downloadErr == nil {
-		key := state.MetadataKey(rt.indexer.ID, rt.result)
-		rt.data, rt.storageErr = runner.state.Metadata(ctx, key, time.Now())
-		if rt.storageErr != nil {
-			return nil, rt.storageErr
-		}
-		if rt.data != nil {
-			rt.run.report.TorrentCacheHits++
-		} else {
-			rt.data, rt.downloadErr = runner.provider.Download(ctx, rt.indexer.ID, rt.result)
-			if rt.downloadErr == nil {
-				rt.run.report.TorrentDownloads++
-				if _, err := torrents.ParseInfo(rt.data); err == nil {
-					if rt.storageErr = runner.state.PutMetadata(ctx, key, rt.data, time.Now()); rt.storageErr != nil {
-						return nil, rt.storageErr
-					}
-				}
-			}
-		}
-	}
-	if rt.downloadErr != nil {
-		return nil, rt.downloadErr
-	}
-	return rt.data, nil
-}
-
-func (r *searchRunner) recordCooldown(ctx context.Context, indexerID int, err error) error {
-	if failure, ok := errors.AsType[*prowlarr.CooldownError](err); ok && failure.Until.After(r.cooldowns[indexerID]) {
-		r.cooldowns[indexerID] = failure.Until
-		return r.state.SetCooldown(ctx, indexerID, failure.Until)
-	}
-	return nil
-}
-
-func (r *searchRunner) stateError(err error) error {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return err
-	}
-	r.log.Error().Err(errtrace.WithStack(err)).Msg("database operation failed")
-	return errDatabase
-}
-
-func (run *discoveryRun) storageFailure(err error) {
-	run.storageFailed = true
-	run.report.Failures = append(run.report.Failures, searchFailure{Reason: run.runner.stateError(err).Error()})
 }

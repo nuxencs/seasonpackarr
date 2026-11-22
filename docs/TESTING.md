@@ -51,6 +51,18 @@ code of the real binary.
   waits for a deadline runs in a `testing/synctest` bubble and moves the
   virtual clock with `time.Sleep`. Examples are the end of a cooldown, the
   retention time of a retained listing, and the request spacing.
+- The discovery run tests in `internal/http/` (`search_test.go`,
+  `search_cooldown_test.go`, `search_persistence_test.go`, and `rss_test.go`)
+  assert what the run adds to the source: the outcomes, the imports, the
+  notifications, the log lines of the run, and the report. A search test
+  enters through `POST /api/search`. An RSS test enters through the
+  unexported poll, because RSS has no route. For each source rule that
+  reaches the report, one HTTP test is the wiring guard (for example
+  `TestSearch_HonorsRateLimitAcrossRuns` for a cooldown). The other facts of
+  a source rule have their test in `internal/discovery/` only. A database
+  failure test closes the store through the fixture that opened it
+  (`processorHTTPFixture.store`). A test that cannot assert its fact without a
+  read of the source shows a gap in the interface of the source.
 - Tests that drive several files through one entry point live with the entry
   point. HTTP endpoint tests live in `internal/http/webhook_test.go`.
 - The tests of the candidate check, the match, and the import live in

@@ -87,6 +87,36 @@ func TestFeed_RetainedListingExpires(t *testing.T) {
 	})
 }
 
+func TestFeed_RetainedListingUsesTorrentCache(t *testing.T) {
+	f := newSourceFixture(t)
+	// fetchAll polls indexer 1 and gets the torrent of each listing.
+	fetchAll := func(t *testing.T) ([]string, discovery.Stats) {
+		t.Helper()
+		run, err := f.source.Begin(t.Context(), f.settings, discovery.KindRSS)
+		require.NoError(t, err)
+		defer run.End()
+		var got []string
+		for listing := range run.Feed(t.Context(), usableIndexers(t, run)[1], accept("Show.S01")) {
+			got = append(got, listing.Title())
+			_, err := listing.Torrent(t.Context())
+			require.NoError(t, err)
+		}
+		require.Empty(t, run.Failures())
+		return got, run.Stats()
+	}
+	f.prowlarr.listings = map[int][]string{1: {"Show.S01", "Old.S01E01"}}
+	got, stats := fetchAll(t)
+	require.Equal(t, []string{"Show.S01"}, got)
+	require.Equal(t, discovery.Stats{FeedPages: 1, Downloads: 1}, stats)
+
+	f.restart(t)
+	f.prowlarr.listings[1] = []string{"Show.S01E02", "Old.S01E01"}
+	got, stats = fetchAll(t)
+	assert.Equal(t, []string{"Show.S01"}, got, "the listing must be retained after it left the feed")
+	assert.Equal(t, discovery.Stats{FeedPages: 1, CacheHits: 1}, stats, "a retained listing must read the torrent cache")
+	assert.Len(t, f.requestsTo("/1/download"), 1)
+}
+
 func TestFeed_GapFailure(t *testing.T) {
 	const gap = "RSS feed did not overlap the previous poll; releases may be missing; use a manual targeted search"
 	for _, tt := range []struct {
@@ -283,7 +313,8 @@ func TestFeed_CooldownSharedWithSearch(t *testing.T) {
 			require.Len(t, run.Failures(), 1)
 
 			ids, failures := f.indexers(t, kinds[1])
-			assert.NotContains(t, ids, 1)
+			usable := map[discovery.Kind][]int{discovery.KindSearch: {2}, discovery.KindRSS: {3}}
+			assert.Equal(t, usable[kinds[1]], ids, "the other indexers must stay usable")
 			assert.Equal(t, []discovery.Failure{{IndexerID: 1, Reason: inCooldown}}, failures)
 			assert.Len(t, f.requestsTo("/1/api"), 1)
 		})

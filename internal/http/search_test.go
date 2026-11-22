@@ -4,7 +4,6 @@
 package http
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
@@ -17,8 +16,6 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient/torrentclienttest"
 
-	"github.com/autobrr/go-torrent/bencode"
-	"github.com/autobrr/go-torrent/metainfo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -292,32 +289,6 @@ func TestSearch_DryRunDoesNotRetrieveFilesOrMetadata(t *testing.T) {
 	require.Zero(t, f.torrentClient.ImportCalls)
 }
 
-func TestSearch_IndexerAllowlist(t *testing.T) {
-	for _, tt := range []struct {
-		name                       string
-		ids                        []int
-		wantID, requests, failures int
-	}{
-		{"selected", []int{2}, 2, 1, 0},
-		{"missing", []int{99}, 0, 0, 2},
-		{"partial", []int{2, 99}, 2, 1, 1},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
-			cfg := f.config.Snapshot()
-			cfg.Search.IndexerIDs = tt.ids
-			f.config.Store(cfg)
-			report := f.runExact(t, true)
-			require.Equal(t, tt.requests, report.Requests)
-			require.Len(t, report.Failures, tt.failures)
-			require.Len(t, report.Outcomes, tt.requests)
-			for _, outcome := range report.Outcomes {
-				require.Equal(t, tt.wantID, outcome.IndexerID)
-			}
-		})
-	}
-}
-
 func TestSearch_PreflightStopsBeforeMetadata(t *testing.T) {
 	for _, mode := range []string{"missing", "empty", "wrong size", "directory", "client error"} {
 		t.Run(mode, func(t *testing.T) {
@@ -384,48 +355,6 @@ func TestSearch_MetadataReuseRechecksSourcesAndSettings(t *testing.T) {
 	require.Equal(t, "rejected", fourth.Outcomes[0].Status)
 	require.Zero(t, fourth.TorrentCacheHits)
 	require.Equal(t, 1, f.downloads)
-}
-
-// TestSearch_MetadataKeepsSingleFileTorrent: a single-file result is a valid
-// torrent, so its bytes stay in the stored torrent cache.
-func TestSearch_MetadataKeepsSingleFileTorrent(t *testing.T) {
-	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
-	cfg := f.config.Snapshot()
-	cfg.Search.IndexerIDs = []int{1}
-	f.config.Store(cfg)
-	infoBytes, err := bencode.Marshal(metainfo.Info{Name: f.releaseName + ".mkv", PieceLength: 16384, Length: 1})
-	require.NoError(t, err)
-	var torrent bytes.Buffer
-	require.NoError(t, (&metainfo.MetaInfo{InfoBytes: infoBytes}).Write(&torrent))
-	f.torrentByTitle = map[string][]byte{f.releaseName: torrent.Bytes()}
-
-	first := f.runExact(t, true)
-	require.Equal(t, 1, first.TorrentDownloads)
-	second := f.runExact(t, true)
-	require.Equal(t, 1, second.TorrentCacheHits)
-	require.Equal(t, 1, f.downloads)
-}
-
-func TestSearch_MetadataConnectionChangeAndInvalidResponse(t *testing.T) {
-	for _, invalid := range []bool{false, true} {
-		t.Run(fmt.Sprint(invalid), func(t *testing.T) {
-			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
-			cfg := f.config.Snapshot()
-			cfg.Search.IndexerIDs = []int{1}
-			f.config.Store(cfg)
-			if invalid {
-				f.torrentByTitle = map[string][]byte{f.releaseName: []byte("invalid torrent")}
-			}
-			f.runExact(t, true)
-			if !invalid {
-				cfg.Search.ProwlarrURL += "/"
-				f.config.Store(cfg)
-			}
-			second := f.runExact(t, true)
-			require.Zero(t, second.TorrentCacheHits)
-			require.Equal(t, 2, f.downloads)
-		})
-	}
 }
 
 func TestSearch_ExistingPackSkipsQueriesInEveryMode(t *testing.T) {

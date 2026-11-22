@@ -28,7 +28,9 @@
    6. It creates the notification sender.
    7. It gets the database path with `state.Path`. Then it opens the SQLite
       store.
-   8. It starts the HTTP server.
+   8. It creates the Prowlarr discovery source, `discovery.New`, from the
+      store and the logger.
+   9. It starts the HTTP server with the source.
 
    Signal cancellation starts a bounded graceful shutdown. The command closes
    the store after server shutdown.
@@ -74,7 +76,9 @@
 ### HTTP/API
 
 - Implemented in `internal/http/`
-- Concerns: server lifecycle, middleware, auth, health, webhook handlers, Prowlarr discovery runs
+- Concerns: server lifecycle, middleware, auth, health, webhook handlers, Prowlarr discovery runs. A discovery run
+  reaches Prowlarr and the discovery tables only through `internal/discovery/`. Its production code imports neither
+  `internal/prowlarr/` nor `internal/state/`
 - External contract:
   - `POST /api/candidate`
   - `POST /api/match`
@@ -158,26 +162,55 @@
 
 - `internal/prowlarr/` owns indexer discovery, capability-aware Torznab queries,
   bounded HTTP reads, request spacing, and torrent proxy retrieval.
+- `internal/discovery/` is the source of Prowlarr discovery. It is the only
+  production caller of the Prowlarr client and of the discovery methods of the
+  store, apart from the Prowlarr constructor call in the config validation. Its
+  contract:
+  - `Source.Begin` opens one discovery run at a time and `Run.End` closes it.
+    `Begin` takes the overlap guard, parses the request interval, builds the
+    connection again after a change of the URL or the API key, tells the store
+    which connection is in use, and loads the cooldowns. Its errors are
+    `ErrRunActive` (`409`), `ErrDatabase` (`500`), and `ErrInvalidSettings` (`400`).
+  - `Run.Indexers` returns the usable indexers by priority and then by id. It
+    applies the capability of the kind of the run, the allowlist, and the cooldowns.
+  - `Run.Search` and `Run.Feed` return lazy sequences of listings. The source
+    owns the page budget of 10 pages, the stop on a repeated page, the dedupe,
+    and the order of an RSS poll: prune, save, read back to the checkpoint, set
+    the checkpoint, save, then yield. `Run.ClientUnreadable` makes the run save
+    no feed state.
+  - `Listing.Torrent` gets the torrent bytes of a listing one time, from the
+    torrent cache or by one download. Its errors match `ErrDownload` or
+    `ErrDatabase`, or are the error of a canceled context.
+  - The run is the one place that knows which indexers are out. It records a
+    cooldown after each failed provider call, and states the four "indexer is
+    out" rules in `internal/discovery/run.go`. A database failure ends each
+    sequence, and `Run.Err` reports it.
+  - `Run.Failures` gives the failures of the source with their reason texts in
+    time order, and `Run.Stats` gives the feed pages, the downloads, and the
+    cache hits.
 - `internal/http/search.go` groups episode inventories by series/season,
   excludes variants already covered by a pack in each client, shares remaining
-  searches across years and clients, and gives each result to the season pack
+  searches across years and clients, and gives each listing to the season pack
   processor. It accepts one pack per release variant.
 - Discovery uses the candidate check for a dry run, the match with a fetch for
   `verify`, and the match with a fetch followed by the import for an import.
-  The fetch reads the stored torrent cache or downloads the torrent through
-  Prowlarr, one time for each result. The download never runs under the
-  endpoint import lock. The import takes the plan of the match from the
-  processor, as for the two requests of an announce.
-- A run keeps one client handle for each client. The duplicate-variant rule of
-  a run, the stored torrent cache, the download counts, the pause rules, and the
-  report stay in `internal/http/search.go`.
+  The fetch is `Listing.Torrent`, so it reads the stored torrent cache or
+  downloads the torrent through Prowlarr, one time for each listing. The
+  download never runs under the endpoint import lock. The import takes the
+  plan of the match from the processor, as for the two requests of an announce.
+- A run keeps one client handle for each client. The groups from the inventory,
+  the duplicate-variant rule of a run, the dry-run, verify, and import modes,
+  the report, the notifications, and the run and result lines of the log stay
+  in `internal/http/search.go`. The report gets the client failures of the
+  run, then the failures of the source, then a canceled context.
 - `POST /api/search` and `cmd/search.go` expose search-only dry runs, exact previews, and imports. The
   request context owns a manual run; there is no persistent job queue.
 - `internal/http/search_schedule.go` polls RSS on an opt-in interval from the
   server lifecycle context. Targeted searches are manual only. All discovery runs
-  share an overlap guard.
-- `internal/http/rss.go` reads recent feeds once per indexer and pages back to the
-  previous poll when possible. `internal/state/rss.go` retains bounded relevant
+  share the overlap guard of the source.
+- `internal/http/rss.go` gives the feed of each indexer its relevance predicate
+  from the groups. The source reads recent feeds once per indexer and pages back
+  to the previous poll when possible. `internal/state/rss.go` retains bounded relevant
   listings for later coverage checks. SQLite preserves feed state across restarts.
   Checkpoints and candidates commit together before evaluation. Runs with an
   unavailable client discard their feed working set instead of advancing it.

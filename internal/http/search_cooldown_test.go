@@ -4,58 +4,11 @@
 package http
 
 import (
-	"fmt"
 	stdhttp "net/http"
 	"testing"
-	"time"
-
-	"github.com/nuxencs/seasonpackarr/internal/state"
 
 	"github.com/stretchr/testify/require"
 )
-
-func TestSearch_CooldownsAcrossRuns(t *testing.T) {
-	for _, endpoint := range []string{"/api/v1/indexer", "/1/api", "/1/download"} {
-		for _, status := range []int{429, 503} {
-			t.Run(fmt.Sprintf("%s/%d", endpoint, status), func(t *testing.T) {
-				f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
-				cfg := f.config.Snapshot()
-				cfg.Search.IndexerIDs = []int{1}
-				f.config.Store(cfg)
-				// Multiple candidates must not cause more requests after a failure.
-				f.titles = append(f.titles, f.releaseName)
-				calls := 0
-				f.respond = func(w stdhttp.ResponseWriter, r *stdhttp.Request) bool {
-					if r.URL.Path != endpoint {
-						return false
-					}
-					calls++
-					w.Header().Set("Retry-After", "7200")
-					w.WriteHeader(status)
-					return true
-				}
-				f.runExact(t, true)
-				require.Equal(t, 1, calls)
-				report := f.runExact(t, true)
-				require.Equal(t, 1, calls, "cooldown must prevent requests across runs")
-				require.Len(t, report.Failures, 1)
-				require.Contains(t, report.Failures[0].Reason, "cooldown")
-				id := 1
-				if endpoint == "/api/v1/indexer" {
-					id = state.ProwlarrCooldownID
-				}
-				require.WithinDuration(t, time.Now().Add(2*time.Hour), f.search.cooldowns[id], 2*time.Second)
-				f.restart(t)
-				f.runExact(t, true)
-				require.Equal(t, 1, calls, "restart must preserve cooldowns")
-				_, err := f.search.state.Cooldowns(t.Context(), time.Now().Add(3*time.Hour))
-				require.NoError(t, err)
-				f.runExact(t, true)
-				require.Equal(t, 2, calls, "requests resume after cooldown expiry")
-			})
-		}
-	}
-}
 
 func TestSearch_TransientFailureDoesNotBlockOtherIndexers(t *testing.T) {
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
@@ -78,30 +31,4 @@ func TestSearch_TransientFailureDoesNotBlockOtherIndexers(t *testing.T) {
 	require.Len(t, second.Outcomes, 1)
 	require.Equal(t, "would_import", second.Outcomes[0].Status)
 	require.Equal(t, 1, failedDownloads)
-}
-
-func TestSearch_ElapsedRetryAfterSkipsRestOfRun(t *testing.T) {
-	for _, header := range []string{"0", time.Now().Add(-time.Hour).UTC().Format(stdhttp.TimeFormat)} {
-		t.Run(header, func(t *testing.T) {
-			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
-			cfg := f.config.Snapshot()
-			cfg.Search.IndexerIDs = []int{1}
-			f.config.Store(cfg)
-			f.titles = append(f.titles, f.releaseName)
-			calls := 0
-			f.respond = func(w stdhttp.ResponseWriter, r *stdhttp.Request) bool {
-				if r.URL.Path != "/1/download" {
-					return false
-				}
-				calls++
-				w.Header().Set("Retry-After", header)
-				w.WriteHeader(429)
-				return true
-			}
-			f.runExact(t, true)
-			require.Equal(t, 1, calls, "do not continue downloading candidates after a failure")
-			f.runExact(t, true)
-			require.Equal(t, 2, calls, "an elapsed server deadline must not block a later run")
-		})
-	}
 }
