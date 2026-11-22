@@ -30,7 +30,7 @@ func validateSearch(search domain.Search) error {
 	if search.ProwlarrURL == "" && search.APIKey == "" && interval == 0 {
 		return nil
 	}
-	if _, err := prowlarr.New(search.ProwlarrURL, search.APIKey, spacing); err != nil {
+	if _, err := prowlarr.New(search.ProwlarrURL, search.APIKey, spacing, nil); err != nil {
 		return fmt.Errorf("search: %w", err)
 	}
 	return nil

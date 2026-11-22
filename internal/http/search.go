@@ -156,7 +156,7 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 		return report, errors.New("invalid search.requestInterval")
 	}
 	if r.provider == nil || r.prowlarrURL != snapshot.Search.ProwlarrURL || r.prowlarrKey != snapshot.Search.APIKey {
-		provider, err := prowlarr.New(snapshot.Search.ProwlarrURL, snapshot.Search.APIKey, spacing)
+		provider, err := prowlarr.New(snapshot.Search.ProwlarrURL, snapshot.Search.APIKey, spacing, nil)
 		if err != nil {
 			return report, err
 		}

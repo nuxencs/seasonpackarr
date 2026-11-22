@@ -92,7 +92,9 @@ type Client struct {
 	lastRequest time.Time
 }
 
-func New(rawURL, apiKey string, interval time.Duration) (*Client, error) {
+// New validates the connection settings. A nil transport selects
+// http.DefaultTransport. The timeout and the redirect rule apply to each transport.
+func New(rawURL, apiKey string, interval time.Duration, transport http.RoundTripper) (*Client, error) {
 	base, err := url.Parse(rawURL)
 	if err != nil || base == nil || (base.Scheme != "http" && base.Scheme != "https") || base.Host == "" || base.User != nil || base.RawQuery != "" || base.Fragment != "" {
 		return nil, errors.New("Prowlarr URL must be an HTTP(S) base URL without credentials, query, or fragment")
@@ -104,7 +106,8 @@ func New(rawURL, apiKey string, interval time.Duration) (*Client, error) {
 		return nil, errors.New("Prowlarr request interval cannot be negative")
 	}
 	return &Client{base: base, apiKey: apiKey, interval: interval, http: &http.Client{
-		Timeout: 2 * time.Minute,
+		Transport: transport,
+		Timeout:   2 * time.Minute,
 		// Prowlarr must proxy torrent bytes. Redirects can lead to a magnet or
 		// expose its API key to a tracker, so report them without following them.
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },

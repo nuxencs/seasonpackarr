@@ -26,6 +26,10 @@ code of the real binary.
 - `<file>_test.go` tests the code in `<file>.go`. A large set can split by
   aspect: `<file>_<aspect>_test.go` (`search_cooldown_test.go`,
   `client_rss_test.go`, `inventory_benchmark_test.go`).
+- `internal/prowlarr/client_transport_test.go` is in the external test package
+  `prowlarr_test`. It proves that code outside the package can give the client
+  an in-process transport through `prowlarr.New`. The other client tests stay
+  in the package.
 - Tests that drive several files through one entry point live with the entry
   point. HTTP endpoint tests live in `internal/http/webhook_test.go`.
 - The tests of the candidate check, the match, and the import live in
