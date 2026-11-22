@@ -885,6 +885,14 @@ func (c *AppConfig) reloadOnChange(ctx context.Context, log logger.Logger, chang
 			if ctx.Err() != nil {
 				return
 			}
+			// select also picks at random when a change is ready too, and a late wake-up can let one queue. Either way the
+			// file is not quiet yet, so the change restarts the quiet period.
+			select {
+			case <-changes:
+				timer.Reset(configReloadDebounceDelay)
+				continue
+			default:
+			}
 			snapshot, err := c.reload()
 			if err != nil {
 				log.Error().Err(err).Msg("config reload rejected; keeping previous config")
