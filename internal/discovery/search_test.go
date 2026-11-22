@@ -16,15 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// episodeTitles returns n episode titles of showQuery.
-func episodeTitles(n int) []string {
-	titles := make([]string, n)
-	for i := range titles {
-		titles[i] = fmt.Sprintf("Show.S01E%02d", i+1)
-	}
-	return titles
-}
-
 func TestSearch_RequestsPagesOnDemand(t *testing.T) {
 	f := newSourceFixture(t)
 	f.prowlarr.listings = map[int][]string{1: {"Show.S01E01", "Show.S01E02", "Show.S01", "Show.S01E03", "Show.S01E04"}}

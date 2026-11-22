@@ -32,14 +32,15 @@ code of the real binary.
   in the package.
 - The tests of the discovery source live in `internal/discovery/`
   (`source_test.go` for `Begin` and `End`, `run_test.go` for `Indexers` and
-  the rules of a whole run, `search_test.go` for `Search`, and
-  `listing_test.go` for `Listing.Torrent`). They are in the external test
-  package `discovery_test`, so they call only `Begin`, the methods of the run,
-  and the methods of a listing. The fixture in `fixtures_test.go` gives the
-  source a real SQLite file in a temporary directory. It also gives the source
-  an in-process fake Prowlarr (`fakeProwlarr`) as its HTTP transport. The fake
-  serves the indexer list, a feed page for each indexer from a list of titles,
-  and the torrent bytes of each listing.
+  the rules of a whole run, `search_test.go` for `Search`, `feed_test.go`
+  for `Feed`, and `listing_test.go` for `Listing.Torrent`). They are in the
+  external test package `discovery_test`, so they call only `Begin`, the
+  methods of the run, and the methods of a listing. The fixture in
+  `fixtures_test.go` gives the source a real SQLite file in a temporary
+  directory. It also gives the source an in-process fake Prowlarr
+  (`fakeProwlarr`) as its HTTP transport. The fake serves the indexer list, a
+  feed page for each indexer from a list of titles, and the torrent bytes of
+  each listing.
   The tests need no torrent client, no pack, and no config provider. A
   restart is: close the store, open it again, and make a new source
   (`restart`). A database failure test closes the store. No test calls
@@ -48,8 +49,8 @@ code of the real binary.
   bytes and their errors, the failures, `Err`, `Stats`, the requests that the
   fake Prowlarr received, and the log lines. A test that
   waits for a deadline runs in a `testing/synctest` bubble and moves the
-  virtual clock with `time.Sleep`. Examples are the end of a cooldown and the
-  request spacing.
+  virtual clock with `time.Sleep`. Examples are the end of a cooldown, the
+  retention time of a retained listing, and the request spacing.
 - Tests that drive several files through one entry point live with the entry
   point. HTTP endpoint tests live in `internal/http/webhook_test.go`.
 - The tests of the candidate check, the match, and the import live in

@@ -67,11 +67,18 @@ type Run struct {
 	// indexer id or state.ProwlarrCooldownID.
 	cooldowns map[int]time.Time
 	// out holds the indexers that the run uses no more.
-	out      map[int]bool
-	failures []Failure
-	stats    Stats
-	err      error
-	ended    bool
+	out map[int]bool
+	// present holds the selected capable indexers, also those in cooldown.
+	// The prune of the feed state keeps their state.
+	present []prowlarr.Indexer
+	// feeds is the feed state of the run, loaded at the first Feed.
+	feeds *state.Feeds
+	// skipFeedSave is true after a client was not readable: the run saves no feed state.
+	skipFeedSave bool
+	failures     []Failure
+	stats        Stats
+	err          error
+	ended        bool
 }
 
 // Failures returns the failures of the run in time order.
@@ -110,6 +117,7 @@ func (r *Run) Indexers(ctx context.Context) []Indexer {
 		}
 		capable = slices.DeleteFunc(capable, func(indexer prowlarr.Indexer) bool { return !slices.Contains(r.indexerIDs, indexer.ID) })
 	}
+	r.present = capable
 	if len(capable) == 0 {
 		r.fail(Failure{Reason: "no enabled " + capability + " torrent indexers in Prowlarr"})
 		return nil
