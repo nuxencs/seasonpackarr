@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
 	"maps"
 	"os"
 	"path/filepath"
@@ -350,41 +349,27 @@ notifications:
   shoutrrr: []
 `
 
-func (c *AppConfig) writeConfig(configPath string, configFile string) error {
+func (c *AppConfig) writeConfig(configPath string, configFile string) (err error) {
+	if err := os.MkdirAll(configPath, os.ModePerm); err != nil {
+		return err
+	}
+
+	// Keep an existing config. The load reports a file that it cannot read.
 	cfgPath := filepath.Join(configPath, configFile)
-
-	// check if configPath exists, if not create it
-	if _, err := os.Stat(configPath); errors.Is(err, fs.ErrNotExist) {
-		err := os.MkdirAll(configPath, os.ModePerm)
-		if err != nil {
-			log.Println(err)
-			return err
-		}
+	if _, err := os.Stat(cfgPath); !errors.Is(err, fs.ErrNotExist) {
+		return nil
 	}
-
-	// check if config exists, if not create it
-	if _, err := os.Stat(cfgPath); errors.Is(err, fs.ErrNotExist) {
-		f, err := os.Create(cfgPath)
-		if err != nil { // perm 0666
-			// handle failed create
-			log.Printf("error creating file: %q", err)
-			return err
-		}
-		defer func() {
-			if err := f.Close(); err != nil {
-				log.Printf("error closing config file: %q", err)
-			}
-		}()
-
-		if _, err = f.WriteString(defaultConfigFile); err != nil {
-			log.Printf("error writing contents to file: %v %q", configPath, err)
-			return err
-		}
-
-		return f.Sync()
+	f, err := os.Create(cfgPath) // perm 0666
+	if err != nil {
+		return err
 	}
-
-	return nil
+	defer func() {
+		err = errors.Join(err, f.Close())
+	}()
+	if _, err := f.WriteString(defaultConfigFile); err != nil {
+		return err
+	}
+	return f.Sync()
 }
 
 type Provider interface {
@@ -399,12 +384,11 @@ type AppConfig struct {
 	watcher           *fsnotify.Watcher
 }
 
-func New(configPath string, version string) *AppConfig {
-	if _, err := os.Stat(filepath.Join(configPath, "config.toml")); err == nil {
-		log.Fatalf("A legacy 'config.toml' file has been detected. " +
-			"To continue, please migrate your configuration to the new 'config.yaml' format. " +
-			"You can easily do this by copying the settings from 'config.toml' to 'config.yaml' and then renaming 'config.toml' to 'config.toml.old'. " +
-			"The only difference between the old and the new config is, that the qbit client info is now stored in an array to allow for multiple clients to be configured.")
+// New loads the config as Load does and returns a holder that can reload it.
+// When configPath is not empty, New creates a missing config.yaml in it.
+func New(configPath string, version string) (*AppConfig, error) {
+	if err := checkLegacyConfigFile(configPath); err != nil {
+		return nil, err
 	}
 
 	c := &AppConfig{
@@ -415,23 +399,29 @@ func New(configPath string, version string) *AppConfig {
 	if !c.disableConfigFile {
 		configFile, err := c.resolveConfigFile(configPath)
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 		c.configFile = configFile
 	}
 
 	snapshot, err := c.loadSnapshot()
 	if err != nil {
-		// cmd/start.go logs these warnings after a successful load. Print them
-		// here too, because an unknown variable can explain the load error.
-		for _, name := range UnknownEnvironmentVariables(os.Environ()) {
-			log.Printf("warning: unknown environment variable %s; seasonpackarr ignores it", name)
-		}
-		log.Fatal(err)
+		return nil, err
 	}
 	c.current.Store(snapshot)
 
-	return c
+	return c, nil
+}
+
+// checkLegacyConfigFile rejects a config.toml in configDir, which v0.x read.
+func checkLegacyConfigFile(configDir string) error {
+	if _, err := os.Stat(filepath.Join(configDir, "config.toml")); err != nil {
+		return nil
+	}
+	return errors.New("A legacy 'config.toml' file has been detected. " +
+		"To continue, please migrate your configuration to the new 'config.yaml' format. " +
+		"You can easily do this by copying the settings from 'config.toml' to 'config.yaml' and then renaming 'config.toml' to 'config.toml.old'. " +
+		"The only difference between the old and the new config is, that the qbit client info is now stored in an array to allow for multiple clients to be configured.")
 }
 
 // Load reads and validates the config as the service does at startup, from the
@@ -439,6 +429,9 @@ func New(configPath string, version string) *AppConfig {
 // watcher. configDir selects the directory of config.yaml. When it is empty,
 // Load searches the default locations.
 func Load(configDir, version string) (domain.Config, error) {
+	if err := checkLegacyConfigFile(configDir); err != nil {
+		return domain.Config{}, err
+	}
 	c := &AppConfig{
 		version:           version,
 		disableConfigFile: os.Getenv("SEASONPACKARR__DISABLE_CONFIG_FILE") == "true",

@@ -118,3 +118,14 @@ func TestReadConnectionSettings_ChecksOnlyConnectionVariables(t *testing.T) {
 		})
 	}
 }
+
+func TestReadConnectionSettings_IgnoresLegacyConfigFile(t *testing.T) {
+	clearConnectionEnvironment(t)
+	dir := filepath.Dir(writeTestConfig(t, "apiToken: token\n"))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.toml"), nil, 0o600))
+
+	settings, err := ReadConnectionSettings(dir)
+
+	require.NoError(t, err)
+	assert.Equal(t, "token", settings.APIToken)
+}

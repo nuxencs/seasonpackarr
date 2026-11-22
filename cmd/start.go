@@ -41,8 +41,14 @@ func newStartCommand() *cobra.Command {
 		Args:    cobra.NoArgs,
 		Example: "  seasonpackarr start --config ./config",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// read config
-			cfg := config.New(configPath, buildinfo.Version)
+			cfg, err := config.New(configPath, buildinfo.Version)
+			if err != nil {
+				// No service logger exists yet. A warning can explain the load error, and a failed write must not hide it.
+				for _, name := range config.UnknownEnvironmentVariables(os.Environ()) {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: unknown environment variable %s; seasonpackarr ignores it\n", name)
+				}
+				return err
+			}
 			snapshot := cfg.Snapshot()
 
 			// init new logger

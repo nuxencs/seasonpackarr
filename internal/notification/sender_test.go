@@ -343,9 +343,10 @@ func TestSender_KeepsDestinationsAfterRejectedReload(t *testing.T) {
 		require.NoError(t, os.WriteFile(configFile, []byte(contents), 0o600))
 	}
 	writeConfig(destination.genericURL("/before", ""))
-	cfg := config.New(dir, "test")
+	cfg, err := config.New(dir, "test")
+	require.NoError(t, err)
 	log := loggertest.New()
-	_, err := cfg.DynamicReload(log)
+	_, err = cfg.DynamicReload(log)
 	require.NoError(t, err)
 	sender := NewSender(log, cfg)
 

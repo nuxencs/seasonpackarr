@@ -107,3 +107,17 @@ func TestNotificationTestCommand_MissingConfigFileIsAnError(t *testing.T) {
 	assert.Contains(t, stderr, "config.yaml")
 	assert.NoFileExists(t, filepath.Join(dir, "config.yaml"), "the command must not write a config")
 }
+
+func TestNotificationTestCommand_RejectsLegacyConfigFile(t *testing.T) {
+	isolateCLI(t)
+	t.Setenv("SEASONPACKARR__DISABLE_CONFIG_FILE", "")
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("notifications:\n  discord: https://discord.com/api/webhooks/123/token\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.toml"), nil, 0o600))
+
+	code, stdout, stderr := runCLI(t, "notification", "test", "--config", dir)
+
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stdout)
+	assert.Contains(t, stderr, "Error: A legacy 'config.toml' file has been detected.")
+}
