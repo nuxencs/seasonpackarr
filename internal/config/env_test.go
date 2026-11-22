@@ -66,14 +66,8 @@ func TestApplyEnvironment_SetsFuzzyMatching(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {
-			// Exported shell values for the other keys would change the result.
-			for _, other := range tests {
-				t.Setenv(other.key, "false")
-			}
-			t.Setenv(tt.key, "true")
-
 			cfg := domain.Config{Clients: map[string]*domain.Client{}}
-			require.NoError(t, applyEnvironment(&cfg))
+			require.NoError(t, applyEnvironment(&cfg, environment{tt.key + "=true"}))
 
 			require.Equal(t, tt.want, cfg.FuzzyMatching)
 		})

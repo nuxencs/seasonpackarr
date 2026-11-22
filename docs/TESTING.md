@@ -109,6 +109,10 @@ so the glossary does not define them.
   requires the event of that failure, so the test cannot pass on a path that
   logs nothing. `start` returns a config load error before the service logger
   exists, so its CLI test asserts on the process output instead.
+- Config tests call `config.Load`, `config.New`, or `config.ReadConnectionSettings`
+  with a `config.Input` that holds a temporary directory and the environment as a
+  literal list. They change no process environment variable and build no
+  `AppConfig` literal.
 - Every Go file groups imports as standard library, this module, then external
   modules.
 

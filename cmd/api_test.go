@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -69,7 +70,9 @@ func TestAPIClient_CancellationStopsSearch(t *testing.T) {
 	defer cancel()
 	var stdout, stderr bytes.Buffer
 	result := make(chan int, 1)
-	go func() { result <- execute(ctx, []string{"search", "--url", server.URL, "--dry-run"}, &stdout, &stderr) }()
+	go func() {
+		result <- execute(ctx, []string{"search", "--url", server.URL, "--dry-run"}, os.Environ(), &stdout, &stderr)
+	}()
 	<-started
 	cancel()
 	select {

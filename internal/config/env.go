@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"os"
 	"reflect"
 	"slices"
 	"strconv"
@@ -248,19 +247,20 @@ func cutClientEnvVariable(name string) (clientName, setting string, ok bool) {
 	return strings.Cut(after, "_")
 }
 
-func applyEnvironment(cfg *domain.Config) error {
-	return applyEnvironmentSettings(cfg, envSettings, clientEnvSettings)
+func applyEnvironment(cfg *domain.Config, env environment) error {
+	return applyEnvironmentSettings(cfg, env, envSettings, clientEnvSettings)
 }
 
 // applyEnvironmentSettings applies the variables that the maps name and joins an error for each value that does not parse.
 func applyEnvironmentSettings(
 	cfg *domain.Config,
+	env environment,
 	settings map[string]func(*domain.Config, string) error,
 	clientSettings map[string]func(*domain.Client, string) error,
 ) error {
 	var errs []error
-	for _, env := range os.Environ() {
-		key, value, _ := strings.Cut(env, "=")
+	for _, entry := range env {
+		key, value, _ := strings.Cut(entry, "=")
 		name, ok := strings.CutPrefix(key, envPrefix)
 		if !ok || value == "" {
 			continue

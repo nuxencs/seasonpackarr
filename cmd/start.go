@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -32,7 +31,7 @@ type managedServer interface {
 	Shutdown(ctx context.Context) error
 }
 
-func newStartCommand() *cobra.Command {
+func newStartCommand(environ []string) *cobra.Command {
 	var configPath string
 	cmd := &cobra.Command{
 		Use:     "start",
@@ -41,10 +40,11 @@ func newStartCommand() *cobra.Command {
 		Args:    cobra.NoArgs,
 		Example: "  seasonpackarr start --config ./config",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.New(configPath, buildinfo.Version)
+			// Only start creates a missing config.yaml, and only in a directory that the operator named.
+			cfg, err := config.New(config.Input{ConfigDir: configPath, Environ: environ, Version: buildinfo.Version, CreateFile: configPath != ""})
 			if err != nil {
 				// No service logger exists yet. A warning can explain the load error, and a failed write must not hide it.
-				for _, name := range config.UnknownEnvironmentVariables(os.Environ()) {
+				for _, name := range config.UnknownEnvironmentVariables(environ) {
 					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: unknown environment variable %s; seasonpackarr ignores it\n", name)
 				}
 				return err
@@ -59,7 +59,7 @@ func newStartCommand() *cobra.Command {
 			log.Info().Msgf("Commit: %s", buildinfo.Commit)
 			log.Info().Msgf("Build date: %s", buildinfo.Date)
 			log.Info().Msgf("Log-level: %s", snapshot.LogLevel)
-			for _, name := range config.UnknownEnvironmentVariables(os.Environ()) {
+			for _, name := range config.UnknownEnvironmentVariables(environ) {
 				log.Warn().Str("variable", name).Msg("unknown environment variable; seasonpackarr ignores it - remove or rename it (see the configuration guide)")
 			}
 			config.LogInventoryScopeWarnings(log, snapshot)

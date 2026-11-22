@@ -14,18 +14,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newNotificationCommand() *cobra.Command {
+func newNotificationCommand(environ []string) *cobra.Command {
 	group := &cobra.Command{
 		Use:     "notification",
 		GroupID: "tools",
 		Short:   "Check the notification destinations",
 		Args:    cobra.NoArgs,
 	}
-	group.AddCommand(newNotificationTestCommand())
+	group.AddCommand(newNotificationTestCommand(environ))
 	return group
 }
 
-func newNotificationTestCommand() *cobra.Command {
+func newNotificationTestCommand(environ []string) *cobra.Command {
 	var configDir string
 	cmd := &cobra.Command{
 		Use:   "test",
@@ -38,7 +38,7 @@ fails or when no destination is configured.`,
 		Example: "  seasonpackarr notification test --config ./config",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load(configDir, buildinfo.Version)
+			cfg, err := config.Load(config.Input{ConfigDir: configDir, Environ: environ, Version: buildinfo.Version})
 			if err != nil {
 				return err
 			}

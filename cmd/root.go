@@ -10,12 +10,14 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
 )
 
-func newRootCommand() *cobra.Command {
+// newRootCommand passes environ, the environment in os.Environ form, to each command that reads the environment.
+func newRootCommand(environ []string) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "seasonpackarr",
 		Short: "Reuse downloaded episodes in season packs",
@@ -41,9 +43,9 @@ Use --config for another config directory or --url for a remote service.`,
 		&cobra.Group{ID: "packs", Title: "Season packs (requires a running service):"},
 		&cobra.Group{ID: "tools", Title: "Tools:"},
 	)
-	root.AddCommand(newStartCommand(), newSearchCommand(), newSetupCommand(), newNotificationCommand(), newGenTokenCommand(), newVersionCommand())
+	root.AddCommand(newStartCommand(environ), newSearchCommand(environ), newSetupCommand(environ), newNotificationCommand(environ), newGenTokenCommand(), newVersionCommand())
 	for _, name := range []string{"candidate", "match", "import"} {
-		root.AddCommand(newOperationCommand(name))
+		root.AddCommand(newOperationCommand(name, environ))
 	}
 	return root
 }
@@ -53,8 +55,8 @@ type resultError struct{ code int }
 
 func (e *resultError) Error() string { return "operation did not pass" }
 
-func execute(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	cmd := newRootCommand()
+func execute(ctx context.Context, args, environ []string, stdout, stderr io.Writer) int {
+	cmd := newRootCommand(environ)
 	cmd.SetArgs(args)
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
@@ -71,7 +73,18 @@ func execute(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 func Execute() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if code := execute(ctx, os.Args[1:], os.Stdout, os.Stderr); code != 0 {
+	// This is the one read of the process environment. The commands and the config package get it as a value.
+	if code := execute(ctx, os.Args[1:], os.Environ(), os.Stdout, os.Stderr); code != 0 {
 		os.Exit(code)
 	}
+}
+
+// getenv returns the value of the first entry for key in environ, as os.Getenv does for the process environment.
+func getenv(environ []string, key string) string {
+	for _, entry := range environ {
+		if name, value, ok := strings.Cut(entry, "="); ok && name == key {
+			return value
+		}
+	}
+	return ""
 }

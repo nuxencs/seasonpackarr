@@ -5,20 +5,11 @@ package config
 
 import (
 	"fmt"
-	"path/filepath"
 	"testing"
-
-	"github.com/nuxencs/seasonpackarr/internal/domain"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// loadWithFile runs the public load against a config.yaml with contents.
-func loadWithFile(t *testing.T, contents string) (domain.Config, error) {
-	t.Helper()
-	return Load(filepath.Dir(writeTestConfig(t, contents)), "test")
-}
 
 const qbitClientConfig = `clients:
   default:
@@ -39,10 +30,7 @@ func TestLoad_RejectsEnvironmentValueThatDoesNotParse(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			clearConnectionEnvironment(t)
-			t.Setenv(tt.variable, tt.value)
-
-			_, err := loadWithFile(t, qbitClientConfig)
+			_, err := loadWithFile(t, qbitClientConfig, tt.variable+"="+tt.value)
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.variable)
@@ -52,16 +40,15 @@ func TestLoad_RejectsEnvironmentValueThatDoesNotParse(t *testing.T) {
 }
 
 func TestLoad_ParsesEnvironmentValueOfEachKind(t *testing.T) {
-	clearConnectionEnvironment(t)
-	t.Setenv("SEASONPACKARR__API_TOKEN", "token")
-	t.Setenv("SEASONPACKARR__SMART_MODE", "true")
-	t.Setenv("SEASONPACKARR__LOG_MAX_SIZE", "7")
-	t.Setenv("SEASONPACKARR__SMART_MODE_THRESHOLD", "0.5")
-	t.Setenv("SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_TAGS", " a , ,b ")
-	t.Setenv("SEASONPACKARR__SEARCH_INDEXER_IDS", "3, 4")
-	t.Setenv("SEASONPACKARR__CLIENTS_DEFAULT_PORT", "8080")
-
-	cfg, err := loadWithFile(t, qbitClientConfig)
+	cfg, err := loadWithFile(t, qbitClientConfig,
+		"SEASONPACKARR__API_TOKEN=token",
+		"SEASONPACKARR__SMART_MODE=true",
+		"SEASONPACKARR__LOG_MAX_SIZE=7",
+		"SEASONPACKARR__SMART_MODE_THRESHOLD=0.5",
+		"SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_TAGS= a , ,b ",
+		"SEASONPACKARR__SEARCH_INDEXER_IDS=3, 4",
+		"SEASONPACKARR__CLIENTS_DEFAULT_PORT=8080",
+	)
 
 	require.NoError(t, err)
 	assert.Equal(t, "token", cfg.APIToken)
@@ -82,10 +69,7 @@ func TestLoad_RejectsListEnvironmentWithoutEntries(t *testing.T) {
 	for variable, values := range tests {
 		for _, value := range values {
 			t.Run(fmt.Sprintf("%s=%q", variable, value), func(t *testing.T) {
-				clearConnectionEnvironment(t)
-				t.Setenv(variable, value)
-
-				_, err := loadWithFile(t, "notifications:\n  notificationLevel: [MATCH]\n  shoutrrr: [\"ntfy://ntfy.sh/topic\"]\n")
+				_, err := loadWithFile(t, "notifications:\n  notificationLevel: [MATCH]\n  shoutrrr: [\"ntfy://ntfy.sh/topic\"]\n", variable+"="+value)
 
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), variable)
@@ -95,12 +79,8 @@ func TestLoad_RejectsListEnvironmentWithoutEntries(t *testing.T) {
 }
 
 func TestLoad_IgnoresEmptyEnvironmentValue(t *testing.T) {
-	clearConnectionEnvironment(t)
-	for _, variable := range []string{"SEASONPACKARR__PORT", "SEASONPACKARR__SMART_MODE", "SEASONPACKARR__NOTIFICATIONS_NOTIFICATION_LEVEL", "SEASONPACKARR__NOTIFICATIONS_SHOUTRRR"} {
-		t.Setenv(variable, "")
-	}
-
-	cfg, err := loadWithFile(t, "port: 4242\nnotifications:\n  notificationLevel: [MATCH]\n  shoutrrr: [\"ntfy://ntfy.sh/topic\"]\n")
+	cfg, err := loadWithFile(t, "port: 4242\nnotifications:\n  notificationLevel: [MATCH]\n  shoutrrr: [\"ntfy://ntfy.sh/topic\"]\n",
+		"SEASONPACKARR__PORT=", "SEASONPACKARR__SMART_MODE=", "SEASONPACKARR__NOTIFICATIONS_NOTIFICATION_LEVEL=", "SEASONPACKARR__NOTIFICATIONS_SHOUTRRR=")
 
 	require.NoError(t, err)
 	assert.Equal(t, 4242, cfg.Port)
@@ -128,15 +108,15 @@ func TestLoad_RangeRules(t *testing.T) {
 	for _, tt := range tests {
 		for _, source := range []string{"file", "environment"} {
 			t.Run(fmt.Sprintf("%s=%s from the %s", tt.key, tt.value, source), func(t *testing.T) {
-				clearConnectionEnvironment(t)
 				contents := "clients: {}\n"
+				var environ []string
 				if source == "file" {
 					contents += fmt.Sprintf("%s: %s\n", tt.key, tt.value)
 				} else {
-					t.Setenv(tt.variable, tt.value)
+					environ = append(environ, tt.variable+"="+tt.value)
 				}
 
-				_, err := loadWithFile(t, contents)
+				_, err := loadWithFile(t, contents, environ...)
 
 				if tt.wantErr == "" {
 					assert.NoError(t, err)
@@ -160,15 +140,15 @@ func TestLoad_ClientPortRange(t *testing.T) {
 	} {
 		for _, source := range []string{"file", "environment"} {
 			t.Run(fmt.Sprintf("port=%s from the %s", tt.value, source), func(t *testing.T) {
-				clearConnectionEnvironment(t)
 				contents := qbitClientConfig + "    port: 8080\n"
+				var environ []string
 				if source == "file" {
 					contents = qbitClientConfig + "    port: " + tt.value + "\n"
 				} else {
-					t.Setenv("SEASONPACKARR__CLIENTS_DEFAULT_PORT", tt.value)
+					environ = append(environ, "SEASONPACKARR__CLIENTS_DEFAULT_PORT="+tt.value)
 				}
 
-				_, err := loadWithFile(t, contents)
+				_, err := loadWithFile(t, contents, environ...)
 
 				if tt.wantErr == "" {
 					assert.NoError(t, err)
@@ -183,15 +163,15 @@ func TestLoad_ClientPortRange(t *testing.T) {
 func TestLoad_LowercasesContentLayoutFromEachSource(t *testing.T) {
 	for _, source := range []string{"file", "environment"} {
 		t.Run(source, func(t *testing.T) {
-			clearConnectionEnvironment(t)
 			contents := qbitClientConfig
+			var environ []string
 			if source == "file" {
 				contents += "      contentLayout: NoSubfolder\n"
 			} else {
-				t.Setenv("SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_CONTENT_LAYOUT", "NoSubfolder")
+				environ = append(environ, "SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_CONTENT_LAYOUT=NoSubfolder")
 			}
 
-			cfg, err := loadWithFile(t, contents)
+			cfg, err := loadWithFile(t, contents, environ...)
 
 			require.NoError(t, err)
 			assert.Equal(t, "nosubfolder", cfg.Clients["default"].Import.ContentLayout)
@@ -200,21 +180,22 @@ func TestLoad_LowercasesContentLayoutFromEachSource(t *testing.T) {
 }
 
 func TestReload_RejectsBadValueAndKeepsLastSnapshot(t *testing.T) {
-	for name, bad := range map[string]func(t *testing.T, configFile string){
-		"file value out of range": func(t *testing.T, configFile string) {
-			writeConfigFile(t, configFile, "clients: {}\nport: 0\n")
-		},
-		"environment value does not parse": func(t *testing.T, configFile string) {
-			t.Setenv("SEASONPACKARR__SMART_MODE", "yes")
-			writeConfigFile(t, configFile, "clients: {}\nport: 4243\n")
+	for name, tt := range map[string]struct {
+		environ []string
+		bad     string
+	}{
+		"file value out of range": {bad: "clients: {}\nport: 0\n"},
+		// The holder applies its environment again, so a file change can make a valid environment value invalid.
+		"environment value invalid with the new file": {
+			environ: []string{"SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_CONTENT_LAYOUT=subfolder"},
+			bad:     "clients:\n  default:\n    type: transmission\nport: 4243\n",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			clearConnectionEnvironment(t)
-			cfg, configFile := newTestAppConfig(t, "clients: {}\nport: 4242\n")
+			cfg, configFile := newTestAppConfig(t, qbitClientConfig+"port: 4242\n", tt.environ...)
 			before := cfg.Snapshot()
 
-			bad(t, configFile)
+			writeConfigFile(t, configFile, tt.bad)
 			_, err := cfg.reload()
 
 			require.Error(t, err)

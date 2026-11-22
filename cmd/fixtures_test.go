@@ -25,6 +25,6 @@ func isolateCLI(t *testing.T) {
 func runCLI(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := execute(t.Context(), args, &stdout, &stderr)
+	code := execute(t.Context(), args, os.Environ(), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }

@@ -29,15 +29,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLoadSnapshot_MissingOptionalConfigKeysUseDefaults(t *testing.T) {
+func TestLoad_MissingOptionalConfigKeysUseDefaults(t *testing.T) {
 	configFile := writeTestConfig(t, `
 host: "127.0.0.1"
 port: 42069
 clients: {}
 logLevel: "INFO"
 `)
-	cfg := &AppConfig{configFile: configFile, version: "test"}
-	snapshot, err := cfg.loadSnapshot()
+	snapshot, err := loadFile(configFile)
 	require.NoError(t, err)
 
 	require.Equal(t, "INFO", snapshot.LogLevel)
@@ -55,7 +54,7 @@ logLevel: "INFO"
 	require.Equal(t, "", snapshot.Notifications.Discord)
 }
 
-func TestLoadSnapshot_RejectsUnknownKeys(t *testing.T) {
+func TestLoad_RejectsUnknownKeys(t *testing.T) {
 	configFile := writeTestConfig(t, `
 host: "127.0.0.1"
 logLevl: "INFO"
@@ -70,17 +69,16 @@ clients:
       savepath: "/data"
       tag: [seasonpackarr]
 `)
-	cfg := &AppConfig{configFile: configFile, version: "test"}
-	_, err := cfg.loadSnapshot()
+	_, err := loadFile(configFile)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown config keys: clients.default.hots, clients.default.import.tag, fuzzyMatching.skipRepackCompar, logLevl")
 	assert.Contains(t, err.Error(), configFile)
 }
 
-// TestLoadSnapshot_IgnoresUnknownClientEnvironmentVariables keeps the promise
+// TestLoad_IgnoresUnknownClientEnvironmentVariables keeps the promise
 // of the startup warning: an unknown client variable must not add a client,
 // because an empty client fails validation and stops startup.
-func TestLoadSnapshot_IgnoresUnknownClientEnvironmentVariables(t *testing.T) {
+func TestLoad_IgnoresUnknownClientEnvironmentVariables(t *testing.T) {
 	configFile := writeTestConfig(t, `
 clients:
   default:
@@ -88,26 +86,23 @@ clients:
     import:
       category: tv-hd
 `)
-	t.Setenv("SEASONPACKARR__CLIENTS_GHOST_IMPORT_SAVEPATH", "/data")
-	t.Setenv("SEASONPACKARR__CLIENTS__HOST", "qbit")
+	environ := []string{"SEASONPACKARR__CLIENTS_GHOST_IMPORT_SAVEPATH=/data", "SEASONPACKARR__CLIENTS__HOST=qbit"}
 	require.Equal(t, []string{"SEASONPACKARR__CLIENTS_GHOST_IMPORT_SAVEPATH", "SEASONPACKARR__CLIENTS__HOST"},
-		UnknownEnvironmentVariables(os.Environ()))
+		UnknownEnvironmentVariables(environ))
 
-	cfg := &AppConfig{configFile: configFile, version: "test"}
-	snapshot, err := cfg.loadSnapshot()
+	snapshot, err := loadFile(configFile, environ...)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"default"}, slices.Sorted(maps.Keys(snapshot.Clients)))
 }
 
-func TestLoadSnapshot_RejectsInternalFieldsAsKeys(t *testing.T) {
+func TestLoad_RejectsInternalFieldsAsKeys(t *testing.T) {
 	configFile := writeTestConfig(t, "clients: {}\nversion: v9\nconfigPath: /tmp\ndisableConfigFile: true\n")
-	cfg := &AppConfig{configFile: configFile, version: "test"}
-	_, err := cfg.loadSnapshot()
+	_, err := loadFile(configFile)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unknown config keys: configPath, disableConfigFile, version")
 }
 
-func TestLoadSnapshot_KeepsCaseInsensitiveKeyMatching(t *testing.T) {
+func TestLoad_KeepsCaseInsensitiveKeyMatching(t *testing.T) {
 	configFile := writeTestConfig(t, `
 LogLevel: "INFO"
 clients:
@@ -116,8 +111,7 @@ clients:
     Import:
       Category: tv-hd
 `)
-	cfg := &AppConfig{configFile: configFile, version: "test"}
-	snapshot, err := cfg.loadSnapshot()
+	snapshot, err := loadFile(configFile)
 	require.NoError(t, err)
 	assert.Equal(t, "INFO", snapshot.LogLevel)
 	assert.Equal(t, "test", snapshot.Version)
@@ -126,16 +120,16 @@ clients:
 	assert.Equal(t, "tv-hd", snapshot.Clients["default"].Import.Category)
 }
 
-// TestLoadSnapshot_ReadsKeyCaseVariants: a case variant once competed with the
+// TestLoad_ReadsKeyCaseVariants: a case variant once competed with the
 // default of the same key, and map order chose the winner. A lost apiToken
 // turns off the API authentication.
-func TestLoadSnapshot_ReadsKeyCaseVariants(t *testing.T) {
+func TestLoad_ReadsKeyCaseVariants(t *testing.T) {
 	for _, key := range []string{"apiToken", "apitoken", "APITOKEN", "APIToken"} {
 		t.Run(key, func(t *testing.T) {
 			configFile := writeTestConfig(t, "clients: {}\nNOTIFICATIONS:\n  DISCORD: hook\n"+key+": secret\n")
 			// One load proves nothing when map order decides the result.
 			for range 20 {
-				snapshot, err := (&AppConfig{configFile: configFile, version: "test"}).loadSnapshot()
+				snapshot, err := loadFile(configFile)
 				require.NoError(t, err)
 				require.Equal(t, "secret", snapshot.APIToken)
 				require.Equal(t, "hook", snapshot.Notifications.Discord)
@@ -144,7 +138,7 @@ func TestLoadSnapshot_ReadsKeyCaseVariants(t *testing.T) {
 	}
 }
 
-func TestLoadSnapshot_KeepsMigrationErrorsForRemovedKeys(t *testing.T) {
+func TestLoad_KeepsMigrationErrorsForRemovedKeys(t *testing.T) {
 	tests := []struct {
 		name, content, want string
 	}{
@@ -154,8 +148,7 @@ func TestLoadSnapshot_KeepsMigrationErrorsForRemovedKeys(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := &AppConfig{configFile: writeTestConfig(t, tt.content), version: "test"}
-			_, err := cfg.loadSnapshot()
+			_, err := loadWithFile(t, tt.content)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.want)
 			assert.NotContains(t, err.Error(), "unknown config keys")
@@ -180,22 +173,13 @@ func TestValidateDeprecatedConfigInputs(t *testing.T) {
 	})
 
 	t.Run("rejects parseTorrentFile env", func(t *testing.T) {
-		lookup := func(key string) (string, bool) {
-			if key == deprecatedParseTorrentFileEnv {
-				return "false", true
-			}
-			return "", false
-		}
-		err := validateDeprecatedConfigInputs(nil, lookup)
+		err := validateDeprecatedConfigInputs(nil, environment{deprecatedParseTorrentFileEnv + "=false"})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), deprecatedParseTorrentFileEnv)
 	})
 
 	t.Run("rejects empty parseTorrentFile env", func(t *testing.T) {
-		lookup := func(key string) (string, bool) {
-			return "", key == deprecatedParseTorrentFileEnv
-		}
-		err := validateDeprecatedConfigInputs(nil, lookup)
+		err := validateDeprecatedConfigInputs(nil, environment{deprecatedParseTorrentFileEnv + "="})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), deprecatedParseTorrentFileEnv)
 	})
@@ -209,15 +193,13 @@ func TestValidateDeprecatedConfigInputs(t *testing.T) {
 	})
 
 	t.Run("rejects preImportPath env", func(t *testing.T) {
-		t.Setenv("SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH", "/data/tv-hd")
-		err := validateDeprecatedConfigInputs(nil, os.LookupEnv)
+		err := validateDeprecatedConfigInputs(nil, environment{"SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH=/data/tv-hd"})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH")
 	})
 
 	t.Run("rejects empty preImportPath env", func(t *testing.T) {
-		t.Setenv("SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH", "")
-		err := validateDeprecatedConfigInputs(nil, os.LookupEnv)
+		err := validateDeprecatedConfigInputs(nil, environment{"SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH="})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH")
 	})
@@ -230,30 +212,21 @@ func TestValidateDeprecatedConfigInputs(t *testing.T) {
 	})
 
 	t.Run("rejects metadata env", func(t *testing.T) {
-		lookup := func(key string) (string, bool) {
-			if key == deprecatedMetadataTVDBAPIKeyEnv {
-				return "old-key", true
-			}
-			return "", false
-		}
-		err := validateDeprecatedConfigInputs(nil, lookup)
+		err := validateDeprecatedConfigInputs(nil, environment{deprecatedMetadataTVDBAPIKeyEnv + "=old-key"})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), deprecatedMetadataTVDBAPIKeyEnv)
 		require.Contains(t, err.Error(), "/api/match")
 	})
 
 	t.Run("rejects empty metadata env", func(t *testing.T) {
-		lookup := func(key string) (string, bool) {
-			return "", key == deprecatedMetadataTVDBPINEnv
-		}
-		err := validateDeprecatedConfigInputs(nil, lookup)
+		err := validateDeprecatedConfigInputs(nil, environment{deprecatedMetadataTVDBPINEnv + "="})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), deprecatedMetadataTVDBPINEnv)
 	})
 
 	t.Run("allows current config", func(t *testing.T) {
 		k := loadTestKoanf(t, "host: 0.0.0.0\nclients: {}\n")
-		err := validateDeprecatedConfigInputs(k, func(string) (string, bool) { return "", false })
+		err := validateDeprecatedConfigInputs(k, environment{"HOME=/home/user"})
 		require.NoError(t, err)
 	})
 }
@@ -262,17 +235,19 @@ func TestValidateDeprecatedConfigInputs(t *testing.T) {
 // like IMPORT_SAVE_PATH (multiple underscores) must survive, including for a
 // client that only exists in the environment.
 func TestLoadFromEnv_ParsesMultiWordClientSettings(t *testing.T) {
-	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_TYPE", "qbittorrent")
-	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_IMPORT_SAVE_PATH", "/data/tv-hd")
-	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_IMPORT_CATEGORY", "tv-hd")
-	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_IMPORT_TAGS", "a, b")
-	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_INVENTORY_INCLUDE_CATEGORIES", "tv-hd, tv-hd.cross-seed,")
-	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_INVENTORY_INCLUDE_TAGS", "keep")
-	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_INVENTORY_EXCLUDE_CATEGORIES", "tv-hd-4k")
-	t.Setenv("SEASONPACKARR__CLIENTS_ENVONLY_INVENTORY_EXCLUDE_TAGS", "noreuse, trash")
+	env := environment{
+		"SEASONPACKARR__CLIENTS_ENVONLY_TYPE=qbittorrent",
+		"SEASONPACKARR__CLIENTS_ENVONLY_IMPORT_SAVE_PATH=/data/tv-hd",
+		"SEASONPACKARR__CLIENTS_ENVONLY_IMPORT_CATEGORY=tv-hd",
+		"SEASONPACKARR__CLIENTS_ENVONLY_IMPORT_TAGS=a, b",
+		"SEASONPACKARR__CLIENTS_ENVONLY_INVENTORY_INCLUDE_CATEGORIES=tv-hd, tv-hd.cross-seed,",
+		"SEASONPACKARR__CLIENTS_ENVONLY_INVENTORY_INCLUDE_TAGS=keep",
+		"SEASONPACKARR__CLIENTS_ENVONLY_INVENTORY_EXCLUDE_CATEGORIES=tv-hd-4k",
+		"SEASONPACKARR__CLIENTS_ENVONLY_INVENTORY_EXCLUDE_TAGS=noreuse, trash",
+	}
 
 	cfg := domain.Config{Clients: map[string]*domain.Client{}}
-	require.NoError(t, applyEnvironment(&cfg))
+	require.NoError(t, applyEnvironment(&cfg, env))
 
 	client, ok := cfg.Clients["envonly"]
 	require.True(t, ok, "env-only client should be lazily created")
@@ -347,14 +322,13 @@ smartMod: true
 }
 
 func TestReload_ReappliesEnvironmentOverrides(t *testing.T) {
-	t.Setenv("SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_CATEGORY", "from-env")
 	cfg, configFile := newTestAppConfig(t, `
 clients:
   default:
     type: qbittorrent
     import:
       category: from-file-before
-`)
+`, "SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_CATEGORY=from-env")
 	require.Equal(t, "from-env", cfg.Snapshot().Clients["default"].Import.Category)
 
 	writeConfigFile(t, configFile, `
@@ -382,19 +356,22 @@ logMaxSize: 99
 	require.Equal(t, 50, cfg.Snapshot().LogMaxSize)
 }
 
-func TestResolveConfigFile_ReturnsDiscoveredFile(t *testing.T) {
+func TestNew_ReadsDiscoveredFileAndCreatesNone(t *testing.T) {
 	workingDir := t.TempDir()
 	homeDir := t.TempDir()
 	configFile := filepath.Join(homeDir, ".config", "seasonpackarr", "config.yaml")
 	require.NoError(t, os.MkdirAll(filepath.Dir(configFile), 0o755))
-	writeConfigFile(t, configFile, "clients: {}\n")
+	writeConfigFile(t, configFile, "clients: {}\nport: 4242\n")
 	t.Chdir(workingDir)
-	t.Setenv("HOME", homeDir)
 
-	cfg := &AppConfig{}
-	got, err := cfg.resolveConfigFile("")
+	cfg, err := New(Input{Environ: []string{"HOME=" + homeDir}, Version: "test"})
+
 	require.NoError(t, err)
-	require.Equal(t, configFile, got)
+	assert.Equal(t, filepath.Dir(configFile), cfg.Snapshot().ConfigPath)
+	assert.Equal(t, 4242, cfg.Snapshot().Port)
+	entries, err := os.ReadDir(workingDir)
+	require.NoError(t, err)
+	assert.Empty(t, entries)
 }
 
 func TestSnapshot_CannotMutateStoredConfig(t *testing.T) {
@@ -703,11 +680,10 @@ clients:
 	nextSymlink := configFile + ".next"
 	require.NoError(t, os.Symlink(secondTarget, nextSymlink))
 
-	cfg := &AppConfig{configFile: configFile, version: "test"}
-	snapshot, err := cfg.loadSnapshot()
+	cfg, err := New(Input{ConfigDir: configDir, Version: "test"})
 	require.NoError(t, err)
-	cfg.current.Store(snapshot)
-	reloads, err := cfg.DynamicReload(logger.New(snapshot))
+	snapshot := cfg.Snapshot()
+	reloads, err := cfg.DynamicReload(logger.New(&snapshot))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NotNil(t, cfg.watcher)
@@ -990,17 +966,17 @@ func TestUnknownConfigKeys_YAMLTagsMatchFieldNames(t *testing.T) {
 func TestFindConfigFile_ImageWorkingDirectoryIsConfigVolume(t *testing.T) {
 	t.Run("discovery checks the working directory first", func(t *testing.T) {
 		home := t.TempDir()
-		t.Setenv("HOME", home)
 		homeConfig := filepath.Join(home, ".config", "seasonpackarr", "config.yaml")
 		require.NoError(t, os.MkdirAll(filepath.Dir(homeConfig), 0o755))
-		writeConfigFile(t, homeConfig, "clients: {}\n")
+		writeConfigFile(t, homeConfig, "clients: {}\nport: 1111\n")
 		workingDir := t.TempDir()
-		writeConfigFile(t, filepath.Join(workingDir, "config.yaml"), "clients: {}\n")
+		writeConfigFile(t, filepath.Join(workingDir, "config.yaml"), "clients: {}\nport: 2222\n")
 		t.Chdir(workingDir)
 
-		configFile, err := findConfigFile()
+		cfg, err := Load(Input{Environ: []string{"HOME=" + home}, Version: "test"})
 		require.NoError(t, err)
-		assert.Equal(t, "./config.yaml", configFile)
+		assert.Equal(t, 2222, cfg.Port)
+		assert.Equal(t, ".", cfg.ConfigPath)
 	})
 	for _, dockerfile := range []string{"Dockerfile", "ci.Dockerfile"} {
 		t.Run(dockerfile, func(t *testing.T) {
@@ -1014,9 +990,18 @@ func TestFindConfigFile_ImageWorkingDirectoryIsConfigVolume(t *testing.T) {
 	}
 }
 
+// newGeneratedConfigDir returns a directory with the config.yaml that start creates. The environment gives
+// the default client of that file an import category, because the file alone does not pass the validation.
+func newGeneratedConfigDir(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "config")
+	_, err := New(Input{ConfigDir: dir, Environ: []string{"SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_CATEGORY=tv"}, Version: "test", CreateFile: true})
+	require.NoError(t, err)
+	return dir
+}
+
 func TestWriteConfig_WritesRepositoryConfigFile(t *testing.T) {
-	dir := t.TempDir()
-	require.NoError(t, (&AppConfig{}).writeConfig(dir, "config.yaml"))
+	dir := newGeneratedConfigDir(t)
 
 	want, err := os.ReadFile("../../config.yaml")
 	require.NoError(t, err)
@@ -1026,8 +1011,7 @@ func TestWriteConfig_WritesRepositoryConfigFile(t *testing.T) {
 }
 
 func TestUnknownConfigKeys_AcceptsConfigExamples(t *testing.T) {
-	generatedDir := t.TempDir()
-	require.NoError(t, (&AppConfig{}).writeConfig(generatedDir, "config.yaml"))
+	generatedDir := newGeneratedConfigDir(t)
 
 	for name, configFile := range map[string]string{
 		"generated config": filepath.Join(generatedDir, "config.yaml"),
@@ -1133,7 +1117,7 @@ func serviceConfigDefaults() map[string]any {
 			}
 		}
 	}
-	walk(reflect.ValueOf(defaultConfig("test", "", false)), "")
+	walk(reflect.ValueOf(defaultConfig("test", "")), "")
 	return defaults
 }
 
@@ -1178,9 +1162,7 @@ func TestConfigSchema_RequiresNoOptionalKey(t *testing.T) {
 		"empty file":          "",
 		"client without host": "clients:\n  default:\n    import:\n      category: tv\n",
 	} {
-		configDir := t.TempDir()
-		writeConfigFile(t, filepath.Join(configDir, "config.yaml"), contents)
-		_, err := Load(configDir, "test")
+		_, err := loadWithFile(t, contents)
 		assert.NoError(t, err, name)
 	}
 
@@ -1247,7 +1229,6 @@ func TestConfigSchema_AcceptsWhatTheLoadAccepts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%s=%s", tt.key, tt.yaml), func(t *testing.T) {
-			clearConnectionEnvironment(t)
 			contents := "clients:\n  default:\n    import:\n      category: tv\n"
 			if field, ok := strings.CutPrefix(tt.key, "clients.*.import."); ok {
 				contents += fmt.Sprintf("      %s: %s\n", field, tt.yaml)
@@ -1265,7 +1246,7 @@ func TestConfigSchema_AcceptsWhatTheLoadAccepts(t *testing.T) {
 	}
 }
 
-func TestLoadSnapshot_RejectsInvalidShoutrrrURL(t *testing.T) {
+func TestLoad_RejectsInvalidShoutrrrURL(t *testing.T) {
 	tests := []struct {
 		name, url, destination, secret string
 	}{
@@ -1288,7 +1269,7 @@ notifications:
     - %q
 `, tt.url))
 
-			_, err := (&AppConfig{configFile: configFile, version: "test"}).loadSnapshot()
+			_, err := loadFile(configFile)
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "notifications.shoutrrr[1] "+tt.destination)
@@ -1316,14 +1297,13 @@ notifications:
 	require.Equal(t, before, cfg.Snapshot())
 }
 
-func TestLoadSnapshot_SplitsShoutrrrEnvironmentOnWhitespace(t *testing.T) {
-	t.Setenv("SEASONPACKARR__NOTIFICATIONS_SHOUTRRR", " ntfy://ntfy.sh/first\ttelegram://123:abc@telegram?chats=1,2  ")
+func TestLoad_SplitsShoutrrrEnvironmentOnWhitespace(t *testing.T) {
 	configFile := writeTestConfig(t, `
 notifications:
   shoutrrr: ["ntfy://ntfy.sh/from-file"]
 `)
 
-	snapshot, err := (&AppConfig{configFile: configFile, version: "test"}).loadSnapshot()
+	snapshot, err := loadFile(configFile, "SEASONPACKARR__NOTIFICATIONS_SHOUTRRR= ntfy://ntfy.sh/first\ttelegram://123:abc@telegram?chats=1,2  ")
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{"ntfy://ntfy.sh/first", "telegram://123:abc@telegram?chats=1,2"}, snapshot.Notifications.Shoutrrr)
@@ -1440,12 +1420,11 @@ func TestDynamicReload_WarnsWhenInventoryScopeMissesImport(t *testing.T) {
 	require.NotContains(t, log.String(), "config reload rejected")
 }
 
-// TestLoadSnapshot_RejectsInventoryEnvironmentWithoutEntries: a blank value
+// TestLoad_RejectsInventoryEnvironmentWithoutEntries: a blank value
 // would replace the scope of config.yaml with an empty list, which reads every torrent.
-func TestLoadSnapshot_RejectsInventoryEnvironmentWithoutEntries(t *testing.T) {
+func TestLoad_RejectsInventoryEnvironmentWithoutEntries(t *testing.T) {
 	for _, value := range []string{" ", ",", " , "} {
 		t.Run(fmt.Sprintf("%q", value), func(t *testing.T) {
-			t.Setenv("SEASONPACKARR__CLIENTS_DEFAULT_INVENTORY_EXCLUDE_CATEGORIES", value)
 			configFile := writeTestConfig(t, `
 clients:
   default:
@@ -1456,7 +1435,7 @@ clients:
       excludeCategories: [movies]
 `)
 
-			_, err := (&AppConfig{configFile: configFile, version: "test"}).loadSnapshot()
+			_, err := loadFile(configFile, "SEASONPACKARR__CLIENTS_DEFAULT_INVENTORY_EXCLUDE_CATEGORIES="+value)
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "SEASONPACKARR__CLIENTS_DEFAULT_INVENTORY_EXCLUDE_CATEGORIES")

@@ -29,45 +29,52 @@ func TestSearchConfig_IntervalLimits(t *testing.T) {
 		{name: "below spacing minimum", interval: "10m", spacing: "9.999999999s", wantErr: "search.requestInterval must be at least 10s"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			for _, source := range []string{"file", "environment"} {
-				t.Run(source, func(t *testing.T) {
-					cfg, file := newTestAppConfig(t, connection)
-					before := cfg.Snapshot()
-					if source == "environment" {
-						t.Setenv("SEASONPACKARR__SEARCH_RSS_INTERVAL", tt.interval)
-						t.Setenv("SEASONPACKARR__SEARCH_REQUEST_INTERVAL", tt.spacing)
-					} else {
-						writeConfigFile(t, file, connection+fmt.Sprintf("  rssInterval: %s\n  requestInterval: %s\n", tt.interval, tt.spacing))
-					}
-					_, loadErr := cfg.loadSnapshot()
-					next, reloadErr := cfg.reload()
-					if tt.wantErr != "" {
-						require.ErrorContains(t, loadErr, tt.wantErr)
-						require.ErrorContains(t, reloadErr, tt.wantErr)
-						require.Equal(t, before, cfg.Snapshot(), "invalid reload must preserve active config")
-						return
-					}
-					require.NoError(t, loadErr)
-					require.NoError(t, reloadErr)
-					require.Equal(t, tt.interval, next.Search.RSSInterval)
-					require.Equal(t, tt.spacing, next.Search.RequestInterval)
-				})
-			}
+			t.Run("environment", func(t *testing.T) {
+				cfg, err := loadWithFile(t, connection,
+					"SEASONPACKARR__SEARCH_RSS_INTERVAL="+tt.interval, "SEASONPACKARR__SEARCH_REQUEST_INTERVAL="+tt.spacing)
+				if tt.wantErr != "" {
+					require.ErrorContains(t, err, tt.wantErr)
+					return
+				}
+				require.NoError(t, err)
+				require.Equal(t, tt.interval, cfg.Search.RSSInterval)
+				require.Equal(t, tt.spacing, cfg.Search.RequestInterval)
+			})
+			t.Run("file", func(t *testing.T) {
+				cfg, file := newTestAppConfig(t, connection)
+				before := cfg.Snapshot()
+				writeConfigFile(t, file, connection+fmt.Sprintf("  rssInterval: %s\n  requestInterval: %s\n", tt.interval, tt.spacing))
+				_, loadErr := loadFile(file)
+				next, reloadErr := cfg.reload()
+				if tt.wantErr != "" {
+					require.ErrorContains(t, loadErr, tt.wantErr)
+					require.ErrorContains(t, reloadErr, tt.wantErr)
+					require.Equal(t, before, cfg.Snapshot(), "invalid reload must preserve active config")
+					return
+				}
+				require.NoError(t, loadErr)
+				require.NoError(t, reloadErr)
+				require.Equal(t, tt.interval, next.Search.RSSInterval)
+				require.Equal(t, tt.spacing, next.Search.RequestInterval)
+			})
 		})
 	}
 }
 
 func TestSearchConfig_DefaultsEnvironmentAndReload(t *testing.T) {
-	cfg, file := newTestAppConfig(t, "clients: {}\n")
-	require.Equal(t, "0s", cfg.Snapshot().Search.RSSInterval)
-	require.Equal(t, "10s", cfg.Snapshot().Search.RequestInterval)
-	t.Setenv("SEASONPACKARR__SEARCH_PROWLARR_URL", "http://prowlarr:9696")
-	t.Setenv("SEASONPACKARR__SEARCH_API_KEY", "key")
-	t.Setenv("SEASONPACKARR__SEARCH_RSS_INTERVAL", "12h")
-	t.Setenv("SEASONPACKARR__SEARCH_INDEXER_IDS", "2, 5")
-	t.Setenv("SEASONPACKARR__SEARCH_REQUEST_INTERVAL", "30s")
-	next, err := cfg.reload()
+	defaults, err := loadWithFile(t, "clients: {}\n")
 	require.NoError(t, err)
+	require.Equal(t, "0s", defaults.Search.RSSInterval)
+	require.Equal(t, "10s", defaults.Search.RequestInterval)
+
+	cfg, file := newTestAppConfig(t, "clients: {}\n",
+		"SEASONPACKARR__SEARCH_PROWLARR_URL=http://prowlarr:9696",
+		"SEASONPACKARR__SEARCH_API_KEY=key",
+		"SEASONPACKARR__SEARCH_RSS_INTERVAL=12h",
+		"SEASONPACKARR__SEARCH_INDEXER_IDS=2, 5",
+		"SEASONPACKARR__SEARCH_REQUEST_INTERVAL=30s",
+	)
+	next := cfg.Snapshot()
 	require.Equal(t, "http://prowlarr:9696", next.Search.ProwlarrURL)
 	require.Equal(t, "12h", next.Search.RSSInterval)
 	require.Equal(t, "30s", next.Search.RequestInterval)
@@ -75,8 +82,14 @@ func TestSearchConfig_DefaultsEnvironmentAndReload(t *testing.T) {
 	isolated := cfg.Snapshot()
 	isolated.Search.IndexerIDs[0] = 99
 	require.Equal(t, []int{2, 5}, cfg.Snapshot().Search.IndexerIDs)
-	t.Setenv("SEASONPACKARR__SEARCH_RSS_INTERVAL", "bad")
+
+	// The reload applies the environment of New again, so it overrides the file.
 	writeConfigFile(t, file, "clients: {}\nsearch:\n  rssInterval: 1h\n")
+	_, err = cfg.reload()
+	require.NoError(t, err)
+	require.Equal(t, "12h", cfg.Snapshot().Search.RSSInterval)
+
+	writeConfigFile(t, file, "clients: {}\nport: 0\n")
 	_, err = cfg.reload()
 	require.Error(t, err)
 	require.Equal(t, "12h", cfg.Snapshot().Search.RSSInterval)
@@ -89,8 +102,7 @@ func TestSearchConfig_RejectsInvalidSettings(t *testing.T) {
 		"prowlarrURL: http://user:secret@prowlarr", "prowlarrURL: file:///tmp/prowlarr", "rssInterval: 1h",
 	} {
 		t.Run(search, func(t *testing.T) {
-			cfg := &AppConfig{configFile: writeTestConfig(t, "clients: {}\nsearch:\n  "+search+"\n")}
-			_, err := cfg.loadSnapshot()
+			_, err := loadWithFile(t, "clients: {}\nsearch:\n  "+search+"\n")
 			require.Error(t, err)
 			require.NotContains(t, err.Error(), "secret")
 		})
@@ -107,9 +119,7 @@ func TestSearchConfig_InvalidIndexerEnvironmentDoesNotBroadenSelection(t *testin
 		"-1":                          "search.indexerIDs",
 	} {
 		t.Run(value, func(t *testing.T) {
-			t.Setenv("SEASONPACKARR__SEARCH_INDEXER_IDS", value)
-			cfg := &AppConfig{configFile: writeTestConfig(t, "clients: {}\n")}
-			_, err := cfg.loadSnapshot()
+			_, err := loadWithFile(t, "clients: {}\n", "SEASONPACKARR__SEARCH_INDEXER_IDS="+value)
 			require.ErrorContains(t, err, want)
 		})
 	}

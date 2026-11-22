@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 
@@ -17,6 +16,8 @@ import (
 )
 
 type connectionOptions struct {
+	// environ is the environment in os.Environ form.
+	environ                             []string
 	configDir, url, host, token, client string
 	port                                int
 	json                                bool
@@ -36,7 +37,7 @@ func (o *connectionOptions) addFlags(cmd *cobra.Command) {
 }
 
 func (o *connectionOptions) resolve(cmd *cobra.Command, allClients bool) (*apiClient, string, error) {
-	settings, err := config.ReadConnectionSettings(o.configDir)
+	settings, err := config.ReadConnectionSettings(config.Input{ConfigDir: o.configDir, Environ: o.environ})
 	if err != nil {
 		return nil, "", err
 	}
@@ -44,7 +45,7 @@ func (o *connectionOptions) resolve(cmd *cobra.Command, allClients bool) (*apiCl
 	if cmd.Flags().Changed("api") {
 		token = o.token
 	}
-	baseURL := os.Getenv("SEASONPACKARR__URL")
+	baseURL := getenv(o.environ, "SEASONPACKARR__URL")
 	if cmd.Flags().Changed("url") {
 		baseURL = o.url
 		if baseURL == "" {
@@ -80,7 +81,7 @@ func (o *connectionOptions) resolve(cmd *cobra.Command, allClients bool) (*apiCl
 	if err != nil {
 		return nil, "", err
 	}
-	client := os.Getenv("SEASONPACKARR__CLIENT")
+	client := getenv(o.environ, "SEASONPACKARR__CLIENT")
 	if cmd.Flags().Changed("client") {
 		client = o.client
 	}

@@ -349,17 +349,17 @@ notifications:
   shoutrrr: []
 `
 
-func (c *AppConfig) writeConfig(configPath string, configFile string) (err error) {
-	if err := os.MkdirAll(configPath, os.ModePerm); err != nil {
+// writeConfig creates configFile with the content of config.yaml. It keeps an existing file.
+func writeConfig(configFile string) (err error) {
+	if err := os.MkdirAll(filepath.Dir(configFile), os.ModePerm); err != nil {
 		return err
 	}
 
-	// Keep an existing config. The load reports a file that it cannot read.
-	cfgPath := filepath.Join(configPath, configFile)
-	if _, err := os.Stat(cfgPath); !errors.Is(err, fs.ErrNotExist) {
+	// The load reports a file that it cannot read.
+	if _, err := os.Stat(configFile); !errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
-	f, err := os.Create(cfgPath) // perm 0666
+	f, err := os.Create(configFile) // perm 0666
 	if err != nil {
 		return err
 	}
@@ -376,41 +376,61 @@ type Provider interface {
 	Snapshot() domain.Config
 }
 
+// AppConfig holds the current snapshot. Each reload reads the same source, with the environment that New received.
 type AppConfig struct {
-	current           atomic.Pointer[domain.Config]
-	configFile        string
-	version           string
-	disableConfigFile bool
-	watcher           *fsnotify.Watcher
+	current atomic.Pointer[domain.Config]
+	source  source
+	version string
+	watcher *fsnotify.Watcher
 }
 
 // New loads the config as Load does and returns a holder that can reload it.
-// When configPath is not empty, New creates a missing config.yaml in it.
-func New(configPath string, version string) (*AppConfig, error) {
-	if err := checkLegacyConfigFile(configPath); err != nil {
-		return nil, err
+// With in.CreateFile, New first creates a missing config.yaml in in.ConfigDir.
+func New(in Input) (*AppConfig, error) {
+	if in.CreateFile && in.ConfigDir == "" {
+		return nil, errors.New("config: CreateFile needs a ConfigDir")
 	}
-
-	c := &AppConfig{
-		version:           version,
-		disableConfigFile: os.Getenv("SEASONPACKARR__DISABLE_CONFIG_FILE") == "true",
-	}
-
-	if !c.disableConfigFile {
-		configFile, err := c.resolveConfigFile(configPath)
-		if err != nil {
-			return nil, err
-		}
-		c.configFile = configFile
-	}
-
-	snapshot, err := c.loadSnapshot()
+	src, snapshot, err := fullLoad(in)
 	if err != nil {
 		return nil, err
 	}
+	c := &AppConfig{source: src, version: in.Version}
 	c.current.Store(snapshot)
-
 	return c, nil
+}
+
+// Load reads and validates the config as the service does at startup, from the
+// config file and the environment of in. It creates no file and starts no watcher.
+func Load(in Input) (domain.Config, error) {
+	if in.CreateFile {
+		return domain.Config{}, errCreateFileOnlyNew
+	}
+	_, snapshot, err := fullLoad(in)
+	if err != nil {
+		return domain.Config{}, err
+	}
+	return *snapshot, nil
+}
+
+// fullLoad is the one full load of Load and New. ReadConnectionSettings shares only newSource with it.
+func fullLoad(in Input) (source, *domain.Config, error) {
+	if err := checkLegacyConfigFile(in.ConfigDir); err != nil {
+		return source{}, nil, err
+	}
+	src, err := newSource(in)
+	if err != nil {
+		return source{}, nil, err
+	}
+	if in.CreateFile && !src.disabled {
+		if err := writeConfig(src.configFile); err != nil {
+			return source{}, nil, fmt.Errorf("writing config file: %w", err)
+		}
+	}
+	snapshot, err := src.load(in.Version)
+	if err != nil {
+		return source{}, nil, err
+	}
+	return src, snapshot, nil
 }
 
 // checkLegacyConfigFile rejects a config.toml in configDir, which v0.x read.
@@ -422,36 +442,6 @@ func checkLegacyConfigFile(configDir string) error {
 		"To continue, please migrate your configuration to the new 'config.yaml' format. " +
 		"You can easily do this by copying the settings from 'config.toml' to 'config.yaml' and then renaming 'config.toml' to 'config.toml.old'. " +
 		"The only difference between the old and the new config is, that the qbit client info is now stored in an array to allow for multiple clients to be configured.")
-}
-
-// Load reads and validates the config as the service does at startup, from the
-// config file and the environment variables. It creates no file and starts no
-// watcher. configDir selects the directory of config.yaml. When it is empty,
-// Load searches the default locations.
-func Load(configDir, version string) (domain.Config, error) {
-	if err := checkLegacyConfigFile(configDir); err != nil {
-		return domain.Config{}, err
-	}
-	c := &AppConfig{
-		version:           version,
-		disableConfigFile: os.Getenv("SEASONPACKARR__DISABLE_CONFIG_FILE") == "true",
-	}
-	switch {
-	case c.disableConfigFile:
-	case configDir != "":
-		c.configFile = filepath.Join(filepath.Clean(configDir), "config.yaml")
-	default:
-		configFile, err := findConfigFile()
-		if err != nil {
-			return domain.Config{}, err
-		}
-		c.configFile = configFile
-	}
-	snapshot, err := c.loadSnapshot()
-	if err != nil {
-		return domain.Config{}, err
-	}
-	return *snapshot, nil
 }
 
 const (
@@ -469,17 +459,15 @@ const (
 // getting the old behavior. parseTorrentFile and preImportPath were removed:
 // torrent parsing is always on and the import destination now comes from the
 // per-client import policy.
-func validateDeprecatedConfigInputs(k *koanf.Koanf, lookupEnv func(string) (string, bool)) error {
+func validateDeprecatedConfigInputs(k *koanf.Koanf, env environment) error {
 	if k != nil && k.Exists(deprecatedParseTorrentFileKey) {
 		return fmt.Errorf("deprecated config detected: %s was removed; torrent parsing is always enabled now - remove the key, add the new per-client import section (see the example config / README) and update your autobrr filter to use a single Webhook action",
 			deprecatedParseTorrentFileKey)
 	}
 
-	if lookupEnv != nil {
-		if _, ok := lookupEnv(deprecatedParseTorrentFileEnv); ok {
-			return fmt.Errorf("deprecated environment variable detected: %s was removed; torrent parsing is always enabled now - remove this env var, add the new per-client import section (see the example config / README) and update your autobrr filter to use a single Webhook action",
-				deprecatedParseTorrentFileEnv)
-		}
+	if _, ok := env.lookup(deprecatedParseTorrentFileEnv); ok {
+		return fmt.Errorf("deprecated environment variable detected: %s was removed; torrent parsing is always enabled now - remove this env var, add the new per-client import section (see the example config / README) and update your autobrr filter to use a single Webhook action",
+			deprecatedParseTorrentFileEnv)
 	}
 
 	if k != nil && k.Exists(deprecatedMetadataKey) {
@@ -487,12 +475,10 @@ func validateDeprecatedConfigInputs(k *koanf.Koanf, lookupEnv func(string) (stri
 			deprecatedMetadataKey)
 	}
 
-	if lookupEnv != nil {
-		for _, envKey := range []string{deprecatedMetadataTVDBAPIKeyEnv, deprecatedMetadataTVDBPINEnv} {
-			if _, ok := lookupEnv(envKey); ok {
-				return fmt.Errorf("deprecated environment variable detected: %s was removed; smart mode now uses the actual torrent sent to /api/match - remove this variable and update the autobrr external filters as described in the README",
-					envKey)
-			}
+	for _, envKey := range []string{deprecatedMetadataTVDBAPIKeyEnv, deprecatedMetadataTVDBPINEnv} {
+		if _, ok := env.lookup(envKey); ok {
+			return fmt.Errorf("deprecated environment variable detected: %s was removed; smart mode now uses the actual torrent sent to /api/match - remove this variable and update the autobrr external filters as described in the README",
+				envKey)
 		}
 	}
 
@@ -506,16 +492,14 @@ func validateDeprecatedConfigInputs(k *koanf.Koanf, lookupEnv func(string) (stri
 		}
 	}
 
-	if lookupEnv != nil {
-		for _, env := range os.Environ() {
-			envKey, _, ok := strings.Cut(env, "=")
-			if !ok {
-				continue
-			}
-			if strings.HasPrefix(envKey, "SEASONPACKARR__CLIENTS_") && strings.HasSuffix(envKey, "_"+deprecatedPreImportPathEnv) {
-				return fmt.Errorf("deprecated environment variable detected: %s was removed; use the import save path/category environment variables instead",
-					envKey)
-			}
+	for _, entry := range env {
+		envKey, _, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		if strings.HasPrefix(envKey, "SEASONPACKARR__CLIENTS_") && strings.HasSuffix(envKey, "_"+deprecatedPreImportPathEnv) {
+			return fmt.Errorf("deprecated environment variable detected: %s was removed; use the import save path/category environment variables instead",
+				envKey)
 		}
 	}
 
@@ -636,79 +620,48 @@ func validDelugeLabel(label string) bool {
 }
 
 // defaultConfig copies the declared defaults and adds the runtime fields and an empty client map.
-func defaultConfig(version, configFile string, disableConfigFile bool) domain.Config {
+func defaultConfig(version, configFile string) domain.Config {
 	cfg := configDefaults.Clone()
 	cfg.Version = version
 	if configFile != "" {
 		cfg.ConfigPath = filepath.Dir(configFile)
 	}
-	cfg.DisableConfigFile = disableConfigFile
 	return cfg
 }
 
-func (c *AppConfig) resolveConfigFile(configPath string) (string, error) {
-	if configPath != "" {
-		configPath = filepath.Clean(configPath)
-		if err := c.writeConfig(configPath, "config.yaml"); err != nil {
-			return "", fmt.Errorf("writing config file: %w", err)
-		}
-		return filepath.Join(configPath, "config.yaml"), nil
-	}
-	return findConfigFile()
-}
-
-func findConfigFile() (string, error) {
-	locations := []string{
-		"./config.yaml",
-		"$HOME/.config/seasonpackarr/config.yaml",
-		"$HOME/.seasonpackarr/config.yaml",
-	}
-	for _, location := range locations {
-		configFile := os.ExpandEnv(location)
-		info, err := os.Stat(configFile)
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return "", err
-		}
-		if err == nil && !info.IsDir() {
-			return configFile, nil
-		}
-	}
-
-	return "", fmt.Errorf("could not find config file: %w", fs.ErrNotExist)
-}
-
-func (c *AppConfig) loadSnapshot() (*domain.Config, error) {
-	cfg := defaultConfig(c.version, c.configFile, c.disableConfigFile)
+// load reads the config file and the environment of s into a validated snapshot. A reload calls it again with the same source.
+func (s source) load(version string) (*domain.Config, error) {
+	cfg := defaultConfig(version, s.configFile)
 
 	// The defaults live only in cfg. As keys next to the file keys, a default and a
 	// case variant from the file would both match one field, and map order would pick.
 	fileK := koanf.New(".")
-	if !c.disableConfigFile {
-		if err := fileK.Load(file.Provider(c.configFile), yaml.Parser()); err != nil {
-			return nil, fmt.Errorf("reading config file %s: %w", c.configFile, err)
+	if !s.disabled {
+		if err := fileK.Load(file.Provider(s.configFile), yaml.Parser()); err != nil {
+			return nil, fmt.Errorf("reading config file %s: %w", s.configFile, err)
 		}
 	}
-	if err := validateDeprecatedConfigInputs(fileK, os.LookupEnv); err != nil {
-		return nil, fmt.Errorf("validating config file %s: %w", c.configFile, err)
+	if err := validateDeprecatedConfigInputs(fileK, s.env); err != nil {
+		return nil, fmt.Errorf("validating config file %s: %w", s.configFile, err)
 	}
 	if err := fileK.Unmarshal("", &cfg); err != nil {
-		return nil, fmt.Errorf("decoding config file %s: %w", c.configFile, err)
+		return nil, fmt.Errorf("decoding config file %s: %w", s.configFile, err)
 	}
 	unknown, err := unknownConfigKeys(fileK)
 	if err != nil {
-		return nil, fmt.Errorf("checking config keys in %s: %w", c.configFile, err)
+		return nil, fmt.Errorf("checking config keys in %s: %w", s.configFile, err)
 	}
 	if len(unknown) > 0 {
 		return nil, fmt.Errorf("validating config file %s: unknown config keys: %s; remove or rename them (see the configuration guide)",
-			c.configFile, strings.Join(unknown, ", "))
+			s.configFile, strings.Join(unknown, ", "))
 	}
 
-	if err := applyEnvironment(&cfg); err != nil {
+	if err := applyEnvironment(&cfg, s.env); err != nil {
 		return nil, err
 	}
 	normalizeConfig(&cfg)
 	if err := validateConfig(cfg); err != nil {
-		return nil, fmt.Errorf("validating config file %s: %w", c.configFile, err)
+		return nil, fmt.Errorf("validating config file %s: %w", s.configFile, err)
 	}
 
 	snapshot := cfg.Clone()
@@ -800,17 +753,20 @@ func (c *AppConfig) Snapshot() domain.Config {
 }
 
 func (c *AppConfig) reload() (*domain.Config, error) {
-	if !c.disableConfigFile {
-		contents, err := os.ReadFile(c.configFile)
+	configFile := c.source.configFile
+	if !c.source.disabled {
+		contents, err := os.ReadFile(configFile)
 		if err != nil {
-			return nil, fmt.Errorf("reading config file %s: %w", c.configFile, err)
+			return nil, fmt.Errorf("reading config file %s: %w", configFile, err)
 		}
+		// A start accepts an empty file as all defaults, because no previous snapshot exists. On a reload, an
+		// empty file is almost always a write in progress, and the previous snapshot is the config to keep.
 		if len(bytes.TrimSpace(contents)) == 0 {
-			return nil, fmt.Errorf("config file %s is empty", c.configFile)
+			return nil, fmt.Errorf("config file %s is empty", configFile)
 		}
 	}
 
-	snapshot, err := c.loadSnapshot()
+	snapshot, err := c.source.load(c.version)
 	if err != nil {
 		return nil, err
 	}
@@ -821,7 +777,7 @@ func (c *AppConfig) reload() (*domain.Config, error) {
 const configReloadDebounceDelay = 100 * time.Millisecond
 
 func (c *AppConfig) watchConfigFile(log logger.Logger, onChange func()) error {
-	watchedPath := filepath.Clean(c.configFile)
+	watchedPath := filepath.Clean(c.source.configFile)
 	realPath, err := filepath.EvalSymlinks(watchedPath)
 	if err != nil {
 		return err
@@ -880,7 +836,7 @@ func (c *AppConfig) watchConfigFile(log logger.Logger, onChange func()) error {
 }
 
 func (c *AppConfig) DynamicReload(log logger.Logger) (<-chan struct{}, error) {
-	if c.disableConfigFile {
+	if c.source.disabled {
 		return nil, nil
 	}
 
@@ -930,7 +886,7 @@ func (c *AppConfig) DynamicReload(log logger.Logger) (<-chan struct{}, error) {
 		scheduleReload()
 	})
 	if err != nil {
-		return nil, fmt.Errorf("watching config file %s: %w", c.configFile, err)
+		return nil, fmt.Errorf("watching config file %s: %w", c.source.configFile, err)
 	}
 	return reloaded, nil
 }
