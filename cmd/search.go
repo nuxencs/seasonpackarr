@@ -24,7 +24,7 @@ func newSearchCommand(environ []string) *cobra.Command {
 		Long: `Find season packs through the running service's Prowlarr connection.
 
 By default, search creates hardlinks and imports accepted packs for all clients.
-Use --dry-run to check release names without downloading torrent metadata.
+Use --dry-run to check release names without downloading torrents.
 Add --verify to a dry run to check exact reuse without importing.
 
 Reads connection settings from config and environment. Use --client to select
@@ -81,8 +81,8 @@ one client. Search stays connected until it finishes; Ctrl+C cancels the run.`,
 		},
 	}
 	options.addFlags(cmd)
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview candidates without downloading torrent metadata or importing")
-	cmd.Flags().BoolVar(&verify, "verify", false, "with --dry-run, retrieve torrent metadata and check exact reuse")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview candidates without downloading torrents or importing")
+	cmd.Flags().BoolVar(&verify, "verify", false, "with --dry-run, download the torrents and check exact reuse")
 	return cmd
 }
 

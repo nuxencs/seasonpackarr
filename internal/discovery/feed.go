@@ -50,16 +50,16 @@ func (r *Run) Feed(ctx context.Context, indexer Indexer, relevant func(title str
 		// Retained listings follow the feed. They include packs that a client
 		// could not use before their episodes finished downloading.
 		yielded := make(map[state.Key]bool)
-		for _, result := range append(fresh, feeds.Results(indexer.ID)...) {
+		for _, release := range append(fresh, feeds.Retained(indexer.ID)...) {
 			if !r.usable(ctx, indexer.ID) {
 				return
 			}
-			key := state.RSSIdentity(indexer.ID, result)
-			if yielded[key] || !relevant(result.Title) {
+			key := state.RSSIdentity(indexer.ID, release)
+			if yielded[key] || !relevant(release.Title) {
 				continue
 			}
 			yielded[key] = true
-			if !yield(&Listing{run: r, indexerID: indexer.ID, result: result}) {
+			if !yield(&Listing{run: r, indexerID: indexer.ID, release: release}) {
 				return
 			}
 		}
@@ -70,23 +70,23 @@ func (r *Run) Feed(ctx context.Context, indexer Indexer, relevant func(title str
 // relevant listings, and sets the checkpoint from the first page. It returns
 // the new relevant listings in feed order. After a failed page, it returns
 // false and keeps the previous checkpoint.
-func (r *Run) readFeed(ctx context.Context, indexer Indexer, relevant func(string) bool, feeds *state.Feeds) ([]prowlarr.Result, bool) {
+func (r *Run) readFeed(ctx context.Context, indexer Indexer, relevant func(string) bool, feeds *state.Feeds) ([]prowlarr.Release, bool) {
 	previous := feeds.Checkpoint(indexer.ID)
 	firstPage := make(map[state.Key]bool)
 	seen := make(map[state.Key]bool)
-	var fresh []prowlarr.Result
+	var fresh []prowlarr.Release
 	offset := 0
 	for page := range pageBudget {
 		r.stats.FeedPages++
-		results, limit, err := r.source.client.RSSPage(ctx, indexer.prowlarr, offset)
+		releases, limit, err := r.source.client.RSSPage(ctx, indexer.prowlarr, offset)
 		if err != nil {
 			r.recordCooldown(ctx, indexer.ID, err)
 			r.fail(Failure{IndexerID: indexer.ID, Reason: err.Error()})
 			return nil, false
 		}
 		overlap, added := false, 0
-		for _, result := range results {
-			key := state.RSSIdentity(indexer.ID, result)
+		for _, release := range releases {
+			key := state.RSSIdentity(indexer.ID, release)
 			if page == 0 && len(firstPage) < checkpointSize {
 				firstPage[key] = true
 			}
@@ -96,19 +96,19 @@ func (r *Run) readFeed(ctx context.Context, indexer Indexer, relevant func(strin
 			}
 			seen[key] = true
 			added++
-			if relevant(result.Title) {
-				fresh = append(fresh, result)
-				feeds.Remember(key, result, time.Now())
+			if relevant(release.Title) {
+				fresh = append(fresh, release)
+				feeds.Remember(key, release, time.Now())
 			}
 		}
 		if len(previous) == 0 || overlap {
 			break
 		}
-		if !indexer.prowlarr.SupportsPagination || len(results) < limit || added == 0 || page == pageBudget-1 {
+		if !indexer.prowlarr.SupportsPagination || len(releases) < limit || added == 0 || page == pageBudget-1 {
 			r.fail(Failure{IndexerID: indexer.ID, Reason: gapReason})
 			break
 		}
-		offset += len(results)
+		offset += len(releases)
 	}
 	if ctx.Err() == nil && len(firstPage) > 0 {
 		feeds.SetCheckpoint(indexer.ID, firstPage)

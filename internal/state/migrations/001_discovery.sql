@@ -8,6 +8,7 @@ CREATE TABLE cooldowns (
     until_ns INTEGER NOT NULL
 ) STRICT;
 
+-- The torrent cache.
 CREATE TABLE metadata (
     indexer_id INTEGER NOT NULL CHECK (indexer_id > 0),
     identity BLOB NOT NULL CHECK (length(identity) = 32),
@@ -24,6 +25,7 @@ CREATE TABLE rss_checkpoints (
     PRIMARY KEY (indexer_id, identity)
 ) STRICT;
 
+-- The retained listings.
 CREATE TABLE rss_candidates (
     indexer_id INTEGER NOT NULL CHECK (indexer_id > 0),
     identity BLOB NOT NULL CHECK (length(identity) = 32),

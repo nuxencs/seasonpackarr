@@ -22,13 +22,13 @@ const (
 )
 
 type rssEntry struct {
-	result  prowlarr.Result
+	release prowlarr.Release
 	expires time.Time
 	order   uint64
 }
 
-// Feeds is a per-run working set. SaveFeeds commits candidates and checkpoints
-// together. Discard the working set if client inventory is incomplete.
+// Feeds is a per-run working set. SaveFeeds commits retained listings and
+// checkpoints together. Discard the working set if client inventory is incomplete.
 type Feeds struct {
 	checkpoints map[int]map[Key]bool
 	entries     map[Key]rssEntry
@@ -36,10 +36,10 @@ type Feeds struct {
 	sequence    uint64
 }
 
-func RSSIdentity(indexerID int, result prowlarr.Result) Key {
-	key := MetadataKey(indexerID, result)
+func RSSIdentity(indexerID int, release prowlarr.Release) Key {
+	key := TorrentCacheKey(indexerID, release)
 	if key.indexerID == 0 {
-		return Key{indexerID, sha256.Sum256([]byte(result.Title))}
+		return Key{indexerID, sha256.Sum256([]byte(release.Title))}
 	}
 	return key
 }
@@ -70,12 +70,12 @@ func (s *Feeds) Prune(indexers []prowlarr.Indexer, now time.Time) {
 	}
 }
 
-func rssResultSize(result prowlarr.Result) int {
-	return len(result.Title) + len(result.GUID) + len(result.Link) + len(result.Enclosure.URL)
+func rssReleaseSize(release prowlarr.Release) int {
+	return len(release.Title) + len(release.GUID) + len(release.Link) + len(release.Enclosure.URL)
 }
 
-func (s *Feeds) Remember(key Key, result prowlarr.Result, now time.Time) {
-	size := rssResultSize(result)
+func (s *Feeds) Remember(key Key, release prowlarr.Release, now time.Time) {
+	size := rssReleaseSize(release)
 	if size > rssMaxBytes {
 		return
 	}
@@ -96,17 +96,18 @@ func (s *Feeds) Remember(key Key, result prowlarr.Result, now time.Time) {
 		}
 		s.remove(oldest)
 	}
-	entry.result = result
+	entry.release = release
 	s.entries[key] = entry
 	s.bytes += size
 }
 
 func (s *Feeds) remove(key Key) {
-	s.bytes -= rssResultSize(s.entries[key].result)
+	s.bytes -= rssReleaseSize(s.entries[key].release)
 	delete(s.entries, key)
 }
 
-func (s *Feeds) Results(indexerID int) []prowlarr.Result {
+// Retained returns the retained listings of the indexer, oldest first.
+func (s *Feeds) Retained(indexerID int) []prowlarr.Release {
 	var entries []rssEntry
 	for key, entry := range s.entries {
 		if key.indexerID == indexerID {
@@ -114,11 +115,11 @@ func (s *Feeds) Results(indexerID int) []prowlarr.Result {
 		}
 	}
 	slices.SortFunc(entries, func(a, b rssEntry) int { return cmp.Compare(a.order, b.order) })
-	results := make([]prowlarr.Result, len(entries))
+	releases := make([]prowlarr.Release, len(entries))
 	for i, entry := range entries {
-		results[i] = entry.result
+		releases[i] = entry.release
 	}
-	return results
+	return releases
 }
 
 func (s *Store) Feeds(ctx context.Context) (*Feeds, error) {
@@ -154,27 +155,27 @@ func (s *Store) Feeds(ctx context.Context) (*Feeds, error) {
 		defer rows.Close()
 		for rows.Next() {
 			var key Key
-			var identity, result []byte
+			var identity, release []byte
 			var expires int64
 			var entry rssEntry
-			if err := rows.Scan(&key.indexerID, &identity, &result, &expires, &entry.order); err != nil {
+			if err := rows.Scan(&key.indexerID, &identity, &release, &expires, &entry.order); err != nil {
 				return err
 			}
 			copy(key.identity[:], identity)
-			if err := json.Unmarshal(result, &entry.result); err != nil {
+			if err := json.Unmarshal(release, &entry.release); err != nil {
 				return err
 			}
 			entry.expires = time.Unix(0, expires)
 			feeds.entries[key] = entry
 			feeds.sequence = max(feeds.sequence, entry.order)
-			feeds.bytes += rssResultSize(entry.result)
+			feeds.bytes += rssReleaseSize(entry.release)
 		}
 		return rows.Err()
 	})
 	return feeds, err
 }
 
-// SaveFeeds advances checkpoints atomically with their retained candidates.
+// SaveFeeds advances checkpoints atomically with their retained listings.
 func (s *Store) SaveFeeds(ctx context.Context, feeds *Feeds) error {
 	return s.transaction(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, "DELETE FROM rss_checkpoints; DELETE FROM rss_candidates"); err != nil {
@@ -188,12 +189,12 @@ func (s *Store) SaveFeeds(ctx context.Context, feeds *Feeds) error {
 			}
 		}
 		for key, entry := range feeds.entries {
-			result, err := json.Marshal(entry.result)
+			release, err := json.Marshal(entry.release)
 			if err != nil {
 				return err
 			}
 			if _, err := tx.ExecContext(ctx, "INSERT INTO rss_candidates VALUES (?, ?, ?, ?, ?)",
-				key.indexerID, key.identity[:], result, entry.expires.UnixNano(), entry.order); err != nil {
+				key.indexerID, key.identity[:], release, entry.expires.UnixNano(), entry.order); err != nil {
 				return err
 			}
 		}

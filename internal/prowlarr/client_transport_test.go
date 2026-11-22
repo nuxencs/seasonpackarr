@@ -38,7 +38,7 @@ func TestNew_TransportKeepsRedirectRule(t *testing.T) {
 	indexers, err := client.Indexers(t.Context())
 	require.NoError(t, err)
 	require.Len(t, indexers, 1)
-	_, err = client.Download(t.Context(), 1, prowlarr.Result{Link: "/1/download"})
+	_, err = client.Download(t.Context(), 1, prowlarr.Release{Link: "/1/download"})
 
 	require.ErrorContains(t, err, "HTTP 302")
 	require.Equal(t, []string{"/api/v1/indexer", "/1/download"}, paths, "the client must not follow the redirect")
