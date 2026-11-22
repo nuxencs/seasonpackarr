@@ -15,7 +15,23 @@
    command as a value. `start` passes it to `state.Path` too, which derives the
    default database directory from it.
    `setup filter` writes the autobrr filter through `internal/autobrr/`.
-2. `cmd/start.go` loads config, logger, notifications, and the SQLite store, creates the inventory module, then starts the HTTP server. Signal cancellation starts a bounded graceful shutdown. The command closes the store after server shutdown.
+2. `cmd/start.go` starts the service in this order:
+   1. It loads the config with `config.New`.
+   2. It creates the logger. Then it logs the unknown-variable warnings and the
+      inventory scope warnings.
+   3. It creates the signal context.
+   4. It creates the inventory module.
+   5. It starts the config reload watch, `AppConfig.Watch`. The watch calls
+      three reload parties in this order: the log level change, the inventory
+      scope warnings, and the inventory clean-up. The watch stops with the
+      signal context.
+   6. It creates the notification sender.
+   7. It gets the database path with `state.Path`. Then it opens the SQLite
+      store.
+   8. It starts the HTTP server.
+
+   Signal cancellation starts a bounded graceful shutdown. The command closes
+   the store after server shutdown.
 3. `internal/http/server.go` builds `/api/healthz`, `/api/candidate`, `/api/match`, `/api/import`, and `/api/search`.
 4. `internal/http/webhook.go` holds the webhook handlers. A handler decodes the payload, gets the client handle of the request from `internal/inventory/`, calls one operation of the season pack processor, writes the response, and sends the notification.
 5. `internal/seasonpack/` is the season pack processor. It has three operations: the candidate check, the match, and the import. `candidate.go` holds the candidate check, which reads the inventory through the client handle. `match.go` parses the torrent bytes and, for an accepted match, builds the import plan with no side effects. `plan_cache.go` keeps the plan of an accepted match for the import. `import.go` uses that plan or builds it again, gets the destination (import root plus layout) from the client adapter, gives the planned links to `internal/placement/`, and imports the pack. `import_lock.go` holds the endpoint import locks. See [docs/design/season-pack-lifecycle.md](docs/design/season-pack-lifecycle.md) and [docs/design/qbittorrent-import-flow.md](docs/design/qbittorrent-import-flow.md).
