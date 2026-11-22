@@ -191,84 +191,22 @@ func TestCLI_SearchPreviewAndImport(t *testing.T) {
 	}
 }
 
-// TestCLI_StartLogsNoSecretForInvalidConfig reads the process output, because
-// start returns a config load error before the service logger exists.
-func TestCLI_StartLogsNoSecretForInvalidConfig(t *testing.T) {
+// TestCLI_StartExitsWithErrorForInvalidConfig is the smoke test of the exit code and the process output of the real
+// binary. TestStartCommand_ReturnsConfigLoadError in cmd holds the cases of the config load error.
+func TestCLI_StartExitsWithErrorForInvalidConfig(t *testing.T) {
 	binary := buildCLI(t)
-	secrets := map[string]string{
-		"apiToken":        "sentinel-start-api-token",
-		"client password": "sentinel-start-client-password",
-		"Prowlarr apiKey": "sentinel-start-prowlarr-api-key",
-		"Discord webhook": "sentinel-start-discord-webhook-token",
-		"Shoutrrr URL":    "sentinel-start-ntfy-topic",
-		"port variable":   "sentinel-start-port-value",
-	}
-	valid := `apiToken: sentinel-start-api-token
-clients:
-  default:
-    type: qbittorrent
-    host: http://qbittorrent
-    port: 8080
-    password: sentinel-start-client-password
-    import:
-      category: tv-hd
-search:
-  prowlarrURL: http://prowlarr:9696
-  apiKey: sentinel-start-prowlarr-api-key
-notifications:
-  discord: https://discord.com/api/webhooks/123/sentinel-start-discord-webhook-token
-  shoutrrr: ["ntfy://ntfy.sh/sentinel-start-ntfy-topic"]
-`
-	tests := map[string]struct {
-		replace []string
-		env     []string
-		want    string
-	}{
-		"YAML syntax error after the apiToken":      {replace: []string{"clients:\n", "clients: [\n"}},
-		"port next to the password is not a number": {replace: []string{"port: 8080", "port: not-a-port"}},
-		"password is a map":                         {replace: []string{"password: sentinel-start-client-password", "password: {value: sentinel-start-client-password}"}},
-		"Shoutrrr URL is invalid": {
-			replace: []string{"ntfy://ntfy.sh/sentinel-start-ntfy-topic", "gotify://gotify.example/sentinel-start-ntfy-topic"},
-			want:    "notifications.shoutrrr[0] (gotify)",
-		},
-		"port variable is not a number": {
-			env:  []string{"SEASONPACKARR__PORT=sentinel-start-port-value"},
-			want: "environment variable SEASONPACKARR__PORT is not an integer",
-		},
-		"apiToken variable ends with a line break": {
-			env:  []string{"SEASONPACKARR__API_TOKEN=sentinel-start-api-token\n"},
-			want: "environment variable SEASONPACKARR__API_TOKEN contains a control character",
-		},
-		"client password variable has a control character": {
-			env:  []string{"SEASONPACKARR__CLIENTS_DEFAULT_PASSWORD=sentinel-start-client-password\x01"},
-			want: "environment variable SEASONPACKARR__CLIENTS_DEFAULT_PASSWORD contains a control character",
-		},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			invalid := valid
-			if tt.replace != nil {
-				invalid = strings.NewReplacer(tt.replace...).Replace(valid)
-				require.NotEqual(t, valid, invalid, "the replacement matched nothing")
-			}
-			dir := t.TempDir()
-			require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(invalid), 0o600))
+	dir := t.TempDir()
+	// The YAML syntax error comes after the apiToken, so a parse error that quotes the file can show it.
+	invalid := "apiToken: sentinel-start-api-token\nclients: [\n  default:\n    type: qbittorrent\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(invalid), 0o600))
 
-			command := exec.CommandContext(t.Context(), binary, "start", "--config", dir)
-			command.Env = append(cliEnvironment(), tt.env...)
-			output, err := command.CombinedOutput()
+	command := exec.CommandContext(t.Context(), binary, "start", "--config", dir)
+	command.Env = cliEnvironment()
+	output, err := command.CombinedOutput()
 
-			exit, ok := errors.AsType[*exec.ExitError](err)
-			require.True(t, ok, "expected process failure, got %v: %s", err, output)
-			require.Equal(t, 1, exit.ExitCode(), string(output))
-			// The load error must be in the output, or the checks below prove nothing.
-			if tt.env == nil {
-				require.Contains(t, string(output), "config file", string(output))
-			}
-			require.Contains(t, string(output), tt.want, string(output))
-			for kind, secret := range secrets {
-				assert.NotContains(t, string(output), secret, "start output holds the %s", kind)
-			}
-		})
-	}
+	exit, ok := errors.AsType[*exec.ExitError](err)
+	require.True(t, ok, "expected process failure, got %v: %s", err, output)
+	require.Equal(t, 1, exit.ExitCode(), string(output))
+	require.Contains(t, string(output), "Error: reading config file ", string(output))
+	assert.NotContains(t, string(output), "sentinel-start-api-token")
 }
