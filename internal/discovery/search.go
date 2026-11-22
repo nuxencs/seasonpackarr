@@ -11,8 +11,8 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/prowlarr"
 )
 
-// searchPageBudget is the number of pages that one search reads at most.
-const searchPageBudget = 10
+// pageBudget is the number of pages that one search or one poll reads at most.
+const pageBudget = 10
 
 // Search returns the listings of query on indexer. It requests a page only
 // when the caller asks for more listings, and yields each listing one time.
@@ -25,7 +25,7 @@ func (r *Run) Search(ctx context.Context, indexer Indexer, query Query) iter.Seq
 	return func(yield func(*Listing) bool) {
 		seen := make(map[string]bool)
 		offset := 0
-		for range searchPageBudget {
+		for range pageBudget {
 			if !r.usable(ctx, indexer.ID) {
 				return
 			}

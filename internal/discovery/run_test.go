@@ -246,6 +246,31 @@ func TestRun_DatabaseFailureEndsSequences(t *testing.T) {
 		assert.Equal(t, []discovery.Failure{{Reason: databaseFailure}}, run.Failures())
 		assert.Len(t, f.requestsTo("/2/download"), 1)
 	})
+	for name, closeStore := range map[string]func(*testing.T, *sourceFixture){
+		"feed state load": func(t *testing.T, f *sourceFixture) { require.NoError(t, f.store.Close()) },
+		// The store closes after the first save, so only the save after the read fails.
+		"feed state save": func(t *testing.T, f *sourceFixture) {
+			f.prowlarr.respond = at("/1/api", func() *http.Response {
+				require.NoError(t, f.store.Close())
+				return nil
+			})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newSourceFixture(t)
+			f.prowlarr.listings = map[int][]string{1: {"Show.S01"}, 3: {"Show.S01"}}
+			run := f.begin(t, discovery.KindRSS)
+			indexers := usableIndexers(t, run)
+			closeStore(t, f)
+
+			assert.Empty(t, titles(run.Feed(t.Context(), indexers[1], accept("Show.S01"))), "a database failure must end the sequence before a listing")
+			assert.Empty(t, titles(run.Feed(t.Context(), indexers[3], accept("Show.S01"))))
+
+			assert.ErrorIs(t, run.Err(), discovery.ErrDatabase)
+			assert.Equal(t, []discovery.Failure{{Reason: databaseFailure}}, run.Failures())
+			assert.Empty(t, f.requestsTo("/3/api"), "a sequence after a database failure must send no request")
+		})
+	}
 }
 
 func TestStats_MatchesProwlarrRequests(t *testing.T) {

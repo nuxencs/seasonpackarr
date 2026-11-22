@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -239,6 +240,20 @@ func usableIndexers(t *testing.T, run *discovery.Run) map[int]discovery.Indexer 
 		indexers[indexer.ID] = indexer
 	}
 	return indexers
+}
+
+// episodeTitles returns n episode titles of showQuery.
+func episodeTitles(n int) []string {
+	titles := make([]string, n)
+	for i := range titles {
+		titles[i] = fmt.Sprintf("Show.S01E%02d", i+1)
+	}
+	return titles
+}
+
+// accept is a relevance predicate of a feed that accepts only the given titles.
+func accept(titles ...string) func(string) bool {
+	return func(title string) bool { return slices.Contains(titles, title) }
 }
 
 // titles collects the titles of all listings of a sequence.
