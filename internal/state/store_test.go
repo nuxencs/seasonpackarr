@@ -27,7 +27,7 @@ func TestStore_RestartAndConnectionIsolation(t *testing.T) {
 			result := prowlarr.Result{Title: "pack", GUID: "one", Link: "/download"}
 			key := MetadataKey(1, result)
 			require.NoError(t, s.PutMetadata(ctx, key, []byte("torrent"), now))
-			require.NoError(t, s.SetCooldown(ctx, 0, now.Add(time.Hour)))
+			require.NoError(t, s.SetCooldown(ctx, ProwlarrCooldownID, now.Add(time.Hour)))
 			require.NoError(t, s.SetCooldown(ctx, 1, now.Add(2*time.Hour)))
 			require.NoError(t, s.SetCooldown(ctx, 1, now.Add(time.Hour)))
 			feeds, err := s.Feeds(ctx)
@@ -61,7 +61,7 @@ func TestStore_RestartAndConnectionIsolation(t *testing.T) {
 				return
 			}
 			require.Equal(t, []byte("torrent"), metadata)
-			require.True(t, deadlines[0].Equal(now.Add(time.Hour)))
+			require.True(t, deadlines[ProwlarrCooldownID].Equal(now.Add(time.Hour)))
 			require.True(t, deadlines[1].Equal(now.Add(2*time.Hour)))
 			require.Equal(t, feeds.Results(1), loaded.Results(1))
 			require.Equal(t, feeds.Checkpoint(1), loaded.Checkpoint(1))

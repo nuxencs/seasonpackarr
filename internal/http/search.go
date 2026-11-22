@@ -260,13 +260,13 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 		}
 		return report, nil
 	}
-	if until := r.cooldowns[0]; time.Now().Before(until) {
+	if until := r.cooldowns[state.ProwlarrCooldownID]; time.Now().Before(until) {
 		report.Failures = append(report.Failures, searchFailure{Reason: "Prowlarr cooldown is still active"})
 		return report, nil
 	}
 	indexers, err := provider.Indexers(ctx)
 	if err != nil {
-		if stateErr := r.recordCooldown(ctx, 0, err); stateErr != nil {
+		if stateErr := r.recordCooldown(ctx, state.ProwlarrCooldownID, err); stateErr != nil {
 			report.Failures = append(report.Failures, searchFailure{Reason: r.stateError(stateErr).Error()})
 		}
 		report.Failures = append(report.Failures, searchFailure{Reason: err.Error()})

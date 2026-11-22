@@ -214,6 +214,12 @@ func (s *Store) pruneExpired(ctx context.Context, now time.Time) error {
 	})
 }
 
+// ProwlarrCooldownID is the cooldown id of Prowlarr as a whole. Indexer ids
+// are positive, so the value 0 is free for this row of the cooldowns table.
+const ProwlarrCooldownID = 0
+
+// Cooldowns returns the active deadlines by indexer id. The key
+// ProwlarrCooldownID holds the cooldown of Prowlarr as a whole.
 func (s *Store) Cooldowns(ctx context.Context, now time.Time) (map[int]time.Time, error) {
 	if _, err := s.db.ExecContext(ctx, "DELETE FROM cooldowns WHERE until_ns <= ?", now.UnixNano()); err != nil {
 		return nil, err
@@ -235,6 +241,8 @@ func (s *Store) Cooldowns(ctx context.Context, now time.Time) (map[int]time.Time
 	return deadlines, rows.Err()
 }
 
+// SetCooldown never moves a stored deadline to an earlier time. The id is an
+// indexer id, or ProwlarrCooldownID for Prowlarr as a whole.
 func (s *Store) SetCooldown(ctx context.Context, indexerID int, until time.Time) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO cooldowns VALUES (?, ?)
 		ON CONFLICT(indexer_id) DO UPDATE SET until_ns = max(until_ns, excluded.until_ns)`, indexerID, until.UnixNano())
