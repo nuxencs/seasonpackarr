@@ -64,8 +64,11 @@ func newStartCommand(environ []string) *cobra.Command {
 			}
 			config.LogInventoryScopeWarnings(log, snapshot)
 
-			// init dynamic config
-			reloads, err := cfg.DynamicReload(log)
+			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
+			defer stop()
+
+			// The watch stops with the signal context.
+			reloads, err := cfg.Watch(ctx, log)
 			if err != nil {
 				return fmt.Errorf("failed to start config reload watcher: %w", err)
 			}
@@ -87,9 +90,6 @@ func newStartCommand(environ []string) *cobra.Command {
 				}
 			}()
 			srv := http.NewServer(log, cfg, noti, store, inventory.New(torrentclient.New, log), reloads)
-
-			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM)
-			defer stop()
 
 			if err := runServer(ctx, srv); err != nil {
 				return err

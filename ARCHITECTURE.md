@@ -43,6 +43,9 @@
   It has no unknown-key check, no validation of server-only settings, and no `config.toml` check.
 - Runtime readers acquire one snapshot per request or operation. Reload publishes a candidate only after file parsing,
   environment overrides, and validation succeed.
+- `AppConfig.Watch` reloads the config after each change of the config file until its context ends. `start` passes its
+  signal context. Inside the package, the file watcher only signals "the file changed", and one loop debounces the
+  signals and runs one reload at a time. After the context ends, the watcher closes and no new reload starts.
 - Durable contract surfaces: `config.yaml`, `schemas/config-schema.json`, [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
 
 ### HTTP/API
