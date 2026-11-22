@@ -262,9 +262,8 @@ func applyEnvironmentSettings(
 	clientSettings map[string]func(*domain.Client, string) error,
 ) error {
 	var errs []error
-	for _, entry := range env {
-		key, value, _ := strings.Cut(entry, "=")
-		name, ok := strings.CutPrefix(key, envPrefix)
+	for variable, value := range env.variables() {
+		name, ok := strings.CutPrefix(variable.folded, envPrefix)
 		if !ok || value == "" {
 			continue
 		}
@@ -286,7 +285,7 @@ func applyEnvironmentSettings(
 			err = set(cfg.Clients[clientName], value)
 		}
 		if err != nil {
-			errs = append(errs, fmt.Errorf("environment variable %s %w", key, err))
+			errs = append(errs, fmt.Errorf("environment variable %s %w", variable.name, err))
 		}
 	}
 	return errors.Join(errs...)
@@ -296,12 +295,15 @@ func applyEnvironmentSettings(
 // environ ("KEY=value" entries) that neither the service config nor a CLI command
 // reads. It ignores the values, so an empty unknown variable is reported too.
 func UnknownEnvironmentVariables(environ []string) []string {
+	return newEnvironment(environ).unknownVariables()
+}
+
+func (e environment) unknownVariables() []string {
 	var unknown []string
-	for _, env := range environ {
-		key, _, _ := strings.Cut(env, "=")
-		name, ok := strings.CutPrefix(key, envPrefix)
+	for variable := range e.variables() {
+		name, ok := strings.CutPrefix(variable.folded, envPrefix)
 		if ok && !knownEnvironmentVariable(name) {
-			unknown = append(unknown, key)
+			unknown = append(unknown, variable.name)
 		}
 	}
 	slices.Sort(unknown)

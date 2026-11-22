@@ -491,14 +491,10 @@ func validateDeprecatedConfigInputs(k *koanf.Koanf, env environment) error {
 		}
 	}
 
-	for _, entry := range env {
-		envKey, _, ok := strings.Cut(entry, "=")
-		if !ok {
-			continue
-		}
-		if strings.HasPrefix(envKey, "SEASONPACKARR__CLIENTS_") && strings.HasSuffix(envKey, "_"+deprecatedPreImportPathEnv) {
+	for variable := range env.variables() {
+		if strings.HasPrefix(variable.folded, envPrefix+"CLIENTS_") && strings.HasSuffix(variable.folded, "_"+deprecatedPreImportPathEnv) {
 			return fmt.Errorf("deprecated environment variable detected: %s was removed; use the import save path/category environment variables instead",
-				envKey)
+				variable.name)
 		}
 	}
 

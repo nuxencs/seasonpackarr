@@ -10,9 +10,9 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"runtime"
-	"strings"
 	"syscall"
+
+	"github.com/nuxencs/seasonpackarr/internal/envname"
 
 	"github.com/spf13/cobra"
 )
@@ -82,15 +82,6 @@ func Execute() {
 
 // getenv returns the value of the first entry for key in environ, as os.Getenv does for the process environment.
 func getenv(environ []string, key string) string {
-	// Windows environment names have no case, and os.Getenv matches them in that way.
-	sameName := func(name string) bool { return name == key }
-	if runtime.GOOS == "windows" {
-		sameName = func(name string) bool { return strings.EqualFold(name, key) }
-	}
-	for _, entry := range environ {
-		if name, value, ok := strings.Cut(entry, "="); ok && sameName(name) {
-			return value
-		}
-	}
-	return ""
+	value, _ := envname.System.Lookup(environ, key)
+	return value
 }

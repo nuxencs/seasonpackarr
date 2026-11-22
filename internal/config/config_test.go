@@ -164,66 +164,66 @@ func loadTestKoanf(t *testing.T, content string) *koanf.Koanf {
 
 func TestValidateDeprecatedConfigInputs(t *testing.T) {
 	t.Run("rejects parseTorrentFile in yaml", func(t *testing.T) {
-		err := validateDeprecatedConfigInputs(loadTestKoanf(t, "parseTorrentFile: false\n"), nil)
+		err := validateDeprecatedConfigInputs(loadTestKoanf(t, "parseTorrentFile: false\n"), environment{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "parseTorrentFile was removed")
 	})
 
 	t.Run("rejects parseTorrentFile env", func(t *testing.T) {
-		err := validateDeprecatedConfigInputs(nil, environment{deprecatedParseTorrentFileEnv + "=false"})
+		err := validateDeprecatedConfigInputs(nil, newEnvironment([]string{deprecatedParseTorrentFileEnv + "=false"}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), deprecatedParseTorrentFileEnv)
 	})
 
 	t.Run("rejects empty parseTorrentFile env", func(t *testing.T) {
-		err := validateDeprecatedConfigInputs(nil, environment{deprecatedParseTorrentFileEnv + "="})
+		err := validateDeprecatedConfigInputs(nil, newEnvironment([]string{deprecatedParseTorrentFileEnv + "="}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), deprecatedParseTorrentFileEnv)
 	})
 
 	t.Run("rejects preImportPath in yaml", func(t *testing.T) {
 		k := loadTestKoanf(t, "clients:\n  default:\n    preImportPath: /data/tv-hd\n")
-		err := validateDeprecatedConfigInputs(k, nil)
+		err := validateDeprecatedConfigInputs(k, environment{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "clients.default.preImportPath")
 		require.Contains(t, err.Error(), "import.savePath or import.category")
 	})
 
 	t.Run("rejects preImportPath env", func(t *testing.T) {
-		err := validateDeprecatedConfigInputs(nil, environment{"SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH=/data/tv-hd"})
+		err := validateDeprecatedConfigInputs(nil, newEnvironment([]string{"SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH=/data/tv-hd"}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH")
 	})
 
 	t.Run("rejects empty preImportPath env", func(t *testing.T) {
-		err := validateDeprecatedConfigInputs(nil, environment{"SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH="})
+		err := validateDeprecatedConfigInputs(nil, newEnvironment([]string{"SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH="}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "SEASONPACKARR__CLIENTS_DEFAULT_PREIMPORTPATH")
 	})
 
 	t.Run("rejects metadata config", func(t *testing.T) {
-		err := validateDeprecatedConfigInputs(loadTestKoanf(t, "metadata:\n  tvdbAPIKey: old-key\n"), nil)
+		err := validateDeprecatedConfigInputs(loadTestKoanf(t, "metadata:\n  tvdbAPIKey: old-key\n"), environment{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "metadata was removed")
 		require.Contains(t, err.Error(), "/api/match")
 	})
 
 	t.Run("rejects metadata env", func(t *testing.T) {
-		err := validateDeprecatedConfigInputs(nil, environment{deprecatedMetadataTVDBAPIKeyEnv + "=old-key"})
+		err := validateDeprecatedConfigInputs(nil, newEnvironment([]string{deprecatedMetadataTVDBAPIKeyEnv + "=old-key"}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), deprecatedMetadataTVDBAPIKeyEnv)
 		require.Contains(t, err.Error(), "/api/match")
 	})
 
 	t.Run("rejects empty metadata env", func(t *testing.T) {
-		err := validateDeprecatedConfigInputs(nil, environment{deprecatedMetadataTVDBPINEnv + "="})
+		err := validateDeprecatedConfigInputs(nil, newEnvironment([]string{deprecatedMetadataTVDBPINEnv + "="}))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), deprecatedMetadataTVDBPINEnv)
 	})
 
 	t.Run("allows current config", func(t *testing.T) {
 		k := loadTestKoanf(t, "host: 0.0.0.0\nclients: {}\n")
-		err := validateDeprecatedConfigInputs(k, environment{"HOME=/home/user"})
+		err := validateDeprecatedConfigInputs(k, newEnvironment([]string{"HOME=/home/user"}))
 		require.NoError(t, err)
 	})
 }
@@ -232,7 +232,7 @@ func TestValidateDeprecatedConfigInputs(t *testing.T) {
 // like IMPORT_SAVE_PATH (multiple underscores) must survive, including for a
 // client that only exists in the environment.
 func TestLoadFromEnv_ParsesMultiWordClientSettings(t *testing.T) {
-	env := environment{
+	env := newEnvironment([]string{
 		"SEASONPACKARR__CLIENTS_ENVONLY_TYPE=qbittorrent",
 		"SEASONPACKARR__CLIENTS_ENVONLY_IMPORT_SAVE_PATH=/data/tv-hd",
 		"SEASONPACKARR__CLIENTS_ENVONLY_IMPORT_CATEGORY=tv-hd",
@@ -241,7 +241,7 @@ func TestLoadFromEnv_ParsesMultiWordClientSettings(t *testing.T) {
 		"SEASONPACKARR__CLIENTS_ENVONLY_INVENTORY_INCLUDE_TAGS=keep",
 		"SEASONPACKARR__CLIENTS_ENVONLY_INVENTORY_EXCLUDE_CATEGORIES=tv-hd-4k",
 		"SEASONPACKARR__CLIENTS_ENVONLY_INVENTORY_EXCLUDE_TAGS=noreuse, trash",
-	}
+	})
 
 	cfg := domain.Config{Clients: map[string]*domain.Client{}}
 	require.NoError(t, applyEnvironment(&cfg, env))

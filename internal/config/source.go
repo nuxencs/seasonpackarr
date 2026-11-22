@@ -7,9 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"iter"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/nuxencs/seasonpackarr/internal/envname"
 )
 
 // Input holds each input of a config load except the config file contents. Load, New, and ReadConnectionSettings take it.
@@ -27,17 +30,38 @@ type Input struct {
 
 var errCreateFileOnlyNew = errors.New("config: only New creates a config file")
 
-// environment is the environment of an Input.
-type environment []string
+// environment is the environment of an Input. Each name match in the package goes through rule.
+type environment struct {
+	entries []string
+	// rule is envname.System outside tests, so that a name matches as for os.LookupEnv.
+	rule envname.Rule
+}
+
+func newEnvironment(entries []string) environment {
+	return environment{entries: entries, rule: envname.System}
+}
 
 // lookup returns the value of the first entry for key, as os.LookupEnv does.
 func (e environment) lookup(key string) (string, bool) {
-	for _, entry := range e {
-		if name, value, ok := strings.Cut(entry, "="); ok && name == key {
-			return value, true
+	return e.rule.Lookup(e.entries, key)
+}
+
+// variables yields each entry as a variable and its value.
+func (e environment) variables() iter.Seq2[variable, string] {
+	return func(yield func(variable, string) bool) {
+		for _, entry := range e.entries {
+			name, value, _ := strings.Cut(entry, "=")
+			if !yield(variable{name: name, folded: e.rule.Fold(name)}, value) {
+				return
+			}
 		}
 	}
-	return "", false
+}
+
+// variable is the name of an environment entry. Messages show name as given, and matches compare folded.
+type variable struct {
+	name   string
+	folded string
 }
 
 func (e environment) get(key string) string {
@@ -57,7 +81,7 @@ type source struct {
 // newSource resolves the config file of in. It returns an error that wraps fs.ErrNotExist when
 // no default location has a config file. The returned source is then valid without a config file.
 func newSource(in Input) (source, error) {
-	env := environment(in.Environ)
+	env := newEnvironment(in.Environ)
 	disabled, err := configFileDisabled(env)
 	if err != nil {
 		return source{}, err

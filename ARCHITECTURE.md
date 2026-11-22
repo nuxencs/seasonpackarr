@@ -33,12 +33,13 @@
   `internal/domain/config.go`. At package start, `internal/config/env.go` reads the tags into a key table. The defaults,
   the environment overrides, and the unknown-variable warning use that table. A bad tag panics at package start.
 - One load takes a `config.Input` with four parts: the config directory, the environment in `os.Environ` form, the
-  version, and the create-file choice. The config package reads no process environment. The load resolves the config
-  file, decides "config file disabled", rejects a legacy `config.toml`, decodes the file, rejects unknown keys and
-  removed settings, applies the environment, normalizes, and validates. `config.Load` (one snapshot, no file, no
-  watcher) and `config.New` (the snapshot holder, for `start`) use it. Only `New` honors the create-file choice, and
-  only with a config directory. The holder keeps the resolved source and the environment of its input, so each reload
-  reads the same file and applies the same environment again.
+  version, and the create-file choice. The config package reads no process environment. It matches variable names
+  with `internal/envname`, the rule of `os.LookupEnv`: no case on Windows, exact elsewhere. `cmd` uses the same rule.
+  The load resolves the config file, decides "config file disabled", rejects a legacy `config.toml`, decodes the file,
+  rejects unknown keys and removed settings, applies the environment, normalizes, and validates. `config.Load` (one
+  snapshot, no file, no watcher) and `config.New` (the snapshot holder, for `start`) use it. Only `New` honors the
+  create-file choice, and only with a config directory. The holder keeps the resolved source and the environment of
+  its input, so each reload reads the same file and applies the same environment again.
 - `config.ReadConnectionSettings` is a second, lenient decode of host, port, API token, and client names for the CLI.
   It shares only the source step with the full load: the file location, "config file disabled", and the environment.
   It has no unknown-key check, no validation of server-only settings, and no `config.toml` check.
