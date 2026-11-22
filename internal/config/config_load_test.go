@@ -120,10 +120,9 @@ func TestNew_AcceptsEmptyFileBecauseNoPreviousSnapshotExists(t *testing.T) {
 func TestReload_RejectsEmptyFileBecauseItIsAWriteInProgress(t *testing.T) {
 	cfg, configFile := newTestAppConfig(t, "port: 4242\n")
 
-	writeConfigFile(t, configFile, " \n")
-	_, err := cfg.reload()
+	rejection := reloadWithFile(t, cfg, configFile, " \n")
 
-	require.ErrorContains(t, err, "is empty")
+	require.Contains(t, rejection, "is empty")
 	assert.Equal(t, 4242, cfg.Snapshot().Port)
 }
 

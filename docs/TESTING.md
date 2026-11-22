@@ -139,7 +139,9 @@ code of the real binary.
 - Config tests call `config.Load`, `config.New`, or `config.ReadConnectionSettings`
   with a `config.Input` that holds a temporary directory and the environment as a
   literal list. They change no process environment variable and build no
-  `AppConfig` literal.
+  `AppConfig` literal. No test calls the unexported `reload`. A test of one
+  reload (`TestReload_`) uses `reloadWithFile`, which sends one "file changed"
+  signal to the reload loop and returns the logged reason of a rejected reload.
 - The debounce, stop, and party tests of the config reload (`TestReloadOnChange_`)
   send the "file changed" signal to the unexported reload loop in a
   `testing/synctest` bubble. They count the accepted reloads with a last party.

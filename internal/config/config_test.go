@@ -277,7 +277,7 @@ logLevel: INFO
 `)
 	before := cfg.Snapshot()
 
-	writeConfigFile(t, configFile, `
+	rejection := reloadWithFile(t, cfg, configFile, `
 clients:
   default:
     type: transmission
@@ -285,9 +285,7 @@ clients:
       category: tv-hd
 logLevel: TRACE
 `)
-	_, err := cfg.reload()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "qBittorrent only")
+	require.Contains(t, rejection, "qBittorrent only")
 	require.Equal(t, before, cfg.Snapshot())
 	require.Equal(t, zerolog.WarnLevel, zerolog.GlobalLevel())
 }
@@ -303,7 +301,7 @@ logLevel: INFO
 `)
 	before := cfg.Snapshot()
 
-	writeConfigFile(t, configFile, `
+	rejection := reloadWithFile(t, cfg, configFile, `
 clients:
   default:
     type: qbittorrent
@@ -312,9 +310,7 @@ clients:
 logLevel: TRACE
 smartMod: true
 `)
-	_, err := cfg.reload()
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unknown config keys: smartMod")
+	assert.Contains(t, rejection, "unknown config keys: smartMod")
 	assert.Equal(t, before, cfg.Snapshot())
 }
 
@@ -328,15 +324,14 @@ clients:
 `, "SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_CATEGORY=from-env")
 	require.Equal(t, "from-env", cfg.Snapshot().Clients["default"].Import.Category)
 
-	writeConfigFile(t, configFile, `
+	rejection := reloadWithFile(t, cfg, configFile, `
 clients:
   default:
     type: qbittorrent
     import:
       category: from-file-after
 `)
-	_, err := cfg.reload()
-	require.NoError(t, err)
+	require.Empty(t, rejection)
 	require.Equal(t, "from-env", cfg.Snapshot().Clients["default"].Import.Category)
 }
 
@@ -347,9 +342,8 @@ logMaxSize: 99
 `)
 	require.Equal(t, 99, cfg.Snapshot().LogMaxSize)
 
-	writeConfigFile(t, configFile, "clients: {}\n")
-	_, err := cfg.reload()
-	require.NoError(t, err)
+	rejection := reloadWithFile(t, cfg, configFile, "clients: {}\n")
+	require.Empty(t, rejection)
 	require.Equal(t, 50, cfg.Snapshot().LogMaxSize)
 }
 
@@ -918,14 +912,12 @@ notifications:
 `)
 	before := cfg.Snapshot()
 
-	writeConfigFile(t, configFile, `
+	rejection := reloadWithFile(t, cfg, configFile, `
 notifications:
   shoutrrr: ["ntfy://ntfy.sh/first", "gotify://gotify.example/invalid"]
 `)
-	_, err := cfg.reload()
 
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "notifications.shoutrrr[1] (gotify)")
+	require.Contains(t, rejection, "notifications.shoutrrr[1] (gotify)")
 	require.Equal(t, before, cfg.Snapshot())
 }
 

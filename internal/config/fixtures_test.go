@@ -7,11 +7,17 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/logger/loggertest"
 
 	"github.com/stretchr/testify/require"
 )
+
+// reloadRejected is the message of the log event of a rejected reload.
+const reloadRejected = "config reload rejected; keeping previous config"
 
 func writeTestConfig(t *testing.T, content string) string {
 	t.Helper()
@@ -51,4 +57,25 @@ func newTestAppConfig(t *testing.T, contents string, environ ...string) (*AppCon
 func writeConfigFile(t testing.TB, configFile, contents string) {
 	t.Helper()
 	require.NoError(t, os.WriteFile(configFile, []byte(contents), 0o644))
+}
+
+// reloadWithFile writes contents to configFile and sends one "file changed" signal to the reload loop of cfg.
+// It returns the logged reason of a rejected reload, or "" when the reload was accepted.
+func reloadWithFile(t *testing.T, cfg *AppConfig, configFile, contents string) string {
+	t.Helper()
+	writeConfigFile(t, configFile, contents)
+	log := loggertest.New()
+	accepted := 0
+	synctest.Test(t, func(t *testing.T) {
+		loop := startReloadLoop(t, cfg, log)
+		loop.changed()
+		time.Sleep(configReloadDebounceDelay)
+		accepted = loop.reloads()
+	})
+	if accepted == 1 {
+		return ""
+	}
+	reason, _ := log.Events(t).Require(t, reloadRejected)["error"].(string)
+	require.NotEmpty(t, reason, "the rejected reload logged no reason")
+	return reason
 }

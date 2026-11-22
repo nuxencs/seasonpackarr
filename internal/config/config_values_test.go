@@ -195,10 +195,9 @@ func TestReload_RejectsBadValueAndKeepsLastSnapshot(t *testing.T) {
 			cfg, configFile := newTestAppConfig(t, qbitClientConfig+"port: 4242\n", tt.environ...)
 			before := cfg.Snapshot()
 
-			writeConfigFile(t, configFile, tt.bad)
-			_, err := cfg.reload()
+			rejection := reloadWithFile(t, cfg, configFile, tt.bad)
 
-			require.Error(t, err)
+			require.NotEmpty(t, rejection)
 			assert.Equal(t, before, cfg.Snapshot())
 		})
 	}
