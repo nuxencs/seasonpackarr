@@ -180,7 +180,7 @@ func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFix
 		noti = opts.noti
 	}
 	inv := inventory.New(connector.connect, log)
-	server := NewServer(log, cfg, noti, store, inv, nil)
+	server := NewServer(log, cfg, noti, store, inv)
 	return processorHTTPFixture{
 		search:        server.search,
 		inventory:     inv,
@@ -425,7 +425,7 @@ func (f *processorHTTPFixture) restart(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, store.Close()) })
 	// A restart starts with no connections and no inventories.
 	f.inventory = inventory.New(f.connector.connect, f.search.log)
-	server := NewServer(f.search.log, f.config, f.notifications, store, f.inventory, nil)
+	server := NewServer(f.search.log, f.config, f.notifications, store, f.inventory)
 	f.search, f.handler, f.tasks = server.search, server.Handler(), server.tasks
 }
 

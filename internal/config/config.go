@@ -6,6 +6,7 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -14,7 +15,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -381,7 +381,6 @@ type AppConfig struct {
 	current atomic.Pointer[domain.Config]
 	source  source
 	version string
-	watcher *fsnotify.Watcher
 }
 
 // New loads the config as Load does and returns a holder that can reload it.
@@ -776,27 +775,60 @@ func (c *AppConfig) reload() (*domain.Config, error) {
 
 const configReloadDebounceDelay = 100 * time.Millisecond
 
-func (c *AppConfig) watchConfigFile(log logger.Logger, onChange func()) error {
-	watchedPath := filepath.Clean(c.source.configFile)
+// Watch reloads the config after each change of the config file until ctx ends. It returns after the file watcher is set up.
+// After each accepted reload, it calls each party in argument order with its own copy of the new snapshot. The parties
+// run on the reload goroutine, one reload at a time. A rejected reload calls no party, and no party runs at the start.
+// After ctx ends, no new reload starts. A reload in progress can finish, and Watch does not wait for it.
+// With the config file disabled, Watch starts nothing.
+func (c *AppConfig) Watch(ctx context.Context, log logger.Logger, parties ...func(domain.Config)) error {
+	if c.source.disabled {
+		return nil
+	}
+
+	changes, err := watchConfigFile(ctx, log, c.source.configFile)
+	if err != nil {
+		return fmt.Errorf("watching config file %s: %w", c.source.configFile, err)
+	}
+	go c.reloadOnChange(ctx, log, changes, parties)
+	return nil
+}
+
+// watchConfigFile reports each change of configFile on the returned channel until ctx ends, then closes the watcher.
+// One pending signal stands for any number of changes, so the watcher never blocks on a busy reload.
+func watchConfigFile(ctx context.Context, log logger.Logger, configFile string) (<-chan struct{}, error) {
+	watchedPath := filepath.Clean(configFile)
 	realPath, err := filepath.EvalSymlinks(watchedPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	realPath = filepath.Clean(realPath)
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := watcher.Add(filepath.Dir(watchedPath)); err != nil {
 		_ = watcher.Close()
-		return err
+		return nil, err
 	}
-	c.watcher = watcher
 
+	changes := make(chan struct{}, 1)
+	changed := func() {
+		select {
+		case changes <- struct{}{}:
+		default:
+		}
+	}
 	go func() {
+		defer func() {
+			if err := watcher.Close(); err != nil {
+				log.Error().Err(err).Msg("error closing config file watcher")
+			}
+		}()
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case event, ok := <-watcher.Events:
 				if !ok {
 					return
@@ -805,10 +837,10 @@ func (c *AppConfig) watchConfigFile(log logger.Logger, onChange func()) error {
 				eventPath := filepath.Clean(event.Name)
 				currentRealPath, err := filepath.EvalSymlinks(watchedPath)
 				if err != nil {
-					if os.IsNotExist(err) {
+					if errors.Is(err, fs.ErrNotExist) {
 						onWatchedFile := eventPath == watchedPath || eventPath == realPath
 						if onWatchedFile && event.Has(fsnotify.Remove|fsnotify.Rename) {
-							onChange()
+							changed()
 						}
 					} else {
 						log.Error().Err(err).Msg("error resolving watched config file")
@@ -821,7 +853,7 @@ func (c *AppConfig) watchConfigFile(log logger.Logger, onChange func()) error {
 				targetChanged := currentRealPath != realPath
 				if targetChanged || (onWatchedFile && event.Has(fsnotify.Create|fsnotify.Write)) {
 					realPath = currentRealPath
-					onChange()
+					changed()
 				}
 			case watchErr, ok := <-watcher.Errors:
 				if !ok {
@@ -832,61 +864,45 @@ func (c *AppConfig) watchConfigFile(log logger.Logger, onChange func()) error {
 		}
 	}()
 
-	return nil
+	return changes, nil
 }
 
-func (c *AppConfig) DynamicReload(log logger.Logger) (<-chan struct{}, error) {
-	if c.source.disabled {
-		return nil, nil
-	}
-
-	reloaded := make(chan struct{}, 1)
-	var (
-		reloadGeneration atomic.Uint64
-		reloadMu         sync.Mutex
-	)
-
-	reloadIfLatest := func(generation uint64) {
-		if generation != reloadGeneration.Load() {
-			return
-		}
-
-		reloadMu.Lock()
-		defer reloadMu.Unlock()
-		if generation != reloadGeneration.Load() {
-			return
-		}
-
-		snapshot, err := c.reload()
-		if err != nil {
-			log.Error().Err(err).Msg("config reload rejected; keeping previous config")
-			return
-		}
-
-		log.SetLogLevel(snapshot.LogLevel)
-		LogInventoryScopeWarnings(log, *snapshot)
+// reloadOnChange reloads the config when no change signal arrived for configReloadDebounceDelay, until ctx ends.
+// Editors and bind mounts can emit several write events for one save. The quiet period prevents a transient rejection
+// of a truncate-first write. It also prevents duplicate reloads from an event burst. Reloads run one at a time here.
+func (c *AppConfig) reloadOnChange(ctx context.Context, log logger.Logger, changes <-chan struct{}, parties []func(domain.Config)) {
+	timer := time.NewTimer(configReloadDebounceDelay)
+	timer.Stop()
+	defer timer.Stop()
+	for {
 		select {
-		case reloaded <- struct{}{}:
-		default:
+		case <-ctx.Done():
+			return
+		case <-changes:
+			timer.Reset(configReloadDebounceDelay)
+		case <-timer.C:
+			// select picks at random when ctx also ended, and no reload may start after the stop.
+			if ctx.Err() != nil {
+				return
+			}
+			// select also picks at random when a change is ready too, and a late wake-up can let one queue. Either way the
+			// file is not quiet yet, so the change restarts the quiet period.
+			select {
+			case <-changes:
+				timer.Reset(configReloadDebounceDelay)
+				continue
+			default:
+			}
+			snapshot, err := c.reload()
+			if err != nil {
+				log.Error().Err(err).Msg("config reload rejected; keeping previous config")
+				continue
+			}
+			// A copy per party keeps a change by one party out of the next party and the stored snapshot.
+			for _, party := range parties {
+				party(snapshot.Clone())
+			}
+			log.Debug().Msg("config file reloaded")
 		}
-		log.Debug().Msg("config file reloaded")
 	}
-
-	scheduleReload := func() {
-		generation := reloadGeneration.Add(1)
-		time.AfterFunc(configReloadDebounceDelay, func() {
-			reloadIfLatest(generation)
-		})
-	}
-
-	err := c.watchConfigFile(log, func() {
-		// Editors and bind mounts can emit several write events for one save.
-		// Reload after the event burst becomes quiet so truncate-first writes do
-		// not produce a transient rejection or duplicate successful reloads.
-		scheduleReload()
-	})
-	if err != nil {
-		return nil, fmt.Errorf("watching config file %s: %w", c.source.configFile, err)
-	}
-	return reloaded, nil
 }

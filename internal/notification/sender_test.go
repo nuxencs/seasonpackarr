@@ -344,8 +344,7 @@ func TestSender_KeepsDestinationsAfterRejectedReload(t *testing.T) {
 	cfg, err := config.New(config.Input{ConfigDir: dir, Version: "test"})
 	require.NoError(t, err)
 	log := loggertest.New()
-	_, err = cfg.DynamicReload(log)
-	require.NoError(t, err)
+	require.NoError(t, cfg.Watch(t.Context(), log))
 	sender := NewSender(log, cfg)
 
 	writeConfig("gotify://gotify.example/invalid-token")

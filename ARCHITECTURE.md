@@ -43,6 +43,14 @@
   It has no unknown-key check, no validation of server-only settings, and no `config.toml` check.
 - Runtime readers acquire one snapshot per request or operation. Reload publishes a candidate only after file parsing,
   environment overrides, and validation succeed.
+- `AppConfig.Watch` reloads the config after each change of the config file until its context ends. `start` passes its
+  signal context. Inside the package, the file watcher only signals "the file changed", and one loop debounces the
+  signals and runs one reload at a time. After the context ends, the watcher closes and no new reload starts.
+- The parties that a reload concerns are callbacks in the `Watch` call. After each accepted reload, the loop calls them
+  in argument order, each with its own copy of the new snapshot. A rejected reload calls none, and none runs at the
+  start. `start` wires three parties in this order: the log level change, the inventory scope warnings, and the
+  inventory clean-up. The config package changes no logger state. `start` sets the first log level and logs the first
+  scope warnings itself.
 - Durable contract surfaces: `config.yaml`, `schemas/config-schema.json`, [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
 
 ### HTTP/API
@@ -114,7 +122,7 @@
 - A qBittorrent inventory scope makes the scan read only the include values: one `torrents/info` request for each include category and include tag, up to four in parallel, merged by hash in a fixed order. `torrents/info` has no exclude filter, so the adapter drops the excludes after the read, and a scope with excludes only reads every torrent. qBittorrent 4.3 has no tag filter, so there a scope with include tags adds one unfiltered read, and the adapter keeps the torrents with an include tag. `BenchmarkQbitGetTorrents` compares the read shapes. The lookup of the added torrent during the import ignores the scope.
 - The inventory module keeps the parsed torrent names of each client endpoint and inventory scope separately from the inventory. An import discards the inventory, but the next scan parses only new names. A scan also reuses the names of the other scopes of its endpoint, so a name in two scopes is parsed once.
 - At startup, a server lifecycle task runs the startup read of the inventory module. It reads the inventory of each client once, so the first announce does not log in or parse every name. Clients of one endpoint share the parsed names. The task tries a client that is not ready up to four times, 10 seconds apart, then only logs a warning.
-- After each config reload, the server reload loop runs the clean-up of the inventory module. It drops the cached connection and inventory of each client that the config no longer has or configures differently, and the parsed names of endpoints and inventory scopes that no client uses. A scan that overlaps this clean-up adds no new parsed-name key, so it cannot restore a removed one. It closes the Deluge connection of a dropped client. A request that still holds that client connects again.
+- After each config reload, the inventory clean-up party of `start` runs the clean-up of the inventory module. It drops the cached connection and inventory of each client that the config no longer has or configures differently, and the parsed names of endpoints and inventory scopes that no client uses. A scan that overlaps this clean-up adds no new parsed-name key, so it cannot restore a removed one. It closes the Deluge connection of a dropped client. A request that still holds that client connects again.
 - Only an accepted match produces an import plan. One function decides the coverage rule of smart mode, for the planned coverage of a plan build and for the achieved coverage after the hardlinks. A rejected match keeps no plan. It returns its coverage when the torrent episodes were matched.
 - The processor keeps the import plan of an accepted match for 2 minutes, for both callers. No plan value crosses its interface. The import normally performs no second inventory or file-detail reads.
 - A kept plan is valid only for the same client name, torrent identity, release name, client configuration, and fuzzy matching settings. The import builds the plan again when it has no valid one.

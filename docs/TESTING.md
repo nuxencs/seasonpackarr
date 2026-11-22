@@ -113,6 +113,13 @@ so the glossary does not define them.
   with a `config.Input` that holds a temporary directory and the environment as a
   literal list. They change no process environment variable and build no
   `AppConfig` literal.
+- The debounce, stop, and party tests of the config reload (`TestReloadOnChange_`)
+  send the "file changed" signal to the unexported reload loop in a
+  `testing/synctest` bubble. They count the accepted reloads with a last party.
+  The `TestWatch_` tests call `Watch` with `t.Context()`, so the test stops the
+  watch. Most of them need real file system events.
+- The `cmd` tests of the reload parties (`TestReloadParties_`,
+  `TestCleanUpInventory_`) call the parties directly, without a watch.
 - Every Go file groups imports as standard library, this module, then external
   modules.
 
