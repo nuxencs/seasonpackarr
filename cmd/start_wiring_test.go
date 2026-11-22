@@ -84,8 +84,12 @@ func writeConfig(t *testing.T, dir, contents string) {
 }
 
 // startClient sends each request on its own connection. A pooled connection that no request used delays the shutdown
-// of the server by 5 seconds, because http.Server.Shutdown waits that long for a new connection.
-var startClient = &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
+// of the server by 5 seconds, because http.Server.Shutdown waits that long for a new connection. The timeout keeps a
+// request that gets no response from blocking the deadline check of waitFor.
+var startClient = &http.Client{
+	Timeout:   time.Second,
+	Transport: &http.Transport{DisableKeepAlives: true},
+}
 
 // startRun is one start command that runs in-process until its context ends.
 type startRun struct {
@@ -121,7 +125,10 @@ func runStart(t *testing.T, dir string, port int) *startRun {
 	t.Helper()
 	run := launchStart(t, dir, port, nil)
 	require.True(t, waitFor(conditionWait, func() bool {
-		require.False(t, run.returned(), "start returned before it served: exit code %d: %s", run.code, run.stderr)
+		// The result fields are safe to read only after finished closed.
+		if run.returned() {
+			require.FailNow(t, "start returned before it served", "exit code %d: %s", run.code, run.stderr)
+		}
 		return run.live(t)
 	}), "start did not serve")
 	return run
