@@ -5,6 +5,7 @@ package discovery_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -176,4 +177,98 @@ func TestIndexers_KeepsAPIKeySecret(t *testing.T) {
 	}
 	f.log.Events(t).Require(t, "database operation failed")
 	f.log.AssertNoSecrets(t, map[string]string{"Prowlarr API key": key})
+}
+
+func TestRun_DatabaseFailureEndsSequences(t *testing.T) {
+	const databaseFailure = "could not access database; check service logs"
+	t.Run("torrent cache read", func(t *testing.T) {
+		f := newSourceFixture(t)
+		f.prowlarr.listings = map[int][]string{2: {"Show.S01", "Show.S01.REPACK"}}
+		run := f.begin(t, discovery.KindSearch)
+		indexers := usableIndexers(t, run)
+
+		var got []string
+		var errs []error
+		for listing := range run.Search(t.Context(), indexers[2], showQuery) {
+			got = append(got, listing.Title())
+			require.NoError(t, f.store.Close())
+			_, err := listing.Torrent(t.Context())
+			errs = append(errs, err)
+			_, err = listing.Torrent(t.Context())
+			errs = append(errs, err)
+		}
+
+		assert.Equal(t, []string{"Show.S01"}, got)
+		for _, err := range errs {
+			assert.ErrorIs(t, err, discovery.ErrDatabase)
+		}
+		assert.ErrorIs(t, run.Err(), discovery.ErrDatabase)
+		assert.Equal(t, []discovery.Failure{{Reason: databaseFailure}}, run.Failures())
+		pages := f.requestCount()
+		assert.Empty(t, titles(run.Search(t.Context(), indexers[1], showQuery)))
+		assert.Equal(t, pages, f.requestCount(), "a sequence after a database failure must send no request")
+		assert.Empty(t, f.requestsTo("/2/download"))
+		event := f.log.Events(t).Require(t, "database operation failed")
+		assert.Equal(t, "sql: database is closed", event["error"])
+	})
+	t.Run("cooldown write", func(t *testing.T) {
+		f := newSourceFixture(t)
+		f.prowlarr.listings = map[int][]string{2: {"Show.S01"}}
+		f.prowlarr.respond = at("/1/api", func() *http.Response { return cooldownResponse(http.StatusServiceUnavailable, "7200") })
+		run := f.begin(t, discovery.KindSearch)
+		indexers := usableIndexers(t, run)
+		require.NoError(t, f.store.Close())
+
+		assert.Empty(t, titles(run.Search(t.Context(), indexers[1], showQuery)))
+		assert.Empty(t, titles(run.Search(t.Context(), indexers[2], showQuery)))
+
+		assert.ErrorIs(t, run.Err(), discovery.ErrDatabase)
+		assert.Equal(t, []discovery.Failure{
+			{IndexerID: 1, Query: "Show S01", Reason: "Prowlarr returned HTTP 503"},
+			{Reason: databaseFailure},
+		}, run.Failures())
+		assert.Empty(t, f.requestsTo("/2/api"))
+	})
+	t.Run("torrent cache write", func(t *testing.T) {
+		f := newSourceFixture(t)
+		f.prowlarr.listings = map[int][]string{2: {"Show.S01", "Show.S01.REPACK"}}
+		// The store closes after the cache read, so only the write fails.
+		f.prowlarr.respond = atTitle("Show.S01", func() *http.Response {
+			require.NoError(t, f.store.Close())
+			return nil
+		})
+		run := f.begin(t, discovery.KindSearch)
+
+		got := searchAll(t, run, usableIndexers(t, run)[2])
+
+		assert.Equal(t, []string{"Show.S01"}, got)
+		assert.ErrorIs(t, run.Err(), discovery.ErrDatabase)
+		assert.Equal(t, []discovery.Failure{{Reason: databaseFailure}}, run.Failures())
+		assert.Len(t, f.requestsTo("/2/download"), 1)
+	})
+}
+
+func TestStats_MatchesProwlarrRequests(t *testing.T) {
+	f := newSourceFixture(t)
+	f.prowlarr.listings = map[int][]string{1: {"A", "B", "C"}, 2: {"Show.S01", "Show.S01.REPACK"}}
+	f.fetchFirst(t)
+	f.prowlarr.requests = nil
+	run := f.begin(t, discovery.KindSearch)
+	indexers := usableIndexers(t, run)
+
+	searchAll(t, run, indexers[2])
+	searchAll(t, run, indexers[1])
+
+	var pages, downloads int
+	for _, request := range f.prowlarr.requests {
+		switch {
+		case strings.HasSuffix(request.Path, "/download"):
+			downloads++
+		case request.Path != "/api/v1/indexer":
+			pages++
+		}
+	}
+	want := discovery.Stats{FeedPages: 3, Downloads: 4, CacheHits: 1}
+	assert.Equal(t, want, run.Stats())
+	assert.Equal(t, discovery.Stats{FeedPages: pages, Downloads: downloads, CacheHits: 1}, run.Stats())
 }

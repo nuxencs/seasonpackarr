@@ -31,17 +31,22 @@ code of the real binary.
   an in-process transport through `prowlarr.New`. The other client tests stay
   in the package.
 - The tests of the discovery source live in `internal/discovery/`
-  (`source_test.go` for `Begin` and `End`, `run_test.go` for the run methods).
-  They are in the external test package `discovery_test`, so they call only
-  `Begin` and the methods of the run. The fixture in `fixtures_test.go` gives
-  the source a real SQLite file in a temporary directory. It also gives the
-  source an in-process fake Prowlarr (`fakeProwlarr`) as its HTTP transport.
+  (`source_test.go` for `Begin` and `End`, `run_test.go` for `Indexers` and
+  the rules of a whole run, `search_test.go` for `Search`, and
+  `listing_test.go` for `Listing.Torrent`). They are in the external test
+  package `discovery_test`, so they call only `Begin`, the methods of the run,
+  and the methods of a listing. The fixture in `fixtures_test.go` gives the
+  source a real SQLite file in a temporary directory. It also gives the source
+  an in-process fake Prowlarr (`fakeProwlarr`) as its HTTP transport. The fake
+  serves the indexer list, a feed page for each indexer from a list of titles,
+  and the torrent bytes of each listing.
   The tests need no torrent client, no pack, and no config provider. A
   restart is: close the store, open it again, and make a new source
   (`restart`). A database failure test closes the store. No test calls
   another store method, reads a cooldown map, or sets a deadline. A test
-  asserts only what a caller can see: the indexers, the failures, `Err`, the
-  requests that the fake Prowlarr received, and the log lines. A test that
+  asserts only what a caller can see: the indexers, the listings, the torrent
+  bytes and their errors, the failures, `Err`, `Stats`, the requests that the
+  fake Prowlarr received, and the log lines. A test that
   waits for a deadline runs in a `testing/synctest` bubble and moves the
   virtual clock with `time.Sleep`. Examples are the end of a cooldown and the
   request spacing.

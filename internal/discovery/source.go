@@ -21,21 +21,23 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/state"
 )
 
-// The error classes of Begin. An invalid interval or connection matches
-// ErrInvalidSettings and keeps the text of its cause.
+// The error classes of Begin and of Listing.Torrent. An invalid interval or
+// connection matches ErrInvalidSettings, and a failed download matches
+// ErrDownload. Both keep the text of their cause.
 var (
 	ErrRunActive       = errors.New("a Prowlarr discovery run is already active")
 	ErrDatabase        = errors.New("could not access database; check service logs")
 	ErrInvalidSettings = errors.New("invalid Prowlarr discovery settings")
+	ErrDownload        = errors.New("torrent download failed")
 )
 
-// settingsError is an invalid interval or connection. Its text is the text of
-// the cause, so the report of the run does not change.
-type settingsError struct{ err error }
+// classError puts its cause in an error class. Its text is the text of the
+// cause, so the report of the run does not change.
+type classError struct{ class, err error }
 
-func (e settingsError) Error() string        { return e.err.Error() }
-func (e settingsError) Unwrap() error        { return e.err }
-func (e settingsError) Is(target error) bool { return target == ErrInvalidSettings }
+func (e classError) Error() string        { return e.err.Error() }
+func (e classError) Unwrap() error        { return e.err }
+func (e classError) Is(target error) bool { return target == e.class }
 
 // Kind is the kind of a discovery run. It selects the capability that an
 // indexer must have.
@@ -109,12 +111,12 @@ func (r *Run) End() {
 func (s *Source) begin(ctx context.Context, settings domain.Search, kind Kind) (*Run, error) {
 	spacing, err := time.ParseDuration(settings.RequestInterval)
 	if err != nil || spacing < 0 {
-		return nil, settingsError{errors.New("invalid search.requestInterval")}
+		return nil, classError{ErrInvalidSettings, errors.New("invalid search.requestInterval")}
 	}
 	if s.client == nil || s.prowlarrURL != settings.ProwlarrURL || s.prowlarrKey != settings.APIKey {
 		client, err := prowlarr.New(settings.ProwlarrURL, settings.APIKey, spacing, s.transport)
 		if err != nil {
-			return nil, settingsError{err}
+			return nil, classError{ErrInvalidSettings, err}
 		}
 		s.client = client
 		s.prowlarrURL = settings.ProwlarrURL
@@ -133,15 +135,21 @@ func (s *Source) begin(ctx context.Context, settings domain.Search, kind Kind) (
 		kind:       kind,
 		indexerIDs: settings.IndexerIDs,
 		cooldowns:  cooldowns,
+		out:        make(map[int]bool),
 	}, nil
 }
 
 // stateError logs a database failure with its stack and returns ErrDatabase.
 // A canceled context returns as is.
 func (s *Source) stateError(err error) error {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if canceled(err) {
 		return err
 	}
 	s.log.Error().Err(errtrace.WithStack(err)).Msg("database operation failed")
 	return ErrDatabase
+}
+
+// canceled reports whether err is the error of a canceled context.
+func canceled(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
