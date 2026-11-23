@@ -381,6 +381,14 @@ func TestQbitBuildTorrentAddOptions(t *testing.T) {
 		require.Equal(t, "true", prepared["useDownloadPath"])
 	})
 
+	t.Run("trims category", func(t *testing.T) {
+		q := newTestQbitClient(&fakeQbitAPI{}, domain.ImportPolicy{Category: " tv-hd "})
+		prepared, err := q.buildTorrentAddOptions(true)
+		require.NoError(t, err)
+		assert.Equal(t, "tv-hd", prepared["category"])
+		assert.NotContains(t, prepared, "tags")
+	})
+
 	t.Run("joins tags", func(t *testing.T) {
 		q := newTestQbitClient(&fakeQbitAPI{}, domain.ImportPolicy{Category: "tv-hd", Tags: []string{" a ", "", "b"}})
 		prepared, err := q.buildTorrentAddOptions(true)

@@ -538,22 +538,10 @@ func validateClientConfig(clientName string, client *domain.Client) error {
 func LogInventoryScopeWarnings(log logger.Logger, cfg domain.Config) {
 	for _, name := range slices.Sorted(maps.Keys(cfg.Clients)) {
 		client := cfg.Clients[name]
-		if client == nil || !client.Inventory.IsSet() {
+		if client == nil || torrentclient.InventorySelectsImports(*client) {
 			continue
 		}
-		// The add trims the category and the tags and drops blank tags, so compare what it sends.
-		imp := client.Import
-		category := strings.TrimSpace(imp.Category)
-		tags := make([]string, 0, len(imp.Tags))
-		for _, tag := range imp.Tags {
-			if tag = strings.TrimSpace(tag); tag != "" {
-				tags = append(tags, tag)
-			}
-		}
-		if client.Inventory.Selects(category, tags) {
-			continue
-		}
-		log.Warn().Str("clientname", name).Str("import_category", imp.Category).Strs("import_tags", imp.Tags).
+		log.Warn().Str("clientname", name).Str("import_category", client.Import.Category).Strs("import_tags", client.Import.Tags).
 			Msg("inventory scope does not select new packs, which have the import category and import tags; a second announce of a pack that is still in the import category is not found (see the configuration guide)")
 	}
 }

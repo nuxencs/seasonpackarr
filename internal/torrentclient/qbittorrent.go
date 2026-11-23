@@ -679,8 +679,10 @@ func (q *qbitClient) buildTorrentAddOptions(dataComplete bool) (map[string]strin
 		Paused:        dataComplete,
 	}
 
-	if q.policy.Category != "" {
-		opts.Category = strings.TrimSpace(q.policy.Category)
+	category, tags := qbitImportCategoryAndTags(q.policy)
+	opts.Category = category
+	if len(tags) > 0 {
+		opts.Tags = strings.Join(tags, ",")
 	}
 	if q.policy.DownloadPath != "" {
 		opts.DownloadPath = strings.TrimSpace(q.policy.DownloadPath)
@@ -689,24 +691,23 @@ func (q *qbitClient) buildTorrentAddOptions(dataComplete bool) (map[string]strin
 		opts.ContentLayout = contentLayout
 	}
 
-	if len(q.policy.Tags) > 0 {
-		trimmed := make([]string, 0, len(q.policy.Tags))
-		for _, tag := range q.policy.Tags {
-			if t := strings.TrimSpace(tag); t != "" {
-				trimmed = append(trimmed, t)
-			}
-		}
-		if len(trimmed) > 0 {
-			opts.Tags = strings.Join(trimmed, ",")
-		}
-	}
-
 	params := opts.Prepare()
 	if !dataComplete {
 		// qBittorrent 4.5+ applies its global stop condition when this is unset.
 		params["stopCondition"] = "None"
 	}
 	return params, nil
+}
+
+// qbitImportCategoryAndTags returns the category and the tags that the add sends: trimmed, with blank tags dropped.
+// InventorySelectsImports compares the same values, so the scope warning matches the add.
+func qbitImportCategoryAndTags(policy domain.ImportPolicy) (category string, tags []string) {
+	for _, tag := range policy.Tags {
+		if tag = strings.TrimSpace(tag); tag != "" {
+			tags = append(tags, tag)
+		}
+	}
+	return strings.TrimSpace(policy.Category), tags
 }
 
 // contentLayouts maps each value of import.contentLayout to the layout that the add sends.

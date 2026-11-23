@@ -173,3 +173,81 @@ func TestValidate_AppliesClientTypeRules(t *testing.T) {
 		})
 	}
 }
+
+func TestInventorySelectsImports(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		client domain.Client
+		want   bool
+	}{
+		{
+			name:   "no scope",
+			client: domain.Client{Import: domain.ImportPolicy{Category: "tv-hd"}},
+			want:   true,
+		},
+		{
+			name: "scope includes the padded import category",
+			client: domain.Client{
+				Import:    domain.ImportPolicy{Category: " tv-hd "},
+				Inventory: domain.InventoryScope{IncludeCategories: []string{"tv-hd"}},
+			},
+			want: true,
+		},
+		{
+			name: "scope includes a padded import tag",
+			client: domain.Client{
+				Import:    domain.ImportPolicy{Category: "tv-hd", Tags: []string{" keep "}},
+				Inventory: domain.InventoryScope{IncludeTags: []string{"keep"}},
+			},
+			want: true,
+		},
+		{
+			name: "scope misses the import category and tags",
+			client: domain.Client{
+				Import:    domain.ImportPolicy{Category: "tv-hd", Tags: []string{"seasonpackarr"}},
+				Inventory: domain.InventoryScope{IncludeCategories: []string{"tv-hd-completed"}},
+			},
+		},
+		// Validate rejects an empty scope entry, but only this scope shows that a blank tag is not sent.
+		{
+			name: "blank import tag is dropped",
+			client: domain.Client{
+				Import:    domain.ImportPolicy{Category: "tv-hd", Tags: []string{" "}},
+				Inventory: domain.InventoryScope{ExcludeTags: []string{""}},
+			},
+			want: true,
+		},
+		{
+			name: "excludes only keep the import category",
+			client: domain.Client{
+				Import:    domain.ImportPolicy{Category: "tv-hd", Tags: []string{"seasonpackarr"}},
+				Inventory: domain.InventoryScope{ExcludeCategories: []string{"movies"}},
+			},
+			want: true,
+		},
+		{
+			name: "excludes only drop the padded import tag",
+			client: domain.Client{
+				Import:    domain.ImportPolicy{Category: "tv-hd", Tags: []string{" seasonpackarr "}},
+				Inventory: domain.InventoryScope{ExcludeTags: []string{"seasonpackarr"}},
+			},
+		},
+		{
+			name: "client type without an inventory scope",
+			client: domain.Client{
+				Type:      "transmission",
+				Import:    domain.ImportPolicy{Tags: []string{"seasonpackarr"}},
+				Inventory: domain.InventoryScope{IncludeTags: []string{"tv"}},
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, InventorySelectsImports(tt.client))
+		})
+	}
+}

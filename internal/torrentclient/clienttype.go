@@ -20,8 +20,9 @@ type clientType struct {
 	name string
 	// aliases are the other spellings that select this type.
 	aliases []string
-	// appliesInventoryScope reports that the adapter applies an inventory scope.
-	appliesInventoryScope bool
+	// importCategoryAndTags returns the category and tags that the add gives a new pack.
+	// Nil means that the adapter applies no inventory scope, which validate checks.
+	importCategoryAndTags func(domain.ImportPolicy) (category string, tags []string)
 	// validate checks the rules of this type. typeName is the canonical name, for the message.
 	validate   func(typeName string, client domain.Client) error
 	newAdapter constructor
@@ -33,7 +34,7 @@ type constructor func(context.Context, *domain.Client) (TorrentClient, error)
 var clientTypes = []clientType{
 	// An empty type is qBittorrent, the default client type.
 	{
-		name: "qbittorrent", aliases: []string{""}, appliesInventoryScope: true,
+		name: "qbittorrent", aliases: []string{""}, importCategoryAndTags: qbitImportCategoryAndTags,
 		validate: validateQbitConfig, newAdapter: asConstructor(newQbitClient),
 	},
 	{name: "transmission", validate: rejectQbitOnlyImportKeys, newAdapter: asConstructor(newTransmissionClient)},
@@ -63,13 +64,24 @@ func validate(client domain.Client) (clientType, error) {
 			return clientType{}, fmt.Errorf("inventory list entry %q is empty or starts or ends with a space", value)
 		}
 	}
-	if scope.IsSet() && !entry.appliesInventoryScope {
+	if scope.IsSet() && entry.importCategoryAndTags == nil {
 		return clientType{}, fmt.Errorf("type %q must not set inventory - the inventory scope is qBittorrent only", entry.name)
 	}
 	if err := entry.validate(entry.name, client); err != nil {
 		return clientType{}, err
 	}
 	return entry, nil
+}
+
+// InventorySelectsImports reports whether the inventory scope of client
+// surely selects the packs that its import adds. A client with no scope set,
+// a client type that applies no inventory scope, and an unknown type answer true.
+func InventorySelectsImports(client domain.Client) bool {
+	entry, ok := lookupClientType(client.Type)
+	if !ok || entry.importCategoryAndTags == nil || !client.Inventory.IsSet() {
+		return true
+	}
+	return client.Inventory.Selects(entry.importCategoryAndTags(client.Import))
 }
 
 // clientTypeSpellings lists each type spelling of the config for a message.
