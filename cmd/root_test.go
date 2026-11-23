@@ -86,7 +86,7 @@ func TestExecute_OnlyStartCreatesConfigFile(t *testing.T) {
 
 		// The default client of the new file has no import category, so the load stops start after the write.
 		assert.Equal(t, 1, code)
-		assert.Contains(t, stderr.String(), `client "default" must configure import.category or import.savePath`)
+		assert.Contains(t, stderr.String(), `client "default": must configure import.category or import.savePath`)
 		want, err := os.ReadFile("../config.yaml")
 		require.NoError(t, err)
 		got, err := os.ReadFile(filepath.Join(dir, "config.yaml"))

@@ -5,7 +5,10 @@ package torrentclient
 
 import (
 	"context"
+	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 )
@@ -16,7 +19,11 @@ type clientType struct {
 	// name is the canonical spelling of the type in the config.
 	name string
 	// aliases are the other spellings that select this type.
-	aliases    []string
+	aliases []string
+	// appliesInventoryScope reports that the adapter applies an inventory scope.
+	appliesInventoryScope bool
+	// validate checks the rules of this type. typeName is the canonical name, for the message.
+	validate   func(typeName string, client domain.Client) error
 	newAdapter constructor
 }
 
@@ -25,10 +32,76 @@ type constructor func(context.Context, *domain.Client) (TorrentClient, error)
 
 var clientTypes = []clientType{
 	// An empty type is qBittorrent, the default client type.
-	{name: "qbittorrent", aliases: []string{""}, newAdapter: asConstructor(newQbitClient)},
-	{name: "transmission", newAdapter: asConstructor(newTransmissionClient)},
-	{name: "deluge-v1", newAdapter: delugeConstructor(delugeV1)},
-	{name: "deluge-v2", aliases: []string{"deluge"}, newAdapter: delugeConstructor(delugeV2)},
+	{
+		name: "qbittorrent", aliases: []string{""}, appliesInventoryScope: true,
+		validate: validateQbitConfig, newAdapter: asConstructor(newQbitClient),
+	},
+	{name: "transmission", validate: rejectQbitOnlyImportKeys, newAdapter: asConstructor(newTransmissionClient)},
+	{name: "deluge-v1", validate: validateDelugeConfig, newAdapter: delugeConstructor(delugeV1)},
+	{name: "deluge-v2", aliases: []string{"deluge"}, validate: validateDelugeConfig, newAdapter: delugeConstructor(delugeV2)},
+}
+
+// Validate reports whether client is a valid config for its client type. It
+// does no file access. Its messages name the config keys but not the client,
+// so the caller adds the client name.
+func Validate(client domain.Client) error {
+	_, err := validate(client)
+	return err
+}
+
+// validate is Validate, and it also returns the entry of the client type for New.
+func validate(client domain.Client) (clientType, error) {
+	entry, ok := lookupClientType(client.Type)
+	if !ok {
+		return clientType{}, fmt.Errorf("type %q is invalid - use %s", client.Type, clientTypeSpellings())
+	}
+	// go-qbittorrent drops an empty filter value, which would read every torrent,
+	// and qBittorrent compares exact names, so " tv" would match no torrent.
+	scope := client.Inventory
+	for _, value := range slices.Concat(scope.IncludeCategories, scope.IncludeTags, scope.ExcludeCategories, scope.ExcludeTags) {
+		if value == "" || strings.TrimSpace(value) != value {
+			return clientType{}, fmt.Errorf("inventory list entry %q is empty or starts or ends with a space", value)
+		}
+	}
+	if scope.IsSet() && !entry.appliesInventoryScope {
+		return clientType{}, fmt.Errorf("type %q must not set inventory - the inventory scope is qBittorrent only", entry.name)
+	}
+	if err := entry.validate(entry.name, client); err != nil {
+		return clientType{}, err
+	}
+	return entry, nil
+}
+
+// clientTypeSpellings lists each type spelling of the config for a message.
+func clientTypeSpellings() string {
+	var spellings []string
+	for _, entry := range clientTypes {
+		spellings = append(spellings, strconv.Quote(entry.name))
+		for _, alias := range entry.aliases {
+			if alias != "" {
+				spellings = append(spellings, strconv.Quote(alias))
+			}
+		}
+	}
+	return orList(spellings)
+}
+
+// orList joins values for a message, such as "a, b or c".
+func orList(values []string) string {
+	if len(values) < 2 {
+		return strings.Join(values, "")
+	}
+	last := len(values) - 1
+	return strings.Join(values[:last], ", ") + " or " + values[last]
+}
+
+// rejectQbitOnlyImportKeys is the import rule of each client type that is not qBittorrent.
+func rejectQbitOnlyImportKeys(typeName string, client domain.Client) error {
+	imp := client.Import
+	if imp.Category != "" || imp.DownloadPath != "" || imp.ContentLayout != "" {
+		return fmt.Errorf("type %q must not set import.category, import.downloadPath or import.contentLayout - those are qBittorrent only", typeName)
+	}
+	return nil
 }
 
 // lookupClientType returns the entry that the type spelling of a client

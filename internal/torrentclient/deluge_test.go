@@ -157,6 +157,27 @@ func TestDelugeImport_AppliesLowercaseLabel(t *testing.T) {
 	require.Equal(t, []string{"seasonpackarr"}, plugin.setLabels)
 }
 
+// TestDelugeImport_RejectsInvalidLabelBeforeAdd: the unexported constructors
+// skip Validate, and a label error after the add would leave the torrent in the client.
+func TestDelugeImport_RejectsInvalidLabelBeforeAdd(t *testing.T) {
+	t.Parallel()
+
+	api := &fakeDelugeAPI{addedHash: "returned-hash"}
+	client := newTestDelugeClient(api, domain.ImportPolicy{SavePath: "/downloads/tv", Tags: []string{"tv shows"}})
+	client.label = func(context.Context) (delugeLabelAPI, error) { return &fakeDelugeLabelAPI{}, nil }
+
+	_, err := client.Import(t.Context(), ImportRequest{
+		TorrentBytes: []byte("torrent bytes"),
+		SavePath:     "/downloads/tv",
+		LegacyHash:   "legacy-hash",
+		HasV1:        true,
+	})
+
+	require.ErrorContains(t, err, "import label")
+	assert.Equal(t, domain.StatusImportConfigError, ImportStatusCode(err))
+	assert.Zero(t, api.addCalls)
+}
+
 func TestBuildDelugeSettings(t *testing.T) {
 	t.Parallel()
 

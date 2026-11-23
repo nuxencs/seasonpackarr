@@ -380,6 +380,12 @@ func (d *delugeClient) Import(ctx context.Context, req ImportRequest) (ImportRep
 		report.record(ImportStageConfig, started)
 		return report, importErr(ImportStageConfig, errors.New("resolved deluge save path is empty"))
 	}
+	// Before the add, so an invalid label adds no torrent.
+	label, err := d.importLabel()
+	if err != nil {
+		report.record(ImportStageConfig, started)
+		return report, importErr(ImportStageConfig, err)
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, delugeTimeout)
 	defer cancel()
@@ -393,7 +399,7 @@ func (d *delugeClient) Import(ctx context.Context, req ImportRequest) (ImportRep
 
 	started = time.Now()
 	var addedHash string
-	err := d.call(ctx, noRetry, func() (err error) {
+	err = d.call(ctx, noRetry, func() (err error) {
 		addedHash, err = d.c.AddTorrentFile(ctx, req.LegacyHash+".torrent", content, options)
 		return err
 	})
@@ -409,7 +415,7 @@ func (d *delugeClient) Import(ctx context.Context, req ImportRequest) (ImportRep
 		report.record(ImportStageAdd, started)
 		return report, nil
 	}
-	if err := d.applyLabel(ctx, addedHash); err != nil {
+	if err := d.applyLabel(ctx, addedHash, label); err != nil {
 		report.record(ImportStageAdd, started)
 		return report, importErr(ImportStageAdd, err)
 	}
@@ -433,13 +439,16 @@ func (d *delugeClient) Import(ctx context.Context, req ImportRequest) (ImportRep
 	return report, nil
 }
 
-func (d *delugeClient) applyLabel(ctx context.Context, hash string) error {
-	if len(d.policy.Tags) == 0 || d.label == nil {
-		return nil
+// importLabel returns the label of the first import tag, or "" with no tag.
+func (d *delugeClient) importLabel() (string, error) {
+	if len(d.policy.Tags) == 0 {
+		return "", nil
 	}
+	return delugeLabel(d.policy.Tags[0])
+}
 
-	label := strings.ToLower(strings.TrimSpace(d.policy.Tags[0]))
-	if label == "" {
+func (d *delugeClient) applyLabel(ctx context.Context, hash, label string) error {
+	if label == "" || d.label == nil {
 		return nil
 	}
 
@@ -459,6 +468,43 @@ func (d *delugeClient) applyLabel(ctx context.Context, hash string) error {
 		}
 		return nil
 	})
+}
+
+// validateDelugeConfig is the import rule of Deluge 1 and Deluge 2.
+func validateDelugeConfig(typeName string, client domain.Client) error {
+	imp := client.Import
+	if imp.SavePath == "" {
+		return fmt.Errorf("type %q must configure import.savePath", typeName)
+	}
+	if len(imp.Tags) > 1 {
+		return fmt.Errorf("type %q supports at most one import.tags entry, its label", typeName)
+	}
+	if len(imp.Tags) == 1 {
+		if _, err := delugeLabel(imp.Tags[0]); err != nil {
+			return err
+		}
+	}
+	if err := rejectQbitOnlyImportKeys(typeName, client); err != nil {
+		return err
+	}
+	if client.APIKey != "" {
+		return fmt.Errorf("type %q must not set apiKey", typeName)
+	}
+	return nil
+}
+
+// delugeLabel returns the Deluge label of an import tag. Deluge accepts only
+// these characters and keeps labels in lower case. The check runs before the
+// lower-case step, which maps some other runes to ASCII letters.
+func delugeLabel(tag string) (string, error) {
+	label := strings.TrimSpace(tag)
+	invalid := func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-')
+	}
+	if label == "" || strings.ContainsFunc(label, invalid) {
+		return "", fmt.Errorf("import label %q is invalid - use letters, digits, underscores or hyphens", tag)
+	}
+	return strings.ToLower(label), nil
 }
 
 func ensureDelugeLabel(ctx context.Context, plugin delugeLabelAPI, hash, label string) error {

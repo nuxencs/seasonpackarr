@@ -149,7 +149,7 @@
 - The processor keeps the import plan of an accepted match for 2 minutes, for both callers. No plan value crosses its interface. The import normally performs no second inventory or file-detail reads.
 - A kept plan is valid only for the same client name, torrent identity, release name, client configuration, and fuzzy matching settings. The import builds the plan again when it has no valid one.
 - The import has one path: take the endpoint import lock, do the candidate check again, take the kept plan or build it again, apply the coverage rule, make the hardlinks, check the achieved coverage, import into the client, and drop the inventories and plans of the endpoint. Imports to the same client type, host, and port run one at a time.
-- After each client import attempt, the import discards the inventories of that endpoint, including aliases, and drops the plans of that endpoint. One deferred call does this and then releases the endpoint import lock, so the order does not depend on two deferred calls. A failed attempt can have added the torrent. When a hardlink source is missing, the import drops the plan and discards the inventory of that one client. A search run discards the inventory of each client before its first read.
+- After each client import attempt, the import discards the inventories of each client on that endpoint and drops the plans of that endpoint. One deferred call does this and then releases the endpoint import lock, so the order does not depend on two deferred calls. A failed attempt can have added the torrent. When a hardlink source is missing, the import drops the plan and discards the inventory of that one client. A search run discards the inventory of each client before its first read.
 - An inventory read that a discard overlaps returns its result to its caller, but does not store it.
 - Each plan build returns one compact reason for every unmatched torrent target,
   for the log lines of the match.
@@ -321,6 +321,9 @@ Preferred dependency direction:
    - `internal/placement/` should not know webhook payloads
    - the direction is `internal/torrentclient/` to `internal/placement/` to `internal/torrents/`.
      `internal/placement/` must not import `internal/torrentclient/`
+   - `internal/config/` may ask `internal/torrentclient/` whether a client config is valid for its client type
+     (`torrentclient.Validate`). The config package has no client type switch and adds only the client name and the
+     rules that need no client type
 6. `internal/domain/` holds cross-package data shapes and status concepts
 7. test helper packages (`internal/logger/loggertest`, `internal/daemontest`,
    `internal/torrentclient/torrentclienttest`) hold test doubles and test helpers

@@ -407,158 +407,50 @@ notifications:
 	require.Equal(t, []string{"ntfy://ntfy.sh/first"}, stored.Notifications.Shoutrrr)
 }
 
-func TestValidateClientConfig(t *testing.T) {
-	t.Run("qbittorrent requires category or savePath", func(t *testing.T) {
-		err := validateClientConfig("default", &domain.Client{Type: "qbittorrent"})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "import.category or import.savePath")
-	})
+func TestLoad_RejectsNullClient(t *testing.T) {
+	_, err := loadWithFile(t, "clients:\n  default: null\n")
 
-	t.Run("qbittorrent with category is valid", func(t *testing.T) {
-		err := validateClientConfig("default", &domain.Client{Type: "qbittorrent", Import: domain.ImportPolicy{Category: "tv-hd"}})
-		require.NoError(t, err)
-	})
+	require.ErrorContains(t, err, `client "default" cannot be null`)
+}
 
-	t.Run("empty type defaults to qbittorrent rules", func(t *testing.T) {
-		err := validateClientConfig("default", &domain.Client{Import: domain.ImportPolicy{Category: "tv-hd"}})
-		require.NoError(t, err)
-	})
+// TestLoad_WrapsClientTypeRuleWithClientName: the torrent client package owns
+// the rule, and the load adds the client name for each source.
+func TestLoad_WrapsClientTypeRuleWithClientName(t *testing.T) {
+	const wantErr = `client "default": type "transmission" must not set import.category`
+	for _, source := range []string{"file", "environment"} {
+		t.Run(source, func(t *testing.T) {
+			contents := strings.Replace(qbitClientConfig, "type: qbittorrent", "type: transmission", 1)
+			var environ []string
+			if source == "environment" {
+				contents = qbitClientConfig
+				environ = append(environ, "SEASONPACKARR__CLIENTS_DEFAULT_TYPE=transmission")
+			}
 
-	t.Run("transmission rejects qbittorrent-only fields", func(t *testing.T) {
-		err := validateClientConfig("default", &domain.Client{Type: "transmission", Import: domain.ImportPolicy{Category: "tv-hd"}})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "qBittorrent only")
-	})
+			_, err := loadWithFile(t, contents, environ...)
 
-	t.Run("transmission with savePath is valid", func(t *testing.T) {
-		err := validateClientConfig("default", &domain.Client{Type: "transmission", Import: domain.ImportPolicy{SavePath: t.TempDir()}})
-		require.NoError(t, err)
-	})
-
-	t.Run("transmission without any policy is valid (uses session download dir)", func(t *testing.T) {
-		err := validateClientConfig("default", &domain.Client{Type: "transmission"})
-		require.NoError(t, err)
-	})
-
-	t.Run("deluge requires savePath", func(t *testing.T) {
-		err := validateClientConfig("default", &domain.Client{Type: "deluge"})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "import.savePath")
-	})
-
-	t.Run("deluge with savePath is valid", func(t *testing.T) {
-		err := validateClientConfig("default", &domain.Client{Type: "deluge", Import: domain.ImportPolicy{SavePath: t.TempDir()}})
-		require.NoError(t, err)
-	})
-
-	t.Run("deluge accepts one label", func(t *testing.T) {
-		err := validateClientConfig("default", &domain.Client{
-			Type: "deluge-v1",
-			Import: domain.ImportPolicy{
-				SavePath: t.TempDir(),
-				Tags:     []string{"seasonpackarr"},
-			},
-		})
-		require.NoError(t, err)
-	})
-
-	t.Run("deluge rejects multiple labels", func(t *testing.T) {
-		err := validateClientConfig("default", &domain.Client{
-			Type: "deluge-v2",
-			Import: domain.ImportPolicy{
-				SavePath: t.TempDir(),
-				Tags:     []string{"seasonpackarr", "tv"},
-			},
-		})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "at most one")
-	})
-
-	t.Run("deluge rejects invalid label characters", func(t *testing.T) {
-		err := validateClientConfig("default", &domain.Client{
-			Type: "deluge",
-			Import: domain.ImportPolicy{
-				SavePath: t.TempDir(),
-				Tags:     []string{"tv shows"},
-			},
-		})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "is invalid")
-	})
-
-	t.Run("deluge rejects qbittorrent api key", func(t *testing.T) {
-		err := validateClientConfig("default", &domain.Client{
-			Type:   "deluge",
-			APIKey: "secret",
-			Import: domain.ImportPolicy{SavePath: t.TempDir()},
-		})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "apiKey")
-	})
-
-	t.Run("invalid type", func(t *testing.T) {
-		err := validateClientConfig("default", &domain.Client{Type: "notarealclient", Import: domain.ImportPolicy{SavePath: t.TempDir()}})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "is invalid")
-	})
-
-	t.Run("qbittorrent rejects invalid content layout", func(t *testing.T) {
-		err := validateClientConfig("default", &domain.Client{
-			Type: "qbittorrent",
-			Import: domain.ImportPolicy{
-				SavePath:      t.TempDir(),
-				ContentLayout: "flat",
-			},
-		})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "contentLayout")
-	})
-
-	t.Run("qbittorrent accepts an inventory scope", func(t *testing.T) {
-		err := validateClientConfig("default", &domain.Client{
-			Type:      "qbittorrent",
-			Import:    domain.ImportPolicy{Category: "tv-hd"},
-			Inventory: domain.InventoryScope{IncludeCategories: []string{"tv-hd"}, IncludeTags: []string{"keep"}},
-		})
-		require.NoError(t, err)
-	})
-
-	for _, clientType := range []string{"transmission", "deluge", "deluge-v1", "deluge-v2"} {
-		t.Run(clientType+" rejects an inventory scope", func(t *testing.T) {
-			err := validateClientConfig("default", &domain.Client{
-				Type:      clientType,
-				Import:    domain.ImportPolicy{SavePath: t.TempDir()},
-				Inventory: domain.InventoryScope{ExcludeTags: []string{"noreuse"}},
-			})
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "must not set inventory")
+			require.ErrorContains(t, err, wantErr)
 		})
 	}
+}
 
-	for name, scope := range map[string]domain.InventoryScope{
-		"empty category entry is rejected":         {IncludeCategories: []string{"tv-hd", ""}},
-		"blank tag entry is rejected":              {IncludeTags: []string{" "}},
-		"empty exclude category entry is rejected": {ExcludeCategories: []string{""}},
-		"empty exclude tag entry is rejected":      {ExcludeTags: []string{"noreuse", ""}},
-		// qBittorrent compares the exact name, so " keep " would match no torrent.
-		"include tag with spaces is rejected":       {IncludeTags: []string{" keep "}},
-		"exclude category with a space is rejected": {ExcludeCategories: []string{"movies "}},
+func TestLoad_RejectsImportPathThatDoesNotExist(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	for key, wantErr := range map[string]string{
+		"savePath":     `import.savePath for client "default" doesn't exist`,
+		"downloadPath": `import.downloadPath for client "default" doesn't exist`,
 	} {
-		t.Run(name, func(t *testing.T) {
-			err := validateClientConfig("default", &domain.Client{
-				Type:      "qbittorrent",
-				Import:    domain.ImportPolicy{Category: "tv-hd"},
-				Inventory: scope,
-			})
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "inventory list")
+		t.Run(key, func(t *testing.T) {
+			_, err := loadWithFile(t, qbitClientConfig+"      "+key+": "+missing+"\n")
+
+			require.ErrorContains(t, err, wantErr)
 		})
 	}
 
-	t.Run("nonexistent savePath", func(t *testing.T) {
-		err := validateClientConfig("default", &domain.Client{Type: "qbittorrent", Import: domain.ImportPolicy{SavePath: "/nope/does/not/exist"}})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "doesn't exist")
+	t.Run("existing paths", func(t *testing.T) {
+		dir := t.TempDir()
+		_, err := loadWithFile(t, qbitClientConfig+"      savePath: "+dir+"\n      downloadPath: "+dir+"\n")
+
+		require.NoError(t, err)
 	})
 }
 

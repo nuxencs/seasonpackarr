@@ -215,10 +215,11 @@ func pollUntil(ctx context.Context, interval time.Duration, cond func() (bool, e
 	}
 }
 
+// New validates client and connects to it. No adapter exists for an invalid config.
 func New(ctx context.Context, client *domain.Client) (TorrentClient, error) {
-	entry, ok := lookupClientType(client.Type)
-	if !ok {
-		return nil, fmt.Errorf("unknown client type: %s", client.Type)
+	entry, err := validate(*client)
+	if err != nil {
+		return nil, err
 	}
 	return entry.newAdapter(ctx, client)
 }

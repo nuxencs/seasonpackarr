@@ -5,6 +5,9 @@ package torrentclient
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
@@ -36,7 +39,25 @@ func TestNew_RejectsUnknownClientType(t *testing.T) {
 	t.Parallel()
 
 	_, err := New(t.Context(), &domain.Client{Type: "notarealclient"})
-	require.EqualError(t, err, "unknown client type: notarealclient")
+	require.EqualError(t, err, `type "notarealclient" is invalid - use "qbittorrent", "transmission", "deluge-v1", "deluge-v2" or "deluge"`)
+}
+
+func TestNew_RejectsInvalidConfigBeforeConnect(t *testing.T) {
+	t.Parallel()
+	var requests atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+	client := &domain.Client{Type: "transmission", Host: srv.URL, Import: domain.ImportPolicy{Category: "tv-hd"}}
+
+	adapter, err := New(t.Context(), client)
+
+	require.Error(t, err)
+	assert.Equal(t, Validate(*client), err)
+	assert.Nil(t, adapter)
+	assert.Zero(t, requests.Load())
 }
 
 func TestEndpointOf(t *testing.T) {
