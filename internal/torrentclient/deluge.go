@@ -63,32 +63,40 @@ type delugeClient struct {
 	pollInterval time.Duration
 }
 
-func newDelugeClient(ctx context.Context, client *domain.Client) (*delugeClient, error) {
+// delugeLibraryClient is the go-deluge client of one Deluge version.
+type delugeLibraryClient interface {
+	delugeAPI
+	LabelPlugin(ctx context.Context) (*deluge.LabelPlugin, error)
+}
+
+// delugeVersion is what differs between the Deluge 1 and the Deluge 2 entry
+// of clientTypes.
+type delugeVersion struct {
+	// v1 is true for Deluge 1. Deluge 1 returns an empty status dictionary for
+	// an unknown ID. go-deluge cannot decode that dictionary, so GetFiles must
+	// filter unknown IDs through SessionState before its bulk status request.
+	v1         bool
+	newLibrary func(deluge.Settings) delugeLibraryClient
+}
+
+var (
+	delugeV1 = delugeVersion{v1: true, newLibrary: func(settings deluge.Settings) delugeLibraryClient {
+		return deluge.NewV1(settings)
+	}}
+	delugeV2 = delugeVersion{newLibrary: func(settings deluge.Settings) delugeLibraryClient {
+		return deluge.NewV2(settings)
+	}}
+)
+
+func newDelugeClient(ctx context.Context, client *domain.Client, version delugeVersion) (*delugeClient, error) {
 	settings, err := buildDelugeSettings(client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build deluge settings: %w", err)
 	}
 
-	var c delugeAPI
-	var label delugeLabelPluginFactory
-	switch canonicalType(client.Type) {
-	case "deluge-v1":
-		raw := deluge.NewV1(settings)
-		c = raw
-		// Deluge v1 returns an empty status dictionary for an unknown ID.
-		// go-deluge cannot decode that dictionary, so GetFiles must filter
-		// unknown IDs through SessionState before its bulk status request.
-		label = func(ctx context.Context) (delugeLabelAPI, error) {
-			return raw.LabelPlugin(ctx)
-		}
-	case "deluge-v2":
-		raw := deluge.NewV2(settings)
-		c = raw
-		label = func(ctx context.Context) (delugeLabelAPI, error) {
-			return raw.LabelPlugin(ctx)
-		}
-	default:
-		return nil, fmt.Errorf("unsupported deluge client type: %s", client.Type)
+	c := version.newLibrary(settings)
+	label := func(ctx context.Context) (delugeLabelAPI, error) {
+		return c.LabelPlugin(ctx)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, delugeTimeout)
@@ -101,7 +109,7 @@ func newDelugeClient(ctx context.Context, client *domain.Client) (*delugeClient,
 		c:            c,
 		policy:       client.Import,
 		label:        label,
-		v1:           client.Type == "deluge-v1",
+		v1:           version.v1,
 		pollInterval: 500 * time.Millisecond,
 	}, nil
 }

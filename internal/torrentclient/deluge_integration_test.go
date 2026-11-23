@@ -210,7 +210,7 @@ func newDelugeDaemonClient(t *testing.T, importDir string) *delugeClient {
 	port, err := strconv.Atoi(envOrDefault(envDelugePort, "58846"))
 	require.NoError(t, err, "parse %s", envDelugePort)
 
-	c, err := newDelugeClient(t.Context(), &domain.Client{
+	adapter, err := New(t.Context(), &domain.Client{
 		Type:     clientType,
 		Host:     delugeHost(),
 		Port:     port,
@@ -223,6 +223,8 @@ func newDelugeDaemonClient(t *testing.T, importDir string) *delugeClient {
 		},
 	})
 	require.NoError(t, err, "connect to %s", clientType)
+	c, ok := adapter.(*delugeClient)
+	require.True(t, ok, "%s adapter is %T", clientType, adapter)
 	c.pollInterval = 25 * time.Millisecond
 
 	raw := delugeDaemonAPI(t, c)
