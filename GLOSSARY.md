@@ -56,6 +56,14 @@ _Avoid_: Torrent list, client torrents
 The client setting that limits the inventory: include categories and tags select torrents, and exclude categories and tags drop them. An empty scope is every torrent.
 _Avoid_: Inventory filter
 
+**Client type**:
+The torrent client software and protocol version of a client: qBittorrent, Transmission, Deluge 1, or Deluge 2. An alias is a second spelling of one client type.
+_Avoid_: Client kind
+
+**Endpoint**:
+The torrent client service that a client connects to. Clients with the same endpoint share one service, so an import through one of them changes what the others see.
+_Avoid_: Alias, client alias
+
 ### Discovery
 
 **Discovery**:
