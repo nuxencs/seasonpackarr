@@ -560,7 +560,7 @@ func TestSearch_LogsNoClientSecretOnConnectionFailure(t *testing.T) {
 		t.Run(failure.name, func(t *testing.T) {
 			log := newTraceLogger(t)
 			f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, log: log})
-			f.useClient(failure.client)
+			f.useClient(t, failure.client)
 
 			report := f.runExact(t, true)
 
