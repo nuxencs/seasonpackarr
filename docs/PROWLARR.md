@@ -255,8 +255,10 @@ the same client type and connect to the same address, however `host` and `port`
 spell it:
 
 - The scheme defaults to `http`. `http` and `https` are two endpoints.
-- The host name is compared in lower case. No DNS lookup occurs, so a host name
-  and its IP address are two endpoints.
+- The host name is compared in lower case. An IP address is compared in its
+  canonical form, so `[::1]` and `[0:0:0:0:0:0:0:1]` are one endpoint, but the
+  letter case of an IPv6 zone such as `%eth0` counts. No DNS lookup occurs, so a
+  host name and its IP address are two endpoints.
 - The `port` setting wins over a port in `host`. With no port, `http` uses `80`
   and `https` uses `443`. Deluge uses `58846` for port `0`.
 - For qBittorrent, the path is compared without a last `/` and with `//`,

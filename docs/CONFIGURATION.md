@@ -445,9 +445,9 @@ The error names the setting or the variable. It does not show the value, because
   most `1`, and `clients.<name>.port` from `0` to `65535`. The ranges apply to both sources.
 - Each client must have a `host` that its client type can connect to. An empty `host` stops the load. A Deluge `host`
   must be a hostname or IP address, so a URL scheme (`http://`), user info (`user@`), or a path stops the load. For
-  qBittorrent and Transmission, a `host` that does not parse as a URL, or a URL with no host name such as
-  `http://:8080`, stops the load. The error names the client, but it does not show the `host`, because a path or user
-  info in it can be a secret.
+  qBittorrent and Transmission, a `host` that does not parse as a URL, a URL with no host name such as
+  `http://:8080`, or a port in `host` outside `1` to `65535` with no `port` setting stops the load. The error names
+  the client, but it does not show the `host`, because a path or user info in it can be a secret.
 
 The commands that call the running service, such as `candidate` and `setup filter`, read only the host, the API token,
 and the client names. A bad server-only variable, for example `SEASONPACKARR__SMART_MODE=yes`, does not stop them.

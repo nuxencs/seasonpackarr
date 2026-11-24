@@ -184,12 +184,14 @@ func TestReload_RejectsBadValueAndKeepsLastSnapshot(t *testing.T) {
 	for name, tt := range map[string]struct {
 		environ []string
 		bad     string
+		want    string
 	}{
-		"file value out of range": {bad: "clients: {}\nport: 0\n"},
+		"file value out of range": {bad: "clients: {}\nport: 0\n", want: "port"},
 		// The holder applies its environment again, so a file change can make a valid environment value invalid.
 		"environment value invalid with the new file": {
 			environ: []string{"SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_CONTENT_LAYOUT=subfolder"},
-			bad:     "clients:\n  default:\n    type: transmission\nport: 4243\n",
+			bad:     "clients:\n  default:\n    type: transmission\n    host: localhost\nport: 4243\n",
+			want:    "import.contentLayout",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -198,7 +200,7 @@ func TestReload_RejectsBadValueAndKeepsLastSnapshot(t *testing.T) {
 
 			rejection := reloadWithFile(t, cfg, configFile, tt.bad)
 
-			require.NotEmpty(t, rejection)
+			assert.Contains(t, rejection, tt.want)
 			assert.Equal(t, before, cfg.Snapshot())
 		})
 	}

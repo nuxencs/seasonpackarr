@@ -485,6 +485,10 @@ func TestLoad_RejectsUnusableClientHost(t *testing.T) {
 			name: "host that does not parse", clientType: "qbittorrent", host: "http://qbit:secret/proxy",
 			wantErr: "host does not parse as a URL",
 		},
+		{
+			name: "port in host above the range", clientType: "qbittorrent", host: "http://qbit:65536/secret",
+			wantErr: "host port must be between 1 and 65535",
+		},
 	}
 	for _, tt := range tests {
 		for _, source := range []string{"file", "environment"} {

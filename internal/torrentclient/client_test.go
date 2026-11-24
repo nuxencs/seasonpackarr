@@ -194,6 +194,24 @@ func TestEndpointOf(t *testing.T) {
 			b:    domain.Client{Host: "https://qbit:8080"},
 		},
 		{
+			name: "two spellings of one IPv6 address",
+			a:    domain.Client{Type: "deluge-v2", Host: "[::1]", Port: 58846},
+			b:    domain.Client{Type: "deluge-v2", Host: "[0:0:0:0:0:0:0:1]", Port: 58846},
+			same: true,
+		},
+		{
+			name: "IPv6 hex digit letter case",
+			a:    domain.Client{Host: "http://[FD00::A]:8080"},
+			b:    domain.Client{Host: "http://[fd00::a]:8080"},
+			same: true,
+		},
+		{
+			// Linux interface names are case sensitive, so "LAN" and "lan" can be two interfaces.
+			name: "IPv6 zone letter case",
+			a:    domain.Client{Type: "deluge-v2", Host: "[fe80::1%LAN]", Port: 58846},
+			b:    domain.Client{Type: "deluge-v2", Host: "[fe80::1%lan]", Port: 58846},
+		},
+		{
 			name: "host name is not its IP address",
 			a:    domain.Client{Host: "localhost", Port: 8080},
 			b:    domain.Client{Host: "127.0.0.1", Port: 8080},

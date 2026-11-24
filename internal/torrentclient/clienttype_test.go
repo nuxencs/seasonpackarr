@@ -193,6 +193,20 @@ func TestValidate_AppliesClientTypeRules(t *testing.T) {
 			wantErr: "host does not parse as a URL",
 		},
 		{
+			name:    "port in host above the range",
+			client:  domain.Client{Type: "transmission", Host: "http://transmission:65536/secret"},
+			wantErr: "host port must be between 1 and 65535",
+		},
+		{
+			name:    "port 0 in host",
+			client:  domain.Client{Host: "qbit:0", Import: domain.ImportPolicy{Category: "tv-hd"}},
+			wantErr: "host port must be between 1 and 65535",
+		},
+		{
+			name:   "port setting wins over a port in host above the range",
+			client: domain.Client{Host: "http://qbit:70000", Port: 8080, Import: domain.ImportPolicy{Category: "tv-hd"}},
+		},
+		{
 			name:   "qui proxy URL as the qbittorrent host",
 			client: domain.Client{Host: "http://localhost:7476/proxy/abc123", Import: domain.ImportPolicy{Category: "tv-hd"}},
 		},

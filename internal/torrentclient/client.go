@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/netip"
 	"net/url"
 	"path"
 	"path/filepath"
@@ -257,17 +258,23 @@ func EndpointOf(client domain.Client) Endpoint {
 
 	port := defaultPorts[address.Scheme]
 	if address.Port() != "" {
-		// url.Parse accepts only digits as a port, so only a port too large for an int fails here.
+		// The address build accepts only a port from 1 to 65535.
 		port, _ = strconv.Atoi(address.Port())
 	}
 	// go-qbittorrent joins the API path with url.JoinPath, which cleans the path,
 	// so "/proxy/abc/" and "/proxy/abc" reach the same service. The Transmission
 	// path is fixed, and a Deluge address has no path.
 	cleanPath := strings.TrimSuffix(path.Clean("/"+address.EscapedPath()), "/")
+	host := strings.ToLower(address.Hostname())
+	// An IP address gets its canonical form, which keeps the letter case of a
+	// zone, because an interface name can be case sensitive.
+	if ip, err := netip.ParseAddr(address.Hostname()); err == nil {
+		host = ip.String()
+	}
 	return Endpoint{
 		typeName: entry.name,
 		scheme:   address.Scheme,
-		host:     strings.ToLower(address.Hostname()),
+		host:     host,
 		port:     port,
 		path:     cleanPath,
 	}
@@ -302,6 +309,12 @@ func httpAddress(client domain.Client) (*url.URL, error) {
 
 	if client.Port != 0 {
 		parsedURL.Host = net.JoinHostPort(parsedURL.Hostname(), strconv.Itoa(client.Port))
+	}
+	// url.Parse checks only that a port is digits, and the config load checks only the port setting.
+	if port := parsedURL.Port(); port != "" {
+		if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+			return nil, errors.New("host port must be between 1 and 65535")
+		}
 	}
 
 	return parsedURL, nil
