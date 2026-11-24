@@ -39,7 +39,8 @@ func (f *fakeProvider) store(cfg domain.Config) {
 
 func TestReadAtStartup_ReadsEachClientAndSharesParsedNames(t *testing.T) {
 	const name = "Series.S01E01.1080p.WEB-DL-GRP"
-	adapter := &fakeAdapter{torrents: []torrentclient.Torrent{{Name: name}}}
+	// Two torrents of one season and a movie: the log counts torrents, not seasons.
+	adapter := &fakeAdapter{torrents: []torrentclient.Torrent{{Name: name}, {Name: "Series.S01E02.1080p.WEB-DL-GRP"}, {Name: "Movie.2020.1080p.WEB-DL-GRP"}}}
 	log := loggertest.New()
 	store := New((&fakeConnector{adapter: adapter}).connect, log)
 	hd := &domain.Client{Type: "qbittorrent", Host: "qbit", Import: domain.ImportPolicy{Category: "tv-hd"}}
@@ -54,7 +55,7 @@ func TestReadAtStartup_ReadsEachClientAndSharesParsedNames(t *testing.T) {
 	assert.Equal(t, 2, adapter.readCount(), "the first announce finds the inventory of each client")
 	assert.Same(t, releaseOf(t, first, name), releaseOf(t, second, name), "the clients of one endpoint share the parsed names")
 	event := log.Events(t).RequireField(t, "client inventory ready", "clientname", "default")
-	assert.EqualValues(t, 1, event["titles"])
+	assert.EqualValues(t, 3, event["torrents"])
 	assert.Contains(t, event, "duration_ms")
 	log.Events(t).RequireField(t, "client inventory ready", "clientname", "default-4k")
 }

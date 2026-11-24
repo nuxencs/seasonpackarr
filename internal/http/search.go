@@ -181,10 +181,8 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 			// Collect packs once so episode-only seasons do not need pairwise scans.
 			var packs []release.SeasonPack
 			for entry := range entries {
-				if entry.Release.Type.Is(rls.Series) && entry.Release.Episode == 0 {
-					if pack, ok := release.NewSeasonPack(entry.Release, snapshot.FuzzyMatching); ok {
-						packs = append(packs, pack)
-					}
+				if pack, ok := release.NewSeasonPack(entry.Release, snapshot.FuzzyMatching); ok {
+					packs = append(packs, pack)
 				}
 			}
 			for entry := range entries {
