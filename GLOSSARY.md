@@ -61,7 +61,7 @@ The torrent client software and protocol version of a client: qBittorrent, Trans
 _Avoid_: Client kind
 
 **Endpoint**:
-The torrent client service that a client connects to. Clients with the same endpoint share one service, so an import through one of them changes what the others see.
+The torrent client service that a client connects to: the client type and the address that the adapter connects to, in each spelling of the config. Clients with the same endpoint share one service, so an import through one of them changes what the others see.
 _Avoid_: Alias, client alias
 
 ### Discovery

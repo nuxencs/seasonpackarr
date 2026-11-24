@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -115,20 +117,9 @@ func newDelugeClient(ctx context.Context, client *domain.Client, version delugeV
 }
 
 func buildDelugeSettings(client *domain.Client) (deluge.Settings, error) {
-	host := strings.TrimSpace(client.Host)
-	if host == "" {
-		return deluge.Settings{}, errors.New("host is required")
-	}
-	if strings.Contains(host, "://") || strings.ContainsAny(host, "/?#") {
-		return deluge.Settings{}, errors.New("deluge host must be a hostname or IP address without a URL scheme or path")
-	}
-
-	port := client.Port
-	if port == 0 {
-		port = delugeDefaultPort
-	}
-	if port < 1 || port > 65535 {
-		return deluge.Settings{}, errors.New("deluge port must be between 1 and 65535")
+	host, port, err := delugeHostAndPort(*client)
+	if err != nil {
+		return deluge.Settings{}, err
 	}
 
 	return deluge.Settings{
@@ -138,6 +129,38 @@ func buildDelugeSettings(client *domain.Client) (deluge.Settings, error) {
 		Password:         client.Password,
 		ReadWriteTimeout: delugeTimeout,
 	}, nil
+}
+
+// delugeAddress is the address build of Deluge 1 and Deluge 2. The URL holds only the host and the port.
+func delugeAddress(client domain.Client) (*url.URL, error) {
+	host, port, err := delugeHostAndPort(client)
+	if err != nil {
+		return nil, err
+	}
+	return &url.URL{Host: host + ":" + strconv.Itoa(port)}, nil
+}
+
+// delugeHostAndPort returns the host and the port that the daemon connection
+// uses, with the daemon port for port 0. The library dials "<host>:<port>", so
+// the host keeps its spelling, such as "[::1]" or an IPv6 zone, and is not parsed as a URL.
+func delugeHostAndPort(client domain.Client) (string, int, error) {
+	host := strings.TrimSpace(client.Host)
+	if host == "" {
+		return "", 0, errors.New("host is required")
+	}
+	if strings.Contains(host, "://") || strings.ContainsAny(host, "/?#@") {
+		return "", 0, errors.New("deluge host must be a hostname or IP address without a URL scheme, user info, or path")
+	}
+
+	// The config load checks the port range first. This check is for a direct caller of New.
+	port := client.Port
+	if port == 0 {
+		port = delugeDefaultPort
+	}
+	if port < 1 || port > 65535 {
+		return "", 0, errors.New("deluge port must be between 1 and 65535")
+	}
+	return host, port, nil
 }
 
 // delugeRetry says whether a request can run again on a new connection.

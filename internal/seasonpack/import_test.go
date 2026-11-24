@@ -467,6 +467,45 @@ func TestImport_RunsOneAtATimeForOneEndpoint(t *testing.T) {
 	})
 }
 
+// The endpoint is the address that the adapter connects to, so an import
+// discards the inventory of a client that spells the same address another way,
+// and keeps the inventory of a client behind another qui proxy path.
+func TestImport_DiscardsInventoryOfEachClientOnTheEndpoint(t *testing.T) {
+	tests := map[string]struct {
+		importHost, otherHost string
+		discarded             bool
+	}{
+		"same address with another spelling": {importHost: "qbit", otherHost: "http://QBit:8080/", discarded: true},
+		"other qui proxy path":               {importHost: "http://qui:8080/proxy/abc", otherHost: "http://qui:8080/proxy/def"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			pack := newPack(t, "Endpoint", 1, 1)
+			f := newFixture(pack.client)
+			cfg := newConfig()
+			cfg.Clients["default"].Host = tt.importHost
+			cfg.Clients["default"].Port = 8080
+			cfg.Clients["other"] = &domain.Client{Type: "qbittorrent", Host: tt.otherHost, Import: domain.ImportPolicy{Category: "other"}}
+			other := f.client(t, "other", cfg)
+			_, err := other.Inventory(t.Context())
+			require.NoError(t, err)
+
+			outcome := f.processor.Import(t.Context(), f.client(t, "default", cfg), pack.name, pack.torrent)
+			require.NoError(t, outcome.Err)
+			before := pack.client.TorrentCalls
+			_, err = other.Inventory(t.Context())
+			require.NoError(t, err)
+
+			reads := pack.client.TorrentCalls - before
+			if tt.discarded {
+				assert.Equal(t, 1, reads, "the import must discard the inventory of the other client")
+			} else {
+				assert.Zero(t, reads, "the import must keep the inventory of the other endpoint")
+			}
+		})
+	}
+}
+
 // A client can add a torrent before it reports a failure, so each import
 // attempt makes the next call read the client and build the plan again.
 func TestImport_NextCallReadsClientAgainAfterAttempt(t *testing.T) {

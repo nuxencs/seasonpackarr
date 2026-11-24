@@ -6,9 +6,10 @@ package torrentclient
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -226,20 +227,57 @@ func New(ctx context.Context, client *domain.Client) (TorrentClient, error) {
 
 // Endpoint identifies the client service that a client config connects to.
 // Configs with the same endpoint share one service, so an import through one
-// of them changes what the others see.
+// of them changes what the others see. Its fields are unexported, so a caller
+// can only compare it and use it as a map key.
 type Endpoint struct {
-	Type string
-	Host string
-	Port int
+	typeName string
+	scheme   string
+	host     string
+	port     int
+	path     string
 }
 
-// EndpointOf returns the endpoint of client, with type aliases resolved.
+// defaultPorts are the ports that an HTTP address with no port connects to.
+var defaultPorts = map[string]int{"http": 80, "https": 443}
+
+// EndpointOf returns the endpoint of client: the canonical client type and the
+// address that the adapter connects to, in each spelling of the config. It does
+// no DNS lookup, so a host name and its IP address are two endpoints. A config
+// whose address does not build gets the endpoint of its trimmed host and port.
 func EndpointOf(client domain.Client) Endpoint {
-	typeName := client.Type
-	if entry, ok := lookupClientType(client.Type); ok {
-		typeName = entry.name
+	fallback := Endpoint{typeName: client.Type, host: strings.TrimSpace(client.Host), port: client.Port}
+	entry, ok := lookupClientType(client.Type)
+	if !ok {
+		return fallback
 	}
-	return Endpoint{Type: typeName, Host: client.Host, Port: client.Port}
+	fallback.typeName = entry.name
+	address, err := entry.address(client)
+	if err != nil {
+		return fallback
+	}
+
+	port := defaultPorts[address.Scheme]
+	if address.Port() != "" {
+		// The address build accepts only a port from 1 to 65535.
+		port, _ = strconv.Atoi(address.Port())
+	}
+	// go-qbittorrent joins the API path with url.JoinPath, which cleans the path,
+	// so "/proxy/abc/" and "/proxy/abc" reach the same service. The Transmission
+	// path is fixed, and a Deluge address has no path.
+	cleanPath := strings.TrimSuffix(path.Clean("/"+address.EscapedPath()), "/")
+	host := strings.ToLower(address.Hostname())
+	// An IP address gets its canonical form, which keeps the letter case of a
+	// zone, because an interface name can be case sensitive.
+	if ip, err := netip.ParseAddr(address.Hostname()); err == nil {
+		host = ip.String()
+	}
+	return Endpoint{
+		typeName: entry.name,
+		scheme:   address.Scheme,
+		host:     host,
+		port:     port,
+		path:     cleanPath,
+	}
 }
 
 // normalizePath cleans and normalizes a client-reported destination path so it
@@ -248,9 +286,11 @@ func normalizePath(path string) string {
 	return filepath.Clean(filepath.FromSlash(strings.TrimSpace(path)))
 }
 
-func buildHost(client *domain.Client) (string, error) {
-	if len(client.Host) == 0 {
-		return "", errors.New("host is required")
+// httpAddress is the address build of the client types that connect over HTTP.
+// A host without a scheme gets http, and the port setting wins over a port in host.
+func httpAddress(client domain.Client) (*url.URL, error) {
+	if strings.TrimSpace(client.Host) == "" {
+		return nil, errors.New("host is required")
 	}
 
 	host := client.Host
@@ -260,16 +300,22 @@ func buildHost(client *domain.Client) (string, error) {
 
 	parsedURL, err := url.Parse(host)
 	if err != nil {
-		// A url.Error holds the host, and its path or user info can be a secret.
-		if parseErr, ok := errors.AsType[*url.Error](err); ok {
-			err = parseErr.Err
-		}
-		return "", fmt.Errorf("failed to parse host: %w", err)
+		// Each parse error quotes a part of the host, and a path or user info in it can be a secret.
+		return nil, errors.New("host does not parse as a URL")
+	}
+	if parsedURL.Hostname() == "" {
+		return nil, errors.New("host has no host name")
 	}
 
 	if client.Port != 0 {
 		parsedURL.Host = net.JoinHostPort(parsedURL.Hostname(), strconv.Itoa(client.Port))
 	}
+	// url.Parse checks only that a port is digits, and the config load checks only the port setting.
+	if port := parsedURL.Port(); port != "" {
+		if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+			return nil, errors.New("host port must be between 1 and 65535")
+		}
+	}
 
-	return parsedURL.String(), nil
+	return parsedURL, nil
 }

@@ -71,10 +71,11 @@ func newQbitClient(ctx context.Context, client *domain.Client) (*qbitClient, err
 		return nil, err
 	}
 
-	host, err := buildHost(client)
+	address, err := httpAddress(*client)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build host: %w", err)
+		return nil, fmt.Errorf("failed to build address: %w", err)
 	}
+	host := address.String()
 
 	c := qbittorrent.NewClient(qbittorrent.Config{
 		Host:     host,

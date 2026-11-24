@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -60,6 +61,7 @@ fuzzyMatching:
 clients:
   default:
     type: qbittorrent
+    host: localhost
     hots: qbit
     import:
       category: tv-hd
@@ -80,6 +82,7 @@ func TestLoad_IgnoresUnknownClientEnvironmentVariables(t *testing.T) {
 clients:
   default:
     type: qbittorrent
+    host: localhost
     import:
       category: tv-hd
 `)
@@ -105,6 +108,7 @@ LogLevel: "INFO"
 clients:
   default:
     TYPE: qbittorrent
+    Host: localhost
     Import:
       Category: tv-hd
 `)
@@ -271,6 +275,7 @@ func TestReload_RejectsInvalidConfigAndKeepsLastSnapshot(t *testing.T) {
 clients:
   default:
     type: qbittorrent
+    host: localhost
     import:
       category: tv-hd
 logLevel: INFO
@@ -281,6 +286,7 @@ logLevel: INFO
 clients:
   default:
     type: transmission
+    host: localhost
     import:
       category: tv-hd
 logLevel: TRACE
@@ -290,11 +296,22 @@ logLevel: TRACE
 	require.Equal(t, zerolog.WarnLevel, zerolog.GlobalLevel())
 }
 
+func TestReload_RejectsUnusableClientHostAndKeepsLastSnapshot(t *testing.T) {
+	cfg, configFile := newTestAppConfig(t, qbitClientConfig)
+	before := cfg.Snapshot()
+
+	rejection := reloadWithFile(t, cfg, configFile, strings.Replace(qbitClientConfig, "host: localhost", `host: ""`, 1))
+
+	require.Contains(t, rejection, `client "default": host is required`)
+	require.Equal(t, before, cfg.Snapshot())
+}
+
 func TestReload_RejectsUnknownKeyAndKeepsLastSnapshot(t *testing.T) {
 	cfg, configFile := newTestAppConfig(t, `
 clients:
   default:
     type: qbittorrent
+    host: localhost
     import:
       category: tv-hd
 logLevel: INFO
@@ -305,6 +322,7 @@ logLevel: INFO
 clients:
   default:
     type: qbittorrent
+    host: localhost
     import:
       category: tv-other
 logLevel: TRACE
@@ -319,6 +337,7 @@ func TestReload_ReappliesEnvironmentOverrides(t *testing.T) {
 clients:
   default:
     type: qbittorrent
+    host: localhost
     import:
       category: from-file-before
 `, "SEASONPACKARR__CLIENTS_DEFAULT_IMPORT_CATEGORY=from-env")
@@ -328,6 +347,7 @@ clients:
 clients:
   default:
     type: qbittorrent
+    host: localhost
     import:
       category: from-file-after
 `)
@@ -370,6 +390,7 @@ func TestSnapshot_CannotMutateStoredConfig(t *testing.T) {
 clients:
   default:
     type: qbittorrent
+    host: localhost
     import:
       category: tv-hd
       tags: [one, two]
@@ -430,6 +451,70 @@ func TestLoad_WrapsClientTypeRuleWithClientName(t *testing.T) {
 
 			require.ErrorContains(t, err, wantErr)
 		})
+	}
+}
+
+// TestLoad_RejectsUnusableClientHost: a host that the adapter cannot use stops
+// the load in the same way from config.yaml and from the environment.
+func TestLoad_RejectsUnusableClientHost(t *testing.T) {
+	savePath := t.TempDir()
+	tests := []struct {
+		name, clientType, host, wantErr string
+	}{
+		{name: "empty qbittorrent host", clientType: "qbittorrent", wantErr: "host is required"},
+		{name: "empty transmission host", clientType: "transmission", wantErr: "host is required"},
+		{name: "empty deluge-v1 host", clientType: "deluge-v1", wantErr: "host is required"},
+		{name: "empty deluge-v2 host", clientType: "deluge-v2", wantErr: "host is required"},
+		{
+			name: "deluge host with a URL scheme", clientType: "deluge", host: "http://deluge",
+			wantErr: "deluge host must be a hostname or IP address",
+		},
+		{
+			name: "deluge host with a path", clientType: "deluge", host: "deluge/secret",
+			wantErr: "deluge host must be a hostname or IP address",
+		},
+		{
+			name: "deluge host with user info", clientType: "deluge", host: "admin:secret@deluge",
+			wantErr: "deluge host must be a hostname or IP address",
+		},
+		{
+			name: "host without a host name", clientType: "transmission", host: "http://:9091/secret",
+			wantErr: "host has no host name",
+		},
+		{
+			name: "host that does not parse", clientType: "qbittorrent", host: "http://qbit:secret/proxy",
+			wantErr: "host does not parse as a URL",
+		},
+		{
+			name: "port in host above the range", clientType: "qbittorrent", host: "http://qbit:65536/secret",
+			wantErr: "host port must be between 1 and 65535",
+		},
+	}
+	for _, tt := range tests {
+		for _, source := range []string{"file", "environment"} {
+			t.Run(tt.name+" from the "+source, func(t *testing.T) {
+				contents := "clients:\n  tv:\n    type: " + tt.clientType + "\n    import:\n      savePath: " + savePath + "\n"
+				var environ []string
+				switch {
+				case tt.host == "" && source == "environment":
+					// An empty variable sets nothing, so the client comes only from the environment, with no host.
+					contents = ""
+					environ = []string{"SEASONPACKARR__CLIENTS_TV_TYPE=" + tt.clientType, "SEASONPACKARR__CLIENTS_TV_IMPORT_SAVEPATH=" + savePath}
+				case tt.host == "":
+					// The file has no host key.
+				case source == "file":
+					contents += "    host: " + strconv.Quote(tt.host) + "\n"
+				default:
+					environ = []string{"SEASONPACKARR__CLIENTS_TV_HOST=" + tt.host}
+				}
+
+				_, err := loadWithFile(t, contents, environ...)
+
+				require.ErrorContains(t, err, `client "tv": `+tt.wantErr)
+				// A path or user info in the host can be a secret, so no message repeats a part of it.
+				assert.NotContains(t, err.Error(), "secret")
+			})
+		}
 	}
 }
 
@@ -674,15 +759,13 @@ func TestConfigSchema_DefaultsMatchServiceDefaults(t *testing.T) {
 }
 
 func TestConfigSchema_RequiresNoOptionalKey(t *testing.T) {
-	// The load requires no key on its own, as these files show. Only cross-field
-	// rules require keys. The schema states them in if, then, allOf, and anyOf.
-	for name, contents := range map[string]string{
-		"empty file":          "",
-		"client without host": "clients:\n  default:\n    import:\n      category: tv\n",
-	} {
-		_, err := loadWithFile(t, contents)
-		assert.NoError(t, err, name)
-	}
+	// The load requires no key of the file on its own, as these loads show. Only
+	// cross-field rules require keys. The schema states them in if, then, allOf, and
+	// anyOf. A client needs a host, but the environment can set it.
+	_, err := loadWithFile(t, "")
+	assert.NoError(t, err, "empty file")
+	_, err = loadWithFile(t, "clients:\n  default:\n    import:\n      category: tv\n", "SEASONPACKARR__CLIENTS_DEFAULT_HOST=localhost")
+	assert.NoError(t, err, "client host from the environment")
 
 	schema := readConfigSchema(t)
 	var required []string
@@ -747,7 +830,7 @@ func TestConfigSchema_AcceptsWhatTheLoadAccepts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%s=%s", tt.key, tt.yaml), func(t *testing.T) {
-			contents := "clients:\n  default:\n    import:\n      category: tv\n"
+			contents := "clients:\n  default:\n    host: localhost\n    import:\n      category: tv\n"
 			if field, ok := strings.CutPrefix(tt.key, "clients.*.import."); ok {
 				contents += fmt.Sprintf("      %s: %s\n", field, tt.yaml)
 			} else {
@@ -926,6 +1009,7 @@ func TestLoad_RejectsInventoryEnvironmentWithoutEntries(t *testing.T) {
 clients:
   default:
     type: qbittorrent
+    host: localhost
     import:
       category: tv-hd
     inventory:

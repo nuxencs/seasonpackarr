@@ -26,6 +26,7 @@ const beforeConfig = `
 clients:
   default:
     type: qbittorrent
+    host: localhost
     import:
       category: before
 `
@@ -34,6 +35,7 @@ const afterConfig = `
 clients:
   default:
     type: qbittorrent
+    host: localhost
     import:
       category: after
 `
