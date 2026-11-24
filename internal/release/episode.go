@@ -65,6 +65,13 @@ func ParseEpisodeFile(path string, size int64) (EpisodeFile, bool) {
 	}, true
 }
 
+// parseEpisodeFile parses the base name of path with the container in lower case.
+func parseEpisodeFile(path string) rls.Release {
+	base := filepath.Base(path)
+	ext := filepath.Ext(base)
+	return rls.ParseString(strings.TrimSuffix(base, ext) + strings.ToLower(ext))
+}
+
 func isSampleTag(tag string) bool {
 	return strings.EqualFold(tag, "sample")
 }
@@ -145,10 +152,6 @@ func NewEpisodeMatcher(targets []EpisodeFile) EpisodeMatcher {
 		}
 	}
 	return matcher
-}
-
-func (m EpisodeMatcher) Len() int {
-	return len(m.targets)
 }
 
 // Match returns at most one client source per torrent target. Results follow

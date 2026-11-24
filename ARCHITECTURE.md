@@ -111,7 +111,7 @@
 
 ### Release Matching
 
-- Implemented in `internal/release/`, `internal/format/`, `internal/slices/`
+- Implemented in `internal/release/`, `internal/format/`
 - Concerns: comparing resolution, source, release group, cut, edition, repack state, HDR, streaming service, episode identity
 - Risk: false positives cause wrong hardlinks; false negatives cause unnecessary downloads
 

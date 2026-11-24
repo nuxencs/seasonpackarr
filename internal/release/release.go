@@ -4,12 +4,10 @@
 package release
 
 import (
-	"path/filepath"
-	stdslices "slices"
+	"slices"
 	"strings"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
-	"github.com/nuxencs/seasonpackarr/internal/slices"
 
 	"github.com/autobrr/rls"
 )
@@ -57,7 +55,7 @@ func compare(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatchi
 		}
 	}
 
-	if !slices.EqualElements(requestRls.Cut, clientRls.Cut) {
+	if !equalElements(requestRls.Cut, clientRls.Cut) {
 		return domain.CompareInfo{
 			StatusCode:   domain.StatusCutMismatch,
 			RejectValueA: requestRls.Cut,
@@ -65,7 +63,7 @@ func compare(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatchi
 		}
 	}
 
-	if !slices.EqualElements(requestRls.Edition, clientRls.Edition) {
+	if !equalElements(requestRls.Edition, clientRls.Edition) {
 		return domain.CompareInfo{
 			StatusCode:   domain.StatusEditionMismatch,
 			RejectValueA: requestRls.Edition,
@@ -75,7 +73,7 @@ func compare(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatchi
 
 	// skip comparing repack status when skipRepackCompare is enabled
 	if !fuzzyMatching.SkipRepackCompare {
-		if !slices.EqualElements(requestRls.Other, clientRls.Other) {
+		if !equalElements(requestRls.Other, clientRls.Other) {
 			return domain.CompareInfo{
 				StatusCode:   domain.StatusRepackStatusMismatch,
 				RejectValueA: requestRls.Other,
@@ -84,15 +82,15 @@ func compare(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatchi
 		}
 	}
 
-	requestHDR := stdslices.Clone(requestRls.HDR)
-	clientHDR := stdslices.Clone(clientRls.HDR)
+	requestHDR := slices.Clone(requestRls.HDR)
+	clientHDR := slices.Clone(clientRls.HDR)
 	// normalize any HDR format down to plain HDR when simplifyHdrCompare is enabled
 	if fuzzyMatching.SimplifyHdrCompare {
-		requestRls.HDR = slices.SimplifyHDR(stdslices.Clone(requestHDR))
-		clientRls.HDR = slices.SimplifyHDR(stdslices.Clone(clientHDR))
+		requestRls.HDR = simplifyHDR(slices.Clone(requestHDR))
+		clientRls.HDR = simplifyHDR(slices.Clone(clientHDR))
 	}
 
-	if !slices.EqualElements(requestRls.HDR, clientRls.HDR) {
+	if !equalElements(requestRls.HDR, clientRls.HDR) {
 		return domain.CompareInfo{
 			StatusCode:   domain.StatusHdrMismatch,
 			RejectValueA: requestHDR,
@@ -115,75 +113,43 @@ func compare(requestRls, clientRls rls.Release, fuzzyMatching domain.FuzzyMatchi
 	return domain.CompareInfo{StatusCode: domain.StatusSuccessfulMatch}
 }
 
-func MatchEpToSeasonPackEp(clientEpPath string, clientEpSize int64, torrentEpPath string, torrentEpSize int64) (string, domain.CompareInfo) {
-	clientEpRls := parseEpisodeFile(clientEpPath)
-	torrentEpRls := parseEpisodeFile(torrentEpPath)
-
-	switch {
-	case !strings.EqualFold(clientEpRls.Ext, torrentEpRls.Ext):
-		return "", domain.CompareInfo{
-			StatusCode:   domain.StatusContainerMismatch,
-			RejectValueA: clientEpRls.Ext,
-			RejectValueB: torrentEpRls.Ext,
-		}
-	case clientEpSize != torrentEpSize:
-		return "", domain.CompareInfo{
-			StatusCode:   domain.StatusSizeMismatch,
-			RejectValueA: clientEpSize,
-			RejectValueB: torrentEpSize,
-		}
-	case clientEpRls.Series != torrentEpRls.Series:
-		return "", domain.CompareInfo{
-			StatusCode:   domain.StatusSeasonMismatch,
-			RejectValueA: clientEpRls.Series,
-			RejectValueB: torrentEpRls.Series,
-		}
-	case clientEpRls.Episode != torrentEpRls.Episode:
-		return "", domain.CompareInfo{
-			StatusCode:   domain.StatusEpisodeMismatch,
-			RejectValueA: clientEpRls.Episode,
-			RejectValueB: torrentEpRls.Episode,
-		}
-	case clientEpRls.Resolution != torrentEpRls.Resolution:
-		return "", domain.CompareInfo{
-			StatusCode:   domain.StatusResolutionMismatch,
-			RejectValueA: clientEpRls.Resolution,
-			RejectValueB: torrentEpRls.Resolution,
-		}
-	case rls.MustNormalize(clientEpRls.Group) != rls.MustNormalize(torrentEpRls.Group):
-		return "", domain.CompareInfo{
-			StatusCode:   domain.StatusRlsGrpMismatch,
-			RejectValueA: clientEpRls.Group,
-			RejectValueB: torrentEpRls.Group,
-		}
-	}
-
-	return torrentEpPath, domain.CompareInfo{}
-}
-
-func PercentOfTotalEpisodes(totalEps int, foundEps int) float32 {
-	if totalEps == 0 {
-		return 0
-	}
-
-	return float32(foundEps) / float32(totalEps)
-}
-
-func IsValidEpisodeFile(torrentFileName string) bool {
-	_, ok := ParseEpisodeFile(torrentFileName, 0)
-	return ok
-}
-
-func parseEpisodeFile(path string) rls.Release {
-	base := filepath.Base(path)
-	ext := filepath.Ext(base)
-	return rls.ParseString(strings.TrimSuffix(base, ext) + strings.ToLower(ext))
-}
-
 func simplifyWEB(source string) string {
 	if source == "WEB-DL" {
 		return "WEB"
 	}
 
 	return source
+}
+
+// equalElements reports whether x and y hold the same values with the same
+// count of each value, in any order.
+func equalElements[T comparable](x, y []T) bool {
+	if len(x) != len(y) {
+		return false
+	}
+
+	freqMap := make(map[T]int, len(x))
+	for _, i := range x {
+		freqMap[i]++
+	}
+
+	for _, i := range y {
+		if freqMap[i] == 0 {
+			return false
+		}
+		freqMap[i]--
+	}
+
+	return true
+}
+
+// simplifyHDR replaces each HDR format in hdr with "HDR". It changes hdr in place.
+func simplifyHDR(hdr []string) []string {
+	for i := range hdr {
+		if strings.Contains(hdr[i], "HDR") {
+			hdr[i] = "HDR"
+		}
+	}
+
+	return hdr
 }

@@ -75,294 +75,6 @@ func TestCheckCandidates_AcceptsNormalizedFuzzyValues(t *testing.T) {
 	})
 }
 
-func TestMatchEpToSeasonPackEp(t *testing.T) {
-	type args struct {
-		clientEpPath  string
-		clientEpSize  int64
-		torrentEpPath string
-		torrentEpSize int64
-	}
-
-	type compare struct {
-		path string
-		info domain.CompareInfo
-	}
-
-	tests := []struct {
-		name string
-		args args
-		want compare
-	}{
-		{
-			name: "found match",
-			args: args{
-				clientEpPath:  "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				clientEpSize:  2316560346,
-				torrentEpPath: "Series Title 2022 S02E01 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				torrentEpSize: 2316560346,
-			},
-			want: compare{
-				path: "Series Title 2022 S02E01 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				info: domain.CompareInfo{},
-			},
-		},
-		{
-			name: "wrong episode",
-			args: args{
-				clientEpPath:  "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				clientEpSize:  2316560346,
-				torrentEpPath: "Series Title 2022 S02E02 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				torrentEpSize: 2316560346,
-			},
-			want: compare{
-				path: "",
-				info: domain.CompareInfo{
-					StatusCode:   domain.StatusEpisodeMismatch,
-					RejectValueA: 1,
-					RejectValueB: 2,
-				},
-			},
-		},
-		{
-			name: "wrong season",
-			args: args{
-				clientEpPath:  "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				clientEpSize:  2316560346,
-				torrentEpPath: "Series Title 2022 S03E01 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				torrentEpSize: 2316560346,
-			},
-			want: compare{
-				path: "",
-				info: domain.CompareInfo{
-					StatusCode:   domain.StatusSeasonMismatch,
-					RejectValueA: 2,
-					RejectValueB: 3,
-				},
-			},
-		},
-		{
-			name: "wrong resolution",
-			args: args{
-				clientEpPath:  "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				clientEpSize:  2316560346,
-				torrentEpPath: "Series Title 2022 S02E01 2160p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				torrentEpSize: 2316560346,
-			},
-			want: compare{
-				path: "",
-				info: domain.CompareInfo{
-					StatusCode:   domain.StatusResolutionMismatch,
-					RejectValueA: "1080p",
-					RejectValueB: "2160p",
-				},
-			},
-		},
-		{
-			name: "wrong rlsgrp",
-			args: args{
-				clientEpPath:  "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				clientEpSize:  2316560346,
-				torrentEpPath: "Series Title 2022 S02E01 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-OtherRlsGrp.mkv",
-				torrentEpSize: 2316560346,
-			},
-			want: compare{
-				path: "",
-				info: domain.CompareInfo{
-					StatusCode:   domain.StatusRlsGrpMismatch,
-					RejectValueA: "RlsGrp",
-					RejectValueB: "OtherRlsGrp",
-				},
-			},
-		},
-		{
-			name: "wrong size",
-			args: args{
-				clientEpPath:  "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				clientEpSize:  2316560346,
-				torrentEpPath: "Series Title 2022 S02E01 1080p Test ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				torrentEpSize: 2278773077,
-			},
-			want: compare{
-				path: "",
-				info: domain.CompareInfo{
-					StatusCode:   domain.StatusSizeMismatch,
-					RejectValueA: int64(2316560346),
-					RejectValueB: int64(2278773077),
-				},
-			},
-		},
-		{
-			name: "wrong container",
-			args: args{
-				clientEpPath:  "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				clientEpSize:  2316560346,
-				torrentEpPath: "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mp4",
-				torrentEpSize: 2316560346,
-			},
-			want: compare{
-				path: "",
-				info: domain.CompareInfo{
-					StatusCode:   domain.StatusContainerMismatch,
-					RejectValueA: "mkv",
-					RejectValueB: "mp4",
-				},
-			},
-		},
-		{
-			name: "subfolder in client",
-			args: args{
-				clientEpPath:  "Test/Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				clientEpSize:  2316560346,
-				torrentEpPath: "Series Title 2022 S02E01 Test 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				torrentEpSize: 2316560346,
-			},
-			want: compare{
-				path: "Series Title 2022 S02E01 Test 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				info: domain.CompareInfo{},
-			},
-		},
-		{
-			name: "subfolder in torrent",
-			args: args{
-				clientEpPath:  "Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				clientEpSize:  2316560346,
-				torrentEpPath: "Test/Series Title 2022 S02E01 Test 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				torrentEpSize: 2316560346,
-			},
-			want: compare{
-				path: "Test/Series Title 2022 S02E01 Test 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				info: domain.CompareInfo{},
-			},
-		},
-		{
-			name: "subfolder in both",
-			args: args{
-				clientEpPath:  "Test/Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				clientEpSize:  2316560346,
-				torrentEpPath: "Test/Series Title 2022 S02E01 Test 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				torrentEpSize: 2316560346,
-			},
-			want: compare{
-				path: "Test/Series Title 2022 S02E01 Test 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				info: domain.CompareInfo{},
-			},
-		},
-		{
-			name: "multi subfolder",
-			args: args{
-				clientEpPath:  "/data/torrents/tv/Test/Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				clientEpSize:  2316560346,
-				torrentEpPath: "Series Title 2022 S02/Test/Series Title 2022 S02E01 Test 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				torrentEpSize: 2316560346,
-			},
-			want: compare{
-				path: "Series Title 2022 S02/Test/Series Title 2022 S02E01 Test 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv",
-				info: domain.CompareInfo{},
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotPath, gotInfo := MatchEpToSeasonPackEp(tt.args.clientEpPath, tt.args.clientEpSize, tt.args.torrentEpPath, tt.args.torrentEpSize)
-
-			got := compare{
-				path: gotPath,
-				info: gotInfo,
-			}
-
-			assert.Equalf(t, tt.want, got, "MatchEpToSeasonPackEp(%v, %v, %v, %v)",
-				tt.args.clientEpPath, tt.args.clientEpSize, tt.args.torrentEpPath, tt.args.torrentEpSize)
-		})
-	}
-}
-
-func TestIsValidEpisodeFile(t *testing.T) {
-	type args struct {
-		torrentFileName string
-	}
-	tests := []struct {
-		name string
-		args args
-		want bool
-	}{
-		{
-			name: "sample with dash",
-			args: args{
-				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp-sample.mkv",
-			},
-			want: false,
-		},
-		{
-			name: "sample with dot",
-			args: args{
-				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.sample.mkv",
-			},
-			want: false,
-		},
-		{
-			name: "sample in uppercase",
-			args: args{
-				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.SAMPLE.mkv",
-			},
-			want: false,
-		},
-		{
-			name: "sample as group suffix",
-			args: args{
-				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp-sample.mkv",
-			},
-			want: false,
-		},
-		{
-			name: "wrong ext",
-			args: args{
-				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.nfo",
-			},
-			want: false,
-		},
-		{
-			name: "wrong ext and sample",
-			args: args{
-				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.sample.nfo",
-			},
-			want: false,
-		},
-		{
-			name: "extra video",
-			args: args{
-				torrentFileName: "Extras/Interview.1080p.WEB-DL.mkv",
-			},
-			want: false,
-		},
-		{
-			name: "special episode",
-			args: args{
-				torrentFileName: "test.release.s00e01.dutch.1080p.web.h264-rlsgrp.mkv",
-			},
-			want: true,
-		},
-		{
-			name: "valid release",
-			args: args{
-				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.mkv",
-			},
-			want: true,
-		},
-		{
-			name: "valid mp4 release",
-			args: args{
-				torrentFileName: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.MP4",
-			},
-			want: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equalf(t, tt.want, IsValidEpisodeFile(tt.args.torrentFileName), "IsValidEpisodeFile(%v)", tt.args.torrentFileName)
-		})
-	}
-}
-
 func TestSimplifyWEB(t *testing.T) {
 	type args struct {
 		source string
@@ -419,9 +131,9 @@ func TestCheckCandidates_SiloWebTitle(t *testing.T) {
 	require.Equal(t, domain.StatusSuccessfulMatch, result.StatusCode, "%+v", result)
 
 	target := filepath.Join(packName, episodeName)
-	path, info := MatchEpToSeasonPackEp(episodeName, episodeSize, target, episodeSize)
-	require.Equal(t, target, path)
-	require.Equal(t, domain.CompareInfo{}, info)
+	matches := NewEpisodeMatcher([]EpisodeFile{requireEpisodeFile(t, target, episodeSize)}).
+		Match([]EpisodeFile{requireEpisodeFile(t, episodeName, episodeSize)}).Matches
+	require.Equal(t, []EpisodeMatch{{ClientPath: episodeName, TorrentPath: target}}, matches)
 
 	otherSource := rls.ParseString(strings.Replace(episodeName, "WEB-DL", "WEB", 1))
 	result = CheckCandidates(pack, otherSource, domain.FuzzyMatching{})
@@ -440,4 +152,50 @@ func TestCheckCandidates_CodecAttachedToAudio(t *testing.T) {
 	episode := rls.ParseString("Cells.at.Work.S01E01.1080p.BluRay.FLAC2.0x265-Main10p-CTR")
 	result := CheckCandidates(pack, episode, domain.FuzzyMatching{})
 	require.Equal(t, domain.StatusSuccessfulMatch, result.StatusCode, "%+v", result)
+}
+
+func TestEqualElements(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		x    []string
+		y    []string
+		want bool
+	}{
+		{name: "identical elements", x: []string{"a", "b", "c"}, y: []string{"a", "b", "c"}, want: true},
+		{name: "different order", x: []string{"a", "b", "c"}, y: []string{"c", "b", "a"}, want: true},
+		{name: "different elements", x: []string{"a", "b", "c"}, y: []string{"a", "b", "d"}, want: false},
+		{name: "different lengths", x: []string{"a", "b", "c"}, y: []string{"a", "b"}, want: false},
+		{name: "same values with other counts", x: []string{"a", "a", "b"}, y: []string{"a", "b", "b"}, want: false},
+		{name: "empty slices", x: []string{}, y: []string{}, want: true},
+		{name: "one empty slice", x: []string{}, y: []string{"a"}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equalf(t, tt.want, equalElements(tt.x, tt.y), "equalElements(%v, %v)", tt.x, tt.y)
+		})
+	}
+}
+
+func TestSimplifyHDR(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input []string
+		want  []string
+	}{
+		{name: "contains HDR", input: []string{"HDR10", "HDR10+", "HDR"}, want: []string{"HDR", "HDR", "HDR"}},
+		{name: "no HDR", input: []string{"SDR", "DV"}, want: []string{"SDR", "DV"}},
+		{name: "empty slice", input: []string{}, want: []string{}},
+		{name: "mixed HDR and others", input: []string{"HDR10", "DV", "SDR", "HDR10+"}, want: []string{"HDR", "DV", "SDR", "HDR"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equalf(t, tt.want, simplifyHDR(tt.input), "simplifyHDR(%v)", tt.input)
+		})
+	}
 }
