@@ -11,7 +11,7 @@ One torrent that holds all episodes of one TV season.
 _Avoid_: Pack torrent, full season
 
 **Season**:
-One season of one show, as release names identify it: the show title, the season number, and the year. A name with no year and a name with a year are different seasons.
+One season of one show, as release names identify it: the show title, the season number, and the year. A name with no year and a name with a year are different seasons. With `fuzzyMatching.skipYearCompare`, the year is not part of the season.
 _Avoid_: Comparable title, title (for this meaning)
 
 **Release variant**:
