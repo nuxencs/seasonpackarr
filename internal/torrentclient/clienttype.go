@@ -24,7 +24,8 @@ type clientType struct {
 	// importCategoryAndTags returns the category and tags that the add gives a new pack.
 	// Nil means that the adapter applies no inventory scope, which validate checks.
 	importCategoryAndTags func(domain.ImportPolicy) (category string, tags []string)
-	// address builds the connect address from host and port. Validate, the adapter constructor, and EndpointOf use it.
+	// address builds the connect address from host and port. Validate and EndpointOf use it,
+	// and each adapter constructor connects with the same function or, for Deluge, its host and port parts.
 	address func(domain.Client) (*url.URL, error)
 	// validate checks the rules of this type. typeName is the canonical name, for the message.
 	validate   func(typeName string, client domain.Client) error

@@ -244,15 +244,15 @@ var defaultPorts = map[string]int{"http": 80, "https": 443}
 // no DNS lookup, so a host name and its IP address are two endpoints. A config
 // whose address does not build gets the endpoint of its trimmed host and port.
 func EndpointOf(client domain.Client) Endpoint {
-	raw := Endpoint{typeName: client.Type, host: strings.TrimSpace(client.Host), port: client.Port}
+	fallback := Endpoint{typeName: client.Type, host: strings.TrimSpace(client.Host), port: client.Port}
 	entry, ok := lookupClientType(client.Type)
 	if !ok {
-		return raw
+		return fallback
 	}
-	raw.typeName = entry.name
+	fallback.typeName = entry.name
 	address, err := entry.address(client)
 	if err != nil {
-		return raw
+		return fallback
 	}
 
 	port := defaultPorts[address.Scheme]

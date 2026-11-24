@@ -189,7 +189,7 @@ func TestValidate_AppliesClientTypeRules(t *testing.T) {
 		{
 			// The parse error of net/url quotes the port part.
 			name:    "host with a port that does not parse",
-			client:  domain.Client{Type: "transmission", Host: "http://admin:pass@transmission:secret/"},
+			client:  domain.Client{Type: "transmission", Host: "http://admin:secret@transmission:secret/"},
 			wantErr: "host does not parse as a URL",
 		},
 		{

@@ -204,10 +204,13 @@ func TestBuildDelugeSettings(t *testing.T) {
 
 	// The library dials "<Hostname>:<Port>", so the host keeps its spelling.
 	for host, want := range map[string]string{" deluge ": "deluge", "[::1]": "[::1]", "[fe80::1%eth0]": "[fe80::1%eth0]"} {
-		settings, err := buildDelugeSettings(&domain.Client{Host: host})
-		require.NoError(t, err)
-		require.Equal(t, want, settings.Hostname)
-		require.Equal(t, uint(delugeDefaultPort), settings.Port)
+		t.Run("keeps host spelling "+host, func(t *testing.T) {
+			t.Parallel()
+			settings, err := buildDelugeSettings(&domain.Client{Host: host})
+			require.NoError(t, err)
+			require.Equal(t, want, settings.Hostname)
+			require.Equal(t, uint(delugeDefaultPort), settings.Port)
+		})
 	}
 
 	for _, client := range []*domain.Client{

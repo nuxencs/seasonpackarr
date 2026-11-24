@@ -73,7 +73,7 @@ func newQbitClient(ctx context.Context, client *domain.Client) (*qbitClient, err
 
 	address, err := httpAddress(*client)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build host: %w", err)
+		return nil, fmt.Errorf("failed to build address: %w", err)
 	}
 	host := address.String()
 
