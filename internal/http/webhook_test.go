@@ -851,7 +851,7 @@ func TestEndpoints_CheckRequestInOrder(t *testing.T) {
 				t.Run(path, func(t *testing.T) {
 					f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0})
 					if tt.unreachable {
-						f.useClient(domain.Client{Type: "qbittorrent", Host: newRefusedURL(t), Username: "admin", Password: "password"})
+						f.useClient(t, domain.Client{Type: "qbittorrent", Host: newRefusedURL(t), Username: "admin", Password: "password"})
 					}
 					payload := f.packPayload()
 					tt.mutate(payload)
@@ -1128,7 +1128,7 @@ func TestEndpoints_LogNoClientSecretOnConnectionFailure(t *testing.T) {
 				t.Run(endpoint.path, func(t *testing.T) {
 					log := newTraceLogger(t)
 					f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1, log: log})
-					f.useClient(failure.client)
+					f.useClient(t, failure.client)
 
 					res := f.postJSON(t, endpoint.path, f.packPayload())
 

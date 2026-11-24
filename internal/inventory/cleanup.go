@@ -56,8 +56,8 @@ func (s *Store) CleanUp(cfg domain.Config) ([]string, error) {
 	s.mu.Unlock()
 	slices.Sort(dropped)
 
-	// A request can still hold a dropped adapter. Close must leave it usable,
-	// as the Deluge adapter does by connecting again on its next call.
+	// A request can still hold a dropped adapter. See the Close contract of
+	// torrentclient.TorrentClient.
 	var closeErrs []error
 	for _, closer := range closers {
 		if err := closer.Close(); err != nil {

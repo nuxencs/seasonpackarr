@@ -537,10 +537,13 @@ func listenerPort(t *testing.T, addr net.Addr) int {
 }
 
 // useClient replaces the default client with config, so the next request
-// connects to it.
-func (f processorHTTPFixture) useClient(config domain.Client) {
+// connects to it. It keeps only the save path, which each client type accepts,
+// because a rule error stops New before it connects and the test then checks nothing.
+func (f processorHTTPFixture) useClient(t *testing.T, config domain.Client) {
+	t.Helper()
 	cfg := f.config.Snapshot()
-	config.Import = cfg.Clients["default"].Import
+	config.Import = domain.ImportPolicy{SavePath: cfg.Clients["default"].Import.SavePath}
+	require.NoError(t, torrentclient.Validate(config))
 	cfg.Clients = map[string]*domain.Client{"default": &config}
 	f.config.Store(cfg)
 }

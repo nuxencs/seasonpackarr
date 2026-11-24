@@ -169,6 +169,11 @@ func ImportStatusCode(err error) domain.StatusCode {
 // caller's request timeout, so the client owns the check after the add.
 // Import returns neutral stage timings in execution order. Import failures are
 // returned as *ImportError together with the attempted stage timings.
+//
+// Close contract: an adapter can also implement io.Closer. The inventory
+// clean-up closes an adapter that it drops, but a request can still hold that
+// adapter, so Close must leave it usable. The Deluge adapter connects again on
+// its next call.
 type TorrentClient interface {
 	GetTorrents(ctx context.Context) ([]Torrent, error)
 	// GetFiles returns exactly one result per input hash in input order. Each
@@ -210,17 +215,13 @@ func pollUntil(ctx context.Context, interval time.Duration, cond func() (bool, e
 	}
 }
 
+// New validates client and connects to it. No adapter exists for an invalid config.
 func New(ctx context.Context, client *domain.Client) (TorrentClient, error) {
-	switch canonicalType(client.Type) {
-	case "qbittorrent":
-		return newQbitClient(ctx, client)
-	case "transmission":
-		return newTransmissionClient(ctx, client)
-	case "deluge-v1", "deluge-v2":
-		return newDelugeClient(ctx, client)
-	default:
-		return nil, fmt.Errorf("unknown client type: %s", client.Type)
+	entry, err := validate(*client)
+	if err != nil {
+		return nil, err
 	}
+	return entry.newAdapter(ctx, client)
 }
 
 // Endpoint identifies the client service that a client config connects to.
@@ -234,20 +235,11 @@ type Endpoint struct {
 
 // EndpointOf returns the endpoint of client, with type aliases resolved.
 func EndpointOf(client domain.Client) Endpoint {
-	return Endpoint{Type: canonicalType(client.Type), Host: client.Host, Port: client.Port}
-}
-
-// canonicalType resolves the client type aliases: an empty type is
-// qBittorrent, and "deluge" is Deluge v2.
-func canonicalType(clientType string) string {
-	switch clientType {
-	case "":
-		return "qbittorrent"
-	case "deluge":
-		return "deluge-v2"
-	default:
-		return clientType
+	typeName := client.Type
+	if entry, ok := lookupClientType(client.Type); ok {
+		typeName = entry.name
 	}
+	return Endpoint{Type: typeName, Host: client.Host, Port: client.Port}
 }
 
 // normalizePath cleans and normalizes a client-reported destination path so it

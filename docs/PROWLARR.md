@@ -251,7 +251,7 @@ remain in effect. There is no new quality-ranking system.
 
 Configurations that point to the same client type, host, and port share duplicate
 protection, even when they use different import categories. Use consistent host
-URLs for aliases of the same client. Independent clients receive separate imports.
+URLs for clients on the same endpoint. Independent clients receive separate imports.
 
 For example, NTb episodes and an NTb pack suppress that variant. NTb episodes
 and a FLUX pack still cause a search. Existing packs are checked again on every

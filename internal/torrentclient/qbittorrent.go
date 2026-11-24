@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -678,26 +679,16 @@ func (q *qbitClient) buildTorrentAddOptions(dataComplete bool) (map[string]strin
 		Paused:        dataComplete,
 	}
 
-	if q.policy.Category != "" {
-		opts.Category = strings.TrimSpace(q.policy.Category)
+	category, tags := qbitImportCategoryAndTags(q.policy)
+	opts.Category = category
+	if len(tags) > 0 {
+		opts.Tags = strings.Join(tags, ",")
 	}
 	if q.policy.DownloadPath != "" {
 		opts.DownloadPath = strings.TrimSpace(q.policy.DownloadPath)
 	}
 	if hasLayout {
 		opts.ContentLayout = contentLayout
-	}
-
-	if len(q.policy.Tags) > 0 {
-		trimmed := make([]string, 0, len(q.policy.Tags))
-		for _, tag := range q.policy.Tags {
-			if t := strings.TrimSpace(tag); t != "" {
-				trimmed = append(trimmed, t)
-			}
-		}
-		if len(trimmed) > 0 {
-			opts.Tags = strings.Join(trimmed, ",")
-		}
 	}
 
 	params := opts.Prepare()
@@ -708,19 +699,48 @@ func (q *qbitClient) buildTorrentAddOptions(dataComplete bool) (map[string]strin
 	return params, nil
 }
 
+// qbitImportCategoryAndTags returns the category and the tags that the add sends: trimmed, with blank tags dropped.
+// InventorySelectsImports compares the same values, so the scope warning matches the add.
+func qbitImportCategoryAndTags(policy domain.ImportPolicy) (category string, tags []string) {
+	for _, tag := range policy.Tags {
+		if tag = strings.TrimSpace(tag); tag != "" {
+			tags = append(tags, tag)
+		}
+	}
+	return strings.TrimSpace(policy.Category), tags
+}
+
+// contentLayouts maps each value of import.contentLayout to the layout that the add sends.
+var contentLayouts = map[string]qbittorrent.ContentLayout{
+	"subfolder":   qbittorrent.ContentLayoutSubfolderCreate,
+	"nosubfolder": qbittorrent.ContentLayoutSubfolderNone,
+	"original":    qbittorrent.ContentLayoutOriginal,
+}
+
+// validateQbitConfig is the import rule of qBittorrent.
+func validateQbitConfig(_ string, client domain.Client) error {
+	imp := client.Import
+	if imp.Category == "" && imp.SavePath == "" {
+		return errors.New("must configure import.category or import.savePath")
+	}
+	// Stricter than resolveContentLayout, which trims and lower-cases. The config load lower-cases before this check.
+	if _, ok := contentLayouts[imp.ContentLayout]; imp.ContentLayout != "" && !ok {
+		return fmt.Errorf("import.contentLayout %q is invalid - use %s",
+			imp.ContentLayout, orList(slices.Sorted(maps.Keys(contentLayouts))))
+	}
+	return nil
+}
+
 func resolveContentLayout(mode string) (qbittorrent.ContentLayout, bool, error) {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "":
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "" {
 		return "", false, nil
-	case "subfolder":
-		return qbittorrent.ContentLayoutSubfolderCreate, true, nil
-	case "nosubfolder":
-		return qbittorrent.ContentLayoutSubfolderNone, true, nil
-	case "original":
-		return qbittorrent.ContentLayoutOriginal, true, nil
-	default:
+	}
+	layout, ok := contentLayouts[mode]
+	if !ok {
 		return "", false, fmt.Errorf("unsupported content layout %q", mode)
 	}
+	return layout, true, nil
 }
 
 // waitForTorrent waits for the added torrent to appear. With settle set, it also

@@ -21,6 +21,7 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/shoutrrrurl"
+	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/go-viper/mapstructure/v2"
@@ -501,62 +502,19 @@ func validateDeprecatedConfigInputs(k *koanf.Koanf, env environment) error {
 	return nil
 }
 
-// validateClientConfig enforces each client's import policy and verifies that
-// configured local paths exist.
+// validateClientConfig checks the rules that need no client type, asks the
+// torrent client package for the others, and verifies that configured local
+// paths exist.
 func validateClientConfig(clientName string, client *domain.Client) error {
-	if client.Type != "" && client.Type != "qbittorrent" && client.Type != "transmission" && client.Type != "deluge" && client.Type != "deluge-v1" && client.Type != "deluge-v2" {
-		return fmt.Errorf("type for client %q is invalid: %q - must be \"qbittorrent\", \"transmission\", \"deluge\", \"deluge-v1\" or \"deluge-v2\"", clientName, client.Type)
-	}
 	// 0 is the unset port, whose meaning depends on the client type, so only the values outside every port range stop the load.
 	if client.Port < 0 || client.Port > 65535 {
 		return fmt.Errorf("port for client %q (%sCLIENTS_%s_PORT) must be from 0 to 65535", clientName, envPrefix, strings.ToUpper(clientName))
 	}
-
-	// go-qbittorrent drops an empty filter value, which would read every torrent,
-	// and qBittorrent compares exact names, so " tv" would match no torrent.
-	scope := client.Inventory
-	for _, value := range slices.Concat(scope.IncludeCategories, scope.IncludeTags, scope.ExcludeCategories, scope.ExcludeTags) {
-		if value == "" || strings.TrimSpace(value) != value {
-			return fmt.Errorf("client %q has the inventory list entry %q, which is empty or starts or ends with a space", clientName, value)
-		}
-	}
-	if client.Type != "" && client.Type != "qbittorrent" && client.Inventory.IsSet() {
-		return fmt.Errorf("client %q (%s) must not set inventory - the inventory scope is qBittorrent only", clientName, client.Type)
+	if err := torrentclient.Validate(*client); err != nil {
+		return fmt.Errorf("client %q: %w", clientName, err)
 	}
 
 	imp := client.Import
-	switch client.Type {
-	case "", "qbittorrent":
-		if imp.Category == "" && imp.SavePath == "" {
-			return fmt.Errorf("client %q must configure import.category or import.savePath", clientName)
-		}
-		switch imp.ContentLayout {
-		case "", "subfolder", "nosubfolder", "original":
-		default:
-			return fmt.Errorf("import.contentLayout for client %q is invalid: %q; use subfolder, nosubfolder or original", clientName, imp.ContentLayout)
-		}
-	case "transmission":
-		if imp.Category != "" || imp.DownloadPath != "" || imp.ContentLayout != "" {
-			return fmt.Errorf("client %q (transmission) must not set import.category, import.downloadPath or import.contentLayout - those are qBittorrent only", clientName)
-		}
-	case "deluge", "deluge-v1", "deluge-v2":
-		if imp.SavePath == "" {
-			return fmt.Errorf("client %q (deluge) must configure import.savePath", clientName)
-		}
-		if len(imp.Tags) > 1 {
-			return fmt.Errorf("client %q (deluge) supports at most one import.tags entry", clientName)
-		}
-		if len(imp.Tags) == 1 && !validDelugeLabel(imp.Tags[0]) {
-			return fmt.Errorf("client %q (deluge) import label %q is invalid - use letters, digits, underscores or hyphens", clientName, imp.Tags[0])
-		}
-		if imp.Category != "" || imp.DownloadPath != "" || imp.ContentLayout != "" {
-			return fmt.Errorf("client %q (deluge) must not set import.category, import.downloadPath or import.contentLayout", clientName)
-		}
-		if client.APIKey != "" {
-			return fmt.Errorf("client %q (deluge) must not set apiKey", clientName)
-		}
-	}
-
 	if imp.SavePath != "" {
 		if _, err := os.Stat(imp.SavePath); errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("import.savePath for client %q doesn't exist, please make sure you entered the correct path", clientName)
@@ -580,38 +538,12 @@ func validateClientConfig(clientName string, client *domain.Client) error {
 func LogInventoryScopeWarnings(log logger.Logger, cfg domain.Config) {
 	for _, name := range slices.Sorted(maps.Keys(cfg.Clients)) {
 		client := cfg.Clients[name]
-		if client == nil || !client.Inventory.IsSet() {
+		if client == nil || torrentclient.InventorySelectsImports(*client) {
 			continue
 		}
-		// The add trims the category and the tags and drops blank tags, so compare what it sends.
-		imp := client.Import
-		category := strings.TrimSpace(imp.Category)
-		tags := make([]string, 0, len(imp.Tags))
-		for _, tag := range imp.Tags {
-			if tag = strings.TrimSpace(tag); tag != "" {
-				tags = append(tags, tag)
-			}
-		}
-		if client.Inventory.Selects(category, tags) {
-			continue
-		}
-		log.Warn().Str("clientname", name).Str("import_category", imp.Category).Strs("import_tags", imp.Tags).
+		log.Warn().Str("clientname", name).Str("import_category", client.Import.Category).Strs("import_tags", client.Import.Tags).
 			Msg("inventory scope does not select new packs, which have the import category and import tags; a second announce of a pack that is still in the import category is not found (see the configuration guide)")
 	}
-}
-
-func validDelugeLabel(label string) bool {
-	label = strings.TrimSpace(label)
-	if label == "" {
-		return false
-	}
-	for _, r := range label {
-		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' {
-			continue
-		}
-		return false
-	}
-	return true
 }
 
 // defaultConfig copies the declared defaults and adds the runtime fields and an empty client map.
