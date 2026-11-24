@@ -179,10 +179,12 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 		for entries := range clientInventory.SeasonGroups() {
 			// Each group is one season.
 			// Collect packs once so episode-only seasons do not need pairwise scans.
-			var packs []*rls.Release
+			var packs []release.SeasonPack
 			for entry := range entries {
 				if entry.Release.Type.Is(rls.Series) && entry.Release.Episode == 0 {
-					packs = append(packs, entry.Release)
+					if pack, ok := release.NewSeasonPack(entry.Release, snapshot.FuzzyMatching); ok {
+						packs = append(packs, pack)
+					}
 				}
 			}
 			for entry := range entries {
@@ -194,8 +196,9 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 					continue
 				}
 				report.EpisodeTorrents++
-				if slices.ContainsFunc(packs, func(pack *rls.Release) bool {
-					return release.CheckCandidates(*pack, *parsed, snapshot.FuzzyMatching).StatusCode == domain.StatusSuccessfulMatch
+				if slices.ContainsFunc(packs, func(pack release.SeasonPack) bool {
+					relation, _ := pack.Compare(parsed)
+					return relation == release.Compatible
 				}) {
 					report.CoveredEpisodeTorrents++
 					continue
@@ -269,6 +272,23 @@ type (
 	}
 )
 
+// alreadySelected reports whether the run accepted the same pack for a client
+// on the endpoint of the named client.
+func (run *discoveryRun) alreadySelected(snapshot domain.Config, name string, pack release.SeasonPack) bool {
+	endpoint := torrentclient.EndpointOf(*snapshot.Clients[name])
+	for selectedClient, acceptedReleases := range run.selected {
+		if torrentclient.EndpointOf(*snapshot.Clients[selectedClient]) != endpoint {
+			continue
+		}
+		for _, accepted := range acceptedReleases {
+			if relation, _ := pack.Compare(&accepted); relation == release.SamePack {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // evaluateListing checks the listing for each client of its group, then
 // imports it or reports what the import would do.
 func (run *discoveryRun) evaluateListing(ctx context.Context, listing *discovery.Listing, group *seasonSearch) {
@@ -282,22 +302,7 @@ func (run *discoveryRun) evaluateListing(ctx context.Context, listing *discovery
 		snapshot := client.Snapshot()
 		parsed := rls.ParseString(title)
 		outcome := searchOutcome{ClientName: name, Title: title, IndexerID: listing.IndexerID(), Status: "rejected"}
-		duplicate := false
-		for selectedClient, acceptedReleases := range run.selected {
-			if torrentclient.EndpointOf(*snapshot.Clients[name]) != torrentclient.EndpointOf(*snapshot.Clients[selectedClient]) {
-				continue
-			}
-			for _, accepted := range acceptedReleases {
-				if release.SeasonKeyOf(&parsed, snapshot.FuzzyMatching) == release.SeasonKeyOf(&accepted, snapshot.FuzzyMatching) && release.CheckCandidates(parsed, accepted, snapshot.FuzzyMatching).StatusCode == domain.StatusAlreadyInClient {
-					duplicate = true
-					break
-				}
-			}
-			if duplicate {
-				break
-			}
-		}
-		if duplicate {
+		if pack, ok := release.NewSeasonPack(&parsed, snapshot.FuzzyMatching); ok && run.alreadySelected(snapshot, name, pack) {
 			outcome.Reason = "release variant already selected in this run"
 			run.report.Outcomes = append(run.report.Outcomes, outcome)
 			continue

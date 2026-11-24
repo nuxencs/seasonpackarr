@@ -111,9 +111,11 @@
 
 ### Release Matching
 
-- Implemented in `internal/release/`. Only this package decides if two releases are of one season. Other packages ask it and do not compare titles, years, or seasons themselves. The search group key (show title and season, no year) is not a match decision.
-- Concerns: the season, comparing resolution, source, release group, cut, edition, repack state, HDR, streaming service, episode identity
+- Implemented in `internal/release/`. Only this package decides if two releases are of one season or of one release variant. Other packages ask it and do not compare titles, years, seasons, or release properties themselves. The search group key (show title and season, no year) is not a match decision.
+- Concerns: the season, the release variant (resolution, source, release group, cut, edition, repack status, HDR, streaming service), episode identity
 - `release.SeasonKeyOf` gives the season key of a parsed release under the fuzzy matching settings. The key is opaque and comparable. The inventory groups its entries by this key, and its season lookup takes one.
+- `release.NewSeasonPack` makes a season pack value from a parsed release name. It answers false for a name that is not a season pack (not of the series type, or with a file extension). `SeasonPack.Compare` takes one other parsed release and gives one relation: other season, other release variant, same pack, or compatible. It checks the season first, so no caller can skip it. For "other release variant", the `release.Mismatch` holds the first property that differs, with the value of the season pack as `Want` and the value of the other release as `Got`.
+- The candidate check, the covered episodes of a search, and the selected release variants of a search are the callers of the compare. The episode matcher uses the same `release.Mismatch` type for its diagnostics.
 - Risk: false positives cause wrong hardlinks; false negatives cause unnecessary downloads
 
 ### Torrent Handling
@@ -190,10 +192,12 @@
   - `Run.Failures` gives the failures of the source with their reason texts in
     time order, and `Run.Stats` gives the feed pages, the downloads, and the
     cache hits.
-- `internal/http/search.go` groups episode inventories by series/season,
-  excludes variants already covered by a pack in each client, shares remaining
-  searches across years and clients, and gives each listing to the season pack
-  processor. It accepts one pack per release variant.
+- `internal/http/search.go` reads the inventory one season at a time. It skips
+  an episode torrent when a season pack of the client is compatible with it.
+  It groups the other episode torrents by show title and season number, so
+  one search covers all years and clients. It gives each listing to the
+  season pack processor, and it accepts one pack for each season and release
+  variant on one endpoint.
 - Discovery uses the candidate check for a dry run, the match with a fetch for
   `verify`, and the match with a fetch followed by the import for an import.
   The fetch is `Listing.Torrent`, so it reads the stored torrent cache or

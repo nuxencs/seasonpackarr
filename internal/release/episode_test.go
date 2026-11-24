@@ -142,8 +142,8 @@ func TestEpisodeMatcher_ReportsClosestCompatibilityMismatch(t *testing.T) {
 		TorrentPath:       "Show.S01/Show.S01E05.1080p.WEB-DL-GROUP.mkv",
 		ClosestClientPath: "/client/Show.S01E05.1080p.WEB-DL-OTHER.mkv",
 		Reason:            EpisodeUnmatchedCompatibilityMismatch,
-		Mismatches: []EpisodeMismatch{{
-			Field: EpisodeMismatchReleaseGroup,
+		Mismatches: []Mismatch{{
+			Field: MismatchReleaseGroup,
 			Want:  "group",
 			Got:   "other",
 		}},
@@ -157,11 +157,11 @@ func TestEpisodeMatcher_ReportsWantAndGotForEveryCompatibilityMismatch(t *testin
 	source := requireEpisodeFile(t, "/client/Show.S01E05.2160p.WEB-DL-OTHER.mp4", 101)
 
 	result := NewEpisodeMatcher([]EpisodeFile{target}).Match([]EpisodeFile{source})
-	require.Equal(t, []EpisodeMismatch{
-		{Field: EpisodeMismatchSize, Want: int64(100), Got: int64(101)},
-		{Field: EpisodeMismatchContainer, Want: "mkv", Got: "mp4"},
-		{Field: EpisodeMismatchResolution, Want: "1080p", Got: "2160p"},
-		{Field: EpisodeMismatchReleaseGroup, Want: "group", Got: "other"},
+	require.Equal(t, []Mismatch{
+		{Field: MismatchSize, Want: int64(100), Got: int64(101)},
+		{Field: MismatchContainer, Want: "mkv", Got: "mp4"},
+		{Field: MismatchResolution, Want: "1080p", Got: "2160p"},
+		{Field: MismatchReleaseGroup, Want: "group", Got: "other"},
 	}, result.Unmatched[0].Mismatches)
 }
 

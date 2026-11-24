@@ -73,8 +73,13 @@ code of the real binary.
   that the fake client received, the files on disk, and the log lines. No test
   builds a plan by hand, reads the plan cache, or sets an expiry time. The plan
   expiry test and the endpoint import lock test use `testing/synctest`. The
-  tests of the pure private helpers (`TestEpisodeFileFromFiles_`,
-  `TestCandidateMismatchField`) are in the same files.
+  test of the pure private helper (`TestEpisodeFileFromFiles_`) is in the same
+  file. `TestCandidate_LogsEachIncompatibleProperty` covers the log line
+  `client release is not compatible` for each property of the release variant.
+- `internal/release/seasonpack_test.go` holds the table test of the compare
+  (`TestSeasonPackCompare`): each relation, each property of the release
+  variant, and each fuzzy matching setting. A new matching rule gets a case
+  there. The tests call only exported functions of the package.
 - `fixtures_test.go` holds the fakes and fixtures that more than one test file
   of the package uses. A fake that one file uses stays in that file.
 - `internal/torrentclient/torrentclienttest` holds the fake torrent client

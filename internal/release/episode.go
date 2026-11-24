@@ -99,24 +99,7 @@ const (
 	EpisodeUnmatchedDuplicateTarget       EpisodeUnmatchedReason = "duplicate_torrent_target"
 )
 
-type EpisodeMismatchField string
-
-const (
-	EpisodeMismatchSize         EpisodeMismatchField = "size"
-	EpisodeMismatchContainer    EpisodeMismatchField = "container"
-	EpisodeMismatchResolution   EpisodeMismatchField = "resolution"
-	EpisodeMismatchReleaseGroup EpisodeMismatchField = "release_group"
-)
-
 const episodeCompatibilityFieldCount = 4
-
-// EpisodeMismatch reports one incompatible value. Want is the announced
-// torrent target requirement. Got is the closest client source value.
-type EpisodeMismatch struct {
-	Field EpisodeMismatchField
-	Want  any
-	Got   any
-}
 
 // EpisodeUnmatched explains why one valid torrent target cannot reuse a client
 // episode.
@@ -124,7 +107,8 @@ type EpisodeUnmatched struct {
 	TorrentPath       string
 	ClosestClientPath string
 	Reason            EpisodeUnmatchedReason
-	Mismatches        []EpisodeMismatch
+	// Mismatches: Want is the torrent target requirement, Got is the closest client source value.
+	Mismatches []Mismatch
 }
 
 // EpisodeMatchResult contains the reusable links and diagnostics for every
@@ -219,32 +203,32 @@ func diagnoseUnmatchedEpisode(target EpisodeFile, sources []EpisodeFile) Episode
 	return diagnostic
 }
 
-func compatibilityMismatches(source, target episodeMatchKey) []EpisodeMismatch {
-	mismatches := make([]EpisodeMismatch, 0, episodeCompatibilityFieldCount)
+func compatibilityMismatches(source, target episodeMatchKey) []Mismatch {
+	mismatches := make([]Mismatch, 0, episodeCompatibilityFieldCount)
 	if source.size != target.size {
-		mismatches = append(mismatches, EpisodeMismatch{
-			Field: EpisodeMismatchSize,
+		mismatches = append(mismatches, Mismatch{
+			Field: MismatchSize,
 			Want:  target.size,
 			Got:   source.size,
 		})
 	}
 	if source.ext != target.ext {
-		mismatches = append(mismatches, EpisodeMismatch{
-			Field: EpisodeMismatchContainer,
+		mismatches = append(mismatches, Mismatch{
+			Field: MismatchContainer,
 			Want:  target.ext,
 			Got:   source.ext,
 		})
 	}
 	if source.resolution != target.resolution {
-		mismatches = append(mismatches, EpisodeMismatch{
-			Field: EpisodeMismatchResolution,
+		mismatches = append(mismatches, Mismatch{
+			Field: MismatchResolution,
 			Want:  target.resolution,
 			Got:   source.resolution,
 		})
 	}
 	if source.group != target.group {
-		mismatches = append(mismatches, EpisodeMismatch{
-			Field: EpisodeMismatchReleaseGroup,
+		mismatches = append(mismatches, Mismatch{
+			Field: MismatchReleaseGroup,
 			Want:  target.group,
 			Got:   source.group,
 		})
