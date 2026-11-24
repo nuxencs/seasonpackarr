@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net"
 	"net/url"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -225,20 +226,51 @@ func New(ctx context.Context, client *domain.Client) (TorrentClient, error) {
 
 // Endpoint identifies the client service that a client config connects to.
 // Configs with the same endpoint share one service, so an import through one
-// of them changes what the others see.
+// of them changes what the others see. Its fields are unexported, so a caller
+// can only compare it and use it as a map key.
 type Endpoint struct {
-	Type string
-	Host string
-	Port int
+	typeName string
+	scheme   string
+	host     string
+	port     int
+	path     string
 }
 
-// EndpointOf returns the endpoint of client, with type aliases resolved.
+// defaultPorts are the ports that an HTTP address with no port connects to.
+var defaultPorts = map[string]int{"http": 80, "https": 443}
+
+// EndpointOf returns the endpoint of client: the canonical client type and the
+// address that the adapter connects to, in each spelling of the config. It does
+// no DNS lookup, so a host name and its IP address are two endpoints. A config
+// whose address does not build gets the endpoint of its trimmed host and port.
 func EndpointOf(client domain.Client) Endpoint {
-	typeName := client.Type
-	if entry, ok := lookupClientType(client.Type); ok {
-		typeName = entry.name
+	raw := Endpoint{typeName: client.Type, host: strings.TrimSpace(client.Host), port: client.Port}
+	entry, ok := lookupClientType(client.Type)
+	if !ok {
+		return raw
 	}
-	return Endpoint{Type: typeName, Host: client.Host, Port: client.Port}
+	raw.typeName = entry.name
+	address, err := entry.address(client)
+	if err != nil {
+		return raw
+	}
+
+	port := defaultPorts[address.Scheme]
+	if address.Port() != "" {
+		// url.Parse accepts only digits as a port, so only a port too large for an int fails here.
+		port, _ = strconv.Atoi(address.Port())
+	}
+	// go-qbittorrent joins the API path with url.JoinPath, which cleans the path,
+	// so "/proxy/abc/" and "/proxy/abc" reach the same service. The Transmission
+	// path is fixed, and a Deluge address has no path.
+	cleanPath := strings.TrimSuffix(path.Clean("/"+address.EscapedPath()), "/")
+	return Endpoint{
+		typeName: entry.name,
+		scheme:   address.Scheme,
+		host:     strings.ToLower(address.Hostname()),
+		port:     port,
+		path:     cleanPath,
+	}
 }
 
 // normalizePath cleans and normalizes a client-reported destination path so it

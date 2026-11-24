@@ -90,9 +90,12 @@ Prowlarr discovery calls the same three operations of the season pack processor
 with the release name of each result. The match gets a torrent fetch, and the
 import gets the fetched bytes. The torrent download never runs
 under the endpoint import lock. One process serializes imports per configured client
-endpoint. The import does the candidate check again before it uses a kept plan.
-Client mutation attempts invalidate cached inventories and plans for all clients
-on that endpoint, even when the adapter returns an error. A retry must establish
+endpoint. The endpoint is the client type and the address that the adapter
+connects to, so two spellings of one address are one endpoint (see
+`torrentclient.EndpointOf`). The import does the candidate check again before
+it uses a kept plan. Client mutation attempts invalidate cached inventories and
+plans for all clients on that endpoint, even when the adapter returns an error.
+A retry must establish
 whether the earlier attempt already added the pack. An in-flight inventory scan
 cannot restore a cache entry invalidated by an import.
 

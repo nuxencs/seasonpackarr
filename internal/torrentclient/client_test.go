@@ -111,6 +111,104 @@ func TestEndpointOf(t *testing.T) {
 			a:    domain.Client{Host: "qbit", Port: 8080},
 			b:    domain.Client{Host: "qbit", Port: 8081},
 		},
+		{
+			name: "Deluge port 0 is the daemon port",
+			a:    domain.Client{Type: "deluge-v2", Host: "deluge", Port: 0},
+			b:    domain.Client{Type: "deluge-v2", Host: "deluge", Port: 58846},
+			same: true,
+		},
+		{
+			name: "Deluge host name letter case",
+			a:    domain.Client{Type: "deluge-v1", Host: "Deluge.LAN", Port: 58846},
+			b:    domain.Client{Type: "deluge-v1", Host: "deluge.lan", Port: 58846},
+			same: true,
+		},
+		{
+			name: "port setting and port in host",
+			a:    domain.Client{Host: "qbit", Port: 8080},
+			b:    domain.Client{Host: "http://qbit:8080"},
+			same: true,
+		},
+		{
+			name: "port setting wins over port in host",
+			a:    domain.Client{Host: "http://qbit:9090", Port: 8080},
+			b:    domain.Client{Host: "qbit:8080"},
+			same: true,
+		},
+		{
+			name: "default scheme is http",
+			a:    domain.Client{Host: "qbit:8080"},
+			b:    domain.Client{Host: "http://qbit:8080"},
+			same: true,
+		},
+		{
+			name: "http default port",
+			a:    domain.Client{Host: "http://qbit"},
+			b:    domain.Client{Host: "qbit", Port: 80},
+			same: true,
+		},
+		{
+			name: "https default port",
+			a:    domain.Client{Host: "https://qbit"},
+			b:    domain.Client{Host: "https://qbit:443"},
+			same: true,
+		},
+		{
+			name: "host name letter case",
+			a:    domain.Client{Host: "http://QBit.Example", Port: 8080},
+			b:    domain.Client{Host: "http://qbit.example", Port: 8080},
+			same: true,
+		},
+		{
+			name: "last slash of a path",
+			a:    domain.Client{Host: "http://qui:7476/proxy/abc/"},
+			b:    domain.Client{Host: "http://qui:7476/proxy/abc"},
+			same: true,
+		},
+		{
+			name: "root path",
+			a:    domain.Client{Host: "http://qbit:8080/"},
+			b:    domain.Client{Host: "qbit", Port: 8080},
+			same: true,
+		},
+		{
+			name: "different qui proxy paths",
+			a:    domain.Client{Host: "http://qui:7476/proxy/abc"},
+			b:    domain.Client{Host: "http://qui:7476/proxy/def"},
+		},
+		{
+			name: "Transmission path is not part of the endpoint",
+			a:    domain.Client{Type: "transmission", Host: "http://transmission:9091/some/path"},
+			b:    domain.Client{Type: "transmission", Host: "transmission", Port: 9091},
+			same: true,
+		},
+		{
+			name: "user info, query, and fragment are ignored",
+			a:    domain.Client{Host: "http://user:secret@qbit:8080/?a=b#c"},
+			b:    domain.Client{Host: "qbit", Port: 8080},
+			same: true,
+		},
+		{
+			name: "http is not https",
+			a:    domain.Client{Host: "http://qbit:8080"},
+			b:    domain.Client{Host: "https://qbit:8080"},
+		},
+		{
+			name: "host name is not its IP address",
+			a:    domain.Client{Host: "localhost", Port: 8080},
+			b:    domain.Client{Host: "127.0.0.1", Port: 8080},
+		},
+		{
+			name: "address that does not build uses the trimmed host and port",
+			a:    domain.Client{Type: "deluge-v2", Host: " http://deluge ", Port: 58846},
+			b:    domain.Client{Type: "deluge-v2", Host: "http://deluge", Port: 58846},
+			same: true,
+		},
+		{
+			name: "address that does not build is not the built address",
+			a:    domain.Client{Type: "deluge-v2", Host: "http://deluge", Port: 58846},
+			b:    domain.Client{Type: "deluge-v2", Host: "deluge", Port: 58846},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

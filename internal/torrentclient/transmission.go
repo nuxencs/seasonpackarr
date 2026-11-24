@@ -70,7 +70,7 @@ func newTransmissionClient(ctx context.Context, client *domain.Client) (*transmi
 // password, and the request handlers log these errors. The username setting
 // wins over credentials in the host.
 func buildTransmissionURL(client *domain.Client) (*url.URL, *url.Userinfo, error) {
-	parsed, err := httpAddress(*client)
+	parsed, err := transmissionAddress(*client)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -80,8 +80,19 @@ func buildTransmissionURL(client *domain.Client) (*url.URL, *url.Userinfo, error
 		credentials = url.UserPassword(client.Username, client.Password)
 	}
 	parsed.User = nil
-	parsed.Path = "/transmission/rpc"
 	return parsed, credentials, nil
+}
+
+// transmissionAddress is the address build of Transmission. The adapter always
+// uses the RPC path, so a path in host is not part of the address.
+func transmissionAddress(client domain.Client) (*url.URL, error) {
+	parsed, err := httpAddress(client)
+	if err != nil {
+		return nil, err
+	}
+	parsed.Path = "/transmission/rpc"
+	parsed.RawPath = ""
+	return parsed, nil
 }
 
 // transmissionAuth sends the basic auth credentials on each request to the

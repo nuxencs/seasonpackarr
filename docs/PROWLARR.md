@@ -249,9 +249,22 @@ Release compatibility includes the existing resolution, source, release group,
 cut, edition, repack, HDR, and streaming-service rules. Fuzzy matching options
 remain in effect. There is no new quality-ranking system.
 
-Configurations that point to the same client type, host, and port share duplicate
-protection, even when they use different import categories. Use consistent host
-URLs for clients on the same endpoint. Independent clients receive separate imports.
+Clients with the same endpoint share duplicate protection, even when they use
+different import categories. Two clients are on the same endpoint when they have
+the same client type and connect to the same address, however `host` and `port`
+spell it:
+
+- The scheme defaults to `http`. `http` and `https` are two endpoints.
+- The host name is compared in lower case. No DNS lookup occurs, so a host name
+  and its IP address are two endpoints.
+- The `port` setting wins over a port in `host`. With no port, `http` uses `80`
+  and `https` uses `443`. Deluge uses `58846` for port `0`.
+- For qBittorrent, the path is compared without a last `/` and with `//`,
+  `.`, and `..` cleaned, so two qui proxy paths are two endpoints. Transmission ignores the path.
+- User info, query, and fragment are not compared.
+- Deluge 1 and Deluge 2 on the same host and port are two endpoints.
+
+Independent clients receive separate imports.
 
 For example, NTb episodes and an NTb pack suppress that variant. NTb episodes
 and a FLUX pack still cause a search. Existing packs are checked again on every
