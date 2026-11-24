@@ -16,6 +16,7 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger/loggertest"
+	"github.com/nuxencs/seasonpackarr/internal/release"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 
 	"github.com/autobrr/rls"
@@ -140,20 +141,21 @@ func BenchmarkInventoryCachedAccess(b *testing.B) {
 	}
 }
 
-func BenchmarkInventoryTitleLookup(b *testing.B) {
+func BenchmarkInventorySeasonLookup(b *testing.B) {
 	for _, torrentCount := range inventorySizes {
 		b.Run(strconv.Itoa(torrentCount), func(b *testing.B) {
 			torrents := inventoryBenchmarkTorrents(torrentCount)
 			_, client := newBenchmarkClient(b, &fakeAdapter{torrents: torrents})
 			inv, err := client.Inventory(b.Context())
 			require.NoError(b, err)
-			release := rls.ParseString(torrents[0].Name)
-			require.NotEmpty(b, slices.Collect(inv.SameTitle(&release)), "inventory has no title group")
+			request := rls.ParseString(torrents[0].Name)
+			fuzzy := client.Snapshot().FuzzyMatching
+			require.NotEmpty(b, slices.Collect(inv.SameSeason(release.SeasonKeyOf(&request, fuzzy))), "inventory has no season group")
 			b.ReportAllocs()
 
 			for b.Loop() {
-				// Read each entry of the group, as the candidate check does.
-				for e := range inv.SameTitle(&release) {
+				// Build the key and read each entry of the group, as the candidate check does.
+				for e := range inv.SameSeason(release.SeasonKeyOf(&request, fuzzy)) {
 					inventoryReleaseSink = e.Release
 				}
 			}
@@ -191,9 +193,9 @@ func TestInventory_RetainedMemory(t *testing.T) {
 	runtime.KeepAlive(store)
 
 	t.Logf(
-		"INVENTORY_MEM torrents=%d title_buckets=%d parsed_releases=%d heap_bytes=%d heap_objects=%d total_alloc_bytes=%d mallocs=%d",
+		"INVENTORY_MEM torrents=%d season_groups=%d parsed_releases=%d heap_bytes=%d heap_objects=%d total_alloc_bytes=%d mallocs=%d",
 		torrentCount,
-		len(inv.titles),
+		len(inv.seasons),
 		len(names.names),
 		int64(after.HeapAlloc)-int64(before.HeapAlloc),
 		int64(after.HeapObjects)-int64(before.HeapObjects),

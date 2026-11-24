@@ -46,7 +46,7 @@ func (c *call) findCandidates(ctx context.Context) ([]inventory.Entry, Outcome) 
 
 	requestRls := rls.ParseString(c.release)
 	var candidates []inventory.Entry
-	for filteredEntry := range clientInventory.SameTitle(&requestRls) {
+	for filteredEntry := range clientInventory.SameSeason(release.SeasonKeyOf(&requestRls, c.cfg.FuzzyMatching)) {
 		compareInfo := release.CheckCandidates(requestRls, *filteredEntry.Release, c.cfg.FuzzyMatching)
 		switch compareInfo.StatusCode {
 		case domain.StatusAlreadyInClient, domain.StatusNotASeasonPack:

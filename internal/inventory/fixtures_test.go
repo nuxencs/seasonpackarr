@@ -10,6 +10,7 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/logger/loggertest"
+	"github.com/nuxencs/seasonpackarr/internal/release"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 
 	"github.com/autobrr/rls"
@@ -91,12 +92,20 @@ func readInventory(t *testing.T, client *Client) *Inventory {
 	return inv
 }
 
-// releaseOf returns the parsed release of the torrent name in inv.
+// seasonOf returns the season key of a torrent name for a client with no fuzzy matching.
+func seasonOf(name string) release.SeasonKey {
+	return release.SeasonKeyOf(new(rls.ParseString(name)), domain.FuzzyMatching{})
+}
+
+// releaseOf returns the parsed release of the torrent name in inv. It reads
+// each group, so it works for each fuzzy matching setting of the read.
 func releaseOf(t *testing.T, inv *Inventory, name string) *rls.Release {
 	t.Helper()
-	for e := range inv.SameTitle(new(rls.ParseString(name))) {
-		if e.Torrent.Name == name {
-			return e.Release
+	for group := range inv.SeasonGroups() {
+		for e := range group {
+			if e.Torrent.Name == name {
+				return e.Release
+			}
 		}
 	}
 	require.Failf(t, "torrent missing from the inventory", "%s", name)

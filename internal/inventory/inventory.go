@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
-	"github.com/nuxencs/seasonpackarr/internal/format"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
+	"github.com/nuxencs/seasonpackarr/internal/release"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 
 	"github.com/autobrr/rls"
@@ -89,8 +89,8 @@ type parsedNames struct {
 
 type parsedName struct {
 	release *rls.Release
-	// title is the comparable title, which depends on the fuzzy matching settings.
-	title string
+	// season depends on the fuzzy matching settings.
+	season release.SeasonKey
 }
 
 // New returns an empty store. Production passes torrentclient.New as connect.
@@ -240,7 +240,7 @@ func (s *Store) scan(ctx context.Context, c *Client, current *slot) (*Inventory,
 	key := parsedNamesKeyFor(c.config)
 	previous := s.previousNames(key, c.fuzzy)
 	names := make(map[string]parsedName, len(torrents))
-	inv := &Inventory{fuzzy: c.fuzzy, titles: make(map[string][]Entry)}
+	inv := &Inventory{seasons: make(map[release.SeasonKey][]Entry)}
 	for _, t := range torrents {
 		// Cross-seeds repeat a name in the same scan.
 		parsed, ok := names[t.Name]
@@ -251,11 +251,11 @@ func (s *Store) scan(ctx context.Context, c *Client, current *slot) (*Inventory,
 			parsed, ok = earlier[t.Name]
 		}
 		if !ok {
-			release := rls.ParseString(t.Name)
-			parsed = parsedName{release: &release, title: format.ComparableTitle(release, c.fuzzy)}
+			r := new(rls.ParseString(t.Name))
+			parsed = parsedName{release: r, season: release.SeasonKeyOf(r, c.fuzzy)}
 		}
 		names[t.Name] = parsed
-		inv.titles[parsed.title] = append(inv.titles[parsed.title], Entry{Torrent: t, Release: parsed.release})
+		inv.seasons[parsed.season] = append(inv.seasons[parsed.season], Entry{Torrent: t, Release: parsed.release})
 	}
 
 	s.mu.Lock()
@@ -314,21 +314,20 @@ type Entry struct {
 }
 
 // Inventory is a read-only view of the torrents of one client read, grouped
-// by title. Its methods yield copies of the entries and no slice, so one
+// by season. Its methods yield copies of the entries and no slice, so one
 // caller cannot change what another sees, and a lookup copies no group.
 type Inventory struct {
-	fuzzy  domain.FuzzyMatching
-	titles map[string][]Entry
+	seasons map[release.SeasonKey][]Entry
 }
 
-// SameTitle yields the entries with the title of release under the fuzzy
-// matching settings of the read.
-func (inv *Inventory) SameTitle(release *rls.Release) iter.Seq[Entry] {
-	// The lookup is inside the iterator, so SameTitle stays small enough to
-	// inline and a range over it allocates nothing. A pointer, because a
-	// release is large and the iterator would copy it again.
+// SameSeason yields the entries of the season key. The caller must build the
+// key with the fuzzy matching settings of the Client that gave the inventory
+// (Client.Snapshot), because the read grouped the entries with those settings.
+func (inv *Inventory) SameSeason(key release.SeasonKey) iter.Seq[Entry] {
+	// The lookup is inside the iterator, so SameSeason stays small enough to
+	// inline and a range over it allocates nothing.
 	return func(yield func(Entry) bool) {
-		for _, e := range inv.titles[format.ComparableTitle(*release, inv.fuzzy)] {
+		for _, e := range inv.seasons[key] {
 			if !yield(e) {
 				return
 			}
@@ -336,11 +335,11 @@ func (inv *Inventory) SameTitle(release *rls.Release) iter.Seq[Entry] {
 	}
 }
 
-// TitleGroups yields the entries of each title, in no fixed order. A caller
+// SeasonGroups yields the entries of each season, in no fixed order. A caller
 // can range over one group more than once.
-func (inv *Inventory) TitleGroups() iter.Seq[iter.Seq[Entry]] {
+func (inv *Inventory) SeasonGroups() iter.Seq[iter.Seq[Entry]] {
 	return func(yield func(iter.Seq[Entry]) bool) {
-		for _, group := range inv.titles {
+		for _, group := range inv.seasons {
 			if !yield(slices.Values(group)) {
 				return
 			}

@@ -111,8 +111,9 @@
 
 ### Release Matching
 
-- Implemented in `internal/release/`, `internal/format/`
-- Concerns: comparing resolution, source, release group, cut, edition, repack state, HDR, streaming service, episode identity
+- Implemented in `internal/release/`. Only this package decides if two releases are of one season. Other packages ask it and do not compare titles, years, or seasons themselves. The search group key (show title and season, no year) is not a match decision.
+- Concerns: the season, comparing resolution, source, release group, cut, edition, repack state, HDR, streaming service, episode identity
+- `release.SeasonKeyOf` gives the season key of a parsed release under the fuzzy matching settings. The key is opaque and comparable. The inventory groups its entries by this key, and its season lookup takes one.
 - Risk: false positives cause wrong hardlinks; false negatives cause unnecessary downloads
 
 ### Torrent Handling

@@ -17,7 +17,6 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/config"
 	"github.com/nuxencs/seasonpackarr/internal/discovery"
 	"github.com/nuxencs/seasonpackarr/internal/domain"
-	"github.com/nuxencs/seasonpackarr/internal/format"
 	"github.com/nuxencs/seasonpackarr/internal/inventory"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
 	"github.com/nuxencs/seasonpackarr/internal/release"
@@ -177,8 +176,8 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 			continue
 		}
 		handles[name] = client
-		for entries := range clientInventory.TitleGroups() {
-			// Inventory buckets already apply the title, season, and year rules.
+		for entries := range clientInventory.SeasonGroups() {
+			// Each group is one season.
 			// Collect packs once so episode-only seasons do not need pairwise scans.
 			var packs []*rls.Release
 			for entry := range entries {
@@ -289,7 +288,7 @@ func (run *discoveryRun) evaluateListing(ctx context.Context, listing *discovery
 				continue
 			}
 			for _, accepted := range acceptedReleases {
-				if format.ComparableTitle(parsed, snapshot.FuzzyMatching) == format.ComparableTitle(accepted, snapshot.FuzzyMatching) && release.CheckCandidates(parsed, accepted, snapshot.FuzzyMatching).StatusCode == domain.StatusAlreadyInClient {
+				if release.SeasonKeyOf(&parsed, snapshot.FuzzyMatching) == release.SeasonKeyOf(&accepted, snapshot.FuzzyMatching) && release.CheckCandidates(parsed, accepted, snapshot.FuzzyMatching).StatusCode == domain.StatusAlreadyInClient {
 					duplicate = true
 					break
 				}
