@@ -183,9 +183,9 @@ When an upgrade needs migrations, the logs show the old and new schema versions 
 `database migrations applied` appears after they commit.
 
 After the server starts, seasonpackarr reads the torrent list of each configured client once. `client inventory ready`
-appears for each client and shows the number of release titles and the read time. When a client is not ready yet,
-seasonpackarr tries again up to three more times, 10 seconds apart. Then it logs `could not read client inventory at
-startup` at `WARN` level and continues. The first request to that client reads it as usual.
+appears for each client and shows the number of seasons (`seasons`) and the read time (`duration_ms`). When a client is
+not ready yet, seasonpackarr tries again up to three more times, 10 seconds apart. Then it logs `could not read client
+inventory at startup` at `WARN` level and continues. The first request to that client reads it as usual.
 
 ### Back up and restore
 
