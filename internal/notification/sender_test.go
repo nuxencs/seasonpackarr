@@ -179,7 +179,7 @@ func TestSender_LevelFiltersEveryDestination(t *testing.T) {
 		Shoutrrr:          []string{shoutrrr.genericURL("/hook", "")},
 	})
 
-	require.NoError(t, sender.Send(t.Context(), domain.StatusRlsGrpMismatch, testPayload))
+	require.NoError(t, sender.Send(t.Context(), domain.StatusNotASeasonPack, testPayload))
 
 	discord.assertNoRequest(t)
 	shoutrrr.assertNoRequest(t)
@@ -195,7 +195,7 @@ func TestSender_ErrorLineOnlyForErrorLevel(t *testing.T) {
 			want:       "Release Name: Series.S01.1080p.WEB-DL-GRP\nClient: default\nAction: Import\nError: disk full",
 		},
 		"info level": {
-			statusCode: domain.StatusRlsGrpMismatch,
+			statusCode: domain.StatusNotASeasonPack,
 			want:       "Release Name: Series.S01.1080p.WEB-DL-GRP\nClient: default\nAction: Import",
 		},
 	}
