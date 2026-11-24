@@ -37,9 +37,9 @@ type Verification struct {
 
 // VerifyCandidateCheck asks autobrr to run the candidate check entry of
 // filter, so the request comes from the network position of autobrr. autobrr
-// sends a single-episode sample release, so a pass is usually a rejection
-// such as 211. The check needs autobrr v1.88.0 or later, and it is skipped on
-// an older autobrr.
+// sends a single-episode sample release, so the expected pass is the rejection
+// 211. The check needs autobrr v1.88.0 or later, and it is skipped on an older
+// autobrr.
 func (c *Client) VerifyCandidateCheck(ctx context.Context, filter Filter) Verification {
 	var test struct {
 		Status int    `json:"status"`
