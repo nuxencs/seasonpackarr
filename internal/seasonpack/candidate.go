@@ -39,6 +39,7 @@ func (c *call) findCandidates(ctx context.Context) ([]inventory.Entry, Outcome) 
 		return nil, outcomeOf(domain.StatusAnnounceNameError)
 	}
 
+	// Read the client first: `setup filter` sends a single-episode sample and needs 468 for an unreadable client.
 	clientInventory, err := c.client.Inventory(ctx)
 	if err != nil {
 		return nil, outcomeOfError(domain.StatusGetTorrentsError, err)
@@ -47,11 +48,7 @@ func (c *call) findCandidates(ctx context.Context) ([]inventory.Entry, Outcome) 
 	requestRls := rls.ParseString(c.release)
 	pack, isPack := release.NewSeasonPack(&requestRls, c.cfg.FuzzyMatching)
 	if !isPack {
-		// A name that is not a season pack gets 211 only when the client holds a torrent of its season.
-		for range clientInventory.SameSeason(release.SeasonKeyOf(&requestRls, c.cfg.FuzzyMatching)) {
-			return nil, outcomeOf(domain.StatusNotASeasonPack)
-		}
-		return nil, outcomeOf(domain.StatusNoMatches)
+		return nil, outcomeOf(domain.StatusNotASeasonPack)
 	}
 
 	var candidates []inventory.Entry

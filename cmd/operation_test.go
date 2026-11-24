@@ -56,7 +56,7 @@ func TestOperationCommand_ReportsResults(t *testing.T) {
 	}{
 		{250, 0, "accepted", "release-name checks passed"},
 		{200, 2, "rejected", "no matching releases"},
-		{204, 2, "rejected", "cut did not match"},
+		{210, 2, "rejected", "release already in client"},
 		{230, 2, "rejected", "below threshold"},
 		{445, 2, "rejected", "could not match"},
 		{401, 1, "failed", "authentication failed"},

@@ -197,9 +197,9 @@ After each create or update, the command asks autobrr to run the candidate
 check entry of the filter through the autobrr External test endpoint. autobrr
 sends the request, so the check uses the network position of autobrr and the
 `--webhook-url` of the filter. autobrr sends a fixed single-episode sample
-release. seasonpackarr checks the client before the release name, so a pass is
-usually a rejection such as status `200` or `211`. The text output shows the
-result below each filter:
+release. seasonpackarr reads the client before it checks the release name, so
+a pass is the rejection `211` (release is not a season pack). The text output
+shows the result below each filter:
 
 ```text
 Created filter 1 (seasonpackarr-tv) for client tv

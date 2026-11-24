@@ -52,7 +52,21 @@ The body is one JSON object:
 - **Candidate check** (`/api/candidate`) compares the release name with the
   episode torrents in the client. It reads torrent summaries only. It never
   requests torrent bytes or per-torrent file details, so a rejection here saves
-  the torrent download.
+  the torrent download. After seasonpackarr finds and connects to the client
+  (`472`, `471`), the candidate check gives the first answer that applies, in
+  this order:
+  1. `469` for an empty release name.
+  2. `468` when seasonpackarr cannot read the inventory.
+  3. `211` for a name that is not a season pack, also when the client holds no
+     torrent of its season.
+  4. The result of the compare with the inventory entries of the same season:
+     `210`, `200`, or `250`.
+
+  Match and import first need a `torrent` that decodes to bytes (`467`,
+  `466`). Then the order above applies, with one addition on import: after the
+  name check (`469`), import reads the info hash (`465`) before it reads the
+  inventory. Match reads the torrent metadata only after the candidate check.
+  So both routes give `211` for a name that is not a season pack.
 - **Match** (`/api/match`) reads the torrent file list. It counts MKV and MP4
   files that parse as episodes and ignores samples and extra videos. It finds a
   reusable episode for each distinct episode target, applies
@@ -93,7 +107,7 @@ A rejection or failure gets the status code from the table below, with a JSON
 body:
 
 ```json
-{"statusCode": 203, "error": "release group did not match"}
+{"statusCode": 210, "error": "release already in client"}
 ```
 
 A body that is not valid JSON gets `470`.
@@ -108,20 +122,8 @@ successful match sends no notification. See
 | Code | Meaning | Notification level |
 | --- | --- | --- |
 | `200` | No matching releases in the client | `INFO` |
-| `201` | Resolution did not match | `INFO` |
-| `202` | Source did not match | `INFO` |
-| `203` | Release group did not match | `INFO` |
-| `204` | Cut did not match | `INFO` |
-| `205` | Edition did not match | `INFO` |
-| `206` | Repack status did not match | `INFO` |
-| `207` | HDR metadata did not match | `INFO` |
-| `208` | Streaming service did not match | `INFO` |
 | `210` | Release already in the client | `INFO` |
 | `211` | Release is not a season pack | `INFO` |
-| `212` | Size did not match | None |
-| `213` | Season did not match | None |
-| `214` | Episode did not match | None |
-| `215` | Container did not match | `INFO` |
 | `230` | Coverage is below the smart mode threshold | `INFO` |
 | `250` | Successful match or import | `MATCH` (import only) |
 | `440` | Could not create hardlinks | `ERROR` |
@@ -141,12 +143,23 @@ successful match sends no notification. See
 | `471` | Could not get the client | `ERROR` |
 | `472` | Client not found in the config | `ERROR` |
 
-The current endpoints do not return codes `212` to `215`, and the logs do not
-contain them. For per-episode diagnostics, read the
-`torrent episode is not reusable` log lines. Their `reason` field
-(`source_episode_not_found`, `compatibility_mismatch`, or
-`duplicate_torrent_target`) and `mismatches[].field` (`size`, `container`,
-`resolution`, or `release_group`) explain why an episode was not reused.
+The numbers `201` to `208` and `212` to `215` are retired. No endpoint returns
+them, and they get no new meaning.
+
+For diagnostics, read these log lines at `INFO`:
+
+- `client release is not compatible`: the candidate check found a client
+  release of the same season that is another release variant. Its `reason`
+  field is `compatibility_mismatch`. The `field` value names the first
+  property that differs (`resolution`, `source`, `release_group`, `cut`,
+  `edition`, `repack_status`, `hdr`, or `streaming_service`). `want` and `got`
+  are the values of the requested pack and of the client release, and
+  `client_release` is the name of the client release.
+- `torrent episode is not reusable`: the match did not reuse a torrent
+  episode. Its `reason` field is `source_episode_not_found`,
+  `compatibility_mismatch`, or `duplicate_torrent_target`. For
+  `compatibility_mismatch`, `mismatches[].field` (`size`, `container`,
+  `resolution`, or `release_group`) names each property that differs.
 
 The match and the import count only client episode files that are on disk. An
 episode file that the client lists is not reusable when it is not a regular
@@ -194,9 +207,9 @@ completes.
   The `notification test` command sends its test notification with the label
   `Test`.
 - The candidate check and match log expected rejections, such as a release
-  group mismatch, at `INFO`. Configuration, decoding, client, filesystem, and
-  import failures are logged at `ERROR`. The import logs every failure at
-  `ERROR`, also an expected rejection
+  that is already in the client, at `INFO`. Configuration, decoding, client,
+  filesystem, and import failures are logged at `ERROR`. The import logs every
+  failure at `ERROR`, also an expected rejection
   ([#194](https://github.com/nuxencs/seasonpackarr/issues/194)).
 - When a match does not use a torrent episode, the log shows why: a missing
   source episode, a duplicate target, or the closest client file and each field

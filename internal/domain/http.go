@@ -8,74 +8,38 @@ import "fmt"
 type StatusCode int
 
 const (
-	StatusNoMatches                StatusCode = 200
-	StatusResolutionMismatch       StatusCode = 201
-	StatusSourceMismatch           StatusCode = 202
-	StatusRlsGrpMismatch           StatusCode = 203
-	StatusCutMismatch              StatusCode = 204
-	StatusEditionMismatch          StatusCode = 205
-	StatusRepackStatusMismatch     StatusCode = 206
-	StatusHdrMismatch              StatusCode = 207
-	StatusStreamingServiceMismatch StatusCode = 208
-	StatusAlreadyInClient          StatusCode = 210
-	StatusNotASeasonPack           StatusCode = 211
-	StatusSizeMismatch             StatusCode = 212
-	StatusSeasonMismatch           StatusCode = 213
-	StatusEpisodeMismatch          StatusCode = 214
-	StatusContainerMismatch        StatusCode = 215
-	StatusBelowThreshold           StatusCode = 230
-	StatusSuccessfulMatch          StatusCode = 250
-	StatusSuccessfulHardlink       StatusCode = 250
-	StatusFailedHardlink           StatusCode = 440
-	StatusFailedMatchToTorrentEps  StatusCode = 445
-	StatusClientNotFound           StatusCode = 472
-	StatusGetClientError           StatusCode = 471
-	StatusDecodingError            StatusCode = 470
-	StatusAnnounceNameError        StatusCode = 469
-	StatusGetTorrentsError         StatusCode = 468
-	StatusTorrentBytesError        StatusCode = 467
-	StatusDecodeTorrentBytesError  StatusCode = 466
-	StatusParseTorrentInfoError    StatusCode = 465
-	StatusGetEpisodesError         StatusCode = 464
-	StatusAddTorrentError          StatusCode = 463
-	StatusFindTorrentError         StatusCode = 462
-	StatusRecheckTorrentError      StatusCode = 461
-	StatusResumeTorrentError       StatusCode = 460
-	StatusImportConfigError        StatusCode = 459
+	StatusNoMatches               StatusCode = 200
+	StatusAlreadyInClient         StatusCode = 210
+	StatusNotASeasonPack          StatusCode = 211
+	StatusBelowThreshold          StatusCode = 230
+	StatusSuccessfulMatch         StatusCode = 250
+	StatusSuccessfulHardlink      StatusCode = 250
+	StatusFailedHardlink          StatusCode = 440
+	StatusFailedMatchToTorrentEps StatusCode = 445
+	StatusClientNotFound          StatusCode = 472
+	StatusGetClientError          StatusCode = 471
+	StatusDecodingError           StatusCode = 470
+	StatusAnnounceNameError       StatusCode = 469
+	StatusGetTorrentsError        StatusCode = 468
+	StatusTorrentBytesError       StatusCode = 467
+	StatusDecodeTorrentBytesError StatusCode = 466
+	StatusParseTorrentInfoError   StatusCode = 465
+	StatusGetEpisodesError        StatusCode = 464
+	StatusAddTorrentError         StatusCode = 463
+	StatusFindTorrentError        StatusCode = 462
+	StatusRecheckTorrentError     StatusCode = 461
+	StatusResumeTorrentError      StatusCode = 460
+	StatusImportConfigError       StatusCode = 459
 )
 
 func (s StatusCode) String() string {
 	switch s {
 	case StatusNoMatches:
 		return "no matching releases in client"
-	case StatusResolutionMismatch:
-		return "resolution did not match"
-	case StatusSourceMismatch:
-		return "source did not match"
-	case StatusRlsGrpMismatch:
-		return "release group did not match"
-	case StatusCutMismatch:
-		return "cut did not match"
-	case StatusEditionMismatch:
-		return "edition did not match"
-	case StatusRepackStatusMismatch:
-		return "repack status did not match"
-	case StatusHdrMismatch:
-		return "HDR metadata did not match"
-	case StatusStreamingServiceMismatch:
-		return "streaming service did not match"
 	case StatusAlreadyInClient:
 		return "release already in client"
 	case StatusNotASeasonPack:
 		return "release is not a season pack"
-	case StatusSizeMismatch:
-		return "size did not match"
-	case StatusSeasonMismatch:
-		return "season did not match"
-	case StatusEpisodeMismatch:
-		return "episode did not match"
-	case StatusContainerMismatch:
-		return "container did not match"
 	case StatusBelowThreshold:
 		return "number of matches below threshold"
 	case StatusSuccessfulMatch:
@@ -131,15 +95,6 @@ var NotificationStatusMap = map[string][]StatusCode{
 	},
 	NotificationLevelInfo: {
 		StatusNoMatches,
-		StatusResolutionMismatch,
-		StatusSourceMismatch,
-		StatusRlsGrpMismatch,
-		StatusCutMismatch,
-		StatusEditionMismatch,
-		StatusRepackStatusMismatch,
-		StatusHdrMismatch,
-		StatusStreamingServiceMismatch,
-		StatusContainerMismatch,
 		StatusAlreadyInClient,
 		StatusNotASeasonPack,
 		StatusBelowThreshold,

@@ -867,6 +867,25 @@ func TestEndpoints_CheckRequestInOrder(t *testing.T) {
 	}
 }
 
+// TestEndpoints_RejectReleaseThatIsNotASeasonPack: the match and the import run
+// the candidate check, so a name that is not a season pack gets 211 on each route.
+func TestEndpoints_RejectReleaseThatIsNotASeasonPack(t *testing.T) {
+	for _, path := range []string{"/api/candidate", "/api/match", "/api/import"} {
+		t.Run(path, func(t *testing.T) {
+			f := newProcessorHTTPFixture(t, fixtureOptions{packEpisodes: 1})
+			payload := f.packPayload()
+			payload["name"] = "Lifecycle.S01E01.1080p.WEB-DL.H.264-RlsGrp"
+
+			res := f.postJSON(t, path, payload)
+
+			assert.Equal(t, domain.StatusNotASeasonPack.Code(), res.Code, res.Body.String())
+			assert.Zero(t, f.torrentClient.FileCalls)
+			assert.Zero(t, f.torrentClient.ImportCalls)
+			assert.NoDirExists(t, filepath.Join(f.importDir, f.releaseName))
+		})
+	}
+}
+
 // TestEndpoints_RejectTorrentPathsOutsidePackFolder: the pack name and the file
 // paths come from the torrent and become hardlink targets below the import root.
 func TestEndpoints_RejectTorrentPathsOutsidePackFolder(t *testing.T) {
