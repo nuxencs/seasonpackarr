@@ -6,6 +6,7 @@ package torrentclient
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -23,6 +24,8 @@ type clientType struct {
 	// importCategoryAndTags returns the category and tags that the add gives a new pack.
 	// Nil means that the adapter applies no inventory scope, which validate checks.
 	importCategoryAndTags func(domain.ImportPolicy) (category string, tags []string)
+	// address builds the connect address from host and port. Validate and the adapter constructor both use it.
+	address func(domain.Client) (*url.URL, error)
 	// validate checks the rules of this type. typeName is the canonical name, for the message.
 	validate   func(typeName string, client domain.Client) error
 	newAdapter constructor
@@ -35,11 +38,17 @@ var clientTypes = []clientType{
 	// An empty type is qBittorrent, the default client type.
 	{
 		name: "qbittorrent", aliases: []string{""}, importCategoryAndTags: qbitImportCategoryAndTags,
-		validate: validateQbitConfig, newAdapter: asConstructor(newQbitClient),
+		address: httpAddress, validate: validateQbitConfig, newAdapter: asConstructor(newQbitClient),
 	},
-	{name: "transmission", validate: rejectQbitOnlyImportKeys, newAdapter: asConstructor(newTransmissionClient)},
-	{name: "deluge-v1", validate: validateDelugeConfig, newAdapter: delugeConstructor(delugeV1)},
-	{name: "deluge-v2", aliases: []string{"deluge"}, validate: validateDelugeConfig, newAdapter: delugeConstructor(delugeV2)},
+	{
+		name: "transmission", address: httpAddress, validate: rejectQbitOnlyImportKeys,
+		newAdapter: asConstructor(newTransmissionClient),
+	},
+	{name: "deluge-v1", address: delugeAddress, validate: validateDelugeConfig, newAdapter: delugeConstructor(delugeV1)},
+	{
+		name: "deluge-v2", aliases: []string{"deluge"}, address: delugeAddress, validate: validateDelugeConfig,
+		newAdapter: delugeConstructor(delugeV2),
+	},
 }
 
 // Validate reports whether client is a valid config for its client type. It
@@ -55,6 +64,9 @@ func validate(client domain.Client) (clientType, error) {
 	entry, ok := lookupClientType(client.Type)
 	if !ok {
 		return clientType{}, fmt.Errorf("type %q is invalid - use %s", client.Type, clientTypeSpellings())
+	}
+	if _, err := entry.address(client); err != nil {
+		return clientType{}, err
 	}
 	// go-qbittorrent drops an empty filter value, which would read every torrent,
 	// and qBittorrent compares exact names, so " tv" would match no torrent.

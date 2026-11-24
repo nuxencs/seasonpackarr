@@ -58,7 +58,7 @@ name.
 | Setting | Meaning |
 | --- | --- |
 | `clients.<name>.type` | `"qbittorrent"` (default), `"transmission"`, `"deluge-v1"`, or `"deluge-v2"`. `"deluge"` is an alias for `"deluge-v2"`. |
-| `clients.<name>.host` | Hostname or IP address of the client. |
+| `clients.<name>.host` | Hostname or IP address of the client. It is required. qBittorrent and Transmission also accept a URL, such as `http://qbit:8080`. A Deluge host must not have a URL scheme, user info, or a path. See [Bad values](#bad-values). |
 | `clients.<name>.port` | Port of the client API, at most `65535`. Set it explicitly. Only Deluge has a fallback (`58846`). |
 | `clients.<name>.username`, `clients.<name>.password` | Client credentials. |
 | `clients.<name>.apiKey` | qBittorrent only. See [qBittorrent](#qbittorrent). |
@@ -443,6 +443,11 @@ The error names the setting or the variable. It does not show the value, because
 - After seasonpackarr merges `config.yaml` and the environment variables, it checks the ranges: `port` from `1` to
   `65535`, `logMaxSize` at least `1`, `logMaxBackups` at least `0`, `smartModeThreshold` greater than `0` and at
   most `1`, and `clients.<name>.port` from `0` to `65535`. The ranges apply to both sources.
+- Each client must have a `host` that its client type can connect to. An empty `host` stops the load. A Deluge `host`
+  must be a hostname or IP address, so a URL scheme (`http://`), user info (`user@`), or a path stops the load. For
+  qBittorrent and Transmission, a `host` that does not parse as a URL, or a URL with no host name such as
+  `http://:8080`, stops the load. The error names the client, but it does not show the `host`, because a path or user
+  info in it can be a secret.
 
 The commands that call the running service, such as `candidate` and `setup filter`, read only the host, the API token,
 and the client names. A bad server-only variable, for example `SEASONPACKARR__SMART_MODE=yes`, does not stop them.

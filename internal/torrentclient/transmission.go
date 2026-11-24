@@ -70,14 +70,9 @@ func newTransmissionClient(ctx context.Context, client *domain.Client) (*transmi
 // password, and the request handlers log these errors. The username setting
 // wins over credentials in the host.
 func buildTransmissionURL(client *domain.Client) (*url.URL, *url.Userinfo, error) {
-	host, err := buildHost(client)
+	parsed, err := httpAddress(*client)
 	if err != nil {
 		return nil, nil, err
-	}
-
-	parsed, err := url.Parse(host)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse host: %w", err)
 	}
 
 	credentials := parsed.User

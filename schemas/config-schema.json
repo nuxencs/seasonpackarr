@@ -99,7 +99,7 @@
         },
         "host": {
           "type": "string",
-          "description": "Hostname or IP address of the client. Every client request fails without it."
+          "description": "Hostname or IP address of the client. The config load fails without it."
         },
         "port": {
           "type": "integer",

@@ -6,7 +6,6 @@ package torrentclient
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"net/url"
 	"path/filepath"
@@ -248,9 +247,11 @@ func normalizePath(path string) string {
 	return filepath.Clean(filepath.FromSlash(strings.TrimSpace(path)))
 }
 
-func buildHost(client *domain.Client) (string, error) {
-	if len(client.Host) == 0 {
-		return "", errors.New("host is required")
+// httpAddress is the address build of the client types that connect over HTTP.
+// A host without a scheme gets http, and the port setting wins over a port in host.
+func httpAddress(client domain.Client) (*url.URL, error) {
+	if strings.TrimSpace(client.Host) == "" {
+		return nil, errors.New("host is required")
 	}
 
 	host := client.Host
@@ -260,16 +261,16 @@ func buildHost(client *domain.Client) (string, error) {
 
 	parsedURL, err := url.Parse(host)
 	if err != nil {
-		// A url.Error holds the host, and its path or user info can be a secret.
-		if parseErr, ok := errors.AsType[*url.Error](err); ok {
-			err = parseErr.Err
-		}
-		return "", fmt.Errorf("failed to parse host: %w", err)
+		// Each parse error quotes a part of the host, and a path or user info in it can be a secret.
+		return nil, errors.New("host does not parse as a URL")
+	}
+	if parsedURL.Hostname() == "" {
+		return nil, errors.New("host has no host name")
 	}
 
 	if client.Port != 0 {
 		parsedURL.Host = net.JoinHostPort(parsedURL.Hostname(), strconv.Itoa(client.Port))
 	}
 
-	return parsedURL.String(), nil
+	return parsedURL, nil
 }

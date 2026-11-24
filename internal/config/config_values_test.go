@@ -14,6 +14,7 @@ import (
 const qbitClientConfig = `clients:
   default:
     type: qbittorrent
+    host: localhost
     import:
       category: tv-hd
 `

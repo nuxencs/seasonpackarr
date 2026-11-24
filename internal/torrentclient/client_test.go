@@ -125,7 +125,7 @@ func TestEndpointOf(t *testing.T) {
 	}
 }
 
-func TestBuildHost(t *testing.T) {
+func TestHTTPAddress(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -215,13 +215,13 @@ func TestBuildHost(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := buildHost(tt.client)
+			got, err := httpAddress(*tt.client)
 			if tt.wantErr {
 				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, tt.want, got)
+			require.Equal(t, tt.want, got.String())
 		})
 	}
 }
