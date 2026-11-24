@@ -52,7 +52,19 @@ The body is one JSON object:
 - **Candidate check** (`/api/candidate`) compares the release name with the
   episode torrents in the client. It reads torrent summaries only. It never
   requests torrent bytes or per-torrent file details, so a rejection here saves
-  the torrent download.
+  the torrent download. After seasonpackarr finds and connects to the client
+  (`472`, `471`), the candidate check gives the first answer that applies, in
+  this order:
+  1. `469` for an empty release name.
+  2. `468` when seasonpackarr cannot read the inventory.
+  3. `211` for a name that is not a season pack, also when the client holds no
+     torrent of its season.
+  4. The result of the compare with the inventory entries of the same season:
+     `210`, `200`, or `250`.
+
+  Match and import first check the torrent in the request, then run the
+  candidate check. Thus they also give `211` for a name that is not a season
+  pack.
 - **Match** (`/api/match`) reads the torrent file list. It counts MKV and MP4
   files that parse as episodes and ignores samples and extra videos. It finds a
   reusable episode for each distinct episode target, applies

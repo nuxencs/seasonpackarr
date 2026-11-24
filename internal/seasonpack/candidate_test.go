@@ -5,6 +5,7 @@ package seasonpack
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -88,8 +89,21 @@ func TestCandidate_ReturnsStatusOfEachRejection(t *testing.T) {
 			class:    Rejected,
 		},
 		{
-			name:     "not a season pack",
+			name:    "season pack with no torrent of its season",
+			release: "Candidate.S01.1080p.WEB-DL.H.264-RlsGrp",
+			want:    domain.StatusNoMatches,
+			class:   Rejected,
+		},
+		{
+			name:     "not a season pack with a torrent of its season",
 			release:  "Candidate.S01E02.1080p.WEB-DL.H.264-RlsGrp.mkv",
+			torrents: []string{episode},
+			want:     domain.StatusNotASeasonPack,
+			class:    Rejected,
+		},
+		{
+			name:     "not a season pack with no torrent of its season",
+			release:  "Candidate.S02E01.1080p.WEB-DL.H.264-RlsGrp",
 			torrents: []string{episode},
 			want:     domain.StatusNotASeasonPack,
 			class:    Rejected,
@@ -117,6 +131,18 @@ func TestCandidate_ReturnsStatusOfEachRejection(t *testing.T) {
 			assert.Zero(t, torrentClient.FileCalls)
 		})
 	}
+}
+
+func TestCandidate_ReadsClientBeforeSeasonPackCheck(t *testing.T) {
+	// `setup filter` sends a single-episode sample and needs 468 to find a client that seasonpackarr cannot read.
+	torrentClient := &torrentclienttest.Client{TorrentsErr: errors.New("client offline")}
+	f := newFixture(torrentClient)
+
+	outcome := f.processor.Candidate(t.Context(), f.defaultClient(t), "Candidate.S01E01.1080p.WEB-DL.H.264-RlsGrp")
+
+	assert.Equal(t, domain.StatusGetTorrentsError, outcome.Status)
+	assert.ErrorContains(t, outcome.Err, "client offline")
+	assert.Equal(t, Failed, outcome.Class())
 }
 
 func TestCandidate_LogsEachIncompatibleProperty(t *testing.T) {
