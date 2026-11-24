@@ -240,7 +240,7 @@ func (s *Store) scan(ctx context.Context, c *Client, current *slot) (*Inventory,
 	key := parsedNamesKeyFor(c.config)
 	previous := s.previousNames(key, c.fuzzy)
 	names := make(map[string]parsedName, len(torrents))
-	inv := &Inventory{seasons: make(map[release.SeasonKey][]Entry)}
+	inv := &Inventory{seasons: make(map[release.SeasonKey][]Entry), torrents: len(torrents)}
 	for _, t := range torrents {
 		// Cross-seeds repeat a name in the same scan.
 		parsed, ok := names[t.Name]
@@ -317,7 +317,8 @@ type Entry struct {
 // by season. Its methods yield copies of the entries and no slice, so one
 // caller cannot change what another sees, and a lookup copies no group.
 type Inventory struct {
-	seasons map[release.SeasonKey][]Entry
+	seasons  map[release.SeasonKey][]Entry
+	torrents int // the torrents in the read, for the startup log
 }
 
 // SameSeason yields the entries of the season key. The caller must build the
