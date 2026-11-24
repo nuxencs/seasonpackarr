@@ -65,7 +65,7 @@ func (s *Store) readClientAtStartup(ctx context.Context, cfg config.Provider, na
 		if err == nil {
 			s.log.Info().
 				Str("clientname", name).
-				Int("titles", len(inv.titles)).
+				Int("titles", len(inv.seasons)).
 				Int64("duration_ms", time.Since(started).Milliseconds()).
 				Msg("client inventory ready")
 			return

@@ -15,7 +15,6 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/logger/loggertest"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 
-	"github.com/autobrr/rls"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -202,5 +201,5 @@ func TestCleanUp_ClosesDroppedAdaptersThatRequestsStillUse(t *testing.T) {
 	assert.Equal(t, 1, failing.closeCount(), "a close error does not stop the other closes")
 
 	assert.Same(t, closing, handles["b"].Adapter(), "a request keeps its adapter")
-	assert.Len(t, slices.Collect(readInventory(t, handles["b"]).SameTitle(new(rls.ParseString(cleanUpTorrentName)))), 1, "a request that holds a closed adapter still reads")
+	assert.Len(t, slices.Collect(readInventory(t, handles["b"]).SameSeason(seasonOf(cleanUpTorrentName))), 1, "a request that holds a closed adapter still reads")
 }

@@ -13,6 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCoverage_PercentIsShareOfTotal(t *testing.T) {
+	t.Parallel()
+
+	assert.Zero(t, Coverage{Reusable: 0, Total: 0}.percent(), "a total of zero gives zero")
+	assert.InDelta(t, 0.5, Coverage{Reusable: 1, Total: 2}.percent(), 1e-6)
+}
+
 func TestOutcome_Class(t *testing.T) {
 	failure := errors.New("failure")
 	tests := []struct {

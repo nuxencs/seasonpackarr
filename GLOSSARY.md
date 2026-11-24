@@ -10,6 +10,14 @@ seasonpackarr finds TV season packs and reuses episode files that are already on
 One torrent that holds all episodes of one TV season.
 _Avoid_: Pack torrent, full season
 
+**Season**:
+One season of one show, as release names identify it: the show title, the season number, and the year. A name with no year and a name with a year are different seasons. With `fuzzyMatching.skipYearCompare`, the year is not part of the season.
+_Avoid_: Comparable title, title (for this meaning)
+
+**Release variant**:
+The properties of a release that must be equal before a season pack can reuse an episode: resolution, source, release group, cut, edition, repack status, HDR, and streaming service. The fuzzy matching settings relax some of them. An episode is compatible with a season pack when both have the same season and the same release variant.
+_Avoid_: Flavor, version
+
 **Candidate check**:
 A check of a release name alone against the inventory, with no torrent bytes, that decides whether a release can be a useful season pack. The match and the import do it again.
 _Avoid_: Quick check, pre-check, quick candidate check, candidate gate

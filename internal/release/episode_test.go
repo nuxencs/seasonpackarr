@@ -7,8 +7,38 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestParseEpisodeFile(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "sample with dash", path: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp-sample.mkv", want: false},
+		{name: "sample with dot", path: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.sample.mkv", want: false},
+		{name: "sample in uppercase", path: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.SAMPLE.mkv", want: false},
+		{name: "sample as group suffix", path: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp-sample.mkv", want: false},
+		{name: "wrong ext", path: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.nfo", want: false},
+		{name: "wrong ext and sample", path: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.sample.nfo", want: false},
+		{name: "extra video", path: "Extras/Interview.1080p.WEB-DL.mkv", want: false},
+		{name: "special episode", path: "test.release.s00e01.dutch.1080p.web.h264-rlsgrp.mkv", want: true},
+		{name: "valid release", path: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.mkv", want: true},
+		{name: "valid mp4 release", path: "test.release.s06e03.dutch.1080p.web.h264-rlsgrp.MP4", want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, ok := ParseEpisodeFile(tt.path, 0)
+			assert.Equalf(t, tt.want, ok, "ParseEpisodeFile(%q)", tt.path)
+		})
+	}
+}
 
 func TestEpisodeMatcher_ChecksEveryCompatibilityField(t *testing.T) {
 	t.Parallel()
@@ -112,8 +142,8 @@ func TestEpisodeMatcher_ReportsClosestCompatibilityMismatch(t *testing.T) {
 		TorrentPath:       "Show.S01/Show.S01E05.1080p.WEB-DL-GROUP.mkv",
 		ClosestClientPath: "/client/Show.S01E05.1080p.WEB-DL-OTHER.mkv",
 		Reason:            EpisodeUnmatchedCompatibilityMismatch,
-		Mismatches: []EpisodeMismatch{{
-			Field: EpisodeMismatchReleaseGroup,
+		Mismatches: []Mismatch{{
+			Field: MismatchReleaseGroup,
 			Want:  "group",
 			Got:   "other",
 		}},
@@ -127,32 +157,42 @@ func TestEpisodeMatcher_ReportsWantAndGotForEveryCompatibilityMismatch(t *testin
 	source := requireEpisodeFile(t, "/client/Show.S01E05.2160p.WEB-DL-OTHER.mp4", 101)
 
 	result := NewEpisodeMatcher([]EpisodeFile{target}).Match([]EpisodeFile{source})
-	require.Equal(t, []EpisodeMismatch{
-		{Field: EpisodeMismatchSize, Want: int64(100), Got: int64(101)},
-		{Field: EpisodeMismatchContainer, Want: "mkv", Got: "mp4"},
-		{Field: EpisodeMismatchResolution, Want: "1080p", Got: "2160p"},
-		{Field: EpisodeMismatchReleaseGroup, Want: "group", Got: "other"},
+	require.Equal(t, []Mismatch{
+		{Field: MismatchSize, Want: int64(100), Got: int64(101)},
+		{Field: MismatchContainer, Want: "mkv", Got: "mp4"},
+		{Field: MismatchResolution, Want: "1080p", Got: "2160p"},
+		{Field: MismatchReleaseGroup, Want: "group", Got: "other"},
 	}, result.Unmatched[0].Mismatches)
+}
+
+func TestEpisodeMatcher_MatchesFileNameAtAnyFolderDepth(t *testing.T) {
+	t.Parallel()
+
+	const targetPath = "Series Title 2022 S02/Test/Series Title 2022 S02E01 Test 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv"
+	const sourcePath = "/data/torrents/tv/Test/Series Title 2022 S02E01 1080p ATVP WEB-DL DDP 5.1 Atmos H.264-RlsGrp.mkv"
+	target := requireEpisodeFile(t, targetPath, 2316560346)
+	source := requireEpisodeFile(t, sourcePath, 2316560346)
+
+	result := NewEpisodeMatcher([]EpisodeFile{target}).Match([]EpisodeFile{source})
+	require.Equal(t, []EpisodeMatch{{ClientPath: sourcePath, TorrentPath: targetPath}}, result.Matches)
+}
+
+func TestEpisodeMatcher_IgnoresContainerLetterCase(t *testing.T) {
+	t.Parallel()
+
+	target := requireEpisodeFile(t, "Show.S01/Show.S01E01.1080p.WEB-DL-GROUP.MKV", 100)
+	source := requireEpisodeFile(t, "/client/Show.S01E01.1080p.WEB-DL-GROUP.mkv", 100)
+
+	result := NewEpisodeMatcher([]EpisodeFile{target}).Match([]EpisodeFile{source})
+	require.Equal(t, []EpisodeMatch{{
+		ClientPath:  "/client/Show.S01E01.1080p.WEB-DL-GROUP.mkv",
+		TorrentPath: "Show.S01/Show.S01E01.1080p.WEB-DL-GROUP.MKV",
+	}}, result.Matches)
 }
 
 func BenchmarkEpisodeMatching(b *testing.B) {
 	for _, episodeCount := range []int{12, 24, 100} {
-		b.Run(fmt.Sprintf("nested_%d", episodeCount), func(b *testing.B) {
-			clientPaths, torrentPaths := benchmarkEpisodePaths(episodeCount)
-			b.ResetTimer()
-			for b.Loop() {
-				for _, clientPath := range clientPaths {
-					for _, torrentPath := range torrentPaths {
-						matched, _ := MatchEpToSeasonPackEp(clientPath, 2_000_000_000, torrentPath, 2_000_000_000)
-						if matched != "" {
-							break
-						}
-					}
-				}
-			}
-		})
-
-		b.Run(fmt.Sprintf("indexed_%d", episodeCount), func(b *testing.B) {
+		b.Run(fmt.Sprintf("episodes_%d", episodeCount), func(b *testing.B) {
 			clientPaths, torrentPaths := benchmarkEpisodePaths(episodeCount)
 			b.ResetTimer()
 			for b.Loop() {

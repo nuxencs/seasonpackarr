@@ -45,20 +45,28 @@ func (c *call) findCandidates(ctx context.Context) ([]inventory.Entry, Outcome) 
 	}
 
 	requestRls := rls.ParseString(c.release)
+	pack, isPack := release.NewSeasonPack(&requestRls, c.cfg.FuzzyMatching)
+	if !isPack {
+		// A name that is not a season pack gets 211 only when the client holds a torrent of its season.
+		for range clientInventory.SameSeason(release.SeasonKeyOf(&requestRls, c.cfg.FuzzyMatching)) {
+			return nil, outcomeOf(domain.StatusNotASeasonPack)
+		}
+		return nil, outcomeOf(domain.StatusNoMatches)
+	}
+
 	var candidates []inventory.Entry
-	for filteredEntry := range clientInventory.SameTitle(&requestRls) {
-		compareInfo := release.CheckCandidates(requestRls, *filteredEntry.Release, c.cfg.FuzzyMatching)
-		switch compareInfo.StatusCode {
-		case domain.StatusAlreadyInClient, domain.StatusNotASeasonPack:
-			return nil, outcomeOf(compareInfo.StatusCode)
-		case domain.StatusSuccessfulMatch:
+	for filteredEntry := range clientInventory.SameSeason(pack.Season()) {
+		switch relation, mismatch := pack.Compare(filteredEntry.Release); relation {
+		case release.SamePack:
+			return nil, outcomeOf(domain.StatusAlreadyInClient)
+		case release.Compatible:
 			candidates = append(candidates, filteredEntry)
-		default:
+		case release.OtherReleaseVariant:
 			c.log.Info().
 				Str("reason", "compatibility_mismatch").
-				Str("field", candidateMismatchField(compareInfo.StatusCode)).
-				Interface("want", compareInfo.RejectValueA).
-				Interface("got", compareInfo.RejectValueB).
+				Str("field", string(mismatch.Field)).
+				Interface("want", mismatch.Want).
+				Interface("got", mismatch.Got).
 				Str("client_release", filteredEntry.Release.String()).
 				Msg("client release is not compatible")
 		}
@@ -69,27 +77,4 @@ func (c *call) findCandidates(ctx context.Context) ([]inventory.Entry, Outcome) 
 	}
 
 	return candidates, Outcome{Status: domain.StatusSuccessfulMatch}
-}
-
-func candidateMismatchField(statusCode domain.StatusCode) string {
-	switch statusCode {
-	case domain.StatusResolutionMismatch:
-		return "resolution"
-	case domain.StatusSourceMismatch:
-		return "source"
-	case domain.StatusRlsGrpMismatch:
-		return "release_group"
-	case domain.StatusCutMismatch:
-		return "cut"
-	case domain.StatusEditionMismatch:
-		return "edition"
-	case domain.StatusRepackStatusMismatch:
-		return "repack_status"
-	case domain.StatusHdrMismatch:
-		return "hdr"
-	case domain.StatusStreamingServiceMismatch:
-		return "streaming_service"
-	default:
-		return "unknown"
-	}
 }

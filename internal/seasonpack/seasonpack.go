@@ -15,7 +15,6 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/inventory"
 	"github.com/nuxencs/seasonpackarr/internal/logger"
-	"github.com/nuxencs/seasonpackarr/internal/release"
 
 	"github.com/rs/zerolog"
 )
@@ -65,9 +64,12 @@ func (c Coverage) meetsThreshold(cfg domain.Config) bool {
 	return c.percent() >= cfg.SmartModeThreshold
 }
 
-// percent returns the coverage as a share from 0 to 1.
+// percent returns the coverage as a share from 0 to 1. A total of zero gives zero.
 func (c Coverage) percent() float32 {
-	return release.PercentOfTotalEpisodes(c.Total, c.Reusable)
+	if c.Total == 0 {
+		return 0
+	}
+	return float32(c.Reusable) / float32(c.Total)
 }
 
 // Class is the kind of an outcome, for the log level and the search report.

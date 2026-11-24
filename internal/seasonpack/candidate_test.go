@@ -119,21 +119,38 @@ func TestCandidate_ReturnsStatusOfEachRejection(t *testing.T) {
 	}
 }
 
-func TestCandidateMismatchField(t *testing.T) {
-	t.Parallel()
-
-	tests := map[domain.StatusCode]string{
-		domain.StatusResolutionMismatch:       "resolution",
-		domain.StatusSourceMismatch:           "source",
-		domain.StatusRlsGrpMismatch:           "release_group",
-		domain.StatusCutMismatch:              "cut",
-		domain.StatusEditionMismatch:          "edition",
-		domain.StatusRepackStatusMismatch:     "repack_status",
-		domain.StatusHdrMismatch:              "hdr",
-		domain.StatusStreamingServiceMismatch: "streaming_service",
+func TestCandidate_LogsEachIncompatibleProperty(t *testing.T) {
+	tests := []struct {
+		name   string
+		pack   string
+		client string
+		field  string
+		want   any
+		got    any
+	}{
+		{name: "resolution", pack: "Show.S01.1080p.WEB-DL.H.264-GRP", client: "Show.S01E01.2160p.WEB-DL.H.264-GRP", field: "resolution", want: "1080p", got: "2160p"},
+		{name: "source", pack: "Show.S01.1080p.WEB-DL.H.264-GRP", client: "Show.S01E01.1080p.BluRay.H.264-GRP", field: "source", want: "WEB-DL", got: "BluRay"},
+		{name: "release group", pack: "Show.S01.1080p.WEB-DL.H.264-GRP", client: "Show.S01E01.1080p.WEB-DL.H.264-OTHER", field: "release_group", want: "GRP", got: "OTHER"},
+		{name: "cut", pack: "Show.S01.Uncut.1080p.WEB-DL.H.264-GRP", client: "Show.S01E01.1080p.WEB-DL.H.264-GRP", field: "cut", want: []any{"Uncut"}, got: nil},
+		{name: "edition", pack: "Show.S01.1080p.WEB-DL.H.264-GRP", client: "Show.S01E01.Special.Edition.1080p.WEB-DL.H.264-GRP", field: "edition", want: nil, got: []any{"Special.Edition"}},
+		{name: "repack status", pack: "Show.S01.1080p.WEB-DL.H.264-GRP", client: "Show.S01E01.REPACK.1080p.WEB-DL.H.264-GRP", field: "repack_status", want: nil, got: []any{"REPACK"}},
+		{name: "HDR", pack: "Show.S01.1080p.WEB-DL.HDR.H.265-GRP", client: "Show.S01E01.1080p.WEB-DL.H.265-GRP", field: "hdr", want: []any{"HDR"}, got: nil},
+		{name: "streaming service", pack: "Show.S01.1080p.AMZN.WEB-DL.H.264-GRP", client: "Show.S01E01.1080p.NF.WEB-DL.H.264-GRP", field: "streaming_service", want: "AMZN", got: "NF"},
 	}
-	for statusCode, want := range tests {
-		require.Equal(t, want, candidateMismatchField(statusCode))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(&torrentclienttest.Client{Torrents: []torrentclient.Torrent{{Name: tt.client, Hash: "ep1"}}})
+
+			outcome := f.processor.Candidate(t.Context(), f.defaultClient(t), tt.pack)
+
+			require.Equal(t, domain.StatusNoMatches, outcome.Status)
+			mismatch := f.log.Events(t).Require(t, "client release is not compatible")
+			assert.Equal(t, "compatibility_mismatch", mismatch["reason"])
+			assert.Equal(t, tt.field, mismatch["field"])
+			assert.Equal(t, tt.want, mismatch["want"])
+			assert.Equal(t, tt.got, mismatch["got"])
+			assert.Equal(t, tt.client, mismatch["client_release"])
+		})
 	}
 }
 
