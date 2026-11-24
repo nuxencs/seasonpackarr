@@ -50,13 +50,20 @@ func apiGuideStatusLevels(t *testing.T) map[int]string {
 	return levels
 }
 
-func notificationLevelOf(code StatusCode) string {
+// notificationLevelOf returns the level of code, or "" for none. It fails the test when code is under more than one level.
+func notificationLevelOf(t *testing.T, code StatusCode) string {
+	t.Helper()
+	var levels []string
 	for level, codes := range NotificationStatusMap {
 		if slices.Contains(codes, code) {
-			return level
+			levels = append(levels, level)
 		}
 	}
-	return ""
+	assert.LessOrEqual(t, len(levels), 1, "the notification level map holds %d under %v", code, levels)
+	if len(levels) == 0 {
+		return ""
+	}
+	return levels[0]
 }
 
 func TestStatusCode_MatchesAPIGuide(t *testing.T) {
@@ -67,11 +74,11 @@ func TestStatusCode_MatchesAPIGuide(t *testing.T) {
 		level, inGuide := documented[number]
 		if code.String() == "" {
 			assert.False(t, inGuide, "%s lists %d, which has no status text", apiGuideFile, number)
-			assert.Empty(t, notificationLevelOf(code), "the notification level map holds %d, which has no status text", number)
+			assert.Empty(t, notificationLevelOf(t, code), "the notification level map holds %d, which has no status text", number)
 			continue
 		}
 		if assert.True(t, inGuide, "%s does not list %d (%s)", apiGuideFile, number, code) {
-			assert.Equal(t, notificationLevelOf(code), level, "notification level of %d in %s", number, apiGuideFile)
+			assert.Equal(t, notificationLevelOf(t, code), level, "notification level of %d in %s", number, apiGuideFile)
 		}
 	}
 }

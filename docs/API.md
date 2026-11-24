@@ -62,9 +62,11 @@ The body is one JSON object:
   4. The result of the compare with the inventory entries of the same season:
      `210`, `200`, or `250`.
 
-  Match and import first check the torrent in the request, then run the
-  candidate check. Thus they also give `211` for a name that is not a season
-  pack.
+  Match and import need a `torrent` that decodes to bytes (`467`, `466`)
+  before the candidate check. Import also reads the info hash before it
+  (`465`). Match reads the torrent metadata only after it. When either route
+  reaches the candidate check, the order above applies, so both give `211` for
+  a name that is not a season pack.
 - **Match** (`/api/match`) reads the torrent file list. It counts MKV and MP4
   files that parse as episodes and ignores samples and extra videos. It finds a
   reusable episode for each distinct episode target, applies
