@@ -4,12 +4,14 @@
 services:
   volume-init:
     # seasonpackarr validates import.savePath at startup, so /data/import must
-    # exist first. It runs as uid 1000 and writes its database into /config.
+    # exist first. /data/media/tv is the source folder of the harness config, so
+    # the startup scan reads it. seasonpackarr runs as uid 1000 and writes its
+    # database into /config.
     command:
       - /bin/sh
       - -c
       - >-
-        mkdir -p /data/import &&
+        mkdir -p /data/import /data/media/tv &&
         find /data /cache /seasonpackarr-config ! -user 1000 -exec chown 1000:1000 {} +
     volumes:
       - seasonpackarr-config:/seasonpackarr-config

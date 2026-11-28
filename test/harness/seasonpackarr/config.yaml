@@ -22,6 +22,9 @@ clients:
     # qbitOutsideTag in test/e2e/qbittorrent_test.go has the same value.
     inventory:
       excludeTags: [ "e2e-outside-inventory" ]
+    # The source folder scenario writes its episodes here, on the /data volume of the import root.
+    # sourceFolder in test/e2e/scenarios_test.go has the same value.
+    sourceFolders: &sourceFolders [ "/data/media/tv" ]
   transmission:
     type: "transmission"
     host: "transmission"
@@ -31,6 +34,7 @@ clients:
     import:
       savePath: "/data/import"
       tags: [ "seasonpackarr" ]
+    sourceFolders: *sourceFolders
   deluge:
     # The client type of the newest Deluge entry in run.sh. TestDelugeE2E_Scenarios checks it.
     type: "deluge-v2"
@@ -42,6 +46,11 @@ clients:
       savePath: "/data/import"
       # Deluge applies it through the Label plugin, which the test enables.
       tags: [ "seasonpackarr" ]
+    sourceFolders: *sourceFolders
+
+# The minimum. The source folder scenario waits one interval for the scan of its files.
+# sourceFolderScanInterval in test/e2e/scenarios_test.go has the same value.
+sourceFolderScanInterval: "1m"
 
 # Only the e2e-search entry starts Prowlarr (compose.prowlarr.yaml). RSS
 # monitoring is off, so the other entries never contact it.

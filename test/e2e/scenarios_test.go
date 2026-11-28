@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nuxencs/seasonpackarr/internal/daemontest"
 
@@ -65,6 +66,8 @@ type torrentState struct {
 // inventory without its own episodes.
 func runScenarios(t *testing.T, c client) {
 	h := requireAutobrr(t)
+	// The files go into the source folder first, so seasonpackarr scans them while the other scenarios run.
+	files := writeSourceFolderFiles(t)
 	h.ensureFilter(t, c.configName())
 
 	t.Run("partial pack", func(t *testing.T) { partialPack(t, h, c, h.announceImport) })
@@ -72,6 +75,7 @@ func runScenarios(t *testing.T, c client) {
 	if scoper, ok := c.(inventoryScoper); ok {
 		t.Run("inventory scope", func(t *testing.T) { importPartialPack(t, h, c, h.announceImport, scoper) })
 	}
+	t.Run("source folder", func(t *testing.T) { sourceFolderPack(t, h, c, files) })
 	t.Run("candidate rejection", func(t *testing.T) { candidateRejection(t, h, c) })
 }
 
@@ -95,15 +99,26 @@ func importPartialPack(t *testing.T, h *harness, c client, start importPack, sco
 	name := packName()
 	pack := s.Seed(t, name)
 	sourceDir := daemontest.SourceDir(h.importDir)
-	present := map[int]daemontest.Episode{}
+	sources := make(map[int]string, missing-1)
 	for episode := 1; episode < missing; episode++ {
-		present[episode] = addEpisode(t, c, sourceDir, name, episode)
+		ep := addEpisode(t, c, sourceDir, name, episode)
+		sources[episode] = filepath.Join(sourceDir, ep.Name, ep.File)
 	}
 	if scoper != nil {
 		outside := addEpisode(t, c, sourceDir, name, missing)
 		require.NoError(t, scoper.excludeFromInventory(t.Context(), outside.Hashes.Legacy),
 			"move episode %s out of the inventory scope", outside.Name)
 	}
+	importMissing(t, h, c, s, pack, start, sources)
+}
+
+// importMissing imports pack, which s seeds, with start. The pack must seed, each 1-based episode of sources must be
+// a hardlink of its source file, and only the other episodes may download from s.
+func importMissing(t *testing.T, h *harness, c client, s *daemontest.Seeder, pack daemontest.Pack, start importPack,
+	sources map[int]string,
+) {
+	t.Helper()
+	name := pack.Name
 	hash := pack.Hashes.Legacy
 	removeAtCleanup(t, c, hash)
 
@@ -116,24 +131,70 @@ func importPartialPack(t *testing.T, h *harness, c client, start importPack, sco
 	st, downloading := daemontest.WaitFor(t.Context(), read, func(st torrentState) bool { return st.downloading })
 	require.True(t, downloading, "client does not download the pack %s after its check: %s", name, st)
 
+	// Episodes fill whole pieces, so the missing episodes are exactly their size.
+	want := int64(len(pack.Episodes)-len(sources)) * daemontest.PackEpisodeSize
 	st, seeding := daemontest.WaitSeededDownload(t, s, hash, c.peerAddress(t), read, func(st torrentState) bool {
 		// libtorrent adds payload to the downloaded count once per second,
 		// so the count can lag behind the progress.
-		return st.seeding && st.downloaded >= daemontest.PackEpisodeSize
+		return st.seeding && st.downloaded >= want
 	})
 	require.True(t, seeding, "pack is not complete and seeding: %s", st)
 
 	packDir := filepath.Join(h.importDir, name)
 	for index, file := range pack.Episodes {
 		imported := filepath.Join(packDir, file)
-		if episode, ok := present[index+1]; ok {
-			assertHardlinked(t, filepath.Join(sourceDir, episode.Name, episode.File), imported)
+		if source, ok := sources[index+1]; ok {
+			assertHardlinked(t, source, imported)
 			continue
 		}
 		assertSameBytes(t, filepath.Join(s.Dir(), name, file), imported)
 	}
-	// Episodes fill whole pieces, so the missing episode is exactly its size.
-	assert.Equal(t, int64(daemontest.PackEpisodeSize), st.downloaded, "only the missing episode may download")
+	assert.Equal(t, want, st.downloaded, "only the missing episodes may download")
+}
+
+// sourceFolder is the source folder of each client in test/harness/seasonpackarr/config.yaml. It is on the /data
+// volume of the import root, so the import can hardlink its files.
+const sourceFolder = "/data/media/tv"
+
+// sourceFolderScanInterval is sourceFolderScanInterval in test/harness/seasonpackarr/config.yaml, the minimum.
+const sourceFolderScanInterval = time.Minute
+
+// sourceFolderFiles are the episodes of a pack that only the source folder holds.
+type sourceFolderFiles struct {
+	name string
+	// sources maps each 1-based episode to its file in the source folder.
+	sources map[int]string
+	// scannedBy is the time by which a scan of seasonpackarr has read the files.
+	scannedBy time.Time
+}
+
+// writeSourceFolderFiles writes all episodes of a new pack except the last into the source folder. No torrent of the
+// client holds them.
+func writeSourceFolderFiles(t *testing.T) sourceFolderFiles {
+	t.Helper()
+	name := packName()
+	sources := make(map[int]string, daemontest.PackEpisodes-1)
+	for episode := 1; episode < daemontest.PackEpisodes; episode++ {
+		ep := daemontest.WriteEpisode(t, sourceFolder, name, episode)
+		sources[episode] = filepath.Join(sourceFolder, ep.Name, ep.File)
+	}
+	// A scan starts at most one interval after the end of the last scan, and a scan of the few test files takes
+	// milliseconds.
+	return sourceFolderFiles{name: name, sources: sources, scannedBy: time.Now().Add(sourceFolderScanInterval + 5*time.Second)}
+}
+
+// sourceFolderPack runs the source folder: only the source folder has the episodes that the client can reuse, and
+// the import must end in a seeding pack that hardlinks them and downloads only the missing episode from the seeder.
+func sourceFolderPack(t *testing.T, h *harness, c client, files sourceFolderFiles) {
+	s := daemontest.NewSeeder(t)
+	pack := s.Seed(t, files.name)
+	// seasonpackarr reads the files only in a scan, and the test cannot see the scan.
+	select {
+	case <-t.Context().Done():
+		t.Fatal("the test ended before the scan of the source folder files")
+	case <-time.After(time.Until(files.scannedBy)):
+	}
+	importMissing(t, h, c, s, pack, h.announceImport, files.sources)
 }
 
 // completePack runs the complete pack: the client has every episode as its own

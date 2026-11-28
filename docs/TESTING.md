@@ -323,6 +323,11 @@ why the search test drives a real Prowlarr.
     episodes, but the third has the excluded tag. The pack reuses the first two
     as hardlinks and downloads only the third from the seeder, as in the
     `partial pack`. Without the scope, the pack would be complete.
+  - `source folder`: no torrent of the client has the episodes. The source
+    folder of the harness config, `/data/media/tv`, has two of three episodes as
+    files. It is on the `/data` volume of the import root. The pack hardlinks
+    them, downloads only the missing episode from the seeder, and seeds, as in
+    the `partial pack`.
   - `candidate rejection`: the client has one episode in another resolution.
     autobrr stores no release row for a rejected announce, so the test reads
     autobrr's log through `GET /api/logs/files/autobrr.log`
@@ -335,6 +340,13 @@ why the search test drives a real Prowlarr.
   would get an inventory without its own episodes. For the same reason, the
   scenarios cannot run in parallel or twice in one stack (`-count=2`). Each
   runner call starts a fresh stack.
+- seasonpackarr reads a source folder only in a scan, and the test cannot see
+  the scan. The harness config sets `sourceFolderScanInterval` to the minimum,
+  `1m`. A scan starts at the latest one interval after the end of the last
+  scan, and a scan of the test files takes milliseconds. Thus the scenario
+  waits one interval and 5 seconds after it wrote the files. `runScenarios`
+  writes them before the filter setup, so the wait overlaps the other
+  scenarios.
 - `requireHarness` gates every test with `daemontest.RequireSettings`, so
   strict mode fails a test with missing settings. Once for each test process,
   it starts the torrent server. `requireAutobrr` and `requireProwlarr` add the
@@ -371,7 +383,9 @@ why the search test drives a real Prowlarr.
   do not share releases and both release parsers see the plain title.
 - The client already holds the present episodes as real single-episode
   torrents (`daemontest.WriteEpisode`), which it checked and seeds before the
-  announce. The seeder holds the full pack.
+  announce. In the `source folder`, the present episodes are only files that
+  `daemontest.WriteEpisode` writes into the source folder. The seeder holds the
+  full pack.
 - autobrr only queues the announce. The test waits with bounded polling for
   the autobrr release to finish its actions, then for the client state. autobrr
   stores a release only when a filter approves it, and the Webhook action
