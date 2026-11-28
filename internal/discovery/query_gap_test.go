@@ -128,30 +128,29 @@ func TestQueryGap_DownloadDoesNotWait(t *testing.T) {
 }
 
 func TestQueryGap_CanceledWait(t *testing.T) {
-	for name, read := range map[string]func(context.Context, *discovery.Run, discovery.Indexer) []string{
-		"search": func(ctx context.Context, run *discovery.Run, indexer discovery.Indexer) []string {
+	for name, tt := range map[string]struct {
+		kind discovery.Kind
+		read func(context.Context, *discovery.Run, discovery.Indexer) []string
+	}{
+		"search": {discovery.KindSearch, func(ctx context.Context, run *discovery.Run, indexer discovery.Indexer) []string {
 			return titles(run.Search(ctx, indexer, showQuery))
-		},
-		"feed": func(ctx context.Context, run *discovery.Run, indexer discovery.Indexer) []string {
+		}},
+		"feed": {discovery.KindRSS, func(ctx context.Context, run *discovery.Run, indexer discovery.Indexer) []string {
 			return titles(run.Feed(ctx, indexer, accept("Show.S01")))
-		},
+		}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				f := newSourceFixture(t)
 				f.prowlarr.listings = map[int][]string{1: {"Show.S01"}}
 				f.poll(t, 1, accept())
-				kind := discovery.KindSearch
-				if name == "feed" {
-					kind = discovery.KindRSS
-				}
-				run := f.begin(t, kind)
+				run := f.begin(t, tt.kind)
 				indexer := usableIndexers(t, run)[1]
 				ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 				defer cancel()
 				start := time.Now()
 
-				assert.Empty(t, read(ctx, run, indexer))
+				assert.Empty(t, tt.read(ctx, run, indexer))
 				run.End()
 
 				assert.Equal(t, 20*time.Second, time.Since(start), "a canceled run must end the wait at once")
@@ -159,7 +158,7 @@ func TestQueryGap_CanceledWait(t *testing.T) {
 				assert.Zero(t, run.Stats().FeedPages, "a canceled wait must count no feed page")
 				assert.Empty(t, run.Failures(), "the caller reports a canceled context")
 				assert.NoError(t, run.Err())
-				ids, failures := f.indexers(t, kind)
+				ids, failures := f.indexers(t, tt.kind)
 				assert.Contains(t, ids, 1, "a canceled wait must create no cooldown")
 				assert.Empty(t, failures)
 			})

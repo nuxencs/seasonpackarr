@@ -118,8 +118,8 @@ type processorHTTPFixture struct {
 	importDir     string
 	notifications *fakeNotificationSender
 	tasks         *taskGroup
-	// prowlarr is the transport of the discovery source. It survives a restart.
-	prowlarr *fakeProwlarrTransport
+	// prowlarrTransport is the transport of the discovery source. It survives a restart.
+	prowlarrTransport *fakeProwlarrTransport
 }
 
 // fixtureOptions sets the season pack and the client inventory that a fixture
@@ -205,21 +205,21 @@ func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFix
 	prowlarrTransport := &fakeProwlarrTransport{}
 	server := NewServer(log, cfg, noti, discovery.New(store, log, prowlarrTransport), inv)
 	return processorHTTPFixture{
-		search:        server.search,
-		inventory:     inv,
-		connector:     connector,
-		statePath:     statePath,
-		store:         store,
-		handler:       server.Handler(),
-		torrentClient: torrentClient,
-		config:        cfg,
-		releaseName:   releaseName,
-		torrent:       torrentBytes,
-		sourceDir:     sourceDir,
-		importDir:     importDir,
-		notifications: notifications,
-		tasks:         server.tasks,
-		prowlarr:      prowlarrTransport,
+		search:            server.search,
+		inventory:         inv,
+		connector:         connector,
+		statePath:         statePath,
+		store:             store,
+		handler:           server.Handler(),
+		torrentClient:     torrentClient,
+		config:            cfg,
+		releaseName:       releaseName,
+		torrent:           torrentBytes,
+		sourceDir:         sourceDir,
+		importDir:         importDir,
+		notifications:     notifications,
+		tasks:             server.tasks,
+		prowlarrTransport: prowlarrTransport,
 	}
 }
 
@@ -353,7 +353,7 @@ func newSearchFixture(t *testing.T, opts fixtureOptions) *searchFixture {
 	t.Helper()
 	f := &searchFixture{processorHTTPFixture: newProcessorHTTPFixture(t, opts)}
 	f.titles = []string{f.releaseName}
-	f.prowlarr.handler = stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	f.prowlarrTransport.handler = stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		if r.Header.Get("X-Api-Key") != "prowlarr-test-key" {
 			w.WriteHeader(401)
 			return
@@ -450,7 +450,7 @@ func (f *processorHTTPFixture) restart(t *testing.T) {
 	f.store = store
 	// A restart starts with no client connections, no inventories, and no Prowlarr connection.
 	f.inventory = inventory.New(f.connector.connect, f.search.log)
-	server := NewServer(f.search.log, f.config, f.notifications, discovery.New(store, f.search.log, f.prowlarr), f.inventory)
+	server := NewServer(f.search.log, f.config, f.notifications, discovery.New(store, f.search.log, f.prowlarrTransport), f.inventory)
 	f.search, f.handler, f.tasks = server.search, server.Handler(), server.tasks
 }
 

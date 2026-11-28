@@ -94,7 +94,8 @@ func New(store *state.Store, log logger.Logger, transport http.RoundTripper) *So
 // query waits for the query gap of the indexer, then calls send, which sends
 // one query. The client then also waits for the request spacing. A canceled
 // wait returns the context error and sends nothing. The gap starts when send
-// returns, also after a failure, because the indexer can have seen the query.
+// returns, also after a failure, because a failed query can have reached the
+// indexer.
 func (s *Source) query(ctx context.Context, indexerID int, send func() ([]prowlarr.Release, int, error)) ([]prowlarr.Release, int, error) {
 	if wait := time.Until(s.lastQuery[indexerID].Add(queryGap)); wait > 0 {
 		timer := time.NewTimer(wait)

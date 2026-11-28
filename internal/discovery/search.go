@@ -20,7 +20,8 @@ const pageBudget = 10
 // page, and at the page budget. A failed page takes the indexer out for the
 // run. Each page waits for the query gap of the indexer. The sequence yields
 // nothing for an indexer that is out, and it ends when the indexer goes out,
-// the database fails, or the context is canceled. A canceled context adds no failure.
+// the database fails, or the context is canceled. A canceled context adds no
+// failure.
 func (r *Run) Search(ctx context.Context, indexer Indexer, query Query) iter.Seq[*Listing] {
 	fail := func(reason string) { r.fail(Failure{IndexerID: indexer.ID, Query: query.String(), Reason: reason}) }
 	return func(yield func(*Listing) bool) {
