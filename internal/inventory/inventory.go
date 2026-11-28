@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 // Package inventory owns the connection, the inventory, and the parsed
-// torrent names of each configured client.
+// torrent names of each configured client, and the scan of the source folders.
+// No other package walks a source folder.
 package inventory
 
 import (
@@ -42,6 +43,8 @@ type Store struct {
 	connections map[string]connection
 	inventories map[string]*slot
 	parsed      map[parsedNamesKey]parsedNames
+	// sourceFiles holds the last finished scan of each source folder path. Clients with the same path share it.
+	sourceFiles map[string][]sourceFile
 	// cleanUps counts the clean-ups. A read that overlaps a clean-up adds no
 	// parsed-name key, because the clean-up can have removed that key as unused.
 	cleanUps uint64
@@ -101,6 +104,7 @@ func New(connect ConnectFunc, log logger.Logger) *Store {
 		connections: make(map[string]connection),
 		inventories: make(map[string]*slot),
 		parsed:      make(map[parsedNamesKey]parsedNames),
+		sourceFiles: make(map[string][]sourceFile),
 	}
 }
 

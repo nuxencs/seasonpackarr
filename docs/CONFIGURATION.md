@@ -64,6 +64,7 @@ name.
 | `clients.<name>.apiKey` | qBittorrent only. See [qBittorrent](#qbittorrent). |
 | `clients.<name>.import` | How seasonpackarr adds season packs to this client. See [Import policy](#import-policy). |
 | `clients.<name>.inventory` | qBittorrent only. Limits the torrents that seasonpackarr reads from this client. See [Inventory scope](#inventory-scope). |
+| `clients.<name>.sourceFolders` | Absolute paths of folders whose episode files are part of the inventory of this client. Each client type. See [Source folders](#source-folders). |
 
 ### qBittorrent
 
@@ -263,6 +264,63 @@ Before you set a scope, make sure that you accept these effects:
 - **qBittorrent and qui only:** startup fails when a Transmission or Deluge client sets a scope. An entry that is
   empty or starts or ends with a space also stops startup, because qBittorrent compares exact names.
 
+
+## Source folders
+
+A source folder is a folder whose episode files are part of the inventory of a client, although no torrent of the
+client holds them. Examples are a library that Sonarr fills from Usenet downloads, the files of a torrent that you
+removed from the client, and files that you copied in by hand. seasonpackarr reads the release name of each file from
+the file name only, whichever tool put the file there.
+
+```yaml
+clients:
+  default:
+    sourceFolders: [ "/data/media/tv", "/data/media/anime" ]
+```
+
+| Setting | Meaning |
+| --- | --- |
+| `clients.<name>.sourceFolders` | Absolute paths of the source folders of this client. Each client type supports them. The inventory scope does not apply to them. |
+
+- Each path must be absolute. A relative path or an empty entry stops the load, also at a
+  [config reload](#config-reload). seasonpackarr cleans each path (`/data/tv/` becomes `/data/tv`) and removes a path
+  that is in the list two times.
+- A folder that does not exist or that seasonpackarr cannot read does not stop the start, because a mount can come up
+  late. seasonpackarr logs a warning with the folder and the client.
+- The environment variable is `SEASONPACKARR__CLIENTS_<NAME>_SOURCE_FOLDERS`, with commas between the paths. A path
+  that contains a comma needs `config.yaml`.
+- To give two clients the same folders, use a YAML anchor on the list:
+
+  ```yaml
+  clients:
+    hd:
+      sourceFolders: &folders [ "/data/media/tv" ]
+    uhd:
+      sourceFolders: *folders
+  ```
+
+  Two clients with the same path share one scan of the folder.
+
+seasonpackarr scans the source folders one time at startup. A request never waits for the scan: before the scan of a
+folder is complete, that folder supplies no file. After each scan, the log has one line with the folder, the number of
+episode files, and the duration. The line `client inventory ready` of a client with source folders also has the number
+of episode files from its source folders (`source_folder_files`). A changed folder list applies at the next start.
+
+The scan uses these rules:
+
+- It reads the whole tree below the folder, with no depth limit.
+- It skips each file and each folder whose name starts with a dot, for example a trash folder or a metadata folder.
+- It does not follow a symlink below the folder, and a symlink is not a file. The configured folder itself can be a
+  symlink.
+- It reads only regular files with the extension `.mkv` or `.mp4`, in any letter case.
+- It keeps a file only when its name is the name of one episode and not of a sample. A file with an obfuscated name is
+  not kept.
+- It reads names only, not the file size or the file content.
+- It logs a subfolder that it cannot read, skips it, and keeps the rest of the scan.
+
+In this version, seasonpackarr scans the source folders and logs the result, but the candidate check, the match, and
+discovery do not use the files yet.
+
 ## Smart mode
 
 Smart mode rejects a season pack when too few of its episodes are already on disk.
@@ -417,6 +475,7 @@ sets `host`. On other systems, write the names in upper case, as this guide show
     `SEASONPACKARR__CLIENTS_<NAME>_INVENTORY_INCLUDE_TAGS`, `SEASONPACKARR__CLIENTS_<NAME>_INVENTORY_EXCLUDE_CATEGORIES`,
     and `SEASONPACKARR__CLIENTS_<NAME>_INVENTORY_EXCLUDE_TAGS`, each as a comma-separated list. Without an `INVENTORY_`
     variable, the scope of `config.yaml` applies.
+  - Source folders: `SEASONPACKARR__CLIENTS_<NAME>_SOURCE_FOLDERS` as a comma-separated list of absolute paths.
 - Prowlarr: see [Prowlarr discovery](PROWLARR.md).
 
 At startup, seasonpackarr logs a warning for each `SEASONPACKARR__` variable that it does not know, for example
@@ -480,8 +539,9 @@ These settings need a restart:
 - `logPath`, `logMaxSize`, and `logMaxBackups`
 - `SEASONPACKARR__DISABLE_CONFIG_FILE`
 
-When a reload removes a client or changes its connection, import, or inventory settings, seasonpackarr drops the
-cached connection and inventory of that client. The next request connects again.
+When a reload removes a client or changes its connection, import, inventory, or source folder settings, seasonpackarr
+drops the cached connection and inventory of that client. The next request connects again. A changed source folder
+list gets its scan at the next start.
 
 When you remove an optional setting, it returns to its default. A running search or RSS run keeps the config it started
 with. A changed RSS interval sets the time of the next automatic run.

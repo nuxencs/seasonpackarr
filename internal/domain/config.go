@@ -19,6 +19,8 @@ type Client struct {
 	Import   ImportPolicy `yaml:"import"`
 	// Inventory limits the torrents that seasonpackarr reads from the client. qBittorrent only.
 	Inventory InventoryScope `yaml:"inventory"`
+	// SourceFolders holds the absolute paths of the source folders. Their episode files join the inventory of the client.
+	SourceFolders []string `yaml:"sourceFolders" env:"SOURCE_FOLDERS"`
 }
 
 // Clone copies the lists, so the copy shares no memory with c.
@@ -26,6 +28,7 @@ func (c Client) Clone() Client {
 	clone := c
 	clone.Import.Tags = slices.Clone(c.Import.Tags)
 	clone.Inventory = c.Inventory.Clone()
+	clone.SourceFolders = slices.Clone(c.SourceFolders)
 	return clone
 }
 
@@ -42,7 +45,8 @@ func (c Client) Equal(other Client) bool {
 		c.Import.Category == other.Import.Category &&
 		c.Import.DownloadPath == other.Import.DownloadPath &&
 		c.Import.ContentLayout == other.Import.ContentLayout &&
-		c.Inventory.Equal(other.Inventory)
+		c.Inventory.Equal(other.Inventory) &&
+		slices.Equal(c.SourceFolders, other.SourceFolders)
 }
 
 // InventoryScope selects the torrents of the inventory. A torrent is in the

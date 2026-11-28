@@ -87,6 +87,10 @@ code of the real binary.
   (`TestSeasonPackCompare`): each relation, each property of the release
   variant, and each fuzzy matching setting. A new matching rule gets a case
   there. The tests call only exported functions of the package.
+- The scan tests of the inventory module (`internal/inventory/sourcefolder_test.go`)
+  enter through `Store.ReadAtStartup`, the entry of the startup task, with a real
+  temporary folder. They assert only the log lines: the line of each scan, the
+  warnings, and the file count of each client. No test reads a scan result.
 - `fixtures_test.go` holds the fakes and fixtures that more than one test file
   of the package uses. A fake that one file uses stays in that file.
 - `internal/torrentclient/torrentclienttest` holds the fake torrent client
@@ -108,7 +112,7 @@ code of the real binary.
   port: it listens on port 0, reads the port, closes the listener, and writes
   that port into its config. Another process can take the port before `start`
   listens. The tests accept this short window, so the server gets no listener
-  input for tests. The tests cover five cases:
+  input for tests. The tests cover six cases:
   - An invalid config returns an error, and the port stays closed until
     `start` returns.
   - A valid config serves an authenticated endpoint.
@@ -116,6 +120,8 @@ code of the real binary.
   - A canceled context shuts down the service.
   - Without a config file and a config directory, the database goes below the
     `XDG_DATA_HOME` of the passed environment.
+  - The startup read scans the source folders of the config and logs the
+    file count of each folder and each client.
 
   The reload case also requires that the reload drops the client connection
   of the startup inventory read. Thus it fails when `start` does not watch the

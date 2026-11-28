@@ -209,9 +209,12 @@ func waitFor(timeout time.Duration, condition func() bool) bool {
 
 // logEvent is the part of a log file line that the tests read.
 type logEvent struct {
-	Message    string   `json:"message"`
-	ClientName string   `json:"clientname"`
-	Clients    []string `json:"clients"`
+	Message           string   `json:"message"`
+	ClientName        string   `json:"clientname"`
+	Clients           []string `json:"clients"`
+	Folder            string   `json:"folder"`
+	EpisodeFiles      int      `json:"episode_files"`
+	SourceFolderFiles int      `json:"source_folder_files"`
 }
 
 // hasLogEvent reports whether the log file at path holds an event that match accepts.
@@ -398,6 +401,34 @@ func TestStartCommand_AppliesReloadedConfig(t *testing.T) {
 			return event.Message == "dropped caches of removed or changed clients" && slices.Equal(event.Clients, []string{"default"})
 		})
 	}), "the reload did not drop the connection of the removed client")
+}
+
+// TestStartCommand_ScansSourceFoldersAtStartup fails when the server does not run the startup read of the inventory
+// that has the source folders of the config.
+func TestStartCommand_ScansSourceFoldersAtStartup(t *testing.T) {
+	dir := t.TempDir()
+	port := reservePort(t)
+	logPath := filepath.Join(dir, "seasonpackarr.log")
+	folder := t.TempDir()
+	for _, name := range []string{"Series.S01E01.1080p.WEB-DL-GRP.mkv", "Season 01/Series.S01E02.1080p.WEB-DL-GRP.mkv"} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(folder, name)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(folder, name), nil, 0o600))
+	}
+	clients := newQbitClientConfig(t) + fmt.Sprintf("    sourceFolders: [%q]\n", folder)
+	writeConfig(t, dir, newStartConfig(port, startTestToken, logPath, clients))
+
+	runStart(t, dir, port)
+
+	assert.True(t, waitFor(conditionWait, func() bool {
+		return hasLogEvent(t, logPath, func(event logEvent) bool {
+			return event.Message == "source folder scanned" && event.Folder == folder && event.EpisodeFiles == 2
+		})
+	}), "start did not scan the source folder")
+	assert.True(t, waitFor(conditionWait, func() bool {
+		return hasLogEvent(t, logPath, func(event logEvent) bool {
+			return event.Message == "client inventory ready" && event.ClientName == "default" && event.SourceFolderFiles == 2
+		})
+	}), "the startup read did not count the source folder files of the client")
 }
 
 func TestStartCommand_ShutsDownWhenContextEnds(t *testing.T) {

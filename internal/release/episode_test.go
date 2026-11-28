@@ -40,6 +40,75 @@ func TestParseEpisodeFile(t *testing.T) {
 	}
 }
 
+// TestParseEpisodeName fixes the result for the file name formats that the source folder guide names, so a parser
+// update cannot change them without notice.
+func TestParseEpisodeName(t *testing.T) {
+	t.Parallel()
+
+	type parsed struct {
+		title      string
+		year       int
+		series     int
+		episode    int
+		resolution string
+		source     string
+		group      string
+		hdr        []string
+		service    string
+	}
+	tests := []struct {
+		name string
+		path string
+		want *parsed
+	}{
+		{
+			name: "scene style",
+			path: "/data/tv/Series.Title.S01E02.1080p.WEB-DL.DDP5.1.H.264-GRP.mkv",
+			want: &parsed{title: "Series Title", series: 1, episode: 2, resolution: "1080p", source: "WEB-DL", group: "GRP"},
+		},
+		{
+			name: "TRaSH format",
+			path: "/data/tv/Series Title (2023)/Season 01/Series Title (2023) - S01E02 - Episode Title [AMZN WEBDL-1080p][DV HDR10][EAC3 5.1][h265]-GRP.mkv",
+			want: &parsed{title: "Series Title", year: 2023, series: 1, episode: 2, resolution: "1080p", source: "WEB-DL", group: "GRP", hdr: []string{"DV", "HDR10"}, service: "AMZN"},
+		},
+		{
+			// The name has no release group, so the parser reads the resolution as the group.
+			name: "default Sonarr format",
+			path: "/data/tv/Series Title (2023)/Season 01/Series Title (2023) - S01E02 - Episode Title WEBDL-1080p.mkv",
+			want: &parsed{title: "Series Title", year: 2023, series: 1, episode: 2, source: "WEB-DL", group: "1080p"},
+		},
+		{name: "obfuscated", path: "/data/tv/a3f9c1e07b2d4e8f9a0b.mkv"},
+		{name: "sample", path: "/data/tv/Series.Title.S01E02.1080p.WEB-DL-GRP-sample.mkv"},
+		{name: "no video container", path: "/data/tv/Series.Title.S01E02.1080p.WEB-DL-GRP.nfo"},
+		{name: "no episode", path: "/data/tv/Extras/Interview.1080p.WEB-DL.mkv"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, ok := ParseEpisodeName(tt.path)
+			_, fileOK := ParseEpisodeFile(tt.path, 0)
+			assert.Equal(t, fileOK, ok, "ParseEpisodeName and ParseEpisodeFile accept the same names")
+			if tt.want == nil {
+				assert.False(t, ok)
+				return
+			}
+			require.True(t, ok)
+			assert.Equal(t, *tt.want, parsed{
+				title:      got.Title,
+				year:       got.Year,
+				series:     got.Series,
+				episode:    got.Episode,
+				resolution: got.Resolution,
+				source:     got.Source,
+				group:      got.Group,
+				hdr:        got.HDR,
+				service:    got.Collection,
+			})
+		})
+	}
+}
+
 func TestEpisodeMatcher_ChecksEveryCompatibilityField(t *testing.T) {
 	t.Parallel()
 

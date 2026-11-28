@@ -124,6 +124,15 @@
         },
         "inventory": {
           "$ref": "#/$defs/inventory"
+        },
+        "sourceFolders": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "description": "Absolute paths of the source folders. Their episode files join the inventory of the client. A folder that does not exist gives a warning."
         }
       },
       "allOf": [

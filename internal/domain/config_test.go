@@ -34,6 +34,7 @@ func newFullClient() Client {
 			ExcludeCategories: []string{"tv-4k"},
 			ExcludeTags:       []string{"noreuse"},
 		},
+		SourceFolders: []string{"/data/tv", "/data/anime"},
 	}
 }
 
