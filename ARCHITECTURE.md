@@ -302,8 +302,8 @@
   path is private to the package.
 - `Link` takes the planned links (a source path, the path of a file in the torrent, and for a file of a source folder
   that folder) and returns one outcome for each link in input order: linked, source missing, or failed with its error.
-  A link with a source folder is verified: it opens the source below the folder through `os.Root`, links, and removes
-  its own link when the hardlink target is not the opened file. A refused source fails with an error that wraps
+  A link with a source folder is verified: it reads the source below the folder through `os.Root`, links, and removes
+  its own link when the hardlink target is not that file. It opens no source. A refused source fails with an error that wraps
   `placement.ErrSourceOutsideSourceFolder`. It refuses a path that is not a file of
   the torrent, and it links only a directory torrent. It opens the import root one time for each call and makes the
   target folders through `os.Root`. When the import root cannot be made or opened, each link gets the same error.

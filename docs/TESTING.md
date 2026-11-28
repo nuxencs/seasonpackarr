@@ -112,8 +112,10 @@ code of the real binary.
   symlink after the scan (`moveSeasonFolder`) cover the containment rule of a
   hardlink source. The test of the verified link in
   `internal/placement/placement_test.go` sets the unexported hook
-  `beforeSourceLink`, so it changes the path between the open of the source
-  and the link call. Production leaves the hook nil.
+  `beforeSourceLink`, so it changes the path between the read of the source
+  and the link call. Production leaves the hook nil. The named pipe test is in
+  `internal/placement/sourcefolder_unix_test.go` with the `unix` build tag,
+  because `syscall.Mkfifo` exists only there.
 - `fixtures_test.go` holds the fakes and fixtures that more than one test file
   of the package uses. A fake that one file uses stays in that file.
 - `internal/torrentclient/torrentclienttest` holds the fake torrent client

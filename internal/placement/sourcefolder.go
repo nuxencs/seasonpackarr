@@ -18,8 +18,8 @@ import (
 // folder.
 var ErrSourceOutsideSourceFolder = errors.New("the hardlink source is not below its source folder")
 
-// beforeSourceLink runs between the open of a source below its source folder and the link call. It is nil in
-// production. A test sets it to change the path of the source after the open.
+// beforeSourceLink runs between the read of a source below its source folder and the link call. It is nil in
+// production. A test sets it to change the path of the source after the read.
 var beforeSourceLink func()
 
 // StatSourceFolderFile returns the file info of the file at path below folder. It resolves path below folder with the
@@ -65,26 +65,23 @@ func lstatBelow(root *os.Root, rel, path string) (fs.FileInfo, error) {
 
 // verifiedHardlink links the source of link to target and proves that the target is the file below the source folder.
 // The link call takes the full path, because os.Root can link only when both names are below one root. A folder of
-// the path can change between the open and the link, so the call compares the target with the opened file. It removes
-// only a link that it made itself. A file that was at the target before is never removed, and when it is the opened
-// file, as for a source folder that overlaps the import root, the link counts as linked.
+// the path can change between the read and the link, so the call compares the target with the file that it read below
+// the folder. It opens no source: a hardlink needs no read access, and the open of a named pipe waits. It removes only
+// a link that it made itself. A file that was at the target before is never removed, and when it is the source, as
+// for a source folder that overlaps the import root, the link counts as linked.
 func verifiedHardlink(rootDir *os.Root, link PlannedLink, target hardlinkTarget) error {
 	folder, rel, err := openSourceFolder(link.SourceFolder, link.Source)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = folder.Close() }()
-	if _, err := lstatBelow(folder, rel, link.Source); err != nil {
+	sourceInfo, err := lstatBelow(folder, rel, link.Source)
+	if err != nil {
 		return err
 	}
-	source, err := folder.Open(rel)
-	if err != nil {
-		return errtrace.WithStack(err)
-	}
-	defer func() { _ = source.Close() }()
-	sourceInfo, err := source.Stat()
-	if err != nil {
-		return errtrace.WithStack(err)
+	// A cached import plan can name a file that changed after its plan build.
+	if !sourceInfo.Mode().IsRegular() {
+		return errtrace.WithStack(fmt.Errorf("hardlink source %q is not a regular file", link.Source))
 	}
 
 	if beforeSourceLink != nil {

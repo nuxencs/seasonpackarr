@@ -57,11 +57,14 @@ Current comparison logic checks:
   because a cached import plan or a change after the plan build can give a
   refused path. Each `placement.PlannedLink` of a file carries its source
   folder. A torrent source at the path of a file of a source folder wins, so
-  its link carries no source folder. The link is verified: it opens the source below its source folder
-  through `os.Root`, makes the link with the full path, and compares the
-  hardlink target with the opened file. When they are not the same file, it
-  removes the link that it made and fails that link. It removes only a link
-  that the same call made, never a file that was at the hardlink target
+  its link carries no source folder. The link is verified: it reads the
+  source below its source folder through `os.Root` (it must be a regular
+  file), makes the link with the full path, and compares the hardlink target
+  with the file that it read. When they are not the same file, it removes the
+  link that it made and fails that link. It opens no source, because a
+  hardlink needs no read access to its source, and the open of a named pipe
+  waits while the import holds the endpoint import lock. It removes only a
+  link that the same call made, never a file that was at the hardlink target
   before. A refused source fails with an error that wraps
   `placement.ErrSourceOutsideSourceFolder`. It is a plain failed link: it
   starts no plan refresh and adds no status code, and the coverage count and
@@ -83,8 +86,8 @@ Current comparison logic checks:
   only a torrent proves that the client has the pack
 - a source folder can overlap the import root, so a file can be at its own
   hardlink target. The link call then fails with "exists", the target is the
-  opened source file, and the link counts as linked, as a hardlink from an
-  earlier attempt does. The file stays as it is
+  source file, and the link counts as linked, as a hardlink from an earlier
+  attempt does. The file stays as it is
 - a link between two filesystems fails. The placement module wraps the error
   with `placement.ErrDifferentFilesystems`, so the error text says that the
   hardlink source and the import root are on different filesystems

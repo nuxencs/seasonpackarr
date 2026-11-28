@@ -184,7 +184,24 @@ func TestLink_KeepsOtherFileAtHardlinkTarget(t *testing.T) {
 	}
 }
 
-// After the open of a source below its source folder, a tool replaced a folder of the path with a symlink out of the
+// A hardlink needs no read access to its source, so the verified link of a source folder file needs none either.
+func TestLink_LinksSourceFolderFileWithoutReadAccess(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "import")
+	folder := filepath.Join(dir, "library")
+	source := writeSource(t, folder, episode1)
+	require.NoError(t, os.Chmod(source, 0o200))
+
+	outcomes := New(newPackInfo(t), PackFolderDestination(root)).Link([]PlannedLink{
+		{Source: source, TorrentPath: episode1, SourceFolder: folder},
+	})
+
+	target := filepath.Join(root, packName, episode1)
+	require.Equal(t, []Outcome{{Status: Linked, Target: target}}, outcomes)
+	requireSameFile(t, source, target)
+}
+
+// After the read of a source below its source folder, a tool replaced a folder of the path with a symlink out of the
 // source folder (issue #426). The link call then links the file outside, so Link removes that link and fails it. A
 // refused source is no missing source.
 func TestLink_RemovesLinkThatIsNotTheFileBelowSourceFolder(t *testing.T) {
