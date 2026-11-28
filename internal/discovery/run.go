@@ -44,6 +44,10 @@ type Stats struct {
 	Downloads int
 	// CacheHits counts the torrent bytes that the run read from the torrent cache.
 	CacheHits int
+	// GroupsNotDue counts the search groups of Plan with no due query on a usable indexer.
+	GroupsNotDue int
+	// GroupsDeferred counts the due search groups of Plan that the limit left for a later run.
+	GroupsDeferred int
 }
 
 // Run is one discovery run. It is the one place that knows which indexers are

@@ -251,12 +251,13 @@ The `200` report contains these fields:
 - `scannedTorrents`, `episodeTorrents`, `coveredEpisodeTorrents`, and `groups`:
   inventory counts. See [Search output](PROWLARR.md#search-output).
 - `groupsNotDue`: the search groups that the run skipped, because no query of
-  the group to a usable indexer was due. See
+  the group to a usable indexer was due. An indexer that failed or went into a
+  cooldown earlier in the run is not usable. See
   [Wait time](PROWLARR.md#wait-time). A run in which no search group is due
   sends no query to an indexer.
 - `groupsDeferred`: the due search groups that `limit` left for a later run.
   The run queried `groups` minus `groupsNotDue` minus `groupsDeferred` search
-  groups.
+  groups. A canceled run does not count the search groups after the cancel.
 - `requests`: targeted feed requests. Indexer discovery and torrent downloads
   are not counted.
 - `torrentDownloads`: completed torrent downloads. A failed download appears

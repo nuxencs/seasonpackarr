@@ -24,9 +24,16 @@ var otherQuery = discovery.Query{Title: "Other", Season: 2}
 // showGroup is the search group of showQuery for client "a".
 var showGroup = discovery.Group{Query: showQuery, Clients: []string{"a"}}
 
+// plan is what a caller sees of Plan: the search groups of the sequence and
+// the counts of Stats.
+type plan struct {
+	Groups           []discovery.PlannedGroup
+	NotDue, Deferred int
+}
+
 // plannedQueries returns the planned queries of plan by query text, each as
 // "indexer 2 a,b" for the due clients a and b on indexer 2.
-func plannedQueries(plan discovery.Plan) map[string][]string {
+func plannedQueries(plan plan) map[string][]string {
 	queries := make(map[string][]string)
 	for _, group := range plan.Groups {
 		for _, query := range group.Queries {
@@ -37,37 +44,44 @@ func plannedQueries(plan discovery.Plan) map[string][]string {
 	return queries
 }
 
-// searchPlan sends each planned query of plan and gets the torrent of each
-// listing, as an import run does.
-func searchPlan(ctx context.Context, run *discovery.Run, plan discovery.Plan) {
-	for _, group := range plan.Groups {
+// collect ranges the plan of request. With search, it sends each planned
+// query and gets the torrent of each listing, as an import run does.
+func collect(ctx context.Context, run *discovery.Run, request discovery.PlanRequest, search bool) plan {
+	var result plan
+	for group := range run.Plan(ctx, request) {
+		result.Groups = append(result.Groups, group)
+		if !search {
+			continue
+		}
 		for _, query := range group.Queries {
 			for listing := range run.Search(ctx, query.Indexer, group.Query) {
 				_, _ = listing.Torrent(ctx)
 			}
 		}
 	}
+	stats := run.Stats()
+	result.NotDue, result.Deferred = stats.GroupsNotDue, stats.GroupsDeferred
+	return result
 }
 
 // importRun plans the groups in an import run and sends each planned query.
-func (f *sourceFixture) importRun(t *testing.T, groups ...discovery.Group) discovery.Plan {
+func (f *sourceFixture) importRun(t *testing.T, groups ...discovery.Group) plan {
 	t.Helper()
 	run, err := f.source.Begin(t.Context(), f.settings, discovery.KindSearch)
 	require.NoError(t, err)
 	defer run.End()
-	plan := run.Plan(t.Context(), discovery.PlanRequest{Groups: groups})
-	searchPlan(t.Context(), run, plan)
+	result := collect(t.Context(), run, discovery.PlanRequest{Groups: groups}, true)
 	require.NoError(t, run.Err())
-	return plan
+	return result
 }
 
 // preview plans the groups in a preview and sends no query.
-func (f *sourceFixture) preview(t *testing.T, groups ...discovery.Group) discovery.Plan {
+func (f *sourceFixture) preview(t *testing.T, groups ...discovery.Group) plan {
 	t.Helper()
 	run, err := f.source.Begin(t.Context(), f.settings, discovery.KindSearch)
 	require.NoError(t, err)
 	defer run.End()
-	return run.Plan(t.Context(), discovery.PlanRequest{Groups: groups, Preview: true})
+	return collect(t.Context(), run, discovery.PlanRequest{Groups: groups, Preview: true}, false)
 }
 
 func TestPlan_GroupsInQueryOrderWithDueClients(t *testing.T) {
@@ -190,7 +204,7 @@ func TestPlan_PreviewStoresNoSearchTime(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		f := newSourceFixture(t)
 		run := f.begin(t, discovery.KindSearch)
-		searchPlan(t.Context(), run, run.Plan(t.Context(), discovery.PlanRequest{Groups: []discovery.Group{showGroup}, Preview: true}))
+		collect(t.Context(), run, discovery.PlanRequest{Groups: []discovery.Group{showGroup}, Preview: true}, true)
 		run.End()
 
 		plan := f.preview(t, showGroup)
@@ -205,11 +219,10 @@ func TestPlan_CanceledRunKeepsFinishedQueries(t *testing.T) {
 		f.prowlarr.listings = map[int][]string{1: {"Show.S01"}, 2: {"Show.S01"}}
 		otherGroup := discovery.Group{Query: otherQuery, Clients: []string{"a"}}
 		run := f.begin(t, discovery.KindSearch)
-		plan := run.Plan(t.Context(), discovery.PlanRequest{Groups: []discovery.Group{showGroup, otherGroup}})
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		// "Other S02" goes first. The run cancels during the last listing of "Show S01" on indexer 2.
-		for _, group := range plan.Groups {
+		for group := range run.Plan(ctx, discovery.PlanRequest{Groups: []discovery.Group{showGroup, otherGroup}}) {
 			for _, query := range group.Queries {
 				for range run.Search(ctx, query.Indexer, group.Query) {
 					if group.Query == showQuery {
@@ -235,7 +248,7 @@ func TestPlan_DatabaseFailure(t *testing.T) {
 	run := f.begin(t, discovery.KindSearch)
 	require.NoError(t, f.store.Close())
 
-	plan := run.Plan(t.Context(), discovery.PlanRequest{Groups: []discovery.Group{showGroup}})
+	plan := collect(t.Context(), run, discovery.PlanRequest{Groups: []discovery.Group{showGroup}}, true)
 
 	assert.Empty(t, plan.Groups)
 	assert.ErrorIs(t, run.Err(), discovery.ErrDatabase)
@@ -243,7 +256,7 @@ func TestPlan_DatabaseFailure(t *testing.T) {
 }
 
 // groupOrder returns the query text of each search group of plan, in order.
-func groupOrder(plan discovery.Plan) []string {
+func groupOrder(plan plan) []string {
 	var order []string
 	for _, group := range plan.Groups {
 		order = append(order, group.Query.String())
@@ -290,12 +303,37 @@ func TestPlan_LimitDefersDueGroups(t *testing.T) {
 			{limit: 0, order: []string{"Alpha S01", "Beta S01", "Gamma S01"}},
 		} {
 			run := f.begin(t, discovery.KindSearch)
-			plan := run.Plan(t.Context(), discovery.PlanRequest{Groups: groups, Limit: tt.limit, Preview: true})
+			plan := collect(t.Context(), run, discovery.PlanRequest{Groups: groups, Limit: tt.limit, Preview: true}, true)
 			run.End()
 
 			assert.Equal(t, tt.order, groupOrder(plan), "limit %d", tt.limit)
 			assert.Equal(t, tt.deferred, plan.Deferred, "limit %d", tt.limit)
 			assert.Equal(t, 1, plan.NotDue, "a group that is not due must not count against limit %d", tt.limit)
 		}
+	})
+}
+
+func TestPlan_GroupWithNoQueryUsesNoLimit(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := newSourceFixture(t)
+		group := func(title string) discovery.Group {
+			return discovery.Group{Query: discovery.Query{Title: title, Season: 1}, Clients: []string{"a"}}
+		}
+		// Beta is due on indexer 2 only.
+		f.settings.IndexerIDs = []int{1}
+		f.importRun(t, group("Beta"))
+		f.settings.IndexerIDs = nil
+		// The query of Alpha on indexer 2 fails, so indexer 2 is out for the rest of the run.
+		f.prowlarr.respond = at("/2/api", func() *http.Response { return response(http.StatusBadRequest, "") })
+
+		run := f.begin(t, discovery.KindSearch)
+		plan := collect(t.Context(), run, discovery.PlanRequest{Groups: []discovery.Group{group("Alpha"), group("Beta"), group("Delta"), group("Gamma")}, Limit: 2}, true)
+		run.End()
+
+		assert.Equal(t, []string{"Alpha S01", "Delta S01"}, groupOrder(plan))
+		assert.Equal(t, map[string][]string{"Alpha S01": {"indexer 2 a", "indexer 1 a"}, "Delta S01": {"indexer 1 a"}}, plannedQueries(plan),
+			"a group goes out with the queries on the indexers that are still usable")
+		assert.Equal(t, 1, plan.NotDue, "beta sends no query, so it uses no limit")
+		assert.Equal(t, 1, plan.Deferred)
 	})
 }

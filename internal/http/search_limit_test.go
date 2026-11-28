@@ -130,3 +130,20 @@ func TestSearch_PreviewTakesTheGroupsOfTheNextImportRun(t *testing.T) {
 		require.Equal(t, [][]string{f.queries, f.queries}, previews)
 	})
 }
+
+func TestSearch_GroupWithNoQueryUsesNoCap(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
+		f.titles = nil
+		f.addSearchGroups(2)
+		// The first query gets a 429, so indexer 1, the only indexer, is in a cooldown for the rest of the run.
+		f.failFirst = true
+
+		report := f.searchFor(t, SearchRequest{Limit: new(2)})
+
+		require.Equal(t, []string{"Aaa001 S01"}, f.queries)
+		require.Len(t, report.Failures, 1)
+		require.Equal(t, 2, report.GroupsNotDue, "a group whose indexers went out sends no query and uses no cap")
+		require.Zero(t, report.GroupsDeferred)
+	})
+}

@@ -11,11 +11,10 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/nuxencs/seasonpackarr/internal/domain"
+
 	"github.com/spf13/cobra"
 )
-
-// defaultSearchLimit is the default of --limit. It equals the cap of a search request that omits limit.
-const defaultSearchLimit = 100
 
 func newSearchCommand(environ []string) *cobra.Command {
 	options := &connectionOptions{environ: environ}
@@ -92,7 +91,7 @@ one client. Search stays connected until it finishes; Ctrl+C cancels the run.`,
 	options.addFlags(cmd)
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview candidates without downloading torrents or importing")
 	cmd.Flags().BoolVar(&verify, "verify", false, "with --dry-run, download the torrents and check exact reuse")
-	cmd.Flags().IntVar(&limit, "limit", defaultSearchLimit, "maximum count of search groups to query; 0 means no cap")
+	cmd.Flags().IntVar(&limit, "limit", domain.DefaultSearchLimit, "maximum count of search groups to query; 0 means no cap")
 	return cmd
 }
 

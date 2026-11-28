@@ -5,6 +5,10 @@ package domain
 
 import "fmt"
 
+// DefaultSearchLimit is the cap of a search request that omits limit. The CLI
+// flag --limit has the same default.
+const DefaultSearchLimit = 100
+
 type StatusCode int
 
 const (

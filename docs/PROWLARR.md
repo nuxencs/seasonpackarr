@@ -224,7 +224,10 @@ removes the cap. The cap applies to each mode: dry run, verify, and import. An
 RSS poll has no cap.
 
 - The cap counts only the search groups that the run queries. A search group
-  that is not due does not use up the cap.
+  that is not due does not use up the cap. A search group whose indexers all
+  failed or went into a cooldown earlier in the run sends no query, so it does
+  not use up the cap either. It counts as not due, and it is due again when
+  an indexer is back.
 - The search groups that waited longest go first: the groups that were never
   searched, then the group with the oldest search time. For a search group with
   several due clients and indexers, its oldest search time counts. The query

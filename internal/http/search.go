@@ -27,16 +27,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// defaultSearchLimit is the cap of a search request that omits limit.
-const defaultSearchLimit = 100
-
 // SearchRequest selects one configured client or all clients when empty.
 type SearchRequest struct {
 	ClientName string `json:"clientname"`
 	DryRun     bool   `json:"dryRun"`
 	Verify     bool   `json:"verify"`
 	// Limit is the maximum count of search groups that the search queries.
-	// Nil means defaultSearchLimit, and 0 means no cap.
+	// Nil means domain.DefaultSearchLimit, and 0 means no cap.
 	Limit *int `json:"limit"`
 }
 
@@ -140,7 +137,7 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 	}
 	// An RSS poll has no cap, so its report keeps limit 0.
 	if !rss {
-		report.Limit = defaultSearchLimit
+		report.Limit = domain.DefaultSearchLimit
 		if req.Limit != nil {
 			report.Limit = *req.Limit
 		}
@@ -260,9 +257,7 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 		for _, group := range groups {
 			request.Groups = append(request.Groups, discovery.Group{Query: group.query, Clients: slices.Collect(maps.Keys(group.clients))})
 		}
-		plan := source.Plan(ctx, request)
-		report.GroupsNotDue, report.GroupsDeferred = plan.NotDue, plan.Deferred
-		for _, group := range plan.Groups {
+		for group := range source.Plan(ctx, request) {
 			for _, query := range group.Queries {
 				for listing := range source.Search(ctx, query.Indexer, group.Query) {
 					run.evaluateListing(ctx, listing, query.Clients)
@@ -272,6 +267,7 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 	}
 	stats := source.Stats()
 	report.Requests, report.TorrentDownloads, report.TorrentCacheHits = stats.FeedPages, stats.Downloads, stats.CacheHits
+	report.GroupsNotDue, report.GroupsDeferred = stats.GroupsNotDue, stats.GroupsDeferred
 	// The client failures come first, as they happen before the first call to Prowlarr.
 	for _, failure := range source.Failures() {
 		report.Failures = append(report.Failures, searchFailure{Query: failure.Query, IndexerID: failure.IndexerID, Reason: failure.Reason})

@@ -6,6 +6,7 @@ package discovery
 import (
 	"cmp"
 	"context"
+	"iter"
 	"slices"
 	"time"
 
@@ -36,16 +37,6 @@ type PlanRequest struct {
 	Preview bool
 }
 
-// Plan is the work of a search run.
-type Plan struct {
-	// Groups holds the due search groups in query order.
-	Groups []PlannedGroup
-	// NotDue counts the search groups with no due query on a usable indexer.
-	NotDue int
-	// Deferred counts the due search groups that the limit left for a later run.
-	Deferred int
-}
-
 // PlannedGroup is one due search group and its due queries, in indexer order.
 type PlannedGroup struct {
 	Query   Query
@@ -72,24 +63,54 @@ func searchGroup(query Query) state.SearchGroup {
 	return state.SearchGroup{Title: rls.MustNormalize(query.Title), Season: query.Season}
 }
 
-// Plan returns the work of a search run. It calls Indexers, so its failures
-// are the failures of the run. A query of a search group to an indexer is due
-// when at least one client of the group has no search time on the indexer
-// or a search time that is waitTime old or older. A group with no due query
-// on a usable indexer counts as not due. Plan sends no request without groups.
+// Plan returns the due search groups of a search run, longest wait first. A query
+// of a search group to an indexer is due when at least one client of the group
+// has no search time on the indexer or a search time that is waitTime old or
+// older. Each group goes out with its due queries on the indexers that are
+// still usable. A group with no such query counts as not due in Stats.
 //
-// The due groups that waited longest go first: a group with a due client that
-// was never searched, then the group with the oldest search time of a due
-// client. The query text breaks a tie. The groups after the limit count as
-// deferred.
+// The groups that waited longest go first: a group with a due client that was
+// never searched, then the group with the oldest search time of a due client.
+// The query text breaks a tie. Only the groups that the sequence gives count
+// against the limit, so a group whose indexers went out during the run uses
+// none of it. The due groups after the limit count as deferred in Stats.
 //
-// The run then stores the search times of the planned queries that Search
-// answers, unless the request is a preview.
-func (r *Run) Plan(ctx context.Context, request PlanRequest) Plan {
+// The sequence calls Indexers, so its failures are the failures of the run. It
+// sends no request without groups, and it ends when the database fails or the
+// context is canceled. The run stores the search times of the planned queries
+// that Search answers, unless the request is a preview.
+func (r *Run) Plan(ctx context.Context, request PlanRequest) iter.Seq[PlannedGroup] {
+	return func(yield func(PlannedGroup) bool) {
+		queried := 0
+		for _, group := range r.dueGroups(ctx, request) {
+			if ctx.Err() != nil || r.err != nil {
+				return
+			}
+			// A failure or a cooldown in this run can take an indexer out after the start of the sequence.
+			group.Queries = slices.DeleteFunc(group.Queries, func(query PlannedQuery) bool { return !r.usable(ctx, query.Indexer.ID) })
+			switch {
+			case len(group.Queries) == 0:
+				r.stats.GroupsNotDue++
+			case request.Limit > 0 && queried == request.Limit:
+				r.stats.GroupsDeferred++
+			default:
+				queried++
+				if !yield(group) {
+					return
+				}
+			}
+		}
+	}
+}
+
+// dueGroups returns the due search groups of request in the order of Plan and
+// counts the groups with no due query as not due. It also prepares the run to
+// store the search times of the due queries.
+func (r *Run) dueGroups(ctx context.Context, request PlanRequest) []PlannedGroup {
 	r.preview = request.Preview
 	r.planned = make(map[queryKey][]string)
 	if len(request.Groups) == 0 {
-		return Plan{}
+		return nil
 	}
 	indexers := r.Indexers(ctx)
 	now := time.Now()
@@ -98,7 +119,7 @@ func (r *Run) Plan(ctx context.Context, request PlanRequest) Plan {
 		var err error
 		if times, err = r.source.store.SearchTimes(ctx, now); err != nil {
 			r.databaseFailure(err)
-			return Plan{}
+			return nil
 		}
 	}
 	type dueGroup struct {
@@ -106,10 +127,7 @@ func (r *Run) Plan(ctx context.Context, request PlanRequest) Plan {
 		// oldest is the oldest search time of a due client. It is zero when a due client was never searched.
 		oldest time.Time
 	}
-	var (
-		plan Plan
-		due  []dueGroup
-	)
+	var due []dueGroup
 	for _, group := range request.Groups {
 		key := searchGroup(group.Query)
 		clients := slices.Sorted(slices.Values(group.Clients))
@@ -128,10 +146,11 @@ func (r *Run) Plan(ctx context.Context, request PlanRequest) Plan {
 			}
 			if len(dueClients) > 0 {
 				planned.Queries = append(planned.Queries, PlannedQuery{Indexer: indexer, Clients: dueClients})
+				r.planned[queryKey{key, indexer.ID}] = dueClients
 			}
 		}
 		if len(planned.Queries) == 0 {
-			plan.NotDue++
+			r.stats.GroupsNotDue++
 			continue
 		}
 		due = append(due, planned)
@@ -139,19 +158,11 @@ func (r *Run) Plan(ctx context.Context, request PlanRequest) Plan {
 	slices.SortFunc(due, func(a, b dueGroup) int {
 		return cmp.Or(a.oldest.Compare(b.oldest), cmp.Compare(a.Query.String(), b.Query.String()))
 	})
-	if request.Limit > 0 && len(due) > request.Limit {
-		plan.Deferred = len(due) - request.Limit
-		due = due[:request.Limit]
-	}
+	groups := make([]PlannedGroup, 0, len(due))
 	for _, group := range due {
-		// Only the queries of the run are in the plan, so Search stores no time for a deferred group.
-		key := searchGroup(group.Query)
-		for _, query := range group.Queries {
-			r.planned[queryKey{key, query.Indexer.ID}] = query.Clients
-		}
-		plan.Groups = append(plan.Groups, group.PlannedGroup)
+		groups = append(groups, group.PlannedGroup)
 	}
-	return plan
+	return groups
 }
 
 // searched stores the search time of each due client of a planned query that
