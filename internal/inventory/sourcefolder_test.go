@@ -151,6 +151,17 @@ func TestReadAtStartup_WarnsAboutAMissingSourceFolder(t *testing.T) {
 	assert.Equal(t, 1, countEvents(events, sourceFolderScanned), "a missing folder has no scan line")
 }
 
+func TestReadAtStartup_WarnsAboutASourceFolderThatIsAFile(t *testing.T) {
+	file := writeSourceFile(t, t.TempDir(), keptEpisode)
+
+	log := readAtStartupWithFolders(t, t.Context(), map[string]*domain.Client{"default": {Host: "qbit", SourceFolders: []string{file}}})
+
+	events := log.Events(t)
+	warning := events.RequireField(t, "could not read source folder", "folder", file)
+	assert.Contains(t, warning["error"], "not a directory")
+	assert.Zero(t, countEvents(events, sourceFolderScanned), "a file is no source folder")
+}
+
 func TestReadAtStartup_SkipsASubfolderThatCannotBeRead(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root reads each folder")

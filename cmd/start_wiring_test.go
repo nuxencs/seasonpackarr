@@ -411,8 +411,9 @@ func TestStartCommand_ScansSourceFoldersAtStartup(t *testing.T) {
 	logPath := filepath.Join(dir, "seasonpackarr.log")
 	folder := t.TempDir()
 	for _, name := range []string{"Series.S01E01.1080p.WEB-DL-GRP.mkv", "Season 01/Series.S01E02.1080p.WEB-DL-GRP.mkv"} {
-		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(folder, name)), 0o755))
-		require.NoError(t, os.WriteFile(filepath.Join(folder, name), nil, 0o600))
+		path := filepath.Join(folder, name)
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, nil, 0o600))
 	}
 	clients := newQbitClientConfig(t) + fmt.Sprintf("    sourceFolders: [%q]\n", folder)
 	writeConfig(t, dir, newStartConfig(port, startTestToken, logPath, clients))

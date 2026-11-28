@@ -35,7 +35,6 @@ func (s *Store) ReadAtStartup(ctx context.Context, cfg config.Provider) {
 	}
 
 	var wg sync.WaitGroup
-	// The client lines wait for the scan, so they can count the source folder files.
 	scanned := make(chan struct{})
 	wg.Go(func() {
 		defer close(scanned)
@@ -46,19 +45,36 @@ func (s *Store) ReadAtStartup(ctx context.Context, cfg config.Provider) {
 		wg.Go(func() {
 			// One client at a time, so the first parses the names and the others reuse them.
 			for _, name := range names {
-				s.readClientAtStartup(ctx, cfg, name, scanned)
+				inv, read := s.readClientAtStartup(ctx, cfg, name)
+				if inv == nil {
+					continue
+				}
+				// The count uses the folders of the scan, not those of a later snapshot.
+				folders := snapshot.Clients[name].SourceFolders
+				if len(folders) == 0 {
+					s.logInventoryReady(name, inv, read, nil)
+					continue
+				}
+				// The line waits for the scan in its own goroutine, so the next client of the endpoint does not wait.
+				wg.Go(func() {
+					select {
+					case <-ctx.Done():
+					case <-scanned:
+						s.logInventoryReady(name, inv, read, folders)
+					}
+				})
 			}
 		})
 	}
 	wg.Wait()
 }
 
-func (s *Store) readClientAtStartup(ctx context.Context, cfg config.Provider, name string, scanned <-chan struct{}) {
+// readClientAtStartup returns the inventory and the duration of the read that worked, or nil.
+func (s *Store) readClientAtStartup(ctx context.Context, cfg config.Provider, name string) (*Inventory, time.Duration) {
 	for attempt := 1; ; attempt++ {
 		snapshot := cfg.Snapshot()
-		clientConfig, ok := snapshot.Clients[name]
-		if !ok {
-			return
+		if _, ok := snapshot.Clients[name]; !ok {
+			return nil, 0
 		}
 
 		started := time.Now()
@@ -68,41 +84,30 @@ func (s *Store) readClientAtStartup(ctx context.Context, cfg config.Provider, na
 			inv, err = client.Inventory(ctx)
 		}
 		if ctx.Err() != nil {
-			return
+			return nil, 0
 		}
 		if err == nil {
-			s.logInventoryReady(ctx, name, clientConfig.SourceFolders, inv, time.Since(started), scanned)
-			return
+			return inv, time.Since(started)
 		}
 		if attempt == startupAttempts {
 			s.log.Warn().Err(err).Str("clientname", name).Msg("could not read client inventory at startup")
-			return
+			return nil, 0
 		}
 		s.log.Debug().Err(err).Str("clientname", name).Int("attempt", attempt).Msg("client inventory not ready at startup")
 
 		select {
 		case <-ctx.Done():
-			return
+			return nil, 0
 		case <-time.After(startupRetryDelay):
 		}
 	}
 }
 
 // logInventoryReady logs the torrent count, and for a client with source folders the number of their episode files.
-func (s *Store) logInventoryReady(ctx context.Context, name string, folders []string, inv *Inventory, read time.Duration, scanned <-chan struct{}) {
-	if len(folders) == 0 {
-		s.log.Info().Str("clientname", name).Int("torrents", inv.torrents).Int64("duration_ms", read.Milliseconds()).Msg("client inventory ready")
-		return
+func (s *Store) logInventoryReady(name string, inv *Inventory, read time.Duration, folders []string) {
+	event := s.log.Info().Str("clientname", name).Int("torrents", inv.torrents)
+	if len(folders) > 0 {
+		event = event.Int("source_folder_files", s.sourceFolderFiles(folders))
 	}
-	select {
-	case <-ctx.Done():
-		return
-	case <-scanned:
-	}
-	s.log.Info().
-		Str("clientname", name).
-		Int("torrents", inv.torrents).
-		Int("source_folder_files", s.sourceFolderFiles(folders)).
-		Int64("duration_ms", read.Milliseconds()).
-		Msg("client inventory ready")
+	event.Int64("duration_ms", read.Milliseconds()).Msg("client inventory ready")
 }

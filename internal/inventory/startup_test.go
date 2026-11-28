@@ -6,7 +6,6 @@ package inventory
 import (
 	"context"
 	"errors"
-	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -18,24 +17,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// fakeProvider is a config provider whose snapshot a test can replace.
-type fakeProvider struct {
-	mu  sync.Mutex
-	cfg domain.Config
-}
-
-func (f *fakeProvider) Snapshot() domain.Config {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.cfg
-}
-
-func (f *fakeProvider) store(cfg domain.Config) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.cfg = cfg
-}
 
 func TestReadAtStartup_ReadsEachClientAndSharesParsedNames(t *testing.T) {
 	const name = "Series.S01E01.1080p.WEB-DL-GRP"
