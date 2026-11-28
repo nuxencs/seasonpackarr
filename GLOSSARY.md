@@ -46,6 +46,9 @@ _Avoid_: Import folder, import destination
 The folder below the import root that has the name of the season pack and holds its files. A client layout without a subfolder has no pack folder.
 _Avoid_: Season pack folder
 
+**Hardlink source**:
+The path on disk of a reusable episode, from which an import makes a hardlink.
+
 **Hardlink target**:
 The path below the import root where one file of the season pack must be.
 
@@ -65,7 +68,7 @@ The client setting that limits the torrents of the inventory: include categories
 _Avoid_: Inventory filter
 
 **Source folder**:
-A folder of one client whose episode files are in the inventory, although no torrent of the client holds them. seasonpackarr reads the file names as they are, whichever tool put the files there.
+A folder of one client whose episode files are in the inventory, although no torrent of the client holds them. seasonpackarr reads the file names as they are, whichever tool put the files there. A file behind a symlink that leaves the folder is not in the source folder.
 _Avoid_: Library, library path, local path
 
 **Client type**:
