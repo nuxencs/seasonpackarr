@@ -29,9 +29,7 @@ type importPlan struct {
 	hashes       torrents.Hashes
 	info         torrents.Info
 	links        []placement.PlannedLink
-	// folderSources holds the link sources that are files of a source folder, for the log lines of the import.
-	folderSources map[string]struct{}
-	totalEps      int
+	totalEps     int
 }
 
 func (plan importPlan) coverage() Coverage {
@@ -119,36 +117,29 @@ func (c *call) buildPlan(ctx context.Context, torrent Torrent) (importPlan, []re
 		return importPlan{}, nil, outcome
 	}
 
-	folderFiles := make(map[string]struct{})
+	// A torrent file at the path of a folder file is the same file, so the link of that path gets the folder rule.
+	sourceFolders := make(map[string]string)
 	for _, candidate := range candidates {
 		if candidate.IsFile() {
-			folderFiles[candidate.File] = struct{}{}
+			sourceFolders[candidate.File] = candidate.SourceFolder
 		}
 	}
 	matchResult := release.NewEpisodeMatcher(parsed.episodes).Match(sources)
 	links := make([]placement.PlannedLink, 0, len(matchResult.Matches))
-	var folderSources map[string]struct{}
 	for _, match := range matchResult.Matches {
 		links = append(links, placement.PlannedLink{
-			Source:      match.ClientPath,
-			TorrentPath: match.TorrentPath,
+			Source:       match.ClientPath,
+			TorrentPath:  match.TorrentPath,
+			SourceFolder: sourceFolders[match.ClientPath],
 		})
-		// A torrent file at the path of a folder file is the same file, so the kind of the path does not matter.
-		if _, ok := folderFiles[match.ClientPath]; ok {
-			if folderSources == nil {
-				folderSources = make(map[string]struct{})
-			}
-			folderSources[match.ClientPath] = struct{}{}
-		}
 	}
 
 	plan := importPlan{
-		torrentBytes:  parsed.bytes,
-		hashes:        parsed.hashes,
-		info:          parsed.info,
-		links:         links,
-		folderSources: folderSources,
-		totalEps:      len(parsed.episodes),
+		torrentBytes: parsed.bytes,
+		hashes:       parsed.hashes,
+		info:         parsed.info,
+		links:        links,
+		totalEps:     len(parsed.episodes),
 	}
 	coverage := plan.coverage()
 	switch {
@@ -237,7 +228,7 @@ func (c *call) readSources(ctx context.Context, candidates []inventory.Entry) ([
 
 	sources, err := c.readTorrentSources(ctx, torrentCandidates)
 	for _, candidate := range fileCandidates {
-		if source, ok := c.sourceFolderFile(candidate.File); ok {
+		if source, ok := c.sourceFolderFile(candidate); ok {
 			sources = append(sources, source)
 		}
 	}
@@ -304,11 +295,13 @@ func (c *call) onDisk(source release.EpisodeFile) bool {
 	return false
 }
 
-// sourceFolderFile reads the file of a source folder with one stat call. The file is a source only when it is a
-// regular file, and its size is the size on disk. The call does not follow a symlink, because the scan follows none
-// below a source folder, and a hardlink of a symlink links the symlink itself on Linux.
-func (c *call) sourceFolderFile(path string) (release.EpisodeFile, bool) {
-	info, err := os.Lstat(path)
+// sourceFolderFile reads the file of a source folder with one stat call below the folder whose scan listed it. The file
+// is a source only when its path resolves below that folder, as the link requires, and it is a regular file. Its size
+// is the size on disk. The call does not follow a symlink at the file itself, because the scan follows none below a
+// source folder, and a hardlink of a symlink links the symlink itself on Linux.
+func (c *call) sourceFolderFile(entry inventory.Entry) (release.EpisodeFile, bool) {
+	path := entry.File
+	info, err := placement.StatSourceFolderFile(entry.SourceFolder, path)
 	if err == nil && info.Mode().IsRegular() {
 		// The scan accepted the name with the same rule (release.ParseEpisodeName), so the parse cannot fail here.
 		return release.ParseEpisodeFile(path, info.Size())
@@ -321,6 +314,8 @@ func (c *call) sourceFolderFile(path string) (release.EpisodeFile, bool) {
 func logNotReusable(event *zerolog.Event, path string, info fs.FileInfo, err error, wantSize int64) {
 	event = event.Str("source", path)
 	switch {
+	case errors.Is(err, placement.ErrSourceOutsideSourceFolder):
+		event = event.Str("reason", "outside_source_folder").Err(err)
 	case err != nil:
 		event = event.Str("reason", "missing")
 		// Another stat error, such as a denied permission, needs its own text.

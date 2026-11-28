@@ -338,6 +338,9 @@ type Entry struct {
 	Torrent torrentclient.Torrent
 	// File is the path of a file of a source folder, and is empty for a torrent entry. A file entry has no hash.
 	File string
+	// SourceFolder is the source folder whose scan listed File, and is empty for a torrent entry. A hardlink source
+	// must resolve below it.
+	SourceFolder string
 	// Release is shared by reads and by the clients of one endpoint or source folder. Callers must not change it.
 	Release *rls.Release
 }
@@ -366,7 +369,7 @@ type Inventory struct {
 }
 
 // SameSeason yields the entries of the season key, the torrent entries before the file entries. A file in two source
-// folders of the client, one below the other, comes once. The caller must build the key with the fuzzy matching
+// folders of the client, one below the other, comes once, with the folder that comes first in the config. The caller must build the key with the fuzzy matching
 // settings of the Client that gave the inventory (Client.Snapshot), because the read grouped the entries with those
 // settings.
 func (inv *Inventory) SameSeason(key release.SeasonKey) iter.Seq[Entry] {

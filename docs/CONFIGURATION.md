@@ -354,6 +354,10 @@ torrents in the client. A compatible file is hardlinked into the pack folder, an
   file in the torrent. A file that was removed or replaced after the last scan is dropped with the log line
   `client episode file is not reusable` and the field `source_kind` set to `source_folder`. The coverage rule then
   accepts or rejects the pack.
+- A file is reused only when its path stays below its source folder. When a folder of the path became a symlink after
+  the scan, a relative symlink that stays below the source folder is allowed. A symlink that leaves the folder, and
+  each absolute symlink, drops the file with the reason `outside_source_folder`. The import checks this again when
+  it makes the hardlink.
 - When a torrent and a file supply the same episode, the torrent wins.
 - [Smart mode](#smart-mode) counts the files of the source folders in the coverage.
 - RSS monitoring and search make their search groups from the torrents and from the files, so a season that is only in

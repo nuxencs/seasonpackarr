@@ -6,6 +6,7 @@ package placement
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -130,41 +131,86 @@ func TestLink_ReusesExistingHardlink(t *testing.T) {
 }
 
 // A source folder can overlap the import root, so a source can be at its own hardlink target. The link keeps the file
-// as it is and counts it as linked.
+// as it is and counts it as linked. The verified link of a source folder removes nothing.
 func TestLink_KeepsSourceAtItsOwnHardlinkTarget(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "import")
-	source := writeSource(t, filepath.Join(root, packName), episode1)
-	before, err := os.Stat(source)
-	require.NoError(t, err)
+	for _, fromFolder := range []bool{false, true} {
+		t.Run(fmt.Sprintf("source folder %t", fromFolder), func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "import")
+			source := writeSource(t, filepath.Join(root, packName), episode1)
+			link := PlannedLink{Source: source, TorrentPath: episode1}
+			if fromFolder {
+				link.SourceFolder = root
+			}
+			before, err := os.Stat(source)
+			require.NoError(t, err)
 
-	outcomes := New(newPackInfo(t), PackFolderDestination(root)).Link([]PlannedLink{{Source: source, TorrentPath: episode1}})
+			outcomes := New(newPackInfo(t), PackFolderDestination(root)).Link([]PlannedLink{link})
 
-	require.Equal(t, []Outcome{{Status: Linked, Target: source}}, outcomes)
-	after, err := os.Stat(source)
-	require.NoError(t, err)
-	require.True(t, os.SameFile(before, after))
-	contents, err := os.ReadFile(source)
-	require.NoError(t, err)
-	require.Equal(t, []byte("episode"), contents)
+			require.Equal(t, []Outcome{{Status: Linked, Target: source}}, outcomes)
+			after, err := os.Stat(source)
+			require.NoError(t, err)
+			require.True(t, os.SameFile(before, after))
+			contents, err := os.ReadFile(source)
+			require.NoError(t, err)
+			require.Equal(t, []byte("episode"), contents)
+		})
+	}
 }
 
 func TestLink_KeepsOtherFileAtHardlinkTarget(t *testing.T) {
+	for _, fromFolder := range []bool{false, true} {
+		t.Run(fmt.Sprintf("source folder %t", fromFolder), func(t *testing.T) {
+			dir := t.TempDir()
+			root := filepath.Join(dir, "import")
+			source := writeSource(t, filepath.Join(dir, "library"), "one.mkv")
+			link := PlannedLink{Source: source, TorrentPath: episode1}
+			if fromFolder {
+				link.SourceFolder = filepath.Join(dir, "library")
+			}
+			target := filepath.Join(root, packName, episode1)
+			require.NoError(t, os.MkdirAll(filepath.Dir(target), 0o755))
+			require.NoError(t, os.WriteFile(target, []byte("different"), 0o644))
+
+			outcomes := New(newPackInfo(t), PackFolderDestination(root)).Link([]PlannedLink{link})
+
+			require.Len(t, outcomes, 1)
+			assert.Equal(t, Failed, outcomes[0].Status)
+			assert.ErrorIs(t, outcomes[0].Err, fs.ErrExist)
+			assert.Empty(t, outcomes[0].Target)
+			content, err := os.ReadFile(target)
+			require.NoError(t, err)
+			assert.Equal(t, "different", string(content))
+		})
+	}
+}
+
+// After the open of a source below its source folder, a tool replaced a folder of the path with a symlink out of the
+// source folder (issue #426). The link call then links the file outside, so Link removes that link and fails it. A
+// refused source is no missing source.
+func TestLink_RemovesLinkThatIsNotTheFileBelowSourceFolder(t *testing.T) {
 	dir := t.TempDir()
 	root := filepath.Join(dir, "import")
-	source := writeSource(t, filepath.Join(dir, "library"), "one.mkv")
-	target := filepath.Join(root, packName, episode1)
-	require.NoError(t, os.MkdirAll(filepath.Dir(target), 0o755))
-	require.NoError(t, os.WriteFile(target, []byte("different"), 0o644))
+	folder := filepath.Join(dir, "library")
+	season := filepath.Join(folder, "Season 01")
+	source := writeSource(t, season, episode1)
+	outside := writeSource(t, filepath.Join(dir, "outside"), episode1)
+	beforeSourceLink = func() {
+		require.NoError(t, os.Rename(season, filepath.Join(dir, "moved")))
+		require.NoError(t, os.Symlink(filepath.Dir(outside), season))
+	}
+	t.Cleanup(func() { beforeSourceLink = nil })
 
-	outcomes := New(newPackInfo(t), PackFolderDestination(root)).Link([]PlannedLink{{Source: source, TorrentPath: episode1}})
+	outcomes := New(newPackInfo(t), PackFolderDestination(root)).Link([]PlannedLink{
+		{Source: source, TorrentPath: episode1, SourceFolder: folder},
+	})
 
 	require.Len(t, outcomes, 1)
 	assert.Equal(t, Failed, outcomes[0].Status)
-	assert.ErrorIs(t, outcomes[0].Err, fs.ErrExist)
+	assert.ErrorIs(t, outcomes[0].Err, ErrSourceOutsideSourceFolder)
+	assert.ErrorContains(t, outcomes[0].Err, "is not the file below")
 	assert.Empty(t, outcomes[0].Target)
-	content, err := os.ReadFile(target)
-	require.NoError(t, err)
-	assert.Equal(t, "different", string(content))
+	assert.NoFileExists(t, filepath.Join(root, packName, episode1))
+	assert.FileExists(t, outside)
 }
 
 // TestLink_StaysBelowImportRoot: a prepared folder below the import root must

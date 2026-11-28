@@ -4,12 +4,14 @@
 package seasonpack
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
+	"github.com/nuxencs/seasonpackarr/internal/placement"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -171,4 +173,140 @@ func TestImport_RefreshDropsMovedSourceFolderFileWithoutScan(t *testing.T) {
 	assert.FileExists(t, pack.target(1))
 	assert.NoFileExists(t, pack.target(2))
 	assert.False(t, pack.client.ImportReq.DataComplete)
+}
+
+// After the scan, a tool replaced the season folder with a symlink (issue #426). The files keep their names and sizes
+// at the place of the symlink. A file is a hardlink source only when its path resolves below the source folder with
+// the rule of os.Root: a relative symlink that stays below the folder is allowed, and each absolute symlink is refused.
+// Without a plan of a match, the plan build of the import drops a refused file. With the plan of a match, the link
+// refuses it.
+func TestImport_LinksSourceFolderFileOnlyBelowTheFolder(t *testing.T) {
+	tests := map[string]struct {
+		// move returns the new place of the season folder and the target of the symlink.
+		move   func(pack packFixture, outside string) (dir, linkTarget string)
+		linked bool
+	}{
+		"absolute symlink out of the folder": {
+			move: func(_ packFixture, outside string) (string, string) {
+				return outside, outside
+			},
+		},
+		"relative symlink out of the folder": {
+			move: func(pack packFixture, outside string) (string, string) {
+				rel, err := filepath.Rel(pack.folder(), outside)
+				if err != nil {
+					panic(err)
+				}
+				return outside, rel
+			},
+		},
+		"absolute symlink below the folder": {
+			move: func(pack packFixture, _ string) (string, string) {
+				dir := filepath.Join(pack.folder(), "moved")
+				return dir, dir
+			},
+		},
+		"relative symlink below the folder": {
+			move: func(pack packFixture, _ string) (string, string) {
+				return filepath.Join(pack.folder(), "moved"), "moved"
+			},
+			linked: true,
+		},
+	}
+	for name, tt := range tests {
+		for _, cached := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s, cached plan %t", name, cached), func(t *testing.T) {
+				pack := newPack(t, "FolderEscape", 1, 0)
+				pack.writeFolderFile(t, 1)
+				cfg := withSourceFolders(newConfig(), pack.folder())
+				f := newFixture(pack.client)
+				f.scanSourceFolders(t, cfg)
+				if cached {
+					outcome := f.processor.Match(t.Context(), f.client(t, "default", cfg), pack.name, TorrentBytes(pack.torrent))
+					require.NoError(t, outcome.Err)
+				}
+				dir, linkTarget := tt.move(pack, filepath.Join(filepath.Dir(pack.sourceDir), "outside", "Season 01"))
+				pack.moveSeasonFolder(t, dir, linkTarget)
+				moved := filepath.Join(dir, pack.episodeFile(1))
+
+				outcome := f.processor.Import(t.Context(), f.client(t, "default", cfg), pack.name, pack.torrent)
+
+				if tt.linked {
+					require.NoError(t, outcome.Err)
+					assert.Equal(t, domain.StatusSuccessfulHardlink, outcome.Status)
+					requireSameFile(t, moved, pack.target(1))
+					return
+				}
+				require.Error(t, outcome.Err)
+				assert.Zero(t, pack.client.ImportCalls)
+				assert.NoFileExists(t, pack.target(1))
+				requireNoHardlinkBelow(t, pack.importDir, moved)
+				if cached {
+					// A refused source is a plain failed link. It starts no plan refresh.
+					assert.Equal(t, domain.StatusFailedHardlink, outcome.Status)
+					failed := f.log.Events(t).Require(t, "error creating hardlink: "+filepath.Join(pack.seasonFolder(), pack.episodeFile(1)))
+					assert.Contains(t, failed["error"], placement.ErrSourceOutsideSourceFolder.Error())
+					for _, event := range f.log.Events(t) {
+						assert.NotEqual(t, "import plan refreshed after missing hardlink source", event["message"])
+					}
+					return
+				}
+				assert.Equal(t, domain.StatusFailedMatchToTorrentEps, outcome.Status)
+				dropped := f.log.Events(t).Require(t, "client episode file is not reusable")
+				assert.Equal(t, "outside_source_folder", dropped["reason"])
+				assert.Equal(t, "source_folder", dropped["source_kind"])
+			})
+		}
+	}
+}
+
+// The scan follows a source folder that is a symlink, so its files stay hardlink sources.
+func TestImport_LinksFileOfSymlinkedSourceFolder(t *testing.T) {
+	pack := newPack(t, "FolderSymlinked", 1, 0)
+	file := pack.writeFolderFile(t, 1)
+	link := filepath.Join(filepath.Dir(pack.folder()), "source-folder-link")
+	require.NoError(t, os.Symlink(pack.folder(), link))
+	cfg := withSourceFolders(newConfig(), link)
+	f := newFixture(pack.client)
+	f.scanSourceFolders(t, cfg)
+
+	outcome := f.processor.Import(t.Context(), f.client(t, "default", cfg), pack.name, pack.torrent)
+
+	require.NoError(t, outcome.Err)
+	assert.Equal(t, domain.StatusSuccessfulHardlink, outcome.Status)
+	requireSameFile(t, file, pack.target(1))
+}
+
+// The client has a source folder below another. A file is checked against the folder whose scan listed it first, in
+// the order of the config, and no second folder is tried. After the scan, a relative symlink replaced the season
+// folder. It stays below the outer folder and leaves the inner one.
+func TestImport_ChecksFileAgainstFirstSourceFolderThatListsIt(t *testing.T) {
+	for _, innerFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("inner folder first %t", innerFirst), func(t *testing.T) {
+			pack := newPack(t, "FolderNested", 1, 0)
+			pack.writeFolderFile(t, 1)
+			outer := filepath.Dir(pack.folder())
+			folders := []string{outer, pack.folder()}
+			if innerFirst {
+				folders = []string{pack.folder(), outer}
+			}
+			cfg := withSourceFolders(newConfig(), folders...)
+			f := newFixture(pack.client)
+			f.scanSourceFolders(t, cfg)
+			moved := filepath.Join(outer, "moved")
+			pack.moveSeasonFolder(t, moved, filepath.Join("..", "moved"))
+
+			outcome := f.processor.Import(t.Context(), f.client(t, "default", cfg), pack.name, pack.torrent)
+
+			if innerFirst {
+				require.Error(t, outcome.Err)
+				assert.NoFileExists(t, pack.target(1))
+				dropped := f.log.Events(t).Require(t, "client episode file is not reusable")
+				assert.Equal(t, "outside_source_folder", dropped["reason"])
+				return
+			}
+			require.NoError(t, outcome.Err)
+			requireSameFile(t, filepath.Join(moved, pack.episodeFile(1)), pack.target(1))
+		})
+	}
 }

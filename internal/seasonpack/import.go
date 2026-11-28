@@ -188,9 +188,8 @@ func (c *call) createPlanHardlinks(plan importPlan, importDestination placement.
 	outcomes := placement.New(plan.info, importDestination).Link(plan.links)
 	for index, outcome := range outcomes {
 		source := plan.links[index].Source
-		_, fromFolder := plan.folderSources[source]
 		withKind := func(event *zerolog.Event) *zerolog.Event {
-			if fromFolder {
+			if plan.links[index].SourceFolder != "" {
 				return markSourceFolder(event)
 			}
 			return event

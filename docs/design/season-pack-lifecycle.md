@@ -125,8 +125,9 @@ Operators debug with these logs and notifications. Keep them stable, and update
   incompatible field reports its torrent `want` and client `got` value.
 - Each client episode file that a plan build drops produces one `INFO` event
   with the message `client episode file is not reusable`. The event reports the
-  `source` path and a `reason`: `missing`, `not_regular_file`, or
-  `size_mismatch`. A size mismatch also reports `want_size` (the size that the
+  `source` path and a `reason`: `missing`, `not_regular_file`,
+  `size_mismatch`, or `outside_source_folder` (a file of a source folder whose
+  path leaves the folder through a symlink or passes an absolute symlink). A size mismatch also reports `want_size` (the size that the
   client declares) and `got_size` (the size on disk). A `missing` event reports
   the `error` when the file check failed for a cause other than a file that
   does not exist. The level is `INFO`, because a running episode download is a

@@ -163,15 +163,18 @@ For diagnostics, read these log lines at `INFO`:
 
 The match and the import count only client episode files that are on disk. An
 episode file that the client lists is not reusable when it is not a regular
-file with the size that the client declares. Each such file gives one
-`client episode file is not reusable` log line at `INFO`:
+file with the size that the client declares. A file of a source folder is also
+not reusable when its path leaves the source folder through a symlink, or
+passes an absolute symlink. Each
+such file gives one `client episode file is not reusable` log line at `INFO`:
 
 | Field | Value |
 | --- | --- |
 | `source` | The path of the client episode file |
-| `reason` | `missing`, `not_regular_file`, or `size_mismatch` |
+| `reason` | `missing`, `not_regular_file`, `size_mismatch`, or `outside_source_folder` |
+| `source_kind` | Only for a file of a source folder: `source_folder` |
 | `want_size`, `got_size` | Only for `size_mismatch`: the size that the client declares and the size on disk, in bytes |
-| `error` | Only for `missing`, when the file check failed for a cause other than a file that does not exist, for example a denied permission |
+| `error` | For `outside_source_folder`, and for `missing` when the file check failed for a cause other than a file that does not exist, for example a denied permission |
 
 A running episode download is a normal cause of `size_mismatch`. `missing`
 on each file usually shows that seasonpackarr and the client do not see the

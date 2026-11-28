@@ -29,14 +29,49 @@ Current comparison logic checks:
   import after a cache miss, the refresh after a missing hardlink source, and a
   search run
 - a file of a source folder has its own on-disk rule. The scan reads names
-  only, so the plan build reads each candidate file with one `os.Lstat` call.
-  The file is a source only when it is a regular file, and its size is the
-  size on disk. The call does not follow a symlink: the scan follows none
-  below a source folder, and on Linux a hardlink of a symlink links the
-  symlink itself. A file that is missing or not regular is dropped with the
-  log line `client episode file is not reusable` and `source_kind` set to
+  only, so the plan build reads each candidate file with one stat call
+  (`placement.StatSourceFolderFile`). The file is a source only when it is a
+  regular file, and its size is the size on disk. The call does not follow a
+  symlink at the file itself: the scan follows none below a source folder,
+  and on Linux a hardlink of a symlink links the symlink itself. A file that
+  is missing or not regular is dropped with the log line
+  `client episode file is not reusable` and `source_kind` set to
   `source_folder`. That is not a failed file-detail read, so a discovery
   match does not give status `468` for it
+- keep each hardlink source of a source folder below that folder (issue
+  #426). The scan follows no symlink below a source folder, but a tool can
+  replace a folder of a listed path with a symlink after the scan. Then a
+  call with the full path reads a file of the same name and size at another
+  place, and the client writes into that file when it repairs a piece of the
+  pack. Thus the path of a file must resolve below its source folder with the
+  rule of `os.Root`, the same rule as for the hardlink targets: a relative
+  symlink that stays below the folder is allowed, each absolute symlink is
+  refused, and the source folder itself can be a symlink. The file is checked
+  against the source folder whose scan listed it. With nested source folders
+  of one client, that is the first folder in the config, and no second folder
+  is tried. Each plan build drops a file that fails the rule with the reason
+  `outside_source_folder`. `os.Root` has no exported error for a path that
+  leaves the root, so a path that the root refuses and that a plain stat call
+  reads gets that reason
+- the placement module checks a source of a source folder again at link time,
+  because a cached import plan or a change after the plan build can give a
+  refused path. Each `placement.PlannedLink` of a file carries its source
+  folder. The link is verified: it opens the source below its source folder
+  through `os.Root`, makes the link with the full path, and compares the
+  hardlink target with the opened file. When they are not the same file, it
+  removes the link that it made and fails that link. It removes only a link
+  that the same call made, never a file that was at the hardlink target
+  before. A refused source fails with an error that wraps
+  `placement.ErrSourceOutsideSourceFolder`. It is a plain failed link: it
+  starts no plan refresh and adds no status code, and the coverage count and
+  the threshold decide the result of the import. One code path serves all
+  platforms, with no build tags and no `linkat` call
+- a torrent source has no such rule. The save path of a torrent is no
+  boundary that the operator declared, and the client reads and writes
+  through the same symlink, so the file at that path is the data of the
+  torrent. A strict rule would stop the reuse for users whose torrent folder
+  is behind a symlink. `TestImport_LinksTorrentSourceBehindSymlinkedFolder`
+  pins this behavior
 - the file sources go to the episode matcher after the torrent sources, and
   the matcher keeps the first source of a target, so a torrent wins over a
   file for the same episode. The matcher key holds the size, so a file of a
@@ -46,9 +81,9 @@ Current comparison logic checks:
   last scan, and a file entry never gives "same pack" (status `210`), because
   only a torrent proves that the client has the pack
 - a source folder can overlap the import root, so a file can be at its own
-  hardlink target. The link call then fails with "exists", the source and the
-  target are the same file, and the link counts as linked, as a hardlink from
-  an earlier attempt does. The file stays as it is
+  hardlink target. The link call then fails with "exists", the target is the
+  opened source file, and the link counts as linked, as a hardlink from an
+  earlier attempt does. The file stays as it is
 - a link between two filesystems fails. The placement module wraps the error
   with `placement.ErrDifferentFilesystems`, so the error text says that the
   hardlink source and the import root are on different filesystems
@@ -84,7 +119,8 @@ Current comparison logic checks:
     import root itself can be a symlink. `os.Root` rejects each symlink with
     an absolute target, also when the target is below the import root. The
     link call itself uses the full path, because `os.Root` can link only when
-    both names are below the root, and the source is not.
+    both names are below the root, and the source is not. For a source of a
+    source folder, the verified link above proves the result.
 - the import root must be an absolute path. The placement module refuses a
   relative root: each link fails with an error that names the root, the
   completeness check answers false, and the import returns status `440` with

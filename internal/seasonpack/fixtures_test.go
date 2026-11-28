@@ -6,6 +6,7 @@ package seasonpack
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -197,4 +198,36 @@ func requireSameFile(t *testing.T, path, other string) {
 	otherInfo, err := os.Stat(other)
 	require.NoError(t, err)
 	require.True(t, os.SameFile(info, otherInfo), "%s must be a hardlink of %s", other, path)
+}
+
+// seasonFolder returns the season folder below the source folder, which writeFolderFile makes.
+func (p packFixture) seasonFolder() string {
+	return filepath.Join(p.folder(), "Season 01")
+}
+
+// moveSeasonFolder moves the season folder to dir and puts a symlink to linkTarget in its place, as a tool can do after
+// a scan. The files keep their names and sizes at dir.
+func (p packFixture) moveSeasonFolder(t *testing.T, dir, linkTarget string) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(filepath.Dir(dir), 0o755))
+	require.NoError(t, os.Rename(p.seasonFolder(), dir))
+	require.NoError(t, os.Symlink(linkTarget, p.seasonFolder()))
+}
+
+// requireNoHardlinkBelow fails the test when a file below dir is a hardlink of path.
+func requireNoHardlinkBelow(t *testing.T, dir, path string) {
+	t.Helper()
+	info, err := os.Lstat(path)
+	require.NoError(t, err)
+	require.NoError(t, filepath.WalkDir(dir, func(found string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		foundInfo, err := os.Lstat(found)
+		if err != nil {
+			return err
+		}
+		require.False(t, os.SameFile(info, foundInfo), "%s must not be a hardlink of %s", found, path)
+		return nil
+	}))
 }

@@ -49,23 +49,23 @@ func (s *Store) withFiles(inv *Inventory, c *Client) *Inventory {
 	folderSeasons := make([]map[release.SeasonKey][]Entry, 0, len(folders))
 	for _, folder := range folders {
 		if scan, ok := s.folderScans[folder]; ok && len(scan.files) > 0 {
-			folderSeasons = append(folderSeasons, scan.seasonsLocked(c.fuzzy))
+			folderSeasons = append(folderSeasons, scan.seasonsLocked(folder, c.fuzzy))
 		}
 	}
 	return &Inventory{seasons: inv.seasons, torrents: inv.torrents, folderSeasons: folderSeasons}
 }
 
-// seasonsLocked returns the file entries grouped by the season keys of fuzzy, and groups them on the first call. The
-// receiver is a copy from Store.folderScans, and the copies share the seasons map, so the store keeps the groups. It
-// needs Store.mu.
-func (scan folderScan) seasonsLocked(fuzzy domain.FuzzyMatching) map[release.SeasonKey][]Entry {
+// seasonsLocked returns the file entries of folder grouped by the season keys of fuzzy, and groups them on the first
+// call. The receiver is a copy from Store.folderScans, and the copies share the seasons map, so the store keeps the
+// groups. It needs Store.mu.
+func (scan folderScan) seasonsLocked(folder string, fuzzy domain.FuzzyMatching) map[release.SeasonKey][]Entry {
 	if grouped, ok := scan.seasons[fuzzy]; ok {
 		return grouped
 	}
 	grouped := make(map[release.SeasonKey][]Entry)
 	for _, file := range scan.files {
 		key := release.SeasonKeyOf(file.release, fuzzy)
-		grouped[key] = append(grouped[key], Entry{File: file.path, Release: file.release})
+		grouped[key] = append(grouped[key], Entry{File: file.path, SourceFolder: folder, Release: file.release})
 	}
 	scan.seasons[fuzzy] = grouped
 	return grouped

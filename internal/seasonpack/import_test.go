@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -560,4 +561,32 @@ func TestImport_RetryBuildsPlanAgainAfterFailedAttempt(t *testing.T) {
 	assert.Equal(t, 2, pack.client.TorrentCalls, "the retry must check whether the failed import added the pack")
 	assert.Equal(t, 2, pack.client.FileBatchCalls, "the retry must build the plan again")
 	assert.Equal(t, 2, pack.client.ImportCalls)
+}
+
+// A torrent source has no containment rule (issue #426). The save path is no boundary that the operator declared, and
+// the client reads and writes the data of the torrent through the same symlink. Thus an episode behind a folder below
+// the save path that is a symlink to another place is still reused, for a new plan and for the plan of a match.
+func TestImport_LinksTorrentSourceBehindSymlinkedFolder(t *testing.T) {
+	for _, cached := range []bool{false, true} {
+		t.Run(fmt.Sprintf("cached plan %t", cached), func(t *testing.T) {
+			pack := newPack(t, "TorrentSymlinked", 1, 1)
+			outside := filepath.Join(filepath.Dir(pack.sourceDir), "outside")
+			require.NoError(t, os.MkdirAll(outside, 0o755))
+			moved := filepath.Join(outside, pack.episodeFile(1))
+			require.NoError(t, os.Rename(pack.source(1), moved))
+			require.NoError(t, os.Symlink(outside, filepath.Join(pack.sourceDir, "Season 01")))
+			pack.client.FilesByHash["ep1"] = []torrentclient.File{{Name: filepath.Join("Season 01", pack.episodeFile(1)), Size: 1}}
+			f := newFixture(pack.client)
+			client := f.defaultClient(t)
+			if cached {
+				require.NoError(t, f.processor.Match(t.Context(), client, pack.name, TorrentBytes(pack.torrent)).Err)
+			}
+
+			outcome := f.processor.Import(t.Context(), client, pack.name, pack.torrent)
+
+			require.NoError(t, outcome.Err)
+			assert.Equal(t, domain.StatusSuccessfulHardlink, outcome.Status)
+			requireSameFile(t, moved, pack.target(1))
+		})
+	}
 }

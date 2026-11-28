@@ -118,3 +118,29 @@ func TestMatch_FetchesTorrentForSourceFolderFile(t *testing.T) {
 	assert.Equal(t, &Coverage{Reusable: 1, Total: 1}, outcome.Coverage)
 	assert.Zero(t, pack.client.FileBatchCalls, "a client with no torrent candidate needs no file-detail read")
 }
+
+// After the scan, the season folder became a symlink out of the source folder (issue #426). The plan build drops the
+// file with its own reason. That is no failed file-detail read, so the discovery match stops with 445 and not with 468.
+func TestMatch_DropsSourceFolderFileBehindSymlinkOutOfTheFolder(t *testing.T) {
+	pack := newPack(t, "FolderOutside", 1, 0)
+	pack.writeFolderFile(t, 1)
+	cfg := withSourceFolders(newConfig(), pack.folder())
+	f := newFixture(pack.client)
+	f.scanSourceFolders(t, cfg)
+	outside := filepath.Join(filepath.Dir(pack.sourceDir), "outside")
+	pack.moveSeasonFolder(t, outside, outside)
+	fetched := false
+
+	outcome := f.processor.Match(t.Context(), f.client(t, "default", cfg), pack.name, TorrentFetch(func(context.Context) ([]byte, error) {
+		fetched = true
+		return pack.torrent, nil
+	}))
+
+	assert.ErrorIs(t, outcome.Err, ErrNoSourceOnDisk)
+	assert.Equal(t, domain.StatusFailedMatchToTorrentEps, outcome.Status)
+	assert.False(t, fetched)
+	dropped := f.log.Events(t).RequireField(t, "client episode file is not reusable", "source",
+		filepath.Join(pack.seasonFolder(), pack.episodeFile(1)))
+	assert.Equal(t, "outside_source_folder", dropped["reason"])
+	assert.Equal(t, "source_folder", dropped["source_kind"])
+}

@@ -108,6 +108,12 @@ code of the real binary.
   operations. They assert the outcome, the files on disk and their inodes, the
   calls of the fake client, and the log lines. A test that removes a file after
   the scan proves that the candidate check reads no filesystem.
+- The source folder tests that replace a folder of a listed path with a
+  symlink after the scan (`moveSeasonFolder`) cover the containment rule of a
+  hardlink source. The test of the verified link in
+  `internal/placement/placement_test.go` sets the unexported hook
+  `beforeSourceLink`, so it changes the path between the open of the source
+  and the link call. Production leaves the hook nil.
 - `fixtures_test.go` holds the fakes and fixtures that more than one test file
   of the package uses. A fake that one file uses stays in that file.
 - `internal/torrentclient/torrentclienttest` holds the fake torrent client

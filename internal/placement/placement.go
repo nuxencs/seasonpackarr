@@ -50,6 +50,9 @@ type PlannedLink struct {
 	Source string
 	// TorrentPath is the path of the file in the torrent, as torrents.File gives it.
 	TorrentPath string
+	// SourceFolder is the source folder whose scan listed Source, and is empty for a source of a torrent. Link refuses
+	// a source whose path does not resolve below it, with an error that wraps ErrSourceOutsideSourceFolder.
+	SourceFolder string
 }
 
 // LinkStatus is the result class of one planned hardlink.
@@ -182,7 +185,11 @@ func (p Placement) openRoot(create bool) (*os.Root, error) {
 
 func (p Placement) link(rootDir *os.Root, link PlannedLink) Outcome {
 	target := p.target(link.TorrentPath)
-	if err := hardlink(rootDir, link.Source, target); err != nil {
+	if err := hardlink(rootDir, link, target); err != nil {
+		// A refused source is a plain failed link, also when the path names no file.
+		if errors.Is(err, ErrSourceOutsideSourceFolder) {
+			return Outcome{Err: err}
+		}
 		if _, statErr := os.Stat(link.Source); errors.Is(statErr, fs.ErrNotExist) {
 			return Outcome{Status: SourceMissing, Err: err}
 		}
@@ -210,14 +217,20 @@ func (p Placement) target(torrentPath string) hardlinkTarget {
 	return hardlinkTarget{rel: rel, path: filepath.Join(p.destination.root, rel)}
 }
 
-// hardlink links source to target below rootDir. os.Root makes the target
-// folders, because it rejects a symlink that leaves the root. The link call
-// uses the full path, because os.Root can link only when both names are below
-// the root, and the source is not.
-func hardlink(rootDir *os.Root, source string, target hardlinkTarget) error {
+// hardlink links the source of link to target below rootDir. os.Root makes the
+// target folders, because it rejects a symlink that leaves the root. The link
+// call uses the full path, because os.Root can link only when both names are
+// below the root, and the source is not. A source of a source folder gets the
+// verified link. A source of a torrent is linked as its path resolves, because
+// the client reads and writes the data of the torrent through the same path.
+func hardlink(rootDir *os.Root, link PlannedLink, target hardlinkTarget) error {
 	if err := rootDir.MkdirAll(filepath.Dir(target.rel), 0o755); err != nil {
 		return errtrace.WithStack(err)
 	}
+	if link.SourceFolder != "" {
+		return verifiedHardlink(rootDir, link, target)
+	}
+	source := link.Source
 
 	// A hardlink from an earlier attempt is also success, but another file at
 	// the target stays a conflict.
