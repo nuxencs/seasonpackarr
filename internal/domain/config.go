@@ -7,7 +7,11 @@ package domain
 import (
 	"slices"
 	"strings"
+	"time"
 )
+
+// MinSourceFolderScanInterval is the shortest Config.SourceFolderScanInterval that the config load accepts.
+const MinSourceFolderScanInterval = time.Minute
 
 type Client struct {
 	Type     string       `yaml:"type" env:"TYPE"`
@@ -203,10 +207,12 @@ type Config struct {
 	LogMaxBackups      int                `yaml:"logMaxBackups" env:"LOG_MAX_BACKUPS" default:"3"`
 	SmartMode          bool               `yaml:"smartMode" env:"SMART_MODE"`
 	SmartModeThreshold float32            `yaml:"smartModeThreshold" env:"SMART_MODE_THRESHOLD" default:"0.75"`
-	FuzzyMatching      FuzzyMatching      `yaml:"fuzzyMatching"`
-	APIToken           string             `yaml:"apiToken" env:"API_TOKEN"`
-	Notifications      Notifications      `yaml:"notifications"`
-	Search             Search             `yaml:"search"`
+	// SourceFolderScanInterval is the time between two scans of the source folders, as duration text.
+	SourceFolderScanInterval string        `yaml:"sourceFolderScanInterval" env:"SOURCE_FOLDER_SCAN_INTERVAL" default:"15m"`
+	FuzzyMatching            FuzzyMatching `yaml:"fuzzyMatching"`
+	APIToken                 string        `yaml:"apiToken" env:"API_TOKEN"`
+	Notifications            Notifications `yaml:"notifications"`
+	Search                   Search        `yaml:"search"`
 }
 
 // Clone copies the lists, the client map, and each client, so the copy shares no memory with c.

@@ -91,6 +91,14 @@ code of the real binary.
   enter through `Store.ReadAtStartup`, the entry of the startup task, with a real
   temporary folder. They assert only the log lines: the line of each scan, the
   warnings, and the file count of each client. No test reads a scan result.
+- The scan schedule tests (`internal/inventory/sourcefolder_schedule_test.go`)
+  run `Store.ReadAtStartup` and `Store.ScheduleSourceFolderScans` as the server
+  does, in a `testing/synctest` bubble, so the timer uses the virtual clock. A
+  reload stores the new snapshot and calls `Store.CleanUp`, as the reload
+  parties of `start` do. The tests assert the scan lines. Until a stage reads
+  the files, a test that must see a kept or dropped result reads the file count
+  of the startup log line (`sourceFolderFiles`), and the parse test counts the
+  calls of the parse function of the store.
 - `fixtures_test.go` holds the fakes and fixtures that more than one test file
   of the package uses. A fake that one file uses stays in that file.
 - `internal/torrentclient/torrentclienttest` holds the fake torrent client
@@ -121,7 +129,8 @@ code of the real binary.
   - Without a config file and a config directory, the database goes below the
     `XDG_DATA_HOME` of the passed environment.
   - The startup read scans the source folders of the config and logs the
-    file count of each folder and each client.
+    file count of each folder and each client. A reload with a new folder
+    starts a scan of it.
 
   The reload case also requires that the reload drops the client connection
   of the startup inventory read. Thus it fails when `start` does not watch the

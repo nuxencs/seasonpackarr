@@ -278,9 +278,10 @@ clients:
     sourceFolders: [ "/data/media/tv", "/data/media/anime" ]
 ```
 
-| Setting | Meaning |
-| --- | --- |
-| `clients.<name>.sourceFolders` | Absolute paths of the source folders of this client. Each client type supports them. The inventory scope does not apply to them. |
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `clients.<name>.sourceFolders` | `[]` | Absolute paths of the source folders of this client. Each client type supports them. The inventory scope does not apply to them. |
+| `sourceFolderScanInterval` | `"15m"` | Time between two scans of the source folders of all clients, at least `"1m"`. See [Scan interval](#scan-interval). |
 
 - Each path must be absolute. A relative path or an empty entry stops the load, also at a
   [config reload](#config-reload). seasonpackarr cleans each path (`/data/tv/` becomes `/data/tv`) and removes a path
@@ -301,10 +302,21 @@ clients:
 
   Two clients with the same path share one scan of the folder.
 
-seasonpackarr scans the source folders one time at startup. A request never waits for the scan: before the scan of a
-folder is complete, that folder supplies no file. After each scan, the log has one line with the folder, the number of
-episode files, and the duration. The line `client inventory ready` of a client with source folders also has the number
-of episode files from its source folders (`source_folder_files`). A changed folder list applies at the next start.
+seasonpackarr scans the source folders at startup, and then again each `sourceFolderScanInterval`. A request never
+waits for a scan: before the first scan of a folder is complete, that folder supplies no file. After each scan, the log
+has one line with the folder, the number of episode files, and the duration. The line `client inventory ready` of a
+client with source folders also has the number of episode files from its source folders (`source_folder_files`).
+
+- One scan runs at a time, and it reads one folder at a time. A scan that must start while another scan runs starts
+  when that scan ends.
+- A complete scan of a folder replaces the last result of that folder in one step.
+- When seasonpackarr cannot read the folder itself, for example because a mount is gone for a short time, the scan
+  logs a warning and keeps the last result. A folder that was missing at startup counts after the first scan that can
+  read it, with no restart.
+- A scan parses only the file names that the last scan of the folder did not have. This includes the names that the
+  last scan did not keep.
+- A [config reload](#config-reload) applies a changed folder list and a changed interval with no restart. A new folder
+  gets a scan at once. The result of a folder that no client names is dropped.
 
 The scan uses these rules:
 
@@ -317,6 +329,16 @@ The scan uses these rules:
   not kept.
 - It reads names only, not the file size or the file content.
 - It logs a subfolder that it cannot read, skips it, and keeps the rest of the scan.
+
+### Scan interval
+
+A file that arrives in a source folder counts at the latest one `sourceFolderScanInterval` after it arrived. The next
+scan starts one interval after the end of the last scan, also after a long scan at startup. Each scan reads the folder
+tree, so the disks of the folders cannot spin down while a scan runs. For a large library on disks that spin down, set
+a longer interval, for example `"6h"`.
+
+A changed interval applies at the config reload. The next scan then starts one new interval after the end of the last
+scan. When that time is in the past, the next scan starts at once.
 
 In this version, seasonpackarr scans the source folders and logs the result, but the candidate check, the match, and
 discovery do not use the files yet.
@@ -455,7 +477,7 @@ sets `host`. On other systems, write the names in upper case, as this guide show
 
 - Top-level settings: `SEASONPACKARR__HOST`, `SEASONPACKARR__PORT`, `SEASONPACKARR__API_TOKEN`,
   `SEASONPACKARR__LOG_LEVEL`, `SEASONPACKARR__LOG_PATH`, `SEASONPACKARR__LOG_MAX_SIZE`, `SEASONPACKARR__LOG_MAX_BACKUPS`,
-  `SEASONPACKARR__SMART_MODE`, `SEASONPACKARR__SMART_MODE_THRESHOLD`.
+  `SEASONPACKARR__SMART_MODE`, `SEASONPACKARR__SMART_MODE_THRESHOLD`, `SEASONPACKARR__SOURCE_FOLDER_SCAN_INTERVAL`.
 - Fuzzy matching: `SEASONPACKARR__FUZZY_MATCHING_SKIP_REPACK_COMPARE`,
   `SEASONPACKARR__FUZZY_MATCHING_SIMPLIFY_HDR_COMPARE`, `SEASONPACKARR__FUZZY_MATCHING_SIMPLIFY_WEB_COMPARE`,
   `SEASONPACKARR__FUZZY_MATCHING_SKIP_YEAR_COMPARE`.
@@ -501,7 +523,8 @@ The error names the setting or the variable. It does not show the value, because
   torrent.
 - After seasonpackarr merges `config.yaml` and the environment variables, it checks the ranges: `port` from `1` to
   `65535`, `logMaxSize` at least `1`, `logMaxBackups` at least `0`, `smartModeThreshold` greater than `0` and at
-  most `1`, and `clients.<name>.port` from `0` to `65535`. The ranges apply to both sources.
+  most `1`, `sourceFolderScanInterval` a duration of at least `1m`, and `clients.<name>.port` from `0` to `65535`. The
+  ranges apply to both sources.
 - Each client must have a `host` that its client type can connect to. An empty `host` stops the load. A Deluge `host`
   must be a hostname or IP address, so a URL scheme (`http://`), user info (`user@`), or a path stops the load. For
   qBittorrent and Transmission, a `host` that does not parse as a URL, a URL with no host name such as
@@ -526,12 +549,13 @@ seasonpackarr logs the error and keeps the last valid config.
 
 These settings apply without a restart:
 
-- torrent client connections, import policies, and inventory scopes
+- torrent client connections, import policies, inventory scopes, and source folders
 - API token
 - smart mode and fuzzy matching
 - notification destinations and notification levels
 - log level
 - Prowlarr connection, request spacing, and RSS interval
+- source folder scan interval
 
 These settings need a restart:
 
@@ -540,8 +564,8 @@ These settings need a restart:
 - `SEASONPACKARR__DISABLE_CONFIG_FILE`
 
 When a reload removes a client or changes its connection, import, inventory, or source folder settings, seasonpackarr
-drops the cached connection and inventory of that client. The next request connects again. A changed source folder
-list gets its scan at the next start.
+drops the cached connection and inventory of that client. The next request connects again. A new source folder gets a
+scan at once, and the scan result of a folder that no client names is dropped.
 
 When you remove an optional setting, it returns to its default. A running search or RSS run keeps the config it started
 with. A changed RSS interval sets the time of the next automatic run.

@@ -61,11 +61,23 @@ func ParseEpisodeName(path string) (*rls.Release, bool) {
 	return &parsed, true
 }
 
+// HasEpisodeVideoExt reports whether path has the container of an episode video, mkv or mp4 in any letter case.
+// ParseEpisodeName rejects each other path before it calls the release parser.
+func HasEpisodeVideoExt(path string) bool {
+	_, ok := episodeVideoExt(path)
+	return ok
+}
+
+func episodeVideoExt(path string) (string, bool) {
+	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
+	return ext, ext == "mkv" || ext == "mp4"
+}
+
 // parseEpisodeVideo accepts an mkv or mp4 episode that is not a sample, and gives the container in lower case. It
 // checks the container before it calls the release parser, so other files stay on the cheap path.
 func parseEpisodeVideo(path string) (rls.Release, string, bool) {
-	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
-	if ext != "mkv" && ext != "mp4" {
+	ext, ok := episodeVideoExt(path)
+	if !ok {
 		return rls.Release{}, "", false
 	}
 

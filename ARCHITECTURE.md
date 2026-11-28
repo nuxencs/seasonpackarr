@@ -30,9 +30,10 @@
       store.
    8. It creates the Prowlarr discovery source, `discovery.New`, from the
       store and the logger.
-   9. It starts the HTTP server with the source. The server starts two lifecycle
-      tasks: the search schedule, and the startup read of the inventory module,
-      which also scans the source folders one time.
+   9. It starts the HTTP server with the source. The server starts three
+      lifecycle tasks: the search schedule, the startup read of the inventory
+      module, which also makes the first scan of the source folders, and the
+      scan schedule of the inventory module.
 
    Signal cancellation starts a bounded graceful shutdown. The command closes
    the store after server shutdown.
@@ -150,6 +151,7 @@
 - The inventory module keeps the parsed torrent names of each client endpoint and inventory scope separately from the inventory. An import discards the inventory, but the next scan parses only new names. A scan also reuses the names of the other scopes of its endpoint, so a name in two scopes is parsed once.
 - At startup, a server lifecycle task runs the startup read of the inventory module. It reads the inventory of each client once, so the first announce does not log in or parse every name. Clients of one endpoint share the parsed names. The task tries a client that is not ready up to four times, 10 seconds apart, then only logs a warning.
 - Beside the client reads, the startup read scans each source folder of the first snapshot one time, one folder at a time, and stops with the signal context. One scan result exists for each folder path, so clients with the same path share it. The scan walks the whole tree, skips each name that starts with a dot, follows no symlink below the folder, and reads names only. It keeps a regular `mkv` or `mp4` file only when `release.ParseEpisodeName` accepts its name, which is the rule of `release.ParseEpisodeFile` for the files of a torrent. A folder that it cannot read is a warning with the folder and the client, and a subfolder that it cannot read is logged and skipped. A finished scan replaces the result of its folder in one step, and a request never waits for a scan. The line `client inventory ready` of a client with source folders waits for the scan and counts their files. The candidate check, the match, the import, and discovery do not read the files yet.
+- The scan schedule (`Store.ScheduleSourceFolderScans`) scans each source folder again one `sourceFolderScanInterval` after the end of the last full scan, which can be the startup scan. One scan runs at a time, so the schedule checks the due time again after it waits for a running scan. A scan that cannot read the folder itself keeps the last result, and a folder that was missing counts after the first scan that can read it. A scan takes the parsed release of each known path from the last result, and remembers the `mkv` and `mp4` names that the parser rejected, so it parses only new names. The clean-up of a config reload drops the result of each folder that no client names and signals the schedule, which then applies a changed interval and scans each folder that has no scan yet at once. A scan that ends after a clean-up dropped its folder stores no result.
 - After each config reload, the inventory clean-up party of `start` runs the clean-up of the inventory module. It drops the cached connection and inventory of each client that the config no longer has or configures differently, and the parsed names of endpoints and inventory scopes that no client uses. A scan that overlaps this clean-up adds no new parsed-name key, so it cannot restore a removed one. It closes the Deluge connection of a dropped client. A request that still holds that client connects again.
 - Only an accepted match produces an import plan. One function decides the coverage rule of smart mode, for the planned coverage of a plan build and for the achieved coverage after the hardlinks. A rejected match keeps no plan. It returns its coverage when the torrent episodes were matched.
 - The processor keeps the import plan of an accepted match for 2 minutes, for both callers. No plan value crosses its interface. The import normally performs no second inventory or file-detail reads.

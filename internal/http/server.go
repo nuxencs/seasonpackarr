@@ -36,7 +36,7 @@ type Server struct {
 	// both share its import plans and its endpoint import locks.
 	processor *seasonpack.Processor
 	search    *searchRunner
-	// lifecycleTasks holds the search schedule and the startup inventory read.
+	// lifecycleTasks holds the search schedule, the startup inventory read, and the source folder scan schedule.
 	// Shutdown cancels them first, so they cannot hold the HTTP drain.
 	lifecycleTasks *taskGroup
 
@@ -69,6 +69,9 @@ func (s *Server) Open(ctx context.Context) error {
 	})
 	s.lifecycleTasks.Go(func(warmCtx context.Context) {
 		s.inv.ReadAtStartup(warmCtx, s.cfg)
+	})
+	s.lifecycleTasks.Go(func(scanCtx context.Context) {
+		s.inv.ScheduleSourceFolderScans(scanCtx, s.cfg)
 	})
 	defer s.lifecycleTasks.cancel()
 	var err error

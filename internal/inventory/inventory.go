@@ -43,8 +43,20 @@ type Store struct {
 	connections map[string]connection
 	inventories map[string]*slot
 	parsed      map[parsedNamesKey]parsedNames
-	// sourceFiles holds the last finished scan of each source folder path. Clients with the same path share it.
-	sourceFiles map[string][]sourceFile
+	// folderScans holds the last finished scan of each source folder path that a scan tried. Clients with the same
+	// path share it.
+	folderScans map[string]folderScan
+	// fullScanEnded is the end of the last scan of all folders, zero before the first one.
+	fullScanEnded time.Time
+	// namedFolders holds the source folders of the config of the last clean-up, and is nil before the first one. A
+	// scan that ends after a clean-up stores no result for a folder that the clean-up dropped.
+	namedFolders map[string]struct{}
+	// scanning lets one scan run at a time. It is a channel and not a mutex, so synctest sees a waiting scan as blocked.
+	scanning chan struct{}
+	// reloaded tells the scan schedule about a clean-up, so it scans each new folder at once.
+	reloaded chan struct{}
+	// parseEpisodeName is release.ParseEpisodeName. A test can count the parses.
+	parseEpisodeName func(path string) (*rls.Release, bool)
 	// cleanUps counts the clean-ups. A read that overlaps a clean-up adds no
 	// parsed-name key, because the clean-up can have removed that key as unused.
 	cleanUps uint64
@@ -104,7 +116,11 @@ func New(connect ConnectFunc, log logger.Logger) *Store {
 		connections: make(map[string]connection),
 		inventories: make(map[string]*slot),
 		parsed:      make(map[parsedNamesKey]parsedNames),
-		sourceFiles: make(map[string][]sourceFile),
+		folderScans: make(map[string]folderScan),
+		scanning:    make(chan struct{}, 1),
+		reloaded:    make(chan struct{}, 1),
+
+		parseEpisodeName: release.ParseEpisodeName,
 	}
 }
 

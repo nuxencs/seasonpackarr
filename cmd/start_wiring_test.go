@@ -403,20 +403,23 @@ func TestStartCommand_AppliesReloadedConfig(t *testing.T) {
 	}), "the reload did not drop the connection of the removed client")
 }
 
-// TestStartCommand_ScansSourceFoldersAtStartup fails when the server does not run the startup read of the inventory
-// that has the source folders of the config.
-func TestStartCommand_ScansSourceFoldersAtStartup(t *testing.T) {
+// TestStartCommand_ScansSourceFoldersAtStartupAndAfterAReload fails when the server does not run the startup read of
+// the inventory that has the source folders of the config, or when the scan schedule does not get the reload.
+func TestStartCommand_ScansSourceFoldersAtStartupAndAfterAReload(t *testing.T) {
 	dir := t.TempDir()
 	port := reservePort(t)
 	logPath := filepath.Join(dir, "seasonpackarr.log")
-	folder := t.TempDir()
-	for _, name := range []string{"Series.S01E01.1080p.WEB-DL-GRP.mkv", "Season 01/Series.S01E02.1080p.WEB-DL-GRP.mkv"} {
-		path := filepath.Join(folder, name)
+	folder, added := t.TempDir(), t.TempDir()
+	for _, path := range []string{
+		filepath.Join(folder, "Series.S01E01.1080p.WEB-DL-GRP.mkv"),
+		filepath.Join(folder, "Season 01", "Series.S01E02.1080p.WEB-DL-GRP.mkv"),
+		filepath.Join(added, "Series.S01E03.1080p.WEB-DL-GRP.mkv"),
+	} {
 		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
 		require.NoError(t, os.WriteFile(path, nil, 0o600))
 	}
-	clients := newQbitClientConfig(t) + fmt.Sprintf("    sourceFolders: [%q]\n", folder)
-	writeConfig(t, dir, newStartConfig(port, startTestToken, logPath, clients))
+	qbit := newQbitClientConfig(t)
+	writeConfig(t, dir, newStartConfig(port, startTestToken, logPath, qbit+fmt.Sprintf("    sourceFolders: [%q]\n", folder)))
 
 	runStart(t, dir, port)
 
@@ -430,6 +433,14 @@ func TestStartCommand_ScansSourceFoldersAtStartup(t *testing.T) {
 			return event.Message == "client inventory ready" && event.ClientName == "default" && event.SourceFolderFiles == 2
 		})
 	}), "the startup read did not count the source folder files of the client")
+
+	writeConfig(t, dir, newStartConfig(port, startTestToken, logPath, qbit+fmt.Sprintf("    sourceFolders: [%q, %q]\n", folder, added)))
+
+	assert.True(t, waitFor(conditionWait, func() bool {
+		return hasLogEvent(t, logPath, func(event logEvent) bool {
+			return event.Message == "source folder scanned" && event.Folder == added && event.EpisodeFiles == 1
+		})
+	}), "the reload did not start a scan of the new folder")
 }
 
 func TestStartCommand_ShutsDownWhenContextEnds(t *testing.T) {

@@ -299,3 +299,44 @@ func TestReload_RejectsRelativeSourceFolder(t *testing.T) {
 	assert.Contains(t, rejection, `"data/tv" is not an absolute path`)
 	assert.Equal(t, before, cfg.Snapshot())
 }
+
+func TestLoad_SourceFolderScanIntervalHasADefaultAndAMinimum(t *testing.T) {
+	tests := map[string]struct {
+		file    string
+		environ []string
+		want    string
+		wantErr bool
+	}{
+		"default":               {want: "15m"},
+		"minimum":               {file: "sourceFolderScanInterval: 1m\n", want: "1m"},
+		"longer, from the file": {file: "sourceFolderScanInterval: 6h\n", want: "6h"},
+		"from the environment":  {environ: []string{"SEASONPACKARR__SOURCE_FOLDER_SCAN_INTERVAL=2h"}, want: "2h"},
+		"below the minimum":     {file: "sourceFolderScanInterval: 59s\n", wantErr: true},
+		"zero":                  {environ: []string{"SEASONPACKARR__SOURCE_FOLDER_SCAN_INTERVAL=0s"}, wantErr: true},
+		"negative":              {file: "sourceFolderScanInterval: -15m\n", wantErr: true},
+		"not a duration":        {file: "sourceFolderScanInterval: often\n", wantErr: true},
+		"number without a unit": {file: "sourceFolderScanInterval: 15\n", wantErr: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := loadWithFile(t, tt.file+"clients: {}\n", tt.environ...)
+
+			if tt.wantErr {
+				require.ErrorContains(t, err, "sourceFolderScanInterval (SEASONPACKARR__SOURCE_FOLDER_SCAN_INTERVAL) must be a duration of at least 1m")
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, cfg.SourceFolderScanInterval)
+		})
+	}
+}
+
+func TestReload_RejectsSourceFolderScanIntervalBelowTheMinimum(t *testing.T) {
+	cfg, configFile := newTestAppConfig(t, "sourceFolderScanInterval: 30m\nclients: {}\n")
+	before := cfg.Snapshot()
+
+	rejection := reloadWithFile(t, cfg, configFile, "sourceFolderScanInterval: 30s\nclients: {}\n")
+
+	assert.Contains(t, rejection, "sourceFolderScanInterval (SEASONPACKARR__SOURCE_FOLDER_SCAN_INTERVAL) must be a duration of at least 1m")
+	assert.Equal(t, before, cfg.Snapshot())
+}

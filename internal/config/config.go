@@ -168,7 +168,8 @@ clients:
 
     # Source Folders
     # Absolute paths of folders whose episode files join the inventory of this client, for example a library of Usenet downloads.
-    # seasonpackarr reads the release name of each file from its file name only, and reads the folders one time at startup.
+    # seasonpackarr reads the release name of each file from its file name only. It scans the folders at startup and then
+    # each sourceFolderScanInterval.
     # A folder that does not exist gives a warning, not an error. Read the configuration guide before you add a folder.
     #
     # Optional
@@ -234,6 +235,14 @@ clients:
   #  import:
   #    savePath: "/data/torrents/tv-hd"
   #    tags: [ "seasonpackarr" ]
+
+# Source Folder Scan Interval
+# Time between two scans of the source folders of all clients. Minimum: 1m.
+# A longer interval lets the disks of a large library spin down between the scans.
+#
+# Default: "15m"
+#
+# sourceFolderScanInterval: "15m"
 
 # seasonpackarr logs file
 # If not defined, logs to stdout
@@ -686,6 +695,9 @@ func validateConfig(cfg domain.Config) error {
 	// The negated form also rejects NaN, which every comparison fails.
 	if !(cfg.SmartModeThreshold > 0 && cfg.SmartModeThreshold <= 1) {
 		return errors.New("smartModeThreshold (SEASONPACKARR__SMART_MODE_THRESHOLD) must be greater than 0 and at most 1")
+	}
+	if interval, err := time.ParseDuration(cfg.SourceFolderScanInterval); err != nil || interval < domain.MinSourceFolderScanInterval {
+		return errors.New("sourceFolderScanInterval (SEASONPACKARR__SOURCE_FOLDER_SCAN_INTERVAL) must be a duration of at least 1m, for example \"15m\"")
 	}
 	if err := validateSearch(cfg.Search); err != nil {
 		return err

@@ -55,6 +55,11 @@
       "maximum": 1,
       "default": 0.75
     },
+    "sourceFolderScanInterval": {
+      "type": "string",
+      "description": "Go duration between two scans of the source folders. Must be at least 1m.",
+      "default": "15m"
+    },
     "fuzzyMatching": {
       "$ref": "#/$defs/fuzzyMatching"
     },

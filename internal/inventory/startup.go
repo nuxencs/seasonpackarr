@@ -38,7 +38,7 @@ func (s *Store) ReadAtStartup(ctx context.Context, cfg config.Provider) {
 	scanned := make(chan struct{})
 	wg.Go(func() {
 		defer close(scanned)
-		s.scanSourceFolders(ctx, snapshot)
+		s.scanSourceFolders(ctx, snapshot, allFolders)
 	})
 	// One goroutine for each endpoint, so a client that times out does not delay the others.
 	for _, names := range endpoints {
