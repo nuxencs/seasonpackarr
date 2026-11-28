@@ -95,10 +95,16 @@ code of the real binary.
   run `Store.ReadAtStartup` and `Store.ScheduleSourceFolderScans` as the server
   does, in a `testing/synctest` bubble, so the timer uses the virtual clock. A
   reload stores the new snapshot and calls `Store.CleanUp`, as the reload
-  parties of `start` do. The tests assert the scan lines. Until a stage reads
-  the files, a test that must see a kept or dropped result reads the file count
-  of the startup log line (`sourceFolderFiles`), and the parse test counts the
-  calls of the parse function of the store.
+  parties of `start` do. The tests assert the scan lines. A test that must see a kept or dropped
+  result reads the file count of the startup log line (`sourceFolderFiles`),
+  and the parse test counts the calls of the parse function of the store.
+- The source folder tests of the season pack processor
+  (`candidate_sourcefolder_test.go`, `match_sourcefolder_test.go`,
+  `import_sourcefolder_test.go` in `internal/seasonpack/`) scan a real
+  temporary folder through `Store.ReadAtStartup`, then call the three
+  operations. They assert the outcome, the files on disk and their inodes, the
+  calls of the fake client, and the log lines. A test that removes a file after
+  the scan proves that the candidate check reads no filesystem.
 - `fixtures_test.go` holds the fakes and fixtures that more than one test file
   of the package uses. A fake that one file uses stays in that file.
 - `internal/torrentclient/torrentclienttest` holds the fake torrent client

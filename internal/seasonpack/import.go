@@ -12,6 +12,8 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/placement"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
+
+	"github.com/rs/zerolog"
 )
 
 // Import makes the hardlinks of the import plan and imports the season pack
@@ -186,18 +188,25 @@ func (c *call) createPlanHardlinks(plan importPlan, importDestination placement.
 	outcomes := placement.New(plan.info, importDestination).Link(plan.links)
 	for index, outcome := range outcomes {
 		source := plan.links[index].Source
+		_, fromFolder := plan.folderSources[source]
+		withKind := func(event *zerolog.Event) *zerolog.Event {
+			if fromFolder {
+				return markSourceFolder(event)
+			}
+			return event
+		}
 		switch outcome.Status {
 		case placement.Linked:
-			c.log.Info().Msgf("created or reused hardlink: source(%s), target(%s)", source, outcome.Target)
+			withKind(c.log.Info()).Msgf("created or reused hardlink: source(%s), target(%s)", source, outcome.Target)
 			result.linkedCount++
 		case placement.SourceMissing:
 			result.sourceMissing = true
-			c.log.Warn().
+			withKind(c.log.Warn()).
 				Err(outcome.Err).
 				Str("source", source).
 				Msg("hardlink source is missing")
 		default:
-			c.log.Error().Err(outcome.Err).Msgf("error creating hardlink: %s", source)
+			withKind(c.log.Error()).Err(outcome.Err).Msgf("error creating hardlink: %s", source)
 		}
 	}
 	return result

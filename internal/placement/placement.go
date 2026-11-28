@@ -75,6 +75,11 @@ type Outcome struct {
 	Err error
 }
 
+// ErrDifferentFilesystems is the cause of a failed link whose source and import root are on different filesystems. A
+// hardlink cannot cross a filesystem, so a source folder or a torrent save path must be on the filesystem of the
+// import root.
+var ErrDifferentFilesystems = errors.New("the hardlink source and the import root are on different filesystems")
+
 // Placement is one torrent at one destination.
 type Placement struct {
 	info        torrents.Info
@@ -218,7 +223,7 @@ func hardlink(rootDir *os.Root, source string, target hardlinkTarget) error {
 	// the target stays a conflict.
 	if err := os.Link(source, target.path); err != nil {
 		if !errors.Is(err, fs.ErrExist) {
-			return errtrace.WithStack(err)
+			return errtrace.WithStack(linkError(err))
 		}
 
 		sourceInfo, sourceErr := os.Stat(source)
@@ -235,4 +240,13 @@ func hardlink(rootDir *os.Root, source string, target hardlinkTarget) error {
 	}
 
 	return nil
+}
+
+// linkError names the cause of a failed link between two filesystems, because the text of the system is not clear
+// about it.
+func linkError(err error) error {
+	if errors.Is(err, errNotSameDevice) {
+		return fmt.Errorf("%w: %w", ErrDifferentFilesystems, err)
+	}
+	return err
 }

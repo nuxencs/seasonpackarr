@@ -340,8 +340,77 @@ a longer interval, for example `"6h"`.
 A changed interval applies at the config reload. The next scan then starts one new interval after the end of the last
 scan. When that time is in the past, the next scan starts at once.
 
-In this version, seasonpackarr scans the source folders and logs the result, but the candidate check, the match, and
-discovery do not use the files yet.
+### How seasonpackarr uses the files
+
+The candidate check, the match, and the import use the files of the source folders as they use the episodes of the
+torrents in the client. A compatible file is hardlinked into the pack folder, and only the missing data downloads.
+
+- The candidate check reads the result of the last scan only. It reads no file on disk.
+- A file never gives status `210` (already in client), because only a torrent proves that the client has the pack.
+- The match reads each candidate file one time. The file is reused only when it is a regular file with the size of the
+  file in the torrent. A file that was removed or replaced after the last scan is dropped with the log line
+  `client episode file is not reusable` and the field `source_kind` set to `source_folder`. The coverage rule then
+  accepts or rejects the pack.
+- When a torrent and a file supply the same episode, the torrent wins.
+- [Smart mode](#smart-mode) counts the files of the source folders in the coverage.
+- RSS monitoring and search make their search groups from the torrents of the client only, and the search report does
+  not count the files. When discovery checks a listing, its match also uses the files of the source folders.
+
+### File names
+
+seasonpackarr reads the season, the episode, and the [release variant](../GLOSSARY.md) of a file from its file name
+only. A file gives a hardlink only when its name holds the same release variant as the season pack: the resolution, the
+source, the release group, the HDR formats, the streaming service, and the other properties of the
+[fuzzy matching](#fuzzy-matching) compare. A name that does not hold them gives no match. This costs an extra download,
+never a wrong hardlink.
+
+| Format | Example file name | Result |
+| --- | --- | --- |
+| Scene style | `Series.Title.S01E02.1080p.WEB-DL.DDP5.1.H.264-GRP.mkv` | Matches a pack such as `Series.Title.S01.1080p.WEB-DL.DDP5.1.H.264-GRP`. |
+| TRaSH naming format | `Series Title (2023) - S01E02 - Episode Title [AMZN WEBDL-1080p][DV HDR10][EAC3 5.1][h265]-GRP.mkv` | Matches a pack with the same resolution, source, release group, HDR formats, and streaming service, such as `Series.Title.2023.S01.1080p.AMZN.WEB-DL.DDP5.1.DV.HDR10.H.265-GRP`. For a pack name with no year, see [Years in file names](#years-in-file-names). |
+| Default Sonarr format | `Series Title (2023) - S01E02 - Episode Title WEBDL-1080p.mkv` | No match. The name has no release group, and seasonpackarr reads `1080p` as the release group and finds no resolution. Use a naming format with the release group, for example the TRaSH format. |
+| Obfuscated name | `a3f9c1e07b2d4e8f9a0b.mkv` | Ignored. The name has no episode. |
+
+### Years in file names
+
+A file name with a year (`Series Title (2023) - S01E02 ...`) is of another season than a pack name with no year
+(`Series.Title.S01...`). To let such files match, set
+[`fuzzyMatching.skipYearCompare`](#fuzzy-matching) to `true`. The setting is global: it applies to the torrents of
+each client too, and not only to the files of source folders.
+
+### One filesystem
+
+A hardlink cannot go from one filesystem to another. Each source folder must be on the filesystem of the import root
+of its client. When they are on different filesystems, the import fails for those files, and the error text says that
+the hardlink source and the import root are on different filesystems.
+
+With Docker, a hardlink also cannot go from one bind mount to another, even on the same disk. Mount one parent folder
+that holds the source folders and the import root, for example `/data`, and use paths below it:
+
+```yaml
+volumes:
+  - /mnt/storage/data:/data
+```
+
+Then use `/data/media/tv` as the source folder and `/data/torrents/tv` as the import root.
+
+### Permissions
+
+Linux protects hardlinks (`fs.protected_hardlinks`): a process can make a hardlink to a file only when it owns the
+file, or when it can read and write the file. Thus seasonpackarr must own each file of a source folder, or have read
+and write access to it. A file that another user owns with read access only gives a failed hardlink. Run seasonpackarr
+with the user or the group of the tool that writes the files, for example the same `PUID` and `PGID` as Sonarr.
+
+### Risks
+
+- **A pack that you removed comes back.** A file stays in its source folder after you remove its torrent from the
+  client. When an announce offers the pack again, seasonpackarr imports it again. Remove the files too, or remove their
+  folder from the list.
+- **A failed data check writes into the source file.** The torrent client checks the hardlinked data. When the check
+  fails, the client downloads the bad pieces and writes them through the hardlink into the source file. This can occur
+  when a file has the size of the file in the torrent but other data, for example another encode with the same size.
+- **No folder for incomplete downloads.** Do not use a folder for incomplete downloads, for example the download folder
+  of a Usenet client, as a source folder. A file there can be incomplete or can move at any time.
 
 ## Smart mode
 
@@ -352,9 +421,9 @@ Smart mode rejects a season pack when too few of its episodes are already on dis
 | `smartMode` | `false` | Turns smart mode on. |
 | `smartModeThreshold` | `0.75` | The minimum coverage that a pack needs. Greater than `0` and at most `1`. |
 
-Coverage is the share of distinct episode files in the torrent that seasonpackarr can reuse from the client. MKV and MP4
-episodes count. Samples, extra videos, and files with a different container do not count. seasonpackarr reads the
-episode count from the torrent and uses no external episode database.
+Coverage is the share of distinct episode files in the torrent that seasonpackarr can reuse from the client and from its
+[source folders](#source-folders). MKV and MP4 episodes count. Samples, extra videos, and files with a different
+container do not count. seasonpackarr reads the episode count from the torrent and uses no external episode database.
 
 Example: the torrent has 12 episode files and the client has 8 reusable episodes. The coverage is `8/12 = 0.67`, so a
 threshold of `0.75` rejects the pack. Coverage cannot go above 100 percent, even when the client has more episodes than

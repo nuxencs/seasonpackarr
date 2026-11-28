@@ -32,6 +32,43 @@ type folderScan struct {
 	files []sourceFile
 	// rejected holds the video paths whose names the parser rejected, so the next scan does not parse them again.
 	rejected map[string]struct{}
+	// seasons holds the file entries grouped by season, for each fuzzy matching setting that a read used. A read
+	// fills it, and Store.mu guards it.
+	seasons map[domain.FuzzyMatching]map[release.SeasonKey][]Entry
+}
+
+// withFiles returns inv with the files of the last finished scan of each source folder of c, grouped with the fuzzy
+// matching settings of c. It reads no filesystem.
+func (s *Store) withFiles(inv *Inventory, c *Client) *Inventory {
+	folders := c.config.SourceFolders
+	if len(folders) == 0 {
+		return inv
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	folderSeasons := make([]map[release.SeasonKey][]Entry, 0, len(folders))
+	for _, folder := range folders {
+		if scan, ok := s.folderScans[folder]; ok && len(scan.files) > 0 {
+			folderSeasons = append(folderSeasons, scan.seasonsLocked(c.fuzzy))
+		}
+	}
+	return &Inventory{seasons: inv.seasons, torrents: inv.torrents, folderSeasons: folderSeasons}
+}
+
+// seasonsLocked returns the file entries grouped by the season keys of fuzzy, and groups them on the first call. The
+// receiver is a copy from Store.folderScans, and the copies share the seasons map, so the store keeps the groups. It
+// needs Store.mu.
+func (scan folderScan) seasonsLocked(fuzzy domain.FuzzyMatching) map[release.SeasonKey][]Entry {
+	if grouped, ok := scan.seasons[fuzzy]; ok {
+		return grouped
+	}
+	grouped := make(map[release.SeasonKey][]Entry)
+	for _, file := range scan.files {
+		key := release.SeasonKeyOf(file.release, fuzzy)
+		grouped[key] = append(grouped[key], Entry{File: file.path, Release: file.release})
+	}
+	scan.seasons[fuzzy] = grouped
+	return grouped
 }
 
 // scanScope selects the folders of a scan.
@@ -224,7 +261,10 @@ func (s *Store) walkSourceFolder(ctx context.Context, root string, previous fold
 		known[path] = nil
 	}
 
-	scan := folderScan{rejected: make(map[string]struct{})}
+	scan := folderScan{
+		rejected: make(map[string]struct{}),
+		seasons:  make(map[domain.FuzzyMatching]map[release.SeasonKey][]Entry),
+	}
 	// os.DirFS follows a symlink at root, and fs.WalkDir follows no symlink below it, so a link loop or a link out of
 	// the tree adds no file.
 	err := fs.WalkDir(os.DirFS(root), ".", func(name string, entry fs.DirEntry, err error) error {

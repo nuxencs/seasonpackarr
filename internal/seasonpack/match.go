@@ -18,6 +18,8 @@ import (
 	"github.com/nuxencs/seasonpackarr/internal/release"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 	"github.com/nuxencs/seasonpackarr/internal/torrents"
+
+	"github.com/rs/zerolog"
 )
 
 // importPlan is the result of an accepted match. Only buildPlan makes one, so
@@ -27,7 +29,9 @@ type importPlan struct {
 	hashes       torrents.Hashes
 	info         torrents.Info
 	links        []placement.PlannedLink
-	totalEps     int
+	// folderSources holds the link sources that are files of a source folder, for the log lines of the import.
+	folderSources map[string]struct{}
+	totalEps      int
 }
 
 func (plan importPlan) coverage() Coverage {
@@ -115,21 +119,36 @@ func (c *call) buildPlan(ctx context.Context, torrent Torrent) (importPlan, []re
 		return importPlan{}, nil, outcome
 	}
 
+	folderFiles := make(map[string]struct{})
+	for _, candidate := range candidates {
+		if candidate.IsFile() {
+			folderFiles[candidate.File] = struct{}{}
+		}
+	}
 	matchResult := release.NewEpisodeMatcher(parsed.episodes).Match(sources)
 	links := make([]placement.PlannedLink, 0, len(matchResult.Matches))
+	var folderSources map[string]struct{}
 	for _, match := range matchResult.Matches {
 		links = append(links, placement.PlannedLink{
 			Source:      match.ClientPath,
 			TorrentPath: match.TorrentPath,
 		})
+		// A torrent file at the path of a folder file is the same file, so the kind of the path does not matter.
+		if _, ok := folderFiles[match.ClientPath]; ok {
+			if folderSources == nil {
+				folderSources = make(map[string]struct{})
+			}
+			folderSources[match.ClientPath] = struct{}{}
+		}
 	}
 
 	plan := importPlan{
-		torrentBytes: parsed.bytes,
-		hashes:       parsed.hashes,
-		info:         parsed.info,
-		links:        links,
-		totalEps:     len(parsed.episodes),
+		torrentBytes:  parsed.bytes,
+		hashes:        parsed.hashes,
+		info:          parsed.info,
+		links:         links,
+		folderSources: folderSources,
+		totalEps:      len(parsed.episodes),
 	}
 	coverage := plan.coverage()
 	switch {
@@ -203,10 +222,34 @@ func parseTorrent(data []byte) (parsedTorrent, Outcome) {
 	return parsedTorrent{bytes: data, hashes: hashes, info: torrentInfo, episodes: eligibleEps}, Outcome{Status: domain.StatusSuccessfulMatch}
 }
 
-// readSources reads the episode file of each candidate from the client and
-// keeps the files that are on disk. The error holds each failed file-detail
-// read. A file that is not on disk is no error.
+// readSources reads the episode file of each candidate and keeps the files that are on disk. The torrent sources come
+// before the file sources, because the episode matcher keeps the first source of a target, so a torrent wins over a
+// file of a source folder. The error holds each failed file-detail read. A file that is not on disk is no error.
 func (c *call) readSources(ctx context.Context, candidates []inventory.Entry) ([]release.EpisodeFile, error) {
+	var torrentCandidates, fileCandidates []inventory.Entry
+	for _, candidate := range candidates {
+		if candidate.IsFile() {
+			fileCandidates = append(fileCandidates, candidate)
+		} else {
+			torrentCandidates = append(torrentCandidates, candidate)
+		}
+	}
+
+	sources, err := c.readTorrentSources(ctx, torrentCandidates)
+	for _, candidate := range fileCandidates {
+		if source, ok := c.sourceFolderFile(candidate.File); ok {
+			sources = append(sources, source)
+		}
+	}
+	return sources, err
+}
+
+// readTorrentSources reads the episode file of each torrent candidate from the client and keeps the files that are on
+// disk. It makes no client call when there is no torrent candidate.
+func (c *call) readTorrentSources(ctx context.Context, candidates []inventory.Entry) ([]release.EpisodeFile, error) {
+	if len(candidates) == 0 {
+		return nil, nil
+	}
 	var failures []error
 	hashes := make([]string, len(candidates))
 	for index, candidate := range candidates {
@@ -257,8 +300,26 @@ func (c *call) onDisk(source release.EpisodeFile) bool {
 	if err == nil && info.Mode().IsRegular() && info.Size() == source.Size() {
 		return true
 	}
+	logNotReusable(c.log.Info(), source.Path(), info, err, source.Size())
+	return false
+}
 
-	event := c.log.Info().Str("source", source.Path())
+// sourceFolderFile reads the file of a source folder with one stat call. The file is a source only when it is a
+// regular file, and its size is the size on disk. The call does not follow a symlink, because the scan follows none
+// below a source folder, and a hardlink of a symlink links the symlink itself on Linux.
+func (c *call) sourceFolderFile(path string) (release.EpisodeFile, bool) {
+	info, err := os.Lstat(path)
+	if err == nil && info.Mode().IsRegular() {
+		// The scan accepted the name with the same rule (release.ParseEpisodeName), so the parse cannot fail here.
+		return release.ParseEpisodeFile(path, info.Size())
+	}
+	logNotReusable(markSourceFolder(c.log.Info()), path, info, err, 0)
+	return release.EpisodeFile{}, false
+}
+
+// logNotReusable logs why the episode file at path is not reusable. info and err are the result of its stat call.
+func logNotReusable(event *zerolog.Event, path string, info fs.FileInfo, err error, wantSize int64) {
+	event = event.Str("source", path)
 	switch {
 	case err != nil:
 		event = event.Str("reason", "missing")
@@ -270,11 +331,10 @@ func (c *call) onDisk(source release.EpisodeFile) bool {
 		event = event.Str("reason", "not_regular_file")
 	default:
 		event = event.Str("reason", "size_mismatch").
-			Int64("want_size", source.Size()).
+			Int64("want_size", wantSize).
 			Int64("got_size", info.Size())
 	}
 	event.Msg("client episode file is not reusable")
-	return false
 }
 
 func episodeFileFromFiles(files []torrentclient.File, savePath string) (release.EpisodeFile, error) {
