@@ -53,6 +53,17 @@ previous poll finishes. There is no startup run. Searches run only when you star
 `requestInterval` sets the minimum time between requests to Prowlarr, including
 indexer discovery, RSS polls, searches, and torrent retrieval across
 runs. Default and minimum: `"10s"`.
+
+The query gap is a second rule for each indexer. Two queries to one indexer
+are at least 60 seconds apart. A query is one page of a search or one page of
+an RSS feed. The gap starts when the indexer answers the last query and holds
+from one run to the next, so a search directly after an RSS poll waits for the
+rest of the gap. A query waits until both rules allow it. The gap has no
+setting. It does not apply to indexer discovery or to torrent retrieval, and
+queries to two different indexers are only `requestInterval` apart. A search
+sends the queries of one search group to each indexer in turn, so one search
+group costs about one gap, not one gap for each indexer. The service keeps the
+gap in memory only, and a canceled run ends the wait at once without a cooldown.
 A failed feed request skips that indexer for the rest of the run. Temporary failures
 also create a cooldown that applies to searches and RSS polls:
 

@@ -182,6 +182,13 @@
     and the order of an RSS poll: prune, save, read back to the checkpoint, set
     the checkpoint, save, then yield. `Run.ClientUnreadable` makes the run save
     no feed state.
+  - The source owns the query gap of 60 seconds: each search page or feed page
+    to one indexer starts at least 60 seconds after the answer of the last
+    query to that indexer. The last query time of each indexer is in memory
+    in the source, so the gap holds from one run to the next, but not across a
+    restart. The request spacing of the Prowlarr client also applies. Indexer
+    discovery and torrent downloads do not wait for the gap. A canceled wait
+    returns at once, adds no failure, and records no cooldown.
   - `Listing.Torrent` gets the torrent bytes of a listing one time, from the
     torrent cache or by one download. Its errors match `ErrDownload` or
     `ErrDatabase`, or are the error of a canceled context.
@@ -226,7 +233,8 @@
   and rebuild decisions from current inputs.
 - Each run keeps one config snapshot and applies the configured indexer allowlist.
   RSS selects RSS-capable indexers; targeted search selects searchable indexers.
-  Both modes share one connection whose request spacing survives across runs.
+  Both modes share one connection whose request spacing survives across runs,
+  and one query gap for each indexer.
 - SQLite retains retry deadlines across runs and restarts. HTTP 429, temporary HTTP
   errors, and transport failures start a cooldown for the affected indexer.
   Discovery failures start a cooldown for the whole Prowlarr connection.

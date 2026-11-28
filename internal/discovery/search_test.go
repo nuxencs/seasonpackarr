@@ -17,28 +17,30 @@ import (
 )
 
 func TestSearch_RequestsPagesOnDemand(t *testing.T) {
-	f := newSourceFixture(t)
-	f.prowlarr.listings = map[int][]string{1: {"Show.S01E01", "Show.S01E02", "Show.S01", "Show.S01E03", "Show.S01E04"}}
-	run := f.begin(t, discovery.KindSearch)
-	indexer := usableIndexers(t, run)[1]
+	synctest.Test(t, func(t *testing.T) {
+		f := newSourceFixture(t)
+		f.prowlarr.listings = map[int][]string{1: {"Show.S01E01", "Show.S01E02", "Show.S01", "Show.S01E03", "Show.S01E04"}}
+		run := f.begin(t, discovery.KindSearch)
+		indexer := usableIndexers(t, run)[1]
 
-	var seen []string
-	for listing := range run.Search(t.Context(), indexer, showQuery) {
-		seen = append(seen, listing.Title())
-		assert.Equal(t, 1, listing.IndexerID())
-		if listing.Title() == "Show.S01" {
-			break
+		var seen []string
+		for listing := range run.Search(t.Context(), indexer, showQuery) {
+			seen = append(seen, listing.Title())
+			assert.Equal(t, 1, listing.IndexerID())
+			if listing.Title() == "Show.S01" {
+				break
+			}
 		}
-	}
 
-	assert.Equal(t, []string{"Show.S01E01", "Show.S01E02", "Show.S01"}, seen)
-	pages := f.requestsTo("/1/api")
-	if assert.Len(t, pages, 2, "the search must request no page after the caller stops") {
-		assert.Equal(t, "0", pages[0].Query.Get("offset"))
-		assert.Equal(t, "2", pages[1].Query.Get("offset"))
-		assert.Equal(t, "Show S01", pages[0].Query.Get("q"))
-	}
-	assert.Empty(t, run.Failures())
+		assert.Equal(t, []string{"Show.S01E01", "Show.S01E02", "Show.S01"}, seen)
+		pages := f.requestsTo("/1/api")
+		if assert.Len(t, pages, 2, "the search must request no page after the caller stops") {
+			assert.Equal(t, "0", pages[0].Query.Get("offset"))
+			assert.Equal(t, "2", pages[1].Query.Get("offset"))
+			assert.Equal(t, "Show S01", pages[0].Query.Get("q"))
+		}
+		assert.Empty(t, run.Failures())
+	})
 }
 
 func TestSearch_PageStops(t *testing.T) {
@@ -90,18 +92,20 @@ func TestSearch_PageStops(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			f := newSourceFixture(t)
-			f.prowlarr.listings = map[int][]string{tt.indexerID: tt.listings}
-			f.prowlarr.respond = tt.respond
-			run := f.begin(t, discovery.KindSearch)
-			indexer := usableIndexers(t, run)[tt.indexerID]
+			synctest.Test(t, func(t *testing.T) {
+				f := newSourceFixture(t)
+				f.prowlarr.listings = map[int][]string{tt.indexerID: tt.listings}
+				f.prowlarr.respond = tt.respond
+				run := f.begin(t, discovery.KindSearch)
+				indexer := usableIndexers(t, run)[tt.indexerID]
 
-			got := titles(run.Search(t.Context(), indexer, showQuery))
+				got := titles(run.Search(t.Context(), indexer, showQuery))
 
-			assert.Equal(t, tt.wantTitles, got)
-			assert.Len(t, f.requestsTo(fmt.Sprintf("/%d/api", tt.indexerID)), tt.wantPages)
-			assert.Equal(t, tt.wantFailures, run.Failures())
-			assert.Equal(t, tt.wantPages, run.Stats().FeedPages)
+				assert.Equal(t, tt.wantTitles, got)
+				assert.Len(t, f.requestsTo(fmt.Sprintf("/%d/api", tt.indexerID)), tt.wantPages)
+				assert.Equal(t, tt.wantFailures, run.Failures())
+				assert.Equal(t, tt.wantPages, run.Stats().FeedPages)
+			})
 		})
 	}
 }
@@ -156,66 +160,74 @@ func TestSearch_CooldownsAcrossRuns(t *testing.T) {
 
 // TestSearch_ElapsedRetryAfterSkipsRestOfRun covers rule 2 for a download.
 func TestSearch_ElapsedRetryAfterSkipsRestOfRun(t *testing.T) {
-	for name, header := range map[string]string{
-		"seconds":   "0",
-		"http date": time.Now().Add(-time.Hour).UTC().Format(http.TimeFormat),
+	// The header is made in the bubble, because the virtual clock starts at its own time.
+	for name, header := range map[string]func() string{
+		"seconds":   func() string { return "0" },
+		"http date": func() string { return time.Now().Add(-time.Hour).UTC().Format(http.TimeFormat) },
 	} {
 		t.Run(name, func(t *testing.T) {
-			f := newSourceFixture(t)
-			f.prowlarr.listings = map[int][]string{1: {"Show.S01", "Show.S01.REPACK"}}
-			f.prowlarr.respond = at("/1/download", func() *http.Response { return cooldownResponse(http.StatusTooManyRequests, header) })
+			synctest.Test(t, func(t *testing.T) {
+				header := header()
+				f := newSourceFixture(t)
+				f.prowlarr.listings = map[int][]string{1: {"Show.S01", "Show.S01.REPACK"}}
+				f.prowlarr.respond = at("/1/download", func() *http.Response { return cooldownResponse(http.StatusTooManyRequests, header) })
 
-			run := f.begin(t, discovery.KindSearch)
-			indexer := usableIndexers(t, run)[1]
-			assert.Equal(t, []string{"Show.S01"}, searchAll(t, run, indexer))
-			assert.Empty(t, titles(run.Search(t.Context(), indexer, showQuery)))
-			run.End()
-			require.Len(t, f.requestsTo("/1/download"), 1, "do not download more listings after a failure")
-			require.Len(t, f.requestsTo("/1/api"), 1)
+				run := f.begin(t, discovery.KindSearch)
+				indexer := usableIndexers(t, run)[1]
+				assert.Equal(t, []string{"Show.S01"}, searchAll(t, run, indexer))
+				assert.Empty(t, titles(run.Search(t.Context(), indexer, showQuery)))
+				run.End()
+				require.Len(t, f.requestsTo("/1/download"), 1, "do not download more listings after a failure")
+				require.Len(t, f.requestsTo("/1/api"), 1)
 
-			run = f.begin(t, discovery.KindSearch)
-			indexers := usableIndexers(t, run)
-			assert.Empty(t, run.Failures())
-			require.Contains(t, indexers, 1)
-			searchAll(t, run, indexers[1])
-			assert.Len(t, f.requestsTo("/1/download"), 2, "an elapsed deadline must not block a later run")
+				run = f.begin(t, discovery.KindSearch)
+				indexers := usableIndexers(t, run)
+				assert.Empty(t, run.Failures())
+				require.Contains(t, indexers, 1)
+				searchAll(t, run, indexers[1])
+				assert.Len(t, f.requestsTo("/1/download"), 2, "an elapsed deadline must not block a later run")
+			})
 		})
 	}
 }
 
 // TestSearch_FailedPageTakesIndexerOutForRun covers rule 3.
 func TestSearch_FailedPageTakesIndexerOutForRun(t *testing.T) {
-	f := newSourceFixture(t)
-	f.prowlarr.listings = map[int][]string{1: {"Show.S01"}, 2: {"Show.S01"}}
-	f.prowlarr.respond = at("/1/api", func() *http.Response { return response(http.StatusBadRequest, "") })
+	synctest.Test(t, func(t *testing.T) {
+		f := newSourceFixture(t)
+		f.prowlarr.listings = map[int][]string{1: {"Show.S01"}, 2: {"Show.S01"}}
+		f.prowlarr.respond = at("/1/api", func() *http.Response { return response(http.StatusBadRequest, "") })
 
-	run := f.begin(t, discovery.KindSearch)
-	indexers := usableIndexers(t, run)
-	assert.Empty(t, titles(run.Search(t.Context(), indexers[1], showQuery)))
-	assert.Empty(t, titles(run.Search(t.Context(), indexers[1], discovery.Query{Title: "Other", Season: 2})))
-	assert.Equal(t, []string{"Show.S01"}, titles(run.Search(t.Context(), indexers[2], showQuery)), "other indexers must stay usable")
-	run.End()
-	assert.Equal(t, []discovery.Failure{{IndexerID: 1, Query: "Show S01", Reason: "Prowlarr returned HTTP 400"}}, run.Failures())
-	assert.Len(t, f.requestsTo("/1/api"), 1)
+		run := f.begin(t, discovery.KindSearch)
+		indexers := usableIndexers(t, run)
+		assert.Empty(t, titles(run.Search(t.Context(), indexers[1], showQuery)))
+		assert.Empty(t, titles(run.Search(t.Context(), indexers[1], discovery.Query{Title: "Other", Season: 2})))
+		assert.Equal(t, []string{"Show.S01"}, titles(run.Search(t.Context(), indexers[2], showQuery)), "other indexers must stay usable")
+		run.End()
+		assert.Equal(t, []discovery.Failure{{IndexerID: 1, Query: "Show S01", Reason: "Prowlarr returned HTTP 400"}}, run.Failures())
+		assert.Len(t, f.requestsTo("/1/api"), 1)
 
-	f.prowlarr.respond = nil
-	run = f.begin(t, discovery.KindSearch)
-	indexers = usableIndexers(t, run)
-	assert.Empty(t, run.Failures(), "nothing must be stored")
-	assert.Equal(t, []string{"Show.S01"}, titles(run.Search(t.Context(), indexers[1], showQuery)), "the next run must use the indexer again")
-	assert.Len(t, f.requestsTo("/1/api"), 2)
+		f.prowlarr.respond = nil
+		run = f.begin(t, discovery.KindSearch)
+		indexers = usableIndexers(t, run)
+		assert.Empty(t, run.Failures(), "nothing must be stored")
+		assert.Equal(t, []string{"Show.S01"}, titles(run.Search(t.Context(), indexers[1], showQuery)), "the next run must use the indexer again")
+		assert.Len(t, f.requestsTo("/1/api"), 2)
+	})
 }
 
 func TestSearch_DownloadCooldownOnLastPageAddsNoBudgetFailure(t *testing.T) {
-	f := newSourceFixture(t)
-	many := episodeTitles(25)
-	f.prowlarr.listings = map[int][]string{1: many}
-	// The last listing of page 10.
-	f.prowlarr.respond = atTitle(many[19], func() *http.Response { return cooldownResponse(http.StatusTooManyRequests, "7200") })
-	run := f.begin(t, discovery.KindSearch)
+	synctest.Test(t, func(t *testing.T) {
+		f := newSourceFixture(t)
+		many := episodeTitles(25)
+		f.prowlarr.listings = map[int][]string{1: many}
+		// The last listing of page 10.
+		f.prowlarr.respond = atTitle(many[19], func() *http.Response { return cooldownResponse(http.StatusTooManyRequests, "7200") })
+		run := f.begin(t, discovery.KindSearch)
 
-	got := searchAll(t, run, usableIndexers(t, run)[1])
+		got := searchAll(t, run, usableIndexers(t, run)[1])
 
-	assert.Equal(t, many[:20], got)
-	assert.Empty(t, run.Failures())
+		assert.Equal(t, many[:20], got)
+		assert.Empty(t, run.Failures())
+	})
 }

@@ -154,7 +154,8 @@ func TestCLI_SearchPreviewAndImport(t *testing.T) {
 	binary := buildCLI(t)
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	for _, mode := range []string{"discovery", "verify", "import"} {
-		if mode == "import" {
+		// A new server has no query gap from the run before, so the test waits no real time.
+		if mode != "discovery" {
 			f.restart(t)
 		}
 		server := httptest.NewServer(f.handler)

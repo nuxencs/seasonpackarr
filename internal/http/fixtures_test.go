@@ -85,6 +85,23 @@ func (f *fakeConfig) Store(config domain.Config) {
 	f.config = config
 }
 
+// fakeProwlarrHost is the Prowlarr host of the search fixture. Its requests
+// stay in process, so a search test can run in a testing/synctest bubble.
+const fakeProwlarrHost = "prowlarr.invalid"
+
+// fakeProwlarrTransport serves the requests to fakeProwlarrHost with handler.
+// It sends other requests over the network, so a refused connection stays real.
+type fakeProwlarrTransport struct{ handler stdhttp.Handler }
+
+func (f *fakeProwlarrTransport) RoundTrip(r *stdhttp.Request) (*stdhttp.Response, error) {
+	if r.URL.Host != fakeProwlarrHost || f.handler == nil {
+		return stdhttp.DefaultTransport.RoundTrip(r)
+	}
+	recorder := httptest.NewRecorder()
+	f.handler.ServeHTTP(recorder, r)
+	return recorder.Result(), nil
+}
+
 type processorHTTPFixture struct {
 	search    *searchRunner
 	inventory *inventory.Store
@@ -101,6 +118,8 @@ type processorHTTPFixture struct {
 	importDir     string
 	notifications *fakeNotificationSender
 	tasks         *taskGroup
+	// prowlarr is the transport of the discovery source. It survives a restart.
+	prowlarr *fakeProwlarrTransport
 }
 
 // fixtureOptions sets the season pack and the client inventory that a fixture
@@ -183,7 +202,8 @@ func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFix
 		noti = opts.noti
 	}
 	inv := inventory.New(connector.connect, log)
-	server := NewServer(log, cfg, noti, discovery.New(store, log, nil), inv)
+	prowlarrTransport := &fakeProwlarrTransport{}
+	server := NewServer(log, cfg, noti, discovery.New(store, log, prowlarrTransport), inv)
 	return processorHTTPFixture{
 		search:        server.search,
 		inventory:     inv,
@@ -199,6 +219,7 @@ func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFix
 		importDir:     importDir,
 		notifications: notifications,
 		tasks:         server.tasks,
+		prowlarr:      prowlarrTransport,
 	}
 }
 
@@ -332,7 +353,7 @@ func newSearchFixture(t *testing.T, opts fixtureOptions) *searchFixture {
 	t.Helper()
 	f := &searchFixture{processorHTTPFixture: newProcessorHTTPFixture(t, opts)}
 	f.titles = []string{f.releaseName}
-	server := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	f.prowlarr.handler = stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		if r.Header.Get("X-Api-Key") != "prowlarr-test-key" {
 			w.WriteHeader(401)
 			return
@@ -383,10 +404,9 @@ func newSearchFixture(t *testing.T, opts fixtureOptions) *searchFixture {
 			return
 		}
 		w.WriteHeader(404)
-	}))
-	t.Cleanup(server.Close)
+	})
 	cfg := f.config.Snapshot()
-	cfg.Search = domain.Search{ProwlarrURL: server.URL, APIKey: "prowlarr-test-key", RSSInterval: "0s", RequestInterval: "0s"}
+	cfg.Search = domain.Search{ProwlarrURL: "http://" + fakeProwlarrHost, APIKey: "prowlarr-test-key", RSSInterval: "0s", RequestInterval: "0s"}
 	f.config.Store(cfg)
 	f.connector.use("", &fakeSearchClient{Client: f.torrentClient})
 	return f
@@ -430,7 +450,7 @@ func (f *processorHTTPFixture) restart(t *testing.T) {
 	f.store = store
 	// A restart starts with no client connections, no inventories, and no Prowlarr connection.
 	f.inventory = inventory.New(f.connector.connect, f.search.log)
-	server := NewServer(f.search.log, f.config, f.notifications, discovery.New(store, f.search.log, nil), f.inventory)
+	server := NewServer(f.search.log, f.config, f.notifications, discovery.New(store, f.search.log, f.prowlarr), f.inventory)
 	f.search, f.handler, f.tasks = server.search, server.Handler(), server.tasks
 }
 

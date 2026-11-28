@@ -274,26 +274,28 @@ func TestRun_DatabaseFailureEndsSequences(t *testing.T) {
 }
 
 func TestStats_MatchesProwlarrRequests(t *testing.T) {
-	f := newSourceFixture(t)
-	f.prowlarr.listings = map[int][]string{1: {"A", "B", "C"}, 2: {"Show.S01", "Show.S01.REPACK"}}
-	f.fetchFirst(t)
-	f.prowlarr.requests = nil
-	run := f.begin(t, discovery.KindSearch)
-	indexers := usableIndexers(t, run)
+	synctest.Test(t, func(t *testing.T) {
+		f := newSourceFixture(t)
+		f.prowlarr.listings = map[int][]string{1: {"A", "B", "C"}, 2: {"Show.S01", "Show.S01.REPACK"}}
+		f.fetchFirst(t)
+		f.prowlarr.requests = nil
+		run := f.begin(t, discovery.KindSearch)
+		indexers := usableIndexers(t, run)
 
-	searchAll(t, run, indexers[2])
-	searchAll(t, run, indexers[1])
+		searchAll(t, run, indexers[2])
+		searchAll(t, run, indexers[1])
 
-	var pages, downloads int
-	for _, request := range f.prowlarr.requests {
-		switch {
-		case strings.HasSuffix(request.Path, "/download"):
-			downloads++
-		case request.Path != "/api/v1/indexer":
-			pages++
+		var pages, downloads int
+		for _, request := range f.prowlarr.requests {
+			switch {
+			case strings.HasSuffix(request.Path, "/download"):
+				downloads++
+			case request.Path != "/api/v1/indexer":
+				pages++
+			}
 		}
-	}
-	want := discovery.Stats{FeedPages: 3, Downloads: 4, CacheHits: 1}
-	assert.Equal(t, want, run.Stats())
-	assert.Equal(t, discovery.Stats{FeedPages: pages, Downloads: downloads, CacheHits: 1}, run.Stats())
+		want := discovery.Stats{FeedPages: 3, Downloads: 4, CacheHits: 1}
+		assert.Equal(t, want, run.Stats())
+		assert.Equal(t, discovery.Stats{FeedPages: pages, Downloads: downloads, CacheHits: 1}, run.Stats())
+	})
 }

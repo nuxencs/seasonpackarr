@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
@@ -50,24 +51,26 @@ func TestRSS_PollsEachIndexerOnceAndRejectsBeforeDownload(t *testing.T) {
 }
 
 func TestRSS_ImportsOneVariantAcrossTrackersAndManualSearch(t *testing.T) {
-	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
-	preview := f.runExact(t, true)
-	require.Empty(t, preview.Failures)
-	require.Equal(t, "would_import", preview.Outcomes[0].Status)
-	require.Equal(t, "rejected", preview.Outcomes[1].Status)
-	require.Zero(t, f.torrentClient.ImportCalls)
-	report := f.runRSS(t)
-	require.Empty(t, report.Failures)
-	require.Equal(t, "imported", report.Outcomes[0].Status)
-	require.Equal(t, "rejected", report.Outcomes[1].Status)
-	require.Equal(t, 1, f.torrentClient.ImportCalls)
-	require.Equal(t, 1, f.downloads, "the RSS import uses the cached torrent of the verified preview")
-	for _, next := range []searchReport{f.runRSS(t), f.runExact(t, false)} {
-		require.Zero(t, next.Requests)
-		require.Zero(t, next.TorrentDownloads)
-		require.Equal(t, 1, next.CoveredEpisodeTorrents)
-	}
-	require.Equal(t, 1, f.torrentClient.ImportCalls)
+	synctest.Test(t, func(t *testing.T) {
+		f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
+		preview := f.runExact(t, true)
+		require.Empty(t, preview.Failures)
+		require.Equal(t, "would_import", preview.Outcomes[0].Status)
+		require.Equal(t, "rejected", preview.Outcomes[1].Status)
+		require.Zero(t, f.torrentClient.ImportCalls)
+		report := f.runRSS(t)
+		require.Empty(t, report.Failures)
+		require.Equal(t, "imported", report.Outcomes[0].Status)
+		require.Equal(t, "rejected", report.Outcomes[1].Status)
+		require.Equal(t, 1, f.torrentClient.ImportCalls)
+		require.Equal(t, 1, f.downloads, "the RSS import uses the cached torrent of the verified preview")
+		for _, next := range []searchReport{f.runRSS(t), f.runExact(t, false)} {
+			require.Zero(t, next.Requests)
+			require.Zero(t, next.TorrentDownloads)
+			require.Equal(t, 1, next.CoveredEpisodeTorrents)
+		}
+		require.Equal(t, 1, f.torrentClient.ImportCalls)
+	})
 }
 
 func TestRSS_ImportedPackSendsRSSNotification(t *testing.T) {
@@ -154,32 +157,34 @@ func TestRSS_ExistingPackSuppressesOnlyMatchingVariant(t *testing.T) {
 }
 
 func TestRSS_UnavailableClientDoesNotLoseFeedEntries(t *testing.T) {
-	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 1, threshold: 1})
-	cfg := f.config.Snapshot()
-	cfg.Search.IndexerIDs = []int{1}
-	otherCfg := cfg.Clients["default"].Clone()
-	otherCfg.Host = "http://independent:8080"
-	cfg.Clients["other"] = &otherCfg
-	f.config.Store(cfg)
-	other := &torrentclienttest.Client{Torrents: []torrentclient.Torrent{{Name: "Other.Show.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "other"}}}
-	f.connector.use(otherCfg.Host, other)
-	f.pages, f.pageSize = true, 1
-	f.titles = []string{"Old.S01.1080p.WEB-DL.H.264-RlsGrp"}
-	f.runRSS(t)
-	other.TorrentsErr = errors.New("client unavailable")
-	f.titles = append([]string{"Newest.S01.1080p.WEB-DL.H.264-RlsGrp", "Other.Show.S01.1080p.WEB-DL.H.264-RlsGrp"}, f.titles...)
-	partial := f.runRSS(t)
-	require.Len(t, partial.Failures, 1)
-	require.Equal(t, "other", partial.Failures[0].ClientName)
-	f.restart(t)
-	other.TorrentsErr = nil
-	recovered := f.runRSS(t)
-	require.Empty(t, recovered.Failures)
-	require.Equal(t, 3, recovered.Requests)
-	require.Len(t, recovered.Outcomes, 1)
-	require.Equal(t, "other", recovered.Outcomes[0].ClientName)
-	require.Equal(t, "rejected", recovered.Outcomes[0].Status)
-	require.Contains(t, recovered.Outcomes[0].Reason, "no accessible episode files")
+	synctest.Test(t, func(t *testing.T) {
+		f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 1, threshold: 1})
+		cfg := f.config.Snapshot()
+		cfg.Search.IndexerIDs = []int{1}
+		otherCfg := cfg.Clients["default"].Clone()
+		otherCfg.Host = "http://independent:8080"
+		cfg.Clients["other"] = &otherCfg
+		f.config.Store(cfg)
+		other := &torrentclienttest.Client{Torrents: []torrentclient.Torrent{{Name: "Other.Show.S01E01.1080p.WEB-DL.H.264-RlsGrp", Hash: "other"}}}
+		f.connector.use(otherCfg.Host, other)
+		f.pages, f.pageSize = true, 1
+		f.titles = []string{"Old.S01.1080p.WEB-DL.H.264-RlsGrp"}
+		f.runRSS(t)
+		other.TorrentsErr = errors.New("client unavailable")
+		f.titles = append([]string{"Newest.S01.1080p.WEB-DL.H.264-RlsGrp", "Other.Show.S01.1080p.WEB-DL.H.264-RlsGrp"}, f.titles...)
+		partial := f.runRSS(t)
+		require.Len(t, partial.Failures, 1)
+		require.Equal(t, "other", partial.Failures[0].ClientName)
+		f.restart(t)
+		other.TorrentsErr = nil
+		recovered := f.runRSS(t)
+		require.Empty(t, recovered.Failures)
+		require.Equal(t, 3, recovered.Requests)
+		require.Len(t, recovered.Outcomes, 1)
+		require.Equal(t, "other", recovered.Outcomes[0].ClientName)
+		require.Equal(t, "rejected", recovered.Outcomes[0].Status)
+		require.Contains(t, recovered.Outcomes[0].Reason, "no accessible episode files")
+	})
 }
 
 func TestRSS_CheckpointWriteFailureDoesNotImport(t *testing.T) {

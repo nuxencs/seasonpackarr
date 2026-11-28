@@ -50,7 +50,9 @@ code of the real binary.
   fake Prowlarr received, and the log lines. A test that
   waits for a deadline runs in a `testing/synctest` bubble and moves the
   virtual clock with `time.Sleep`. Examples are the end of a cooldown, the
-  retention time of a retained listing, and the request spacing.
+  retention time of a retained listing, the request spacing, and the query
+  gap. Each test that sends two queries to one indexer runs in a bubble, or it
+  waits 60 real seconds for the query gap.
 - The discovery run tests in `internal/http/` (`search_test.go`,
   `search_cooldown_test.go`, `search_persistence_test.go`, and `rss_test.go`)
   assert what the run adds to the source: the outcomes, the imports, the
@@ -62,7 +64,10 @@ code of the real binary.
   a source rule have their test in `internal/discovery/` only. A database
   failure test closes the store through the fixture that opened it
   (`processorHTTPFixture.store`). A test that cannot assert its fact without a
-  read of the source shows a gap in the interface of the source.
+  read of the source shows a gap in the interface of the source. The search
+  fixture serves its fake Prowlarr in process (`fakeProwlarrTransport`), so a
+  test that sends two queries to one indexer runs in a `testing/synctest`
+  bubble. Requests to other hosts go over the network.
 - Tests that drive several files through one entry point live with the entry
   point. HTTP endpoint tests live in `internal/http/webhook_test.go`.
 - The tests of the candidate check, the match, and the import live in
@@ -379,7 +384,9 @@ The search test:
   the size as `length` and the torrent MIME type, and the category `5040`.
 - seasonpackarr spaces its Prowlarr requests by 10 seconds, the minimum of
   `search.requestInterval`. One search sends three requests: indexer
-  discovery, the search, and the torrent download.
+  discovery, the search, and the torrent download. A second query to the
+  indexer waits for the query gap of 60 real seconds, so each test sends one
+  query to the indexer.
 - RSS monitoring has no end-to-end test. Its minimum interval is 10 minutes,
   and it has no startup poll (ADR-0003).
 
