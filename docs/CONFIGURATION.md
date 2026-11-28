@@ -303,10 +303,11 @@ clients:
   Two clients with the same path share one scan of the folder.
 
 seasonpackarr scans the source folders at startup, then again each `sourceFolderScanInterval`, and at the start of each
-[search](PROWLARR.md#search). Only the search waits for its scan. Another request never waits for a scan: before the
-first scan of a folder is complete, that folder supplies no file. After each scan, the log has one line with the folder,
-the number of episode files, and the duration. The line `client inventory ready` of a client with source folders also
-has the number of episode files from its source folders (`source_folder_files`).
+[search](PROWLARR.md#search). Only the search waits for its scan, and it stops the wait when the search request ends.
+Another request never waits for a scan: before the first scan of a folder is complete, that folder supplies no file.
+After each scan, the log has one line with the folder, the number of episode files, and the duration. The line
+`client inventory ready` of a client with source folders also has the number of episode files from its source folders
+(`source_folder_files`).
 
 - One scan runs at a time, and it reads one folder at a time. A scan that must start while another scan runs starts
   when that scan ends.
@@ -333,8 +334,9 @@ The scan uses these rules:
 
 ### Scan interval
 
-A file that arrives in a source folder counts at the latest one `sourceFolderScanInterval` after it arrived. The next
-scan starts one interval after the end of the last scan, also after a long scan at startup. Each scan reads the folder
+A file that arrives in a source folder counts when the next scan of its folder is complete. The next scan starts one
+`sourceFolderScanInterval` after the end of the last scan, also after a long scan at startup. Thus a file can wait for
+one interval and the duration of up to two scans: the rest of a running scan, and the next scan. Each scan reads the folder
 tree, so the disks of the folders cannot spin down while a scan runs. For a large library on disks that spin down, set
 a longer interval, for example `"6h"`.
 

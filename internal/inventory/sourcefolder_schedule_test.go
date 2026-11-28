@@ -363,6 +363,9 @@ func TestScanSourceFolders_ReturnsWhenTheContextEndsDuringAStalledWalk(t *testin
 		writeSourceFile(t, root, keptEpisode)
 		const stalledName = "Series.S01E02.1080p.WEB-DL-GRP.mkv"
 		unblock := make(chan struct{})
+		unblockWalk := sync.OnceFunc(func() { close(unblock) })
+		// A failed check must not leave the walk blocked, because the bubble ends only when its goroutines end.
+		defer unblockWalk()
 		scans := newScheduledScans(folderConfig("15m", root))
 		scans.store.parseEpisodeName = func(path string) (*rls.Release, bool) {
 			if filepath.Base(path) == stalledName {
@@ -400,7 +403,7 @@ func TestScanSourceFolders_ReturnsWhenTheContextEndsDuringAStalledWalk(t *testin
 		default:
 		}
 
-		close(unblock)
+		unblockWalk()
 		<-next
 		assert.Equal(t, []int{1, 2}, scans.scanCounts(t, root), "the stalled scan stores nothing, the next one stores both files")
 	})

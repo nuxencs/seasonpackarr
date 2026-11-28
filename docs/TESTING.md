@@ -98,8 +98,9 @@ code of the real binary.
   reload stores the new snapshot and calls `Store.CleanUp`, as the reload
   parties of `start` do. A search scan calls `Store.ScanSourceFolders`, as a
   search run does. The tests assert the scan lines. A test that must see a kept or dropped
-  result reads the file count of the startup log line (`sourceFolderFiles`),
-  and the parse test counts the calls of the parse function of the store.
+  result reads the current file count with `Store.sourceFolderFiles`, and the
+  parse test counts the calls of the parse function of the store. The parse
+  function also lets a test stall a walk.
 - The source folder tests of the season pack processor
   (`candidate_sourcefolder_test.go`, `match_sourcefolder_test.go`,
   `import_sourcefolder_test.go` in `internal/seasonpack/`) scan a real

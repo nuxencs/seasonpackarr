@@ -130,7 +130,17 @@ func (s *Store) scanIfDue(ctx context.Context, cfg config.Provider, interval tim
 // running scan first. A search run calls it before it reads the inventories, so a file that arrived after the last
 // timer scan is in its search groups. The scan schedule counts it as a full scan.
 func (s *Store) ScanSourceFolders(ctx context.Context, cfg domain.Config) {
-	s.scanSourceFolders(ctx, cfg, allFolders)
+	done := make(chan struct{})
+	// The walk checks ctx only between two reads, so a read that stalls on a hung mount would hold the search. The
+	// walk keeps the scan lock until it returns, so no second walk competes with it.
+	go func() {
+		defer close(done)
+		s.scanSourceFolders(ctx, cfg, allFolders)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
 }
 
 // scanSourceFolders scans the source folders of cfg in scope, after the end of a running scan.
