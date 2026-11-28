@@ -35,7 +35,7 @@ func TestSearchCommand_PreviewRequestAndFailureExit(t *testing.T) {
 				assert.Equal(t, "default", body["clientname"])
 				assert.Equal(t, true, body["dryRun"])
 				assert.Equal(t, false, body["verify"])
-				assert.EqualValues(t, 100, body["limit"])
+				assert.NotContains(t, body, "limit", "without --limit, the service applies its default")
 				fmt.Fprint(w, tt.response)
 			}))
 			defer server.Close()

@@ -49,12 +49,17 @@ one client. Search stays connected until it finishes; Ctrl+C cancels the run.`,
 			if err != nil {
 				return err
 			}
-			body, err := json.Marshal(struct {
+			request := struct {
 				ClientName string `json:"clientname"`
 				DryRun     bool   `json:"dryRun"`
 				Verify     bool   `json:"verify"`
-				Limit      int    `json:"limit"`
-			}{client, dryRun, verify, limit})
+				Limit      *int   `json:"limit,omitempty"`
+			}{ClientName: client, DryRun: dryRun, Verify: verify}
+			// Without --limit, the service applies its default, and a service older than limit accepts the request.
+			if cmd.Flags().Changed("limit") {
+				request.Limit = &limit
+			}
+			body, err := json.Marshal(request)
 			if err != nil {
 				return err
 			}

@@ -193,7 +193,9 @@ After an import run queried one indexer for a search group and a client, no
 search sends that query again for 24 hours. A season pack that an indexer did not
 have an hour ago is very unlikely to be there now. The wait time has no setting,
 and no flag or request field ignores it. Thus a daily search is the most frequent
-useful schedule for an external scheduler.
+useful schedule for an external scheduler. When a run reports deferred search
+groups (`groupsDeferred`), start the next search at once: the
+[search cap](#search-cap) left those groups, and they are due.
 
 - A search queries an indexer for a search group only when at least one client
   of the group is due on that indexer. Only the due clients evaluate the
@@ -408,9 +410,10 @@ report fields.
   - Wait time: a search sends a query of one search group to one indexer for
     one client at most once in 24 hours. See [Wait time](#wait-time).
 
-  Thus a daily search is the most frequent useful schedule. Each page of a
-  query costs one query gap, so a search with the default cap of 100 search
-  groups takes 100 minutes or more.
+  Thus a daily search is the most frequent useful schedule, and a run with
+  deferred search groups can start the next search at once. Each page of a
+  query to one indexer waits for the query gap, so a search that queries 100
+  search groups on one indexer takes about 100 minutes or more.
 - Only one RSS or search run executes at a time. Imports to the same client endpoint
   are serialized with webhook imports. Matching stays free of client mutations.
 
