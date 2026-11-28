@@ -85,6 +85,23 @@ func (f *fakeConfig) Store(config domain.Config) {
 	f.config = config
 }
 
+// fakeProwlarrHost is the Prowlarr host of the search fixture. Its requests
+// stay in process, so a search test can run in a testing/synctest bubble.
+const fakeProwlarrHost = "prowlarr.invalid"
+
+// fakeProwlarrTransport serves the requests to fakeProwlarrHost with handler.
+// It sends other requests over the network, so a refused connection stays real.
+type fakeProwlarrTransport struct{ handler stdhttp.Handler }
+
+func (f *fakeProwlarrTransport) RoundTrip(r *stdhttp.Request) (*stdhttp.Response, error) {
+	if r.URL.Host != fakeProwlarrHost || f.handler == nil {
+		return stdhttp.DefaultTransport.RoundTrip(r)
+	}
+	recorder := httptest.NewRecorder()
+	f.handler.ServeHTTP(recorder, r)
+	return recorder.Result(), nil
+}
+
 type processorHTTPFixture struct {
 	search    *searchRunner
 	inventory *inventory.Store
@@ -101,6 +118,8 @@ type processorHTTPFixture struct {
 	importDir     string
 	notifications *fakeNotificationSender
 	tasks         *taskGroup
+	// prowlarrTransport is the transport of the discovery source. It survives a restart.
+	prowlarrTransport *fakeProwlarrTransport
 }
 
 // fixtureOptions sets the season pack and the client inventory that a fixture
@@ -183,22 +202,24 @@ func newProcessorHTTPFixture(t *testing.T, opts fixtureOptions) processorHTTPFix
 		noti = opts.noti
 	}
 	inv := inventory.New(connector.connect, log)
-	server := NewServer(log, cfg, noti, discovery.New(store, log, nil), inv)
+	prowlarrTransport := &fakeProwlarrTransport{}
+	server := NewServer(log, cfg, noti, discovery.New(store, log, prowlarrTransport), inv)
 	return processorHTTPFixture{
-		search:        server.search,
-		inventory:     inv,
-		connector:     connector,
-		statePath:     statePath,
-		store:         store,
-		handler:       server.Handler(),
-		torrentClient: torrentClient,
-		config:        cfg,
-		releaseName:   releaseName,
-		torrent:       torrentBytes,
-		sourceDir:     sourceDir,
-		importDir:     importDir,
-		notifications: notifications,
-		tasks:         server.tasks,
+		search:            server.search,
+		inventory:         inv,
+		connector:         connector,
+		statePath:         statePath,
+		store:             store,
+		handler:           server.Handler(),
+		torrentClient:     torrentClient,
+		config:            cfg,
+		releaseName:       releaseName,
+		torrent:           torrentBytes,
+		sourceDir:         sourceDir,
+		importDir:         importDir,
+		notifications:     notifications,
+		tasks:             server.tasks,
+		prowlarrTransport: prowlarrTransport,
 	}
 }
 
@@ -316,7 +337,9 @@ func (f *fakeSearchClient) Import(ctx context.Context, req torrentclient.ImportR
 
 type searchFixture struct {
 	processorHTTPFixture
-	queries        []string
+	queries []string
+	// queryPaths holds the path of each search page, such as "/1/api" for indexer 1.
+	queryPaths     []string
 	discoveryCalls int
 	downloads      int
 	titles         []string
@@ -332,7 +355,7 @@ func newSearchFixture(t *testing.T, opts fixtureOptions) *searchFixture {
 	t.Helper()
 	f := &searchFixture{processorHTTPFixture: newProcessorHTTPFixture(t, opts)}
 	f.titles = []string{f.releaseName}
-	server := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	f.prowlarrTransport.handler = stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		if r.Header.Get("X-Api-Key") != "prowlarr-test-key" {
 			w.WriteHeader(401)
 			return
@@ -347,6 +370,7 @@ func newSearchFixture(t *testing.T, opts fixtureOptions) *searchFixture {
 		}
 		if strings.HasSuffix(r.URL.Path, "/api") {
 			f.queries = append(f.queries, r.URL.Query().Get("q"))
+			f.queryPaths = append(f.queryPaths, r.URL.Path)
 			if f.beforeSearch != nil {
 				f.beforeSearch()
 			}
@@ -383,10 +407,9 @@ func newSearchFixture(t *testing.T, opts fixtureOptions) *searchFixture {
 			return
 		}
 		w.WriteHeader(404)
-	}))
-	t.Cleanup(server.Close)
+	})
 	cfg := f.config.Snapshot()
-	cfg.Search = domain.Search{ProwlarrURL: server.URL, APIKey: "prowlarr-test-key", RSSInterval: "0s", RequestInterval: "0s"}
+	cfg.Search = domain.Search{ProwlarrURL: "http://" + fakeProwlarrHost, APIKey: "prowlarr-test-key", RSSInterval: "0s", RequestInterval: "0s"}
 	f.config.Store(cfg)
 	f.connector.use("", &fakeSearchClient{Client: f.torrentClient})
 	return f
@@ -412,7 +435,13 @@ func (f *searchFixture) addOtherVariant(t *testing.T) string {
 
 func (f *searchFixture) runExact(t *testing.T, dryRun bool) searchReport {
 	t.Helper()
-	response := f.postJSON(t, "/api/search", map[string]any{"dryRun": dryRun, "verify": dryRun})
+	return f.searchFor(t, SearchRequest{DryRun: dryRun, Verify: dryRun})
+}
+
+// searchFor sends the search request and returns the report of a 200 answer.
+func (f *searchFixture) searchFor(t *testing.T, request SearchRequest) searchReport {
+	t.Helper()
+	response := f.postJSON(t, "/api/search", request)
 	require.Equal(t, 200, response.Code, response.Body.String())
 	var report searchReport
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &report))
@@ -430,7 +459,7 @@ func (f *processorHTTPFixture) restart(t *testing.T) {
 	f.store = store
 	// A restart starts with no client connections, no inventories, and no Prowlarr connection.
 	f.inventory = inventory.New(f.connector.connect, f.search.log)
-	server := NewServer(f.search.log, f.config, f.notifications, discovery.New(store, f.search.log, nil), f.inventory)
+	server := NewServer(f.search.log, f.config, f.notifications, discovery.New(store, f.search.log, f.prowlarrTransport), f.inventory)
 	f.search, f.handler, f.tasks = server.search, server.Handler(), server.tasks
 }
 

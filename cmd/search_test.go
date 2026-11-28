@@ -35,6 +35,7 @@ func TestSearchCommand_PreviewRequestAndFailureExit(t *testing.T) {
 				assert.Equal(t, "default", body["clientname"])
 				assert.Equal(t, true, body["dryRun"])
 				assert.Equal(t, false, body["verify"])
+				assert.NotContains(t, body, "limit", "without --limit, the service applies its default")
 				fmt.Fprint(w, tt.response)
 			}))
 			defer server.Close()
@@ -62,19 +63,20 @@ func TestSearchCommand_VerifyRequiresDryRun(t *testing.T) {
 
 func TestSearchCommand_ReadableSummaryAndJSONContract(t *testing.T) {
 	isolateCLI(t)
-	response := `{"dryRun":true,"verify":true,"scannedTorrents":12,"episodeTorrents":10,"coveredEpisodeTorrents":2,"groups":1,"requests":2,"torrentDownloads":1,"torrentCacheHits":0,"outcomes":[{"clientname":"tv","title":"Series.S01.1080p.WEB-DL-GRP","indexerId":7,"status":"would_import","reusableEpisodes":8,"totalEpisodes":10}],"failures":[],"futureField":42}`
+	response := `{"dryRun":true,"verify":true,"scannedTorrents":12,"episodeTorrents":10,"coveredEpisodeTorrents":2,"groups":3,"groupsNotDue":1,"groupsDeferred":1,"limit":1,"requests":2,"torrentDownloads":1,"torrentCacheHits":0,"outcomes":[{"clientname":"tv","title":"Series.S01.1080p.WEB-DL-GRP","indexerId":7,"status":"would_import","reusableEpisodes":8,"totalEpisodes":10}],"failures":[],"futureField":42}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 		assert.Equal(t, true, body["dryRun"])
 		assert.Equal(t, true, body["verify"])
+		assert.EqualValues(t, 1, body["limit"])
 		fmt.Fprint(w, response)
 	}))
 	defer server.Close()
-	args := []string{"search", "--url", server.URL, "--dry-run", "--verify"}
+	args := []string{"search", "--url", server.URL, "--dry-run", "--verify", "--limit", "1"}
 	code, stdout, stderr := runCLI(t, args...)
 	require.Equal(t, 0, code, stderr)
-	for _, want := range []string{"Exact preview complete", "12 torrents", "1 groups, 2 requests", "would import", "Client: tv", "Reuse: 8/10 episodes"} {
+	for _, want := range []string{"Exact preview complete", "12 torrents", "3 groups, 1 not due, 1 deferred (limit 1), 2 requests", "would import", "Client: tv", "Reuse: 8/10 episodes"} {
 		require.Contains(t, stdout, want)
 	}
 	code, stdout, stderr = runCLI(t, append(args, "--json")...)

@@ -18,8 +18,11 @@ const pageBudget = 10
 // when the caller asks for more listings, and yields each listing one time.
 // It stops on a short page, on an indexer without pagination, on a repeated
 // page, and at the page budget. A failed page takes the indexer out for the
-// run. The sequence yields nothing for an indexer that is out, and it ends
-// when the indexer goes out or the database fails.
+// run. Each page waits for the query gap of the indexer. The sequence yields
+// nothing for an indexer that is out, and it ends when the indexer goes out,
+// the database fails, or the context is canceled. A canceled context adds no
+// failure. When a query of the plan of the run ends with an answer (the last
+// page, the page budget, or a repeated page), the run stores its search times.
 func (r *Run) Search(ctx context.Context, indexer Indexer, query Query) iter.Seq[*Listing] {
 	fail := func(reason string) { r.fail(Failure{IndexerID: indexer.ID, Query: query.String(), Reason: reason}) }
 	return func(yield func(*Listing) bool) {
@@ -29,8 +32,14 @@ func (r *Run) Search(ctx context.Context, indexer Indexer, query Query) iter.Seq
 			if !r.usable(ctx, indexer.ID) {
 				return
 			}
-			r.stats.FeedPages++
-			releases, limit, err := r.source.client.SearchPage(ctx, indexer.prowlarr, prowlarr.Query(query), offset)
+			releases, limit, err := r.source.query(ctx, indexer.ID, func() ([]prowlarr.Release, int, error) {
+				r.stats.FeedPages++
+				return r.source.client.SearchPage(ctx, indexer.prowlarr, prowlarr.Query(query), offset)
+			})
+			if ctx.Err() != nil {
+				// The caller reports a canceled context. It is no failure of the indexer.
+				return
+			}
 			if err != nil {
 				fail(err.Error())
 				// Rule 3: do not send a request to this indexer for each query.
@@ -59,15 +68,18 @@ func (r *Run) Search(ctx context.Context, indexer Indexer, query Query) iter.Seq
 				}
 			}
 			if !indexer.prowlarr.SupportsPagination || len(releases) < limit {
+				r.searched(ctx, indexer.ID, query)
 				return
 			}
 			if fresh == 0 {
 				fail("indexer repeated a page; remaining results may be incomplete")
+				r.searched(ctx, indexer.ID, query)
 				return
 			}
 			offset += len(releases)
 		}
 		fail("search reached the 10-page limit; remaining results may be incomplete")
+		r.searched(ctx, indexer.ID, query)
 	}
 }
 

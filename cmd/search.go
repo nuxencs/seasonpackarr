@@ -11,12 +11,17 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/nuxencs/seasonpackarr/internal/domain"
+
 	"github.com/spf13/cobra"
 )
 
 func newSearchCommand(environ []string) *cobra.Command {
 	options := &connectionOptions{environ: environ}
-	var dryRun, verify bool
+	var (
+		dryRun, verify bool
+		limit          int
+	)
 	cmd := &cobra.Command{
 		Use:     "search",
 		GroupID: "packs",
@@ -26,12 +31,14 @@ func newSearchCommand(environ []string) *cobra.Command {
 By default, search creates hardlinks and imports accepted packs for all clients.
 Use --dry-run to check release names without downloading torrents.
 Add --verify to a dry run to check exact reuse without importing.
+Use --limit to set the maximum count of search groups that the run queries.
 
 Reads connection settings from config and environment. Use --client to select
 one client. Search stays connected until it finishes; Ctrl+C cancels the run.`,
 		Args: cobra.NoArgs,
 		Example: `  seasonpackarr search --dry-run
   seasonpackarr search --dry-run --verify --client tv
+  seasonpackarr search --limit 25
   seasonpackarr search --config ./config
   seasonpackarr search --dry-run --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -42,11 +49,17 @@ one client. Search stays connected until it finishes; Ctrl+C cancels the run.`,
 			if err != nil {
 				return err
 			}
-			body, err := json.Marshal(struct {
+			request := struct {
 				ClientName string `json:"clientname"`
 				DryRun     bool   `json:"dryRun"`
 				Verify     bool   `json:"verify"`
-			}{client, dryRun, verify})
+				Limit      *int   `json:"limit,omitempty"`
+			}{ClientName: client, DryRun: dryRun, Verify: verify}
+			// Without --limit, the service applies its default, and a service older than limit accepts the request.
+			if cmd.Flags().Changed("limit") {
+				request.Limit = &limit
+			}
+			body, err := json.Marshal(request)
 			if err != nil {
 				return err
 			}
@@ -83,6 +96,7 @@ one client. Search stays connected until it finishes; Ctrl+C cancels the run.`,
 	options.addFlags(cmd)
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "preview candidates without downloading torrents or importing")
 	cmd.Flags().BoolVar(&verify, "verify", false, "with --dry-run, download the torrents and check exact reuse")
+	cmd.Flags().IntVar(&limit, "limit", domain.DefaultSearchLimit, "maximum count of search groups to query; 0 means no cap")
 	return cmd
 }
 
@@ -93,6 +107,9 @@ type searchReport struct {
 	EpisodeTorrents        int  `json:"episodeTorrents"`
 	CoveredEpisodeTorrents int  `json:"coveredEpisodeTorrents"`
 	Groups                 int  `json:"groups"`
+	GroupsNotDue           int  `json:"groupsNotDue"`
+	GroupsDeferred         int  `json:"groupsDeferred"`
+	Limit                  int  `json:"limit"`
 	Requests               int  `json:"requests"`
 	TorrentDownloads       int  `json:"torrentDownloads"`
 	TorrentCacheHits       int  `json:"torrentCacheHits"`
@@ -131,7 +148,11 @@ func (r *searchReport) print(w io.Writer, api *apiClient) error {
 	}
 	fmt.Fprintf(&output, "%s %s\n", searchMode(r.DryRun, r.Verify), completion)
 	fmt.Fprintf(&output, "Scanned: %d torrents, %d episode torrents, %d already covered\n", r.ScannedTorrents, r.EpisodeTorrents, r.CoveredEpisodeTorrents)
-	fmt.Fprintf(&output, "Search: %d groups, %d requests\nMetadata: %d downloads, %d cache hits\n", r.Groups, r.Requests, r.TorrentDownloads, r.TorrentCacheHits)
+	limit := "no cap"
+	if r.Limit > 0 {
+		limit = fmt.Sprintf("limit %d", r.Limit)
+	}
+	fmt.Fprintf(&output, "Search: %d groups, %d not due, %d deferred (%s), %d requests\nMetadata: %d downloads, %d cache hits\n", r.Groups, r.GroupsNotDue, r.GroupsDeferred, limit, r.Requests, r.TorrentDownloads, r.TorrentCacheHits)
 	fmt.Fprintf(&output, "Results: %d\n", len(r.Outcomes))
 	for _, outcome := range r.Outcomes {
 		label := strings.ReplaceAll(terminalText(outcome.Status), "_", " ")

@@ -80,6 +80,7 @@ folder name. Match and import still require the original `.torrent` file.
 | `search --dry-run` | None | Searches Prowlarr and runs candidate checks |
 | `search --dry-run --verify` | None | Searches Prowlarr and runs matches |
 | `search` | None | Searches Prowlarr and imports accepted packs |
+| `search --limit <n>` | None | Queries at most `n` search groups; default `100`, and `0` means no cap |
 | `setup filter` | `--webhook-url`, autobrr URL, and autobrr API key | Creates one disabled autobrr filter for each client, or updates the filter from `--filter-id`; see [Set up the autobrr filter](#set-up-the-autobrr-filter) |
 | `start` | Config directory if outside the default locations | Starts the service; an explicit directory gets a default config if missing |
 | `notification test` | Config directory if outside the default locations | Sends a test notification to each notification destination; see [Notifications](CONFIGURATION.md#notifications) |

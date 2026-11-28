@@ -154,13 +154,19 @@ func TestCLI_SearchPreviewAndImport(t *testing.T) {
 	binary := buildCLI(t)
 	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
 	for _, mode := range []string{"discovery", "verify", "import"} {
-		if mode == "import" {
+		// A new server has no query gap from the run before, so the test waits no real time.
+		if mode != "discovery" {
 			f.restart(t)
 		}
 		server := httptest.NewServer(f.handler)
 		t.Cleanup(server.Close)
 		dryRun := mode != "import"
 		args := []string{"search", "--url", server.URL, "--api", processorTestToken, "--json"}
+		limit := 100
+		if mode == "verify" {
+			limit = 7
+			args = append(args, "--limit", "7")
+		}
 		if dryRun {
 			args = append(args, "--dry-run")
 			if mode == "verify" {
@@ -175,6 +181,7 @@ func TestCLI_SearchPreviewAndImport(t *testing.T) {
 		var report searchReport
 		require.NoError(t, json.Unmarshal(output, &report), string(output))
 		require.Equal(t, dryRun, report.DryRun)
+		require.Equal(t, limit, report.Limit, "--limit must reach the request")
 		if mode == "discovery" {
 			require.Equal(t, "candidate", report.Outcomes[0].Status)
 			require.Zero(t, f.downloads)

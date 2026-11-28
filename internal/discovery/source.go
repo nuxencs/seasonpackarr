@@ -63,8 +63,14 @@ func (k Kind) supportedBy(indexer prowlarr.Indexer) bool {
 	return indexer.SupportsSearch
 }
 
+// queryGap is the minimum time from the answer of one query to an indexer
+// to the start of the next query to that indexer. A query is one search page
+// or one feed page. Torrent downloads do not wait for it.
+const queryGap = time.Minute
+
 // Source opens one discovery run at a time. It keeps the Prowlarr connection
-// across runs, so the request spacing holds from one run to the next.
+// and the last query time of each indexer across runs, so the request spacing
+// and the query gap hold from one run to the next.
 type Source struct {
 	store     *state.Store
 	log       logger.Logger
@@ -75,11 +81,34 @@ type Source struct {
 	client      *prowlarr.Client
 	prowlarrURL string
 	prowlarrKey string
+	// lastQuery holds the answer time of the last query, by indexer id. It
+	// survives a connection change, because an id can still name the same tracker.
+	lastQuery map[int]time.Time
 }
 
 // New makes a source. A nil transport selects http.DefaultTransport.
 func New(store *state.Store, log logger.Logger, transport http.RoundTripper) *Source {
-	return &Source{store: store, log: log, transport: transport}
+	return &Source{store: store, log: log, transport: transport, lastQuery: make(map[int]time.Time)}
+}
+
+// query waits for the query gap of the indexer, then calls send, which sends
+// one query. The client then also waits for the request spacing. A canceled
+// wait returns the context error and sends nothing. The gap starts when send
+// returns, also after a failure, because a failed query can have reached the
+// indexer.
+func (s *Source) query(ctx context.Context, indexerID int, send func() ([]prowlarr.Release, int, error)) ([]prowlarr.Release, int, error) {
+	if wait := time.Until(s.lastQuery[indexerID].Add(queryGap)); wait > 0 {
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return nil, 0, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	releases, limit, err := send()
+	s.lastQuery[indexerID] = time.Now()
+	return releases, limit, err
 }
 
 // Begin opens a discovery run with the search settings of one config

@@ -31,9 +31,10 @@ func (r *Run) ClientUnreadable() { r.skipFeedSave = true }
 //
 // The sequence yields the new listings in feed order, then the retained
 // listings, each one time. A failed page keeps the previous checkpoint, and the
-// sequence yields nothing. A canceled context saves no checkpoint. The
-// sequence yields nothing for an indexer that is out, and it ends when the
-// indexer goes out or the database fails.
+// sequence yields nothing. Each page waits for the query gap of the indexer.
+// A canceled context saves no checkpoint and adds no failure. The sequence
+// yields nothing for an indexer that is out, and it ends when the indexer goes
+// out or the database fails.
 func (r *Run) Feed(ctx context.Context, indexer Indexer, relevant func(title string) bool) iter.Seq[*Listing] {
 	return func(yield func(*Listing) bool) {
 		if !r.usable(ctx, indexer.ID) {
@@ -77,8 +78,14 @@ func (r *Run) readFeed(ctx context.Context, indexer Indexer, relevant func(strin
 	var fresh []prowlarr.Release
 	offset := 0
 	for page := range pageBudget {
-		r.stats.FeedPages++
-		releases, limit, err := r.source.client.RSSPage(ctx, indexer.prowlarr, offset)
+		releases, limit, err := r.source.query(ctx, indexer.ID, func() ([]prowlarr.Release, int, error) {
+			r.stats.FeedPages++
+			return r.source.client.RSSPage(ctx, indexer.prowlarr, offset)
+		})
+		if ctx.Err() != nil {
+			// The caller reports a canceled context, and the poll saves no checkpoint.
+			return nil, false
+		}
 		if err != nil {
 			r.recordCooldown(ctx, indexer.ID, err)
 			r.fail(Failure{IndexerID: indexer.ID, Reason: err.Error()})

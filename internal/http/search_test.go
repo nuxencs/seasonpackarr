@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
@@ -160,37 +161,41 @@ func TestSearch_SeparateReleaseVariantsShareQuery(t *testing.T) {
 }
 
 func TestSearch_GroupIdentityAndUnrelatedTorrents(t *testing.T) {
-	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
-	for _, name := range []string{
-		"Example.2024.S01E01.1080p.WEB-DL.H.264-RlsGrp",
-		"Example.2025.S01E01.1080p.WEB-DL.H.264-RlsGrp",
-		"Example.S01E01.1080p.WEB-DL.H.264-RlsGrp",
-		"Example.2024.S02E01.1080p.WEB-DL.H.264-RlsGrp",
-		"Film.2024.1080p.BluRay.x264-RlsGrp",
-		"Packed.S01.1080p.WEB-DL.H.264-RlsGrp",
-		"readme.txt",
-	} {
-		f.torrentClient.Torrents = append(f.torrentClient.Torrents, torrentclient.Torrent{Name: name, Hash: name})
-	}
-	report := f.runExact(t, true)
-	require.Equal(t, 3, report.Groups)
-	require.ElementsMatch(t, []string{
-		"Example S01", "Example S01", // all years and a missing year share two indexer queries
-		"Example S02", "Example S02",
-		"Lifecycle S01", "Lifecycle S01",
-	}, f.queries)
+	synctest.Test(t, func(t *testing.T) {
+		f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
+		for _, name := range []string{
+			"Example.2024.S01E01.1080p.WEB-DL.H.264-RlsGrp",
+			"Example.2025.S01E01.1080p.WEB-DL.H.264-RlsGrp",
+			"Example.S01E01.1080p.WEB-DL.H.264-RlsGrp",
+			"Example.2024.S02E01.1080p.WEB-DL.H.264-RlsGrp",
+			"Film.2024.1080p.BluRay.x264-RlsGrp",
+			"Packed.S01.1080p.WEB-DL.H.264-RlsGrp",
+			"readme.txt",
+		} {
+			f.torrentClient.Torrents = append(f.torrentClient.Torrents, torrentclient.Torrent{Name: name, Hash: name})
+		}
+		report := f.runExact(t, true)
+		require.Equal(t, 3, report.Groups)
+		require.ElementsMatch(t, []string{
+			"Example S01", "Example S01", // all years and a missing year share two indexer queries
+			"Example S02", "Example S02",
+			"Lifecycle S01", "Lifecycle S01",
+		}, f.queries)
+	})
 }
 
 func TestSearch_PaginationFindsPackAfterRejectedListing(t *testing.T) {
-	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
-	f.pages = true
-	f.pageSize = 1
-	f.titles = []string{"Unrelated.S01.1080p.WEB-DL.H.264-RlsGrp", f.releaseName}
-	report := f.runExact(t, true)
-	require.Empty(t, report.Failures)
-	require.Equal(t, 4, report.Requests) // three pages on first tracker, one on second
-	require.Equal(t, "would_import", report.Outcomes[1].Status)
-	require.Equal(t, 1, f.downloads)
+	synctest.Test(t, func(t *testing.T) {
+		f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
+		f.pages = true
+		f.pageSize = 1
+		f.titles = []string{"Unrelated.S01.1080p.WEB-DL.H.264-RlsGrp", f.releaseName}
+		report := f.runExact(t, true)
+		require.Empty(t, report.Failures)
+		require.Equal(t, 4, report.Requests) // three pages on first tracker, one on second
+		require.Equal(t, "would_import", report.Outcomes[1].Status)
+		require.Equal(t, 1, f.downloads)
+	})
 }
 
 func TestSearch_PreviewDeduplicatesClientAliases(t *testing.T) {
@@ -212,16 +217,18 @@ func TestSearch_PreviewDeduplicatesClientAliases(t *testing.T) {
 }
 
 func TestSearch_HonorsRateLimitAcrossRuns(t *testing.T) {
-	f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
-	f.failFirst = true
-	first := f.runExact(t, true)
-	require.Len(t, first.Failures, 1)
-	f.queries = nil
-	second := f.runExact(t, true)
-	require.Len(t, f.queries, 1, "rate-limited tracker must not receive another search")
-	require.Len(t, second.Failures, 1)
-	require.Contains(t, second.Failures[0].Reason, "Retry-After")
-	require.Equal(t, "would_import", second.Outcomes[0].Status)
+	synctest.Test(t, func(t *testing.T) {
+		f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 0.75})
+		f.failFirst = true
+		first := f.runExact(t, true)
+		require.Len(t, first.Failures, 1)
+		f.queries = nil
+		second := f.runExact(t, true)
+		require.Len(t, f.queries, 1, "rate-limited tracker must not receive another search")
+		require.Len(t, second.Failures, 1)
+		require.Contains(t, second.Failures[0].Reason, "Retry-After")
+		require.Equal(t, "would_import", second.Outcomes[0].Status)
+	})
 }
 
 func TestSearch_RejectsMalformedRequests(t *testing.T) {
@@ -322,39 +329,41 @@ func TestSearch_PreflightStopsBeforeTorrentDownload(t *testing.T) {
 }
 
 func TestSearch_CachedTorrentRechecksSourcesAndSettings(t *testing.T) {
-	f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.75})
-	cfg := f.config.Snapshot()
-	cfg.Search.IndexerIDs = []int{1}
-	f.config.Store(cfg)
-	path := filepath.Join(f.sourceDir, f.torrentClient.FilesByHash["ep2"][0].Name)
-	require.NoError(t, os.Rename(path, path+"-moved"))
-	first := f.runExact(t, true)
-	require.Equal(t, "rejected", first.Outcomes[0].Status)
-	require.Equal(t, new(1), first.Outcomes[0].ReusableEpisodes)
-	require.Equal(t, 1, first.TorrentDownloads)
-	require.Equal(t, 1, f.torrentClient.FileBatchCalls)
-	// Lowering the threshold must re-evaluate the cached torrent.
-	cfg.SmartModeThreshold = 0.5
-	f.config.Store(cfg)
-	second := f.runExact(t, true)
-	require.Equal(t, "would_import", second.Outcomes[0].Status)
-	require.Equal(t, 1, second.TorrentCacheHits)
-	require.Zero(t, second.TorrentDownloads)
-	// Restoring a source changes coverage without another torrent download.
-	require.NoError(t, os.Rename(path+"-moved", path))
-	cfg.SmartModeThreshold = 1
-	f.config.Store(cfg)
-	third := f.runExact(t, true)
-	require.Equal(t, "would_import", third.Outcomes[0].Status)
-	require.Equal(t, new(2), third.Outcomes[0].ReusableEpisodes)
-	require.Equal(t, 1, third.TorrentCacheHits)
-	require.Equal(t, 1, f.downloads)
-	// A removed source is checked even when the torrent is cached.
-	require.NoError(t, os.Rename(f.sourceDir, f.sourceDir+"-moved"))
-	fourth := f.runExact(t, true)
-	require.Equal(t, "rejected", fourth.Outcomes[0].Status)
-	require.Zero(t, fourth.TorrentCacheHits)
-	require.Equal(t, 1, f.downloads)
+	synctest.Test(t, func(t *testing.T) {
+		f := newSearchFixture(t, fixtureOptions{packEpisodes: 2, clientEpisodes: 2, threshold: 0.75})
+		cfg := f.config.Snapshot()
+		cfg.Search.IndexerIDs = []int{1}
+		f.config.Store(cfg)
+		path := filepath.Join(f.sourceDir, f.torrentClient.FilesByHash["ep2"][0].Name)
+		require.NoError(t, os.Rename(path, path+"-moved"))
+		first := f.runExact(t, true)
+		require.Equal(t, "rejected", first.Outcomes[0].Status)
+		require.Equal(t, new(1), first.Outcomes[0].ReusableEpisodes)
+		require.Equal(t, 1, first.TorrentDownloads)
+		require.Equal(t, 1, f.torrentClient.FileBatchCalls)
+		// Lowering the threshold must re-evaluate the cached torrent.
+		cfg.SmartModeThreshold = 0.5
+		f.config.Store(cfg)
+		second := f.runExact(t, true)
+		require.Equal(t, "would_import", second.Outcomes[0].Status)
+		require.Equal(t, 1, second.TorrentCacheHits)
+		require.Zero(t, second.TorrentDownloads)
+		// Restoring a source changes coverage without another torrent download.
+		require.NoError(t, os.Rename(path+"-moved", path))
+		cfg.SmartModeThreshold = 1
+		f.config.Store(cfg)
+		third := f.runExact(t, true)
+		require.Equal(t, "would_import", third.Outcomes[0].Status)
+		require.Equal(t, new(2), third.Outcomes[0].ReusableEpisodes)
+		require.Equal(t, 1, third.TorrentCacheHits)
+		require.Equal(t, 1, f.downloads)
+		// A removed source is checked even when the torrent is cached.
+		require.NoError(t, os.Rename(f.sourceDir, f.sourceDir+"-moved"))
+		fourth := f.runExact(t, true)
+		require.Equal(t, "rejected", fourth.Outcomes[0].Status)
+		require.Zero(t, fourth.TorrentCacheHits)
+		require.Equal(t, 1, f.downloads)
+	})
 }
 
 func TestSearch_ExistingPackSkipsQueriesInEveryMode(t *testing.T) {

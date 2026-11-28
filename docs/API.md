@@ -225,18 +225,21 @@ completes.
 monitoring. The body is one JSON object. Unknown fields are rejected.
 
 ```json
-{"clientname": "default", "dryRun": true, "verify": false}
+{"clientname": "default", "dryRun": true, "verify": false, "limit": 100}
 ```
 
 - `clientname`: one client to scan. Omit it to scan all configured clients.
 - `dryRun`: when `true`, report the outcomes without importing. Default `false`.
 - `verify`: when `true`, also download the torrents and check exact reuse.
   Requires `dryRun: true`. Default `false`.
+- `limit`: the maximum count of search groups that the run queries, a whole
+  number. `0` means no cap. A negative number gives `400`. Default `100`. See
+  [Search cap](PROWLARR.md#search-cap).
 
 | Status | Meaning |
 | --- | --- |
 | `200` | The run finished. The report can still contain failures. |
-| `400` | Invalid request, unknown client, or incomplete search configuration. |
+| `400` | Invalid request, negative `limit`, unknown client, or incomplete search configuration. |
 | `401` | Missing or wrong API token, when authentication is configured. |
 | `409` | Another RSS or search run is active. |
 | `500` | The database could not be read before the run. Check the service logs. |
@@ -244,8 +247,17 @@ monitoring. The body is one JSON object. Unknown fields are rejected.
 The `200` report contains these fields:
 
 - `dryRun` and `verify`: the request values.
+- `limit`: the cap that the run used. `0` means no cap.
 - `scannedTorrents`, `episodeTorrents`, `coveredEpisodeTorrents`, and `groups`:
   inventory counts. See [Search output](PROWLARR.md#search-output).
+- `groupsNotDue`: the search groups that the run skipped, because no query of
+  the group to a usable indexer was due. An indexer that failed or went into a
+  cooldown earlier in the run is not usable. See
+  [Wait time](PROWLARR.md#wait-time). A run in which no search group is due
+  sends no query to an indexer.
+- `groupsDeferred`: the due search groups that `limit` left for a later run.
+  The run queried `groups` minus `groupsNotDue` minus `groupsDeferred` search
+  groups. A canceled run does not count the search groups after the cancel.
 - `requests`: targeted feed requests. Indexer discovery and torrent downloads
   are not counted.
 - `torrentDownloads`: completed torrent downloads. A failed download appears

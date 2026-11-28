@@ -44,6 +44,10 @@ type Stats struct {
 	Downloads int
 	// CacheHits counts the torrent bytes that the run read from the torrent cache.
 	CacheHits int
+	// GroupsNotDue counts the search groups of Plan with no due query on a usable indexer.
+	GroupsNotDue int
+	// GroupsDeferred counts the due search groups of Plan that the limit left for a later run.
+	GroupsDeferred int
 }
 
 // Run is one discovery run. It is the one place that knows which indexers are
@@ -75,10 +79,15 @@ type Run struct {
 	feeds *state.Feeds
 	// skipFeedSave is true after a client was not readable: the run saves no feed state.
 	skipFeedSave bool
-	failures     []Failure
-	stats        Stats
-	err          error
-	ended        bool
+	// planned holds the due clients of each query of the plan that has no
+	// stored search time from this run yet. Plan sets it.
+	planned map[queryKey][]string
+	// preview is true when Plan got a preview: the run stores no search time.
+	preview  bool
+	failures []Failure
+	stats    Stats
+	err      error
+	ended    bool
 }
 
 // Failures returns the failures of the run in time order.

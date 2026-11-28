@@ -30,44 +30,48 @@ func (f *sourceFixture) poll(t *testing.T, indexerID int, relevant func(string) 
 }
 
 func TestFeed_ReadsBackToCheckpoint(t *testing.T) {
-	f := newSourceFixture(t)
-	f.prowlarr.listings = map[int][]string{1: {"Old.S01E01", "Old.S01E02", "Old.S01E03"}}
-	_, failures := f.poll(t, 1, accept())
-	require.Empty(t, failures)
-	require.Len(t, f.requestsTo("/1/api"), 1, "a first poll must read only the newest page")
+	synctest.Test(t, func(t *testing.T) {
+		f := newSourceFixture(t)
+		f.prowlarr.listings = map[int][]string{1: {"Old.S01E01", "Old.S01E02", "Old.S01E03"}}
+		_, failures := f.poll(t, 1, accept())
+		require.Empty(t, failures)
+		require.Len(t, f.requestsTo("/1/api"), 1, "a first poll must read only the newest page")
 
-	f.restart(t)
-	f.prowlarr.listings[1] = []string{"Show.S01E05", "Show.S01", "Show.S01E04", "Show.S01E03", "Old.S01E01", "Old.S01E02", "Old.S01E03"}
-	got, failures := f.poll(t, 1, accept("Show.S01"))
-	assert.Empty(t, failures)
-	assert.Equal(t, []string{"Show.S01"}, got)
-	assert.Len(t, f.requestsTo("/1/api"), 4, "a later poll must read back to the checkpoint after a restart")
+		f.restart(t)
+		f.prowlarr.listings[1] = []string{"Show.S01E05", "Show.S01", "Show.S01E04", "Show.S01E03", "Old.S01E01", "Old.S01E02", "Old.S01E03"}
+		got, failures := f.poll(t, 1, accept("Show.S01"))
+		assert.Empty(t, failures)
+		assert.Equal(t, []string{"Show.S01"}, got)
+		assert.Len(t, f.requestsTo("/1/api"), 4, "a later poll must read back to the checkpoint after a restart")
 
-	_, failures = f.poll(t, 1, accept())
-	assert.Empty(t, failures)
-	assert.Len(t, f.requestsTo("/1/api"), 5, "the first page of the previous poll must be the checkpoint")
+		_, failures = f.poll(t, 1, accept())
+		assert.Empty(t, failures)
+		assert.Len(t, f.requestsTo("/1/api"), 5, "the first page of the previous poll must be the checkpoint")
+	})
 }
 
 func TestFeed_YieldsNewThenRetainedListings(t *testing.T) {
-	f := newSourceFixture(t)
-	relevant := accept("Show.S01", "Other.S01", "Third.S01")
-	f.prowlarr.listings = map[int][]string{1: {"Show.S01", "Show.S01E01"}}
-	got, _ := f.poll(t, 1, relevant)
-	require.Equal(t, []string{"Show.S01"}, got)
+	synctest.Test(t, func(t *testing.T) {
+		f := newSourceFixture(t)
+		relevant := accept("Show.S01", "Other.S01", "Third.S01")
+		f.prowlarr.listings = map[int][]string{1: {"Show.S01", "Show.S01E01"}}
+		got, _ := f.poll(t, 1, relevant)
+		require.Equal(t, []string{"Show.S01"}, got)
 
-	f.prowlarr.listings[1] = []string{"Other.S01", "Show.S01"}
-	got, _ = f.poll(t, 1, relevant)
-	assert.Equal(t, []string{"Other.S01", "Show.S01"}, got, "a listing must be yielded one time")
+		f.prowlarr.listings[1] = []string{"Other.S01", "Show.S01"}
+		got, _ = f.poll(t, 1, relevant)
+		assert.Equal(t, []string{"Other.S01", "Show.S01"}, got, "a listing must be yielded one time")
 
-	f.restart(t)
-	f.prowlarr.listings[1] = []string{"Third.S01", "Other.S01"}
-	got, failures := f.poll(t, 1, relevant)
-	assert.Empty(t, failures)
-	assert.Equal(t, []string{"Third.S01", "Other.S01", "Show.S01"}, got,
-		"new listings must come in feed order, then the retained listings, also after a restart")
+		f.restart(t)
+		f.prowlarr.listings[1] = []string{"Third.S01", "Other.S01"}
+		got, failures := f.poll(t, 1, relevant)
+		assert.Empty(t, failures)
+		assert.Equal(t, []string{"Third.S01", "Other.S01", "Show.S01"}, got,
+			"new listings must come in feed order, then the retained listings, also after a restart")
 
-	got, _ = f.poll(t, 1, accept("Third.S01", "Other.S01"))
-	assert.Equal(t, []string{"Third.S01", "Other.S01"}, got, "a retained listing that is no longer relevant must not be yielded")
+		got, _ = f.poll(t, 1, accept("Third.S01", "Other.S01"))
+		assert.Equal(t, []string{"Third.S01", "Other.S01"}, got, "a retained listing that is no longer relevant must not be yielded")
+	})
 }
 
 func TestFeed_RetainedListingExpires(t *testing.T) {
@@ -130,78 +134,84 @@ func TestFeed_GapFailure(t *testing.T) {
 		{name: "no pagination", indexerID: 3, feed: episodeTitles(3), wantPages: 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			f := newSourceFixture(t)
-			path := fmt.Sprintf("/%d/api", tt.indexerID)
-			f.prowlarr.listings = map[int][]string{tt.indexerID: {"Old.S01E01"}}
-			f.poll(t, tt.indexerID, accept())
-			f.prowlarr.listings[tt.indexerID] = tt.feed
-			f.prowlarr.requests = nil
+			synctest.Test(t, func(t *testing.T) {
+				f := newSourceFixture(t)
+				path := fmt.Sprintf("/%d/api", tt.indexerID)
+				f.prowlarr.listings = map[int][]string{tt.indexerID: {"Old.S01E01"}}
+				f.poll(t, tt.indexerID, accept())
+				f.prowlarr.listings[tt.indexerID] = tt.feed
+				f.prowlarr.requests = nil
 
-			got, failures := f.poll(t, tt.indexerID, accept("Show.S01E02"))
+				got, failures := f.poll(t, tt.indexerID, accept("Show.S01E02"))
 
-			assert.Equal(t, []string{"Show.S01E02"}, got, "the new listings must be yielded after a gap")
-			assert.Equal(t, []discovery.Failure{{IndexerID: tt.indexerID, Reason: gap}}, failures)
-			assert.Len(t, f.requestsTo(path), tt.wantPages)
+				assert.Equal(t, []string{"Show.S01E02"}, got, "the new listings must be yielded after a gap")
+				assert.Equal(t, []discovery.Failure{{IndexerID: tt.indexerID, Reason: gap}}, failures)
+				assert.Len(t, f.requestsTo(path), tt.wantPages)
 
-			_, failures = f.poll(t, tt.indexerID, accept())
-			assert.Empty(t, failures)
-			assert.Len(t, f.requestsTo(path), tt.wantPages+1, "a gap must not cause a second catch-up")
+				_, failures = f.poll(t, tt.indexerID, accept())
+				assert.Empty(t, failures)
+				assert.Len(t, f.requestsTo(path), tt.wantPages+1, "a gap must not cause a second catch-up")
+			})
 		})
 	}
 }
 
 func TestFeed_FailedPageKeepsCheckpoint(t *testing.T) {
-	f := newSourceFixture(t)
-	relevant := accept("Old.S01", "Show.S01")
-	f.prowlarr.listings = map[int][]string{1: {"Old.S01", "Old.S01E01"}}
-	f.poll(t, 1, relevant)
-	f.prowlarr.listings[1] = []string{"Show.S01", "Show.S01E01", "Old.S01", "Old.S01E01"}
-	f.prowlarr.respond = func(r *http.Request) *http.Response {
-		if r.URL.Path == "/1/api" && r.URL.Query().Get("offset") == "2" {
-			return cooldownResponse(http.StatusServiceUnavailable, "0")
+	synctest.Test(t, func(t *testing.T) {
+		f := newSourceFixture(t)
+		relevant := accept("Old.S01", "Show.S01")
+		f.prowlarr.listings = map[int][]string{1: {"Old.S01", "Old.S01E01"}}
+		f.poll(t, 1, relevant)
+		f.prowlarr.listings[1] = []string{"Show.S01", "Show.S01E01", "Old.S01", "Old.S01E01"}
+		f.prowlarr.respond = func(r *http.Request) *http.Response {
+			if r.URL.Path == "/1/api" && r.URL.Query().Get("offset") == "2" {
+				return cooldownResponse(http.StatusServiceUnavailable, "0")
+			}
+			return nil
 		}
-		return nil
-	}
 
-	got, failures := f.poll(t, 1, relevant)
-	assert.Empty(t, got, "a failed page must yield no listing, also no retained listing")
-	assert.Equal(t, []discovery.Failure{{IndexerID: 1, Reason: "Prowlarr returned HTTP 503"}}, failures)
+		got, failures := f.poll(t, 1, relevant)
+		assert.Empty(t, got, "a failed page must yield no listing, also no retained listing")
+		assert.Equal(t, []discovery.Failure{{IndexerID: 1, Reason: "Prowlarr returned HTTP 503"}}, failures)
 
-	f.restart(t)
-	f.prowlarr.respond = nil
-	f.prowlarr.requests = nil
-	got, failures = f.poll(t, 1, relevant)
-	assert.Empty(t, failures)
-	assert.Equal(t, []string{"Show.S01", "Old.S01"}, got)
-	assert.Len(t, f.requestsTo("/1/api"), 2, "the next poll must read the same pages again")
+		f.restart(t)
+		f.prowlarr.respond = nil
+		f.prowlarr.requests = nil
+		got, failures = f.poll(t, 1, relevant)
+		assert.Empty(t, failures)
+		assert.Equal(t, []string{"Show.S01", "Old.S01"}, got)
+		assert.Len(t, f.requestsTo("/1/api"), 2, "the next poll must read the same pages again")
+	})
 }
 
 func TestFeed_CanceledContextSavesNoCheckpoint(t *testing.T) {
-	f := newSourceFixture(t)
-	f.prowlarr.listings = map[int][]string{1: {"Old.S01E01"}}
-	f.poll(t, 1, accept())
-	f.prowlarr.listings[1] = []string{"Show.S01", "Show.S01E01", "Old.S01E01"}
-	ctx, cancel := context.WithCancel(t.Context())
-	f.prowlarr.respond = func(r *http.Request) *http.Response {
-		if r.URL.Path == "/1/api" && r.URL.Query().Get("offset") == "2" {
-			cancel()
+	synctest.Test(t, func(t *testing.T) {
+		f := newSourceFixture(t)
+		f.prowlarr.listings = map[int][]string{1: {"Old.S01E01"}}
+		f.poll(t, 1, accept())
+		f.prowlarr.listings[1] = []string{"Show.S01", "Show.S01E01", "Old.S01E01"}
+		ctx, cancel := context.WithCancel(t.Context())
+		f.prowlarr.respond = func(r *http.Request) *http.Response {
+			if r.URL.Path == "/1/api" && r.URL.Query().Get("offset") == "2" {
+				cancel()
+			}
+			return nil
 		}
-		return nil
-	}
-	run := f.begin(t, discovery.KindRSS)
-	indexer := usableIndexers(t, run)[1]
+		run := f.begin(t, discovery.KindRSS)
+		indexer := usableIndexers(t, run)[1]
 
-	assert.Empty(t, titles(run.Feed(ctx, indexer, accept("Show.S01"))))
-	run.End()
-	assert.Empty(t, run.Failures(), "the caller reports a canceled context")
-	assert.NoError(t, run.Err())
+		assert.Empty(t, titles(run.Feed(ctx, indexer, accept("Show.S01"))))
+		run.End()
+		assert.Empty(t, run.Failures(), "the caller reports a canceled context")
+		assert.NoError(t, run.Err())
 
-	f.prowlarr.respond = nil
-	f.prowlarr.requests = nil
-	got, failures := f.poll(t, 1, accept("Show.S01"))
-	assert.Empty(t, failures)
-	assert.Equal(t, []string{"Show.S01"}, got)
-	assert.Len(t, f.requestsTo("/1/api"), 2, "the next poll must read back to the checkpoint of the poll before")
+		f.prowlarr.respond = nil
+		f.prowlarr.requests = nil
+		got, failures := f.poll(t, 1, accept("Show.S01"))
+		assert.Empty(t, failures)
+		assert.Equal(t, []string{"Show.S01"}, got)
+		assert.Len(t, f.requestsTo("/1/api"), 2, "the next poll must read back to the checkpoint of the poll before")
+	})
 }
 
 func TestFeed_ConnectionChangeDropsFeedState(t *testing.T) {
@@ -210,39 +220,43 @@ func TestFeed_ConnectionChangeDropsFeedState(t *testing.T) {
 		"api key": func(f *sourceFixture) { f.settings.APIKey = "other-key"; f.prowlarr.apiKey = "other-key" },
 	} {
 		t.Run(name, func(t *testing.T) {
-			f := newSourceFixture(t)
-			f.prowlarr.listings = map[int][]string{1: {"Show.S01", "Show.S01E01"}}
-			f.poll(t, 1, accept("Show.S01"))
+			synctest.Test(t, func(t *testing.T) {
+				f := newSourceFixture(t)
+				f.prowlarr.listings = map[int][]string{1: {"Show.S01", "Show.S01E01"}}
+				f.poll(t, 1, accept("Show.S01"))
 
-			change(f)
-			f.prowlarr.listings[1] = episodeTitles(3)
-			f.prowlarr.requests = nil
-			got, failures := f.poll(t, 1, accept("Show.S01"))
+				change(f)
+				f.prowlarr.listings[1] = episodeTitles(3)
+				f.prowlarr.requests = nil
+				got, failures := f.poll(t, 1, accept("Show.S01"))
 
-			assert.Empty(t, got, "a connection change must drop the retained listings")
-			assert.Empty(t, failures, "a connection change must drop the checkpoint")
-			assert.Len(t, f.requestsTo("/1/api"), 1)
+				assert.Empty(t, got, "a connection change must drop the retained listings")
+				assert.Empty(t, failures, "a connection change must drop the checkpoint")
+				assert.Len(t, f.requestsTo("/1/api"), 1)
+			})
 		})
 	}
 }
 
 func TestFeed_UnreadableClientSavesNoFeedState(t *testing.T) {
-	f := newSourceFixture(t)
-	f.prowlarr.listings = map[int][]string{1: {"Old.S01E01"}}
-	f.poll(t, 1, accept())
-	f.prowlarr.listings[1] = []string{"Show.S01", "Show.S01E01", "Old.S01E01"}
-	run := f.begin(t, discovery.KindRSS)
-	run.ClientUnreadable()
-	indexer := usableIndexers(t, run)[1]
-	assert.Equal(t, []string{"Show.S01"}, titles(run.Feed(t.Context(), indexer, accept("Show.S01"))))
-	run.End()
+	synctest.Test(t, func(t *testing.T) {
+		f := newSourceFixture(t)
+		f.prowlarr.listings = map[int][]string{1: {"Old.S01E01"}}
+		f.poll(t, 1, accept())
+		f.prowlarr.listings[1] = []string{"Show.S01", "Show.S01E01", "Old.S01E01"}
+		run := f.begin(t, discovery.KindRSS)
+		run.ClientUnreadable()
+		indexer := usableIndexers(t, run)[1]
+		assert.Equal(t, []string{"Show.S01"}, titles(run.Feed(t.Context(), indexer, accept("Show.S01"))))
+		run.End()
 
-	f.restart(t)
-	f.prowlarr.requests = nil
-	got, failures := f.poll(t, 1, accept("Show.S01"))
-	assert.Empty(t, failures)
-	assert.Equal(t, []string{"Show.S01"}, got)
-	assert.Len(t, f.requestsTo("/1/api"), 2, "the next run must read back to the checkpoint of the run before")
+		f.restart(t)
+		f.prowlarr.requests = nil
+		got, failures := f.poll(t, 1, accept("Show.S01"))
+		assert.Empty(t, failures)
+		assert.Equal(t, []string{"Show.S01"}, got)
+		assert.Len(t, f.requestsTo("/1/api"), 2, "the next run must read back to the checkpoint of the run before")
+	})
 }
 
 func TestFeed_EndsWhenDownloadTakesIndexerOut(t *testing.T) {

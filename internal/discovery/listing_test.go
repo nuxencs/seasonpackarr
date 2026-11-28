@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"testing/synctest"
 
 	"github.com/nuxencs/seasonpackarr/internal/discovery"
 
@@ -68,23 +69,25 @@ func TestListingTorrent_TorrentCache(t *testing.T) {
 		{"bytes that do not parse", []byte("invalid torrent"), downloaded},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			f := newSourceFixture(t)
-			f.prowlarr.listings = map[int][]string{2: {"Show.S01"}}
-			f.prowlarr.torrents = map[string][]byte{"Show.S01": tt.torrent}
+			synctest.Test(t, func(t *testing.T) {
+				f := newSourceFixture(t)
+				f.prowlarr.listings = map[int][]string{2: {"Show.S01"}}
+				f.prowlarr.torrents = map[string][]byte{"Show.S01": tt.torrent}
 
-			data, stats := f.fetchFirst(t)
-			assert.Equal(t, tt.torrent, data)
-			assert.Equal(t, downloaded, stats)
+				data, stats := f.fetchFirst(t)
+				assert.Equal(t, tt.torrent, data)
+				assert.Equal(t, downloaded, stats)
 
-			data, stats = f.fetchFirst(t)
-			assert.Equal(t, tt.torrent, data)
-			assert.Equal(t, tt.later, stats, "a later run")
+				data, stats = f.fetchFirst(t)
+				assert.Equal(t, tt.torrent, data)
+				assert.Equal(t, tt.later, stats, "a later run")
 
-			f.restart(t)
-			data, stats = f.fetchFirst(t)
-			assert.Equal(t, tt.torrent, data)
-			assert.Equal(t, tt.later, stats, "a run after a restart")
-			assert.Len(t, f.requestsTo("/2/download"), 1+2*tt.later.Downloads)
+				f.restart(t)
+				data, stats = f.fetchFirst(t)
+				assert.Equal(t, tt.torrent, data)
+				assert.Equal(t, tt.later, stats, "a run after a restart")
+				assert.Len(t, f.requestsTo("/2/download"), 1+2*tt.later.Downloads)
+			})
 		})
 	}
 }
@@ -98,40 +101,44 @@ func TestListingTorrent_ConnectionChangeEmptiesTorrentCache(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			f := newSourceFixture(t)
-			f.prowlarr.listings = map[int][]string{2: {"Show.S01"}}
-			f.fetchFirst(t)
-			change(f)
+			synctest.Test(t, func(t *testing.T) {
+				f := newSourceFixture(t)
+				f.prowlarr.listings = map[int][]string{2: {"Show.S01"}}
+				f.fetchFirst(t)
+				change(f)
 
-			_, stats := f.fetchFirst(t)
+				_, stats := f.fetchFirst(t)
 
-			assert.Equal(t, discovery.Stats{FeedPages: 1, Downloads: 1}, stats)
-			assert.Len(t, f.requestsTo("/2/download"), 2)
+				assert.Equal(t, discovery.Stats{FeedPages: 1, Downloads: 1}, stats)
+				assert.Len(t, f.requestsTo("/2/download"), 2)
+			})
 		})
 	}
 }
 
 // TestListingTorrent_FailedDownloadLeavesIndexerUsable covers rule 4.
 func TestListingTorrent_FailedDownloadLeavesIndexerUsable(t *testing.T) {
-	f := newSourceFixture(t)
-	f.prowlarr.listings = map[int][]string{2: {"Show.S01", "Show.S01.REPACK"}}
-	f.prowlarr.respond = atTitle("Show.S01", func() *http.Response { return response(http.StatusNotFound, "") })
-	run := f.begin(t, discovery.KindSearch)
+	synctest.Test(t, func(t *testing.T) {
+		f := newSourceFixture(t)
+		f.prowlarr.listings = map[int][]string{2: {"Show.S01", "Show.S01.REPACK"}}
+		f.prowlarr.respond = atTitle("Show.S01", func() *http.Response { return response(http.StatusNotFound, "") })
+		run := f.begin(t, discovery.KindSearch)
 
-	var got []string
-	var errs []error
-	for listing := range run.Search(t.Context(), usableIndexers(t, run)[2], showQuery) {
-		got = append(got, listing.Title())
-		_, err := listing.Torrent(t.Context())
-		errs = append(errs, err)
-	}
+		var got []string
+		var errs []error
+		for listing := range run.Search(t.Context(), usableIndexers(t, run)[2], showQuery) {
+			got = append(got, listing.Title())
+			_, err := listing.Torrent(t.Context())
+			errs = append(errs, err)
+		}
 
-	assert.Equal(t, []string{"Show.S01", "Show.S01.REPACK"}, got)
-	require.Len(t, errs, 2)
-	assert.ErrorIs(t, errs[0], discovery.ErrDownload)
-	assert.NoError(t, errs[1])
-	assert.Empty(t, run.Failures())
-	assert.Equal(t, []string{"Show.S01", "Show.S01.REPACK"}, titles(run.Search(t.Context(), usableIndexers(t, run)[2], showQuery)))
+		assert.Equal(t, []string{"Show.S01", "Show.S01.REPACK"}, got)
+		require.Len(t, errs, 2)
+		assert.ErrorIs(t, errs[0], discovery.ErrDownload)
+		assert.NoError(t, errs[1])
+		assert.Empty(t, run.Failures())
+		assert.Equal(t, []string{"Show.S01", "Show.S01.REPACK"}, titles(run.Search(t.Context(), usableIndexers(t, run)[2], showQuery)))
+	})
 }
 
 func TestListingTorrent_CanceledContext(t *testing.T) {
