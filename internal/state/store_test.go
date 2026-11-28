@@ -4,6 +4,7 @@
 package state
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -88,6 +89,38 @@ func TestStore_PrivateFileAndSchema(t *testing.T) {
 	require.NoError(t, s.Close())
 	_, err = Open(t.Context(), path, zerolog.Nop())
 	require.ErrorContains(t, err, "unsupported database schema version 99")
+}
+
+func TestStore_UpgradesSchemaVersion1(t *testing.T) {
+	// A database of v1.0.0 has schema version 1 and can hold discovery state.
+	path := filepath.Join(t.TempDir(), "seasonpackarr.db")
+	until := time.Now().Add(time.Hour).Truncate(time.Nanosecond)
+	db, err := sql.Open("sqlite", path)
+	require.NoError(t, err)
+	_, err = db.Exec(initialSchema)
+	require.NoError(t, err)
+	_, err = db.Exec("PRAGMA user_version = 1")
+	require.NoError(t, err)
+	_, err = db.Exec("INSERT INTO cooldowns (indexer_id, until_ns) VALUES (3, ?)", until.UnixNano())
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+	require.NoError(t, os.Chmod(path, 0o600))
+
+	s, err := Open(t.Context(), path, zerolog.Nop())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
+
+	var version int
+	require.NoError(t, s.db.QueryRow("PRAGMA user_version").Scan(&version))
+	assert.Equal(t, 2, version)
+	cooldowns, err := s.Cooldowns(t.Context(), time.Now())
+	require.NoError(t, err)
+	assert.True(t, until.Equal(cooldowns[3]), "the upgrade must keep the discovery state of version 1")
+	group := SearchGroup{Title: "show", Season: 1}
+	require.NoError(t, s.SetSearchTimes(t.Context(), group, 3, []string{"a"}, time.Now()))
+	times, err := s.SearchTimes(t.Context(), time.Now())
+	require.NoError(t, err)
+	assert.Contains(t, times, SearchTarget{Group: group, Client: "a", IndexerID: 3})
 }
 
 func TestStore_RejectsInvalidFiles(t *testing.T) {
