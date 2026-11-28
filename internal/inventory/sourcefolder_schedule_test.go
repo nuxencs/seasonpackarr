@@ -354,3 +354,54 @@ func TestScanSourceFolders_MovesTheNextTimerScan(t *testing.T) {
 		assert.Equal(t, []int{1, 2, 2}, scans.scanCounts(t, root))
 	})
 }
+
+// A walk can stall on a hung mount. The search must still end with its request, and the stalled walk keeps the scan
+// lock, so no second walk competes with it.
+func TestScanSourceFolders_ReturnsWhenTheContextEndsDuringAStalledWalk(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		root := t.TempDir()
+		writeSourceFile(t, root, keptEpisode)
+		const stalledName = "Series.S01E02.1080p.WEB-DL-GRP.mkv"
+		unblock := make(chan struct{})
+		scans := newScheduledScans(folderConfig("15m", root))
+		scans.store.parseEpisodeName = func(path string) (*rls.Release, bool) {
+			if filepath.Base(path) == stalledName {
+				<-unblock
+			}
+			return release.ParseEpisodeName(path)
+		}
+		scans.start(t)
+		writeSourceFile(t, root, stalledName)
+
+		ctx, cancel := context.WithCancel(t.Context())
+		stalled := make(chan struct{})
+		go func() {
+			defer close(stalled)
+			scans.store.ScanSourceFolders(ctx, scans.provider.Snapshot())
+		}()
+		synctest.Wait()
+		cancel()
+		synctest.Wait()
+		select {
+		case <-stalled:
+		default:
+			t.Fatal("the search scan must return when its context ends")
+		}
+
+		next := make(chan struct{})
+		go func() {
+			defer close(next)
+			scans.store.ScanSourceFolders(t.Context(), scans.provider.Snapshot())
+		}()
+		synctest.Wait()
+		select {
+		case <-next:
+			t.Fatal("a second scan must wait for the stalled walk")
+		default:
+		}
+
+		close(unblock)
+		<-next
+		assert.Equal(t, []int{1, 2}, scans.scanCounts(t, root), "the stalled scan stores nothing, the next one stores both files")
+	})
+}
