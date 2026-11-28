@@ -337,7 +337,9 @@ func (f *fakeSearchClient) Import(ctx context.Context, req torrentclient.ImportR
 
 type searchFixture struct {
 	processorHTTPFixture
-	queries        []string
+	queries []string
+	// queryPaths holds the path of each search page, such as "/1/api" for indexer 1.
+	queryPaths     []string
 	discoveryCalls int
 	downloads      int
 	titles         []string
@@ -368,6 +370,7 @@ func newSearchFixture(t *testing.T, opts fixtureOptions) *searchFixture {
 		}
 		if strings.HasSuffix(r.URL.Path, "/api") {
 			f.queries = append(f.queries, r.URL.Query().Get("q"))
+			f.queryPaths = append(f.queryPaths, r.URL.Path)
 			if f.beforeSearch != nil {
 				f.beforeSearch()
 			}
@@ -432,7 +435,13 @@ func (f *searchFixture) addOtherVariant(t *testing.T) string {
 
 func (f *searchFixture) runExact(t *testing.T, dryRun bool) searchReport {
 	t.Helper()
-	response := f.postJSON(t, "/api/search", map[string]any{"dryRun": dryRun, "verify": dryRun})
+	return f.searchFor(t, SearchRequest{DryRun: dryRun, Verify: dryRun})
+}
+
+// searchFor sends the search request and returns the report of a 200 answer.
+func (f *searchFixture) searchFor(t *testing.T, request SearchRequest) searchReport {
+	t.Helper()
+	response := f.postJSON(t, "/api/search", request)
 	require.Equal(t, 200, response.Code, response.Body.String())
 	var report searchReport
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &report))

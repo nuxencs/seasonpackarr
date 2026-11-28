@@ -21,7 +21,8 @@ const pageBudget = 10
 // run. Each page waits for the query gap of the indexer. The sequence yields
 // nothing for an indexer that is out, and it ends when the indexer goes out,
 // the database fails, or the context is canceled. A canceled context adds no
-// failure.
+// failure. When a query of the plan of the run ends with an answer (the last
+// page, the page budget, or a repeated page), the run stores its search times.
 func (r *Run) Search(ctx context.Context, indexer Indexer, query Query) iter.Seq[*Listing] {
 	fail := func(reason string) { r.fail(Failure{IndexerID: indexer.ID, Query: query.String(), Reason: reason}) }
 	return func(yield func(*Listing) bool) {
@@ -67,15 +68,18 @@ func (r *Run) Search(ctx context.Context, indexer Indexer, query Query) iter.Seq
 				}
 			}
 			if !indexer.prowlarr.SupportsPagination || len(releases) < limit {
+				r.searched(ctx, indexer.ID, query)
 				return
 			}
 			if fresh == 0 {
 				fail("indexer repeated a page; remaining results may be incomplete")
+				r.searched(ctx, indexer.ID, query)
 				return
 			}
 			offset += len(releases)
 		}
 		fail("search reached the 10-page limit; remaining results may be incomplete")
+		r.searched(ctx, indexer.ID, query)
 	}
 }
 

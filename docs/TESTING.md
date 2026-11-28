@@ -33,7 +33,8 @@ code of the real binary.
 - The tests of the discovery source live in `internal/discovery/`
   (`source_test.go` for `Begin` and `End`, `run_test.go` for `Indexers` and
   the rules of a whole run, `search_test.go` for `Search`, `feed_test.go`
-  for `Feed`, and `listing_test.go` for `Listing.Torrent`). They are in the
+  for `Feed`, `plan_test.go` for `Plan` and the wait time, and
+  `listing_test.go` for `Listing.Torrent`). They are in the
   external test package `discovery_test`, so they call only `Begin`, the
   methods of the run, and the methods of a listing. The fixture in
   `fixtures_test.go` gives the source a real SQLite file in a temporary
@@ -44,17 +45,18 @@ code of the real binary.
   The tests need no torrent client, no pack, and no config provider. A
   restart is: close the store, open it again, and make a new source
   (`restart`). A database failure test closes the store. No test calls
-  another store method, reads a cooldown map, or sets a deadline. A test
+  another store method, reads a cooldown map, or sets a deadline or a search time. A test
   asserts only what a caller can see: the indexers, the listings, the torrent
   bytes and their errors, the failures, `Err`, `Stats`, the requests that the
   fake Prowlarr received, and the log lines. A test that
   waits for a deadline runs in a `testing/synctest` bubble and moves the
   virtual clock with `time.Sleep`. Examples are the end of a cooldown, the
-  retention time of a retained listing, the request spacing, and the query
-  gap. Each test that sends two queries to one indexer runs in a bubble, or it
+  retention time of a retained listing, the request spacing, the query
+  gap, and the wait time. Each test that sends two queries to one indexer runs in a bubble, or it
   waits 60 real seconds for the query gap.
 - The discovery run tests in `internal/http/` (`search_test.go`,
-  `search_cooldown_test.go`, `search_persistence_test.go`, and `rss_test.go`)
+  `search_cooldown_test.go`, `search_persistence_test.go`,
+  `search_wait_test.go`, and `rss_test.go`)
   assert what the run adds to the source: the outcomes, the imports, the
   notifications, the log lines of the run, and the report. A search test
   enters through `POST /api/search`. An RSS test enters through the

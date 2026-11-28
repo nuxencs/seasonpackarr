@@ -93,6 +93,7 @@ type searchReport struct {
 	EpisodeTorrents        int  `json:"episodeTorrents"`
 	CoveredEpisodeTorrents int  `json:"coveredEpisodeTorrents"`
 	Groups                 int  `json:"groups"`
+	GroupsNotDue           int  `json:"groupsNotDue"`
 	Requests               int  `json:"requests"`
 	TorrentDownloads       int  `json:"torrentDownloads"`
 	TorrentCacheHits       int  `json:"torrentCacheHits"`
@@ -131,7 +132,7 @@ func (r *searchReport) print(w io.Writer, api *apiClient) error {
 	}
 	fmt.Fprintf(&output, "%s %s\n", searchMode(r.DryRun, r.Verify), completion)
 	fmt.Fprintf(&output, "Scanned: %d torrents, %d episode torrents, %d already covered\n", r.ScannedTorrents, r.EpisodeTorrents, r.CoveredEpisodeTorrents)
-	fmt.Fprintf(&output, "Search: %d groups, %d requests\nMetadata: %d downloads, %d cache hits\n", r.Groups, r.Requests, r.TorrentDownloads, r.TorrentCacheHits)
+	fmt.Fprintf(&output, "Search: %d groups, %d not due, %d requests\nMetadata: %d downloads, %d cache hits\n", r.Groups, r.GroupsNotDue, r.Requests, r.TorrentDownloads, r.TorrentCacheHits)
 	fmt.Fprintf(&output, "Results: %d\n", len(r.Outcomes))
 	for _, outcome := range r.Outcomes {
 		label := strings.ReplaceAll(terminalText(outcome.Status), "_", " ")

@@ -1,6 +1,6 @@
 # SQLite Schema
 
-Schema version: `1`, tracked by `PRAGMA user_version`.
+Schema version: `2`, tracked by `PRAGMA user_version`.
 
 `internal/state/store.go` embeds and applies the migrations in
 `internal/state/migrations/` inside a transaction. Newer schema versions are
@@ -18,6 +18,7 @@ No database server or SQLite CLI is required at runtime.
 | `metadata` | The torrent cache: validated torrent bytes, expiry, and last access for bounded LRU eviction. |
 | `rss_checkpoints` | The checkpoints: at most one page of listing identities per eligible indexer. |
 | `rss_candidates` | The retained listings: bounded listing JSON, expiry, and original insertion order. |
+| `search_times` | The search times of the wait time: the end of the last answered search query, by normalized show title, season, client name, and indexer. A row expires after 90 days. |
 
 Timestamps use Unix nanoseconds. Listing identities hash the GUID (or download
 link) and title. Indexer IDs keep tracker listings separate. RSS listings without
@@ -31,10 +32,10 @@ for locations, sensitive data, backups, and recovery.
 
 ## Generated Schema
 
-Generate this SQL excerpt from the initial migration, from the repository root:
+Generate this SQL excerpt from the migrations, from the repository root:
 
 ```sh
-sqlite3 :memory: '.read internal/state/migrations/001_discovery.sql' '.schema'
+sqlite3 :memory: '.read internal/state/migrations/001_discovery.sql' '.read internal/state/migrations/002_search_times.sql' '.schema'
 ```
 
 ```sql
@@ -67,5 +68,13 @@ CREATE TABLE rss_candidates (
     expires_ns INTEGER NOT NULL,
     sequence INTEGER NOT NULL,
     PRIMARY KEY (indexer_id, identity)
+) STRICT;
+CREATE TABLE search_times (
+    title TEXT NOT NULL,
+    season INTEGER NOT NULL,
+    client TEXT NOT NULL,
+    indexer_id INTEGER NOT NULL CHECK (indexer_id > 0),
+    searched_ns INTEGER NOT NULL,
+    PRIMARY KEY (title, season, client, indexer_id)
 ) STRICT;
 ```

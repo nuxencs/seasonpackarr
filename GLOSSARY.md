@@ -109,6 +109,10 @@ _Avoid_: Rate limit, delay
 The time after a search queried one indexer for a search group and a client, during which no search sends that query again.
 _Avoid_: Cooldown (for this meaning), exclude time
 
+**Search time**:
+The stored time at which an import run got the answer of a query of one search group to one indexer, for one client. The wait time starts at the search time.
+_Avoid_: Last search, timestamp
+
 **Discovery run**:
 One search or one RSS poll, from its start to its report. Only one is active at a time.
 _Avoid_: Job, scan

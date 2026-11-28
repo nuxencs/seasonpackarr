@@ -187,6 +187,34 @@ URL. The CLI reads connection settings from local config and environment. Add
 `--config <directory>` for a custom config directory. The `--api` token belongs
 to seasonpackarr, not Prowlarr. See the [CLI guide](CLI.md#connection-settings).
 
+### Wait time
+
+After an import run queried one indexer for a search group and a client, no
+search sends that query again for 24 hours. A season pack that an indexer did not
+have an hour ago is very unlikely to be there now. The wait time has no setting,
+and no flag or request field ignores it. Thus a daily search is the most frequent
+useful schedule for an external scheduler.
+
+- A search queries an indexer for a search group only when at least one client
+  of the group is due on that indexer. Only the due clients evaluate the
+  listings of that query. A run for one client does not make a run for another
+  client skip the group.
+- A new indexer and a new client are due at once.
+- A preview (`--dry-run`, with or without `--verify`) skips what an import run
+  would skip, but stores no search time. The import run after a preview sends
+  the queries that the preview sent.
+- An import run stores the time only when the indexer answered: the last page
+  was read, or the page budget or a repeated page stopped the query. A failed
+  query, an indexer in a cooldown, and a canceled query store no time, so the
+  group is due again when the indexer is back. A canceled import run keeps the
+  times of the queries that it finished.
+- RSS polls and announces neither read nor write the search times.
+- After a change of a fuzzy matching setting, a search shows the effect on a
+  group only after its wait time. Announces and RSS polls use the new setting
+  at once.
+
+`groupsNotDue` in the report counts the search groups that the run skipped.
+
 ### Search output
 
 The CLI prints a readable summary. Add `--json` to get the complete API report
@@ -196,7 +224,9 @@ and operation failures. `requests` counts targeted feed requests, excluding
 indexer discovery and torrent downloads. Automatic RSS logs include `rss: true`.
 `coveredEpisodeTorrents` counts episode torrent entries
 excluded because a compatible pack already exists. `episodeTorrents` includes
-these entries; `groups` counts only groups that still need a search. Counts are
+these entries; `groups` counts only groups that still need a search, and
+`groupsNotDue` counts the groups of `groups` that are in their
+[wait time](#wait-time). Counts are
 per client and include duplicate episode torrents, not distinct episodes.
 The CLI exits with a failure code
 if a tracker, client, or listing failed. Normal match rejections are not command
@@ -228,7 +258,8 @@ added a stopped torrent; inspect the client before retrying.
    If no groups remain, do not request Prowlarr indexer discovery or searches.
 4. For a search, read enabled, searchable torrent indexers and apply
    `search.indexerIDs`. Try lower numeric indexer priorities first, with indexer
-   ID as the tie-breaker.
+   ID as the tie-breaker. Skip each indexer on which no client of the group is
+   due, and skip the group when no indexer is left. See [Wait time](#wait-time).
 5. Use a TV title-and-season query when the indexer advertises those parameters.
    Otherwise use a title and `Sxx` text query. Omit the parsed release year from
    both query forms so trackers can return packs whose names omit it. Keep the
@@ -308,7 +339,10 @@ until expiry or a connection change. The cache assumes stable listing identities
 ## Discovery state
 
 seasonpackarr keeps discovery state in its SQLite database: RSS checkpoints,
-retained listings, cooldowns, and the torrent cache. See
+retained listings, cooldowns, the torrent cache, and the search times of the
+[wait time](#wait-time). The search times survive a restart and expire after 90
+days. A change of the Prowlarr URL or API key clears all discovery state,
+because indexer IDs can then name other trackers. See
 [Application data](INSTALL.md#application-data) for the database location,
 backups, and startup errors. Cached torrents and retained links can contain
 tracker credentials, so protect database backups as you protect `config.yaml`.
@@ -337,6 +371,8 @@ report fields.
 - No external series database or TVDB/TMDB lookup is used. Ambiguous names are
   not expanded through guesses. Discovery does not search for shows absent from
   the client and does not remove episode torrents or files.
+- A search sends a query of one search group to one indexer for one client at
+  most once in 24 hours. See [Wait time](#wait-time).
 - Only one RSS or search run executes at a time. Imports to the same client endpoint
   are serialized with webhook imports. Matching stays free of client mutations.
 

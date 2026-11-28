@@ -246,6 +246,10 @@ The `200` report contains these fields:
 - `dryRun` and `verify`: the request values.
 - `scannedTorrents`, `episodeTorrents`, `coveredEpisodeTorrents`, and `groups`:
   inventory counts. See [Search output](PROWLARR.md#search-output).
+- `groupsNotDue`: the search groups that the run skipped, because no query of
+  the group to a usable indexer was due. See
+  [Wait time](PROWLARR.md#wait-time). A run in which no search group is due
+  sends no query to an indexer.
 - `requests`: targeted feed requests. Indexer discovery and torrent downloads
   are not counted.
 - `torrentDownloads`: completed torrent downloads. A failed download appears

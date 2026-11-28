@@ -26,6 +26,9 @@ import (
 //go:embed migrations/001_discovery.sql
 var initialSchema string
 
+//go:embed migrations/002_search_times.sql
+var searchTimesSchema string
+
 // Store is the application database. Discovery operations are serialized
 // by the discovery runner; the store is not a multi-process scheduler.
 type Store struct {
@@ -141,7 +144,7 @@ func (s *Store) transaction(ctx context.Context, apply func(*sql.Tx) error) erro
 }
 
 func (s *Store) migrate(ctx context.Context, log zerolog.Logger) (int, error) {
-	migrations := []string{initialSchema}
+	migrations := []string{initialSchema, searchTimesSchema}
 	var version int
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		if err := tx.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
@@ -192,7 +195,7 @@ func (s *Store) UseConnection(ctx context.Context, address, apiKey string) error
 		if hmac.Equal(previous, fingerprint) {
 			return nil
 		}
-		for _, table := range []string{"metadata", "cooldowns", "rss_candidates", "rss_checkpoints"} {
+		for _, table := range []string{"metadata", "cooldowns", "rss_candidates", "rss_checkpoints", "search_times"} {
 			if _, err := tx.ExecContext(ctx, "DELETE FROM "+table); err != nil {
 				return err
 			}
@@ -208,6 +211,9 @@ func (s *Store) pruneExpired(ctx context.Context, now time.Time) error {
 			if _, err := tx.ExecContext(ctx, "DELETE FROM "+table+" WHERE expires_ns <= ?", now.UnixNano()); err != nil {
 				return err
 			}
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM search_times WHERE searched_ns <= ?", now.Add(-searchTimeTTL).UnixNano()); err != nil {
+			return err
 		}
 		_, err := tx.ExecContext(ctx, "DELETE FROM cooldowns WHERE until_ns <= ?", now.UnixNano())
 		return err

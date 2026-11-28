@@ -82,7 +82,7 @@ func TestStore_PrivateFileAndSchema(t *testing.T) {
 	}
 	var version int
 	require.NoError(t, s.db.QueryRow("PRAGMA user_version").Scan(&version))
-	require.Equal(t, 1, version)
+	require.Equal(t, 2, version)
 	_, err = s.db.Exec("PRAGMA user_version = 99")
 	require.NoError(t, err)
 	require.NoError(t, s.Close())

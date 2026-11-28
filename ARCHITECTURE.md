@@ -189,6 +189,17 @@
     restart. The request spacing of the Prowlarr client also applies. Indexer
     discovery and torrent downloads do not wait for the gap. A canceled wait
     returns at once, adds no failure, and records no cooldown.
+  - The source owns the wait time of 24 hours and the stored search times.
+    `Run.Plan` takes the search groups of a search with their clients and
+    returns the work of the run: the due search groups in query order, for
+    each one the usable indexers to query and the due clients of each
+    indexer, and the count of the search groups that are not due. A triple of
+    search group, client, and indexer is due when it has no stored search time
+    or a time that is 24 hours old or older. In an import run, `Run.Search`
+    stores the time of each due client after a planned query ends with an
+    answer: the last page, the page budget, or a repeated page. A failed
+    request, an indexer that went out, a canceled query, and a preview store
+    nothing. The search code compares no time.
   - `Listing.Torrent` gets the torrent bytes of a listing one time, from the
     torrent cache or by one download. Its errors match `ErrDownload` or
     `ErrDatabase`, or are the error of a canceled context.
@@ -245,7 +256,10 @@
 ### Database
 
 - `internal/state/` owns the embedded SQLite driver, schema migrations, expiry,
-  torrent cache eviction, and atomic RSS snapshots. There is no alternative backend.
+  torrent cache eviction, atomic RSS snapshots, and the search times. There is no
+  alternative backend.
+- The search times are discovery state: one row for each search group, client,
+  and indexer. A connection change clears them, and a row expires after 90 days.
 - `cmd/start.go` creates `seasonpackarr.db` beside the active config. Environment-only
   setups use the explicit config directory or the user data directory.
 - The application owns one SQL connection with WAL journaling, SQLite-managed

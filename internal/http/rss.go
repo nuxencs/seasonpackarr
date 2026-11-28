@@ -5,6 +5,8 @@ package http
 
 import (
 	"context"
+	"maps"
+	"slices"
 
 	"github.com/nuxencs/seasonpackarr/internal/discovery"
 
@@ -29,7 +31,7 @@ func (run *discoveryRun) pollRSS(ctx context.Context, indexers []discovery.Index
 	relevant := func(title string) bool { return rssGroup(title, groups) != nil }
 	for _, indexer := range indexers {
 		for listing := range run.source.Feed(ctx, indexer, relevant) {
-			run.evaluateListing(ctx, listing, rssGroup(listing.Title(), groups))
+			run.evaluateListing(ctx, listing, slices.Sorted(maps.Keys(rssGroup(listing.Title(), groups).clients)))
 		}
 	}
 }

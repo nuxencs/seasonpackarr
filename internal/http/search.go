@@ -61,6 +61,7 @@ type searchReport struct {
 	EpisodeTorrents        int             `json:"episodeTorrents"`
 	CoveredEpisodeTorrents int             `json:"coveredEpisodeTorrents"`
 	Groups                 int             `json:"groups"`
+	GroupsNotDue           int             `json:"groupsNotDue"`
 	Requests               int             `json:"requests"`
 	Outcomes               []searchOutcome `json:"outcomes"`
 	Failures               []searchFailure `json:"failures"`
@@ -154,7 +155,7 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 		for _, outcome := range report.Outcomes {
 			r.log.Info().Bool("rss", rss).Str("clientname", outcome.ClientName).Str("release", outcome.Title).Int("indexer_id", outcome.IndexerID).Str("status", outcome.Status).Str("reason", outcome.Reason).Interface("reusable_episodes", outcome.ReusableEpisodes).Interface("total_episodes", outcome.TotalEpisodes).Msg("Prowlarr result")
 		}
-		r.log.Info().Bool("rss", rss).Bool("dry_run", req.DryRun).Bool("verify", req.Verify).Int("torrent_downloads", report.TorrentDownloads).Int("torrent_cache_hits", report.TorrentCacheHits).Int("covered_episode_torrents", report.CoveredEpisodeTorrents).Int("groups", report.Groups).Int("search_requests", report.Requests).Int("outcomes", len(report.Outcomes)).Int("failures", len(report.Failures)).Int64("duration_ms", time.Since(started).Milliseconds()).Msg("Prowlarr run completed")
+		r.log.Info().Bool("rss", rss).Bool("dry_run", req.DryRun).Bool("verify", req.Verify).Int("torrent_downloads", report.TorrentDownloads).Int("torrent_cache_hits", report.TorrentCacheHits).Int("covered_episode_torrents", report.CoveredEpisodeTorrents).Int("groups", report.Groups).Int("groups_not_due", report.GroupsNotDue).Int("search_requests", report.Requests).Int("outcomes", len(report.Outcomes)).Int("failures", len(report.Failures)).Int64("duration_ms", time.Since(started).Milliseconds()).Msg("Prowlarr run completed")
 	}()
 
 	handles := make(map[string]*inventory.Client, len(clients))
@@ -217,9 +218,7 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 			}
 		}
 	}
-	ordered := slices.Collect(maps.Values(groups))
-	slices.SortFunc(ordered, func(a, b *seasonSearch) int { return strings.Compare(a.query.String(), b.query.String()) })
-	report.Groups = len(ordered)
+	report.Groups = len(groups)
 	run := discoveryRun{
 		runner:   r,
 		source:   source,
@@ -228,21 +227,27 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 		clients:  handles,
 		selected: make(map[string][]rls.Release),
 	}
-	// With no groups, the run sends no request to Prowlarr.
-	if len(ordered) > 0 {
-		indexers := source.Indexers(ctx)
-		if rss {
+	// With no groups, the run sends no request to Prowlarr. Plan applies this rule for a search.
+	if rss {
+		if len(groups) > 0 {
+			indexers := source.Indexers(ctx)
 			// Do not consume listings for clients absent from this inventory scan.
 			if len(handles) != len(clients) {
 				source.ClientUnreadable()
 			}
 			run.pollRSS(ctx, indexers, groups)
-		} else {
-			for _, group := range ordered {
-				for _, indexer := range indexers {
-					for listing := range source.Search(ctx, indexer, group.query) {
-						run.evaluateListing(ctx, listing, group)
-					}
+		}
+	} else {
+		request := discovery.PlanRequest{Preview: req.DryRun}
+		for _, group := range groups {
+			request.Groups = append(request.Groups, discovery.Group{Query: group.query, Clients: slices.Collect(maps.Keys(group.clients))})
+		}
+		plan := source.Plan(ctx, request)
+		report.GroupsNotDue = plan.NotDue
+		for _, group := range plan.Groups {
+			for _, query := range group.Queries {
+				for listing := range source.Search(ctx, query.Indexer, group.Query) {
+					run.evaluateListing(ctx, listing, query.Clients)
 				}
 			}
 		}
@@ -287,12 +292,12 @@ func (run *discoveryRun) alreadySelected(snapshot domain.Config, name string, pa
 	return false
 }
 
-// evaluateListing checks the listing for each client of its group, then
-// imports it or reports what the import would do.
-func (run *discoveryRun) evaluateListing(ctx context.Context, listing *discovery.Listing, group *seasonSearch) {
+// evaluateListing checks the listing for each of the clients, in the given
+// order, then imports it or reports what the import would do.
+func (run *discoveryRun) evaluateListing(ctx context.Context, listing *discovery.Listing, clients []string) {
 	processor := run.runner.processor
 	title := listing.Title()
-	for _, name := range slices.Sorted(maps.Keys(group.clients)) {
+	for _, name := range clients {
 		if ctx.Err() != nil || run.source.Err() != nil {
 			return
 		}
