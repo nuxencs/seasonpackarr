@@ -6,6 +6,7 @@ package seasonpack
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
@@ -25,25 +26,46 @@ func TestMatch_RejectsBelowThresholdWithoutSourceFolder(t *testing.T) {
 	assert.Equal(t, &Coverage{Reusable: 1, Total: 2}, outcome.Coverage, "a folder that the client does not name adds nothing")
 }
 
-// A file removed after the scan is dropped at the match with its log line. The coverage rule then decides.
-func TestMatch_DropsSourceFolderFileRemovedAfterScan(t *testing.T) {
+// A file removed or replaced after the scan is dropped at the match with its log line. The coverage rule then decides.
+// A symlink is dropped also when its target has the size of the file in the torrent, because a hardlink of a symlink
+// links the symlink itself on Linux.
+func TestMatch_DropsSourceFolderFileChangedAfterScan(t *testing.T) {
+	remove := func(t *testing.T, path string) {
+		require.NoError(t, os.Remove(path))
+	}
+	replaceWithSymlink := func(t *testing.T, path string) {
+		target := filepath.Join(t.TempDir(), filepath.Base(path))
+		writeEpisode(t, target)
+		remove(t, path)
+		require.NoError(t, os.Symlink(target, path))
+	}
 	tests := map[string]struct {
 		cfg      domain.Config
+		change   func(t *testing.T, path string)
 		status   domain.StatusCode
 		accepted bool
+		reason   string
 	}{
-		"accepted with no threshold": {cfg: newConfig(), status: domain.StatusSuccessfulMatch, accepted: true},
-		"rejected below threshold":   {cfg: newSmartConfig(1), status: domain.StatusBelowThreshold},
+		"removed, accepted with no threshold": {
+			cfg: newConfig(), change: remove, status: domain.StatusSuccessfulMatch, accepted: true, reason: "missing",
+		},
+		"removed, rejected below threshold": {
+			cfg: newSmartConfig(1), change: remove, status: domain.StatusBelowThreshold, reason: "missing",
+		},
+		"replaced by a symlink, accepted with no threshold": {
+			cfg: newConfig(), change: replaceWithSymlink, status: domain.StatusSuccessfulMatch, accepted: true,
+			reason: "not_regular_file",
+		},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			pack := newPack(t, "FolderRemoved", 2, 0)
+			pack := newPack(t, "FolderChanged", 2, 0)
 			pack.writeFolderFile(t, 1)
-			removed := pack.writeFolderFile(t, 2)
+			changed := pack.writeFolderFile(t, 2)
 			cfg := withSourceFolders(tt.cfg, pack.folder())
 			f := newFixture(pack.client)
 			f.scanSourceFolders(t, cfg)
-			require.NoError(t, os.Remove(removed))
+			tt.change(t, changed)
 
 			outcome := f.processor.Match(t.Context(), f.client(t, "default", cfg), pack.name, TorrentFetch(func(context.Context) ([]byte, error) {
 				return pack.torrent, nil
@@ -52,8 +74,8 @@ func TestMatch_DropsSourceFolderFileRemovedAfterScan(t *testing.T) {
 			assert.Equal(t, tt.status, outcome.Status)
 			assert.Equal(t, tt.accepted, outcome.Err == nil)
 			assert.Equal(t, &Coverage{Reusable: 1, Total: 2}, outcome.Coverage)
-			dropped := f.log.Events(t).RequireField(t, "client episode file is not reusable", "source", removed)
-			assert.Equal(t, "missing", dropped["reason"])
+			dropped := f.log.Events(t).RequireField(t, "client episode file is not reusable", "source", changed)
+			assert.Equal(t, tt.reason, dropped["reason"])
 			assert.Equal(t, "source_folder", dropped["source_kind"])
 		})
 	}
