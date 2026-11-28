@@ -105,7 +105,7 @@ func (c *call) buildPlan(ctx context.Context, torrent Torrent) (importPlan, []re
 
 	var (
 		parsed  parsedTorrent
-		sources []release.EpisodeFile
+		sources clientSources
 	)
 	if torrent.fetch == nil {
 		if parsed, outcome = parseTorrent(torrent.bytes); outcome.Err != nil {
@@ -117,20 +117,13 @@ func (c *call) buildPlan(ctx context.Context, torrent Torrent) (importPlan, []re
 		return importPlan{}, nil, outcome
 	}
 
-	// A torrent file at the path of a folder file is the same file, so the link of that path gets the folder rule.
-	sourceFolders := make(map[string]string)
-	for _, candidate := range candidates {
-		if candidate.IsFile() {
-			sourceFolders[candidate.File] = candidate.SourceFolder
-		}
-	}
-	matchResult := release.NewEpisodeMatcher(parsed.episodes).Match(sources)
+	matchResult := release.NewEpisodeMatcher(parsed.episodes).Match(sources.files)
 	links := make([]placement.PlannedLink, 0, len(matchResult.Matches))
 	for _, match := range matchResult.Matches {
 		links = append(links, placement.PlannedLink{
 			Source:       match.ClientPath,
 			TorrentPath:  match.TorrentPath,
-			SourceFolder: sourceFolders[match.ClientPath],
+			SourceFolder: sources.folders[match.ClientPath],
 		})
 	}
 
@@ -153,24 +146,24 @@ func (c *call) buildPlan(ctx context.Context, torrent Torrent) (importPlan, []re
 
 // fetchTorrent reads the client episode files, then gets the torrent with
 // fetch. See TorrentFetch for the two stops before the fetch.
-func (c *call) fetchTorrent(ctx context.Context, candidates []inventory.Entry, fetch FetchFunc) ([]release.EpisodeFile, parsedTorrent, Outcome) {
+func (c *call) fetchTorrent(ctx context.Context, candidates []inventory.Entry, fetch FetchFunc) (clientSources, parsedTorrent, Outcome) {
 	sources, err := c.readSources(ctx, candidates)
 	if err != nil {
-		return nil, parsedTorrent{}, Outcome{
+		return clientSources{}, parsedTorrent{}, Outcome{
 			Status: domain.StatusGetTorrentsError,
 			Err:    fmt.Errorf("%w: %w", ErrFileDetailRead, err),
 		}
 	}
-	if len(sources) == 0 {
-		return nil, parsedTorrent{}, Outcome{Status: domain.StatusFailedMatchToTorrentEps, Err: ErrNoSourceOnDisk}
+	if len(sources.files) == 0 {
+		return clientSources{}, parsedTorrent{}, Outcome{Status: domain.StatusFailedMatchToTorrentEps, Err: ErrNoSourceOnDisk}
 	}
 
 	data, err := fetch(ctx)
 	if err != nil {
-		return nil, parsedTorrent{}, outcomeOfError(domain.StatusTorrentBytesError, err)
+		return clientSources{}, parsedTorrent{}, outcomeOfError(domain.StatusTorrentBytesError, err)
 	}
 	if len(data) == 0 {
-		return nil, parsedTorrent{}, outcomeOf(domain.StatusTorrentBytesError)
+		return clientSources{}, parsedTorrent{}, outcomeOf(domain.StatusTorrentBytesError)
 	}
 
 	parsed, outcome := parseTorrent(data)
@@ -213,10 +206,19 @@ func parseTorrent(data []byte) (parsedTorrent, Outcome) {
 	return parsedTorrent{bytes: data, hashes: hashes, info: torrentInfo, episodes: eligibleEps}, Outcome{Status: domain.StatusSuccessfulMatch}
 }
 
-// readSources reads the episode file of each candidate and keeps the files that are on disk. The torrent sources come
-// before the file sources, because the episode matcher keeps the first source of a target, so a torrent wins over a
-// file of a source folder. The error holds each failed file-detail read. A file that is not on disk is no error.
-func (c *call) readSources(ctx context.Context, candidates []inventory.Entry) ([]release.EpisodeFile, error) {
+// clientSources are the client episode files on disk of one plan build.
+type clientSources struct {
+	// files has the torrent sources before the file sources, because the episode matcher keeps the first source of a
+	// target, so a torrent wins over a file of a source folder.
+	files []release.EpisodeFile
+	// folders maps the path of each file source to its source folder. A path that a torrent source also has is not in
+	// it, because the torrent wins and keeps the torrent behavior.
+	folders map[string]string
+}
+
+// readSources reads the episode file of each candidate and keeps the files that are on disk. The error holds each
+// failed file-detail read. A file that is not on disk is no error.
+func (c *call) readSources(ctx context.Context, candidates []inventory.Entry) (clientSources, error) {
 	var torrentCandidates, fileCandidates []inventory.Entry
 	for _, candidate := range candidates {
 		if candidate.IsFile() {
@@ -226,10 +228,23 @@ func (c *call) readSources(ctx context.Context, candidates []inventory.Entry) ([
 		}
 	}
 
-	sources, err := c.readTorrentSources(ctx, torrentCandidates)
+	files, err := c.readTorrentSources(ctx, torrentCandidates)
+	sources := clientSources{files: files}
+	torrentPaths := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		torrentPaths[file.Path()] = struct{}{}
+	}
 	for _, candidate := range fileCandidates {
-		if source, ok := c.sourceFolderFile(candidate); ok {
-			sources = append(sources, source)
+		source, ok := c.sourceFolderFile(candidate)
+		if !ok {
+			continue
+		}
+		sources.files = append(sources.files, source)
+		if _, ok := torrentPaths[source.Path()]; !ok {
+			if sources.folders == nil {
+				sources.folders = make(map[string]string)
+			}
+			sources.folders[source.Path()] = candidate.SourceFolder
 		}
 	}
 	return sources, err

@@ -369,9 +369,9 @@ type Inventory struct {
 }
 
 // SameSeason yields the entries of the season key, the torrent entries before the file entries. A file in two source
-// folders of the client, one below the other, comes once, with the folder that comes first in the config. The caller must build the key with the fuzzy matching
-// settings of the Client that gave the inventory (Client.Snapshot), because the read grouped the entries with those
-// settings.
+// folders of the client, one below the other, comes once, with the folder that comes first in the config. The caller
+// must build the key with the fuzzy matching settings of the Client that gave the inventory (Client.Snapshot), because
+// the read grouped the entries with those settings.
 func (inv *Inventory) SameSeason(key release.SeasonKey) iter.Seq[Entry] {
 	// The lookup is inside the iterator, so SameSeason stays small enough to
 	// inline and a range over it allocates nothing.

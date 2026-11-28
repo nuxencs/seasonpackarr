@@ -12,6 +12,7 @@ import (
 
 	"github.com/nuxencs/seasonpackarr/internal/domain"
 	"github.com/nuxencs/seasonpackarr/internal/placement"
+	"github.com/nuxencs/seasonpackarr/internal/torrentclient"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -183,31 +184,29 @@ func TestImport_RefreshDropsMovedSourceFolderFileWithoutScan(t *testing.T) {
 func TestImport_LinksSourceFolderFileOnlyBelowTheFolder(t *testing.T) {
 	tests := map[string]struct {
 		// move returns the new place of the season folder and the target of the symlink.
-		move   func(pack packFixture, outside string) (dir, linkTarget string)
+		move   func(t *testing.T, pack packFixture, outside string) (dir, linkTarget string)
 		linked bool
 	}{
 		"absolute symlink out of the folder": {
-			move: func(_ packFixture, outside string) (string, string) {
+			move: func(_ *testing.T, _ packFixture, outside string) (string, string) {
 				return outside, outside
 			},
 		},
 		"relative symlink out of the folder": {
-			move: func(pack packFixture, outside string) (string, string) {
+			move: func(t *testing.T, pack packFixture, outside string) (string, string) {
 				rel, err := filepath.Rel(pack.folder(), outside)
-				if err != nil {
-					panic(err)
-				}
+				require.NoError(t, err)
 				return outside, rel
 			},
 		},
 		"absolute symlink below the folder": {
-			move: func(pack packFixture, _ string) (string, string) {
+			move: func(_ *testing.T, pack packFixture, _ string) (string, string) {
 				dir := filepath.Join(pack.folder(), "moved")
 				return dir, dir
 			},
 		},
 		"relative symlink below the folder": {
-			move: func(pack packFixture, _ string) (string, string) {
+			move: func(_ *testing.T, pack packFixture, _ string) (string, string) {
 				return filepath.Join(pack.folder(), "moved"), "moved"
 			},
 			linked: true,
@@ -225,7 +224,7 @@ func TestImport_LinksSourceFolderFileOnlyBelowTheFolder(t *testing.T) {
 					outcome := f.processor.Match(t.Context(), f.client(t, "default", cfg), pack.name, TorrentBytes(pack.torrent))
 					require.NoError(t, outcome.Err)
 				}
-				dir, linkTarget := tt.move(pack, filepath.Join(filepath.Dir(pack.sourceDir), "outside", "Season 01"))
+				dir, linkTarget := tt.move(t, pack, filepath.Join(filepath.Dir(pack.sourceDir), "outside", "Season 01"))
 				pack.moveSeasonFolder(t, dir, linkTarget)
 				moved := filepath.Join(dir, pack.episodeFile(1))
 
@@ -309,4 +308,29 @@ func TestImport_ChecksFileAgainstFirstSourceFolderThatListsIt(t *testing.T) {
 			requireSameFile(t, filepath.Join(moved, pack.episodeFile(1)), pack.target(1))
 		})
 	}
+}
+
+// The save path of a torrent is inside a source folder, so the torrent file and a file of the folder have one path.
+// After the scan, the season folder became a symlink out of the source folder. The plan build drops the folder file,
+// and the torrent source wins and keeps the torrent behavior, so the link does not get the folder rule.
+func TestImport_LinksTorrentSourceAtPathOfDroppedSourceFolderFile(t *testing.T) {
+	pack := newPack(t, "FolderTorrentPath", 1, 1)
+	seasonDir := filepath.Join(pack.sourceDir, "Season 01")
+	require.NoError(t, os.MkdirAll(seasonDir, 0o755))
+	require.NoError(t, os.Rename(pack.source(1), filepath.Join(seasonDir, pack.episodeFile(1))))
+	pack.client.FilesByHash["ep1"] = []torrentclient.File{{Name: filepath.Join("Season 01", pack.episodeFile(1)), Size: 1}}
+	cfg := withSourceFolders(newConfig(), pack.sourceDir)
+	f := newFixture(pack.client)
+	f.scanSourceFolders(t, cfg)
+	outside := filepath.Join(filepath.Dir(pack.sourceDir), "outside")
+	require.NoError(t, os.Rename(seasonDir, outside))
+	require.NoError(t, os.Symlink(outside, seasonDir))
+
+	outcome := f.processor.Import(t.Context(), f.client(t, "default", cfg), pack.name, pack.torrent)
+
+	require.NoError(t, outcome.Err)
+	assert.Equal(t, domain.StatusSuccessfulHardlink, outcome.Status)
+	requireSameFile(t, filepath.Join(outside, pack.episodeFile(1)), pack.target(1))
+	dropped := f.log.Events(t).Require(t, "client episode file is not reusable")
+	assert.Equal(t, "outside_source_folder", dropped["reason"])
 }

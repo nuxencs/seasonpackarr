@@ -56,7 +56,8 @@ Current comparison logic checks:
 - the placement module checks a source of a source folder again at link time,
   because a cached import plan or a change after the plan build can give a
   refused path. Each `placement.PlannedLink` of a file carries its source
-  folder. The link is verified: it opens the source below its source folder
+  folder. A torrent source at the path of a file of a source folder wins, so
+  its link carries no source folder. The link is verified: it opens the source below its source folder
   through `os.Root`, makes the link with the full path, and compares the
   hardlink target with the opened file. When they are not the same file, it
   removes the link that it made and fails that link. It removes only a link

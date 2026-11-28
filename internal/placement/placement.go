@@ -186,7 +186,7 @@ func (p Placement) openRoot(create bool) (*os.Root, error) {
 func (p Placement) link(rootDir *os.Root, link PlannedLink) Outcome {
 	target := p.target(link.TorrentPath)
 	if err := hardlink(rootDir, link, target); err != nil {
-		// A refused source is a plain failed link, also when the path names no file.
+		// A refused source is a plain failed link and starts no plan refresh.
 		if errors.Is(err, ErrSourceOutsideSourceFolder) {
 			return Outcome{Err: err}
 		}
@@ -230,16 +230,15 @@ func hardlink(rootDir *os.Root, link PlannedLink, target hardlinkTarget) error {
 	if link.SourceFolder != "" {
 		return verifiedHardlink(rootDir, link, target)
 	}
-	source := link.Source
 
 	// A hardlink from an earlier attempt is also success, but another file at
 	// the target stays a conflict.
-	if err := os.Link(source, target.path); err != nil {
+	if err := os.Link(link.Source, target.path); err != nil {
 		if !errors.Is(err, fs.ErrExist) {
 			return errtrace.WithStack(linkError(err))
 		}
 
-		sourceInfo, sourceErr := os.Stat(source)
+		sourceInfo, sourceErr := os.Stat(link.Source)
 		if sourceErr != nil {
 			return errtrace.WithStack(sourceErr)
 		}

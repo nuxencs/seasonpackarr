@@ -39,7 +39,7 @@ func StatSourceFolderFile(folder, path string) (fs.FileInfo, error) {
 func openSourceFolder(folder, path string) (*os.Root, string, error) {
 	rel, err := filepath.Rel(folder, path)
 	if err != nil || !filepath.IsLocal(rel) {
-		return nil, "", errtrace.WithStack(fmt.Errorf("%w: %q is not below %q", ErrSourceOutsideSourceFolder, path, folder))
+		return nil, "", errtrace.WithStack(fmt.Errorf("%w: source %q, source folder %q", ErrSourceOutsideSourceFolder, path, folder))
 	}
 	root, err := os.OpenRoot(folder)
 	if err != nil {
@@ -94,19 +94,21 @@ func verifiedHardlink(rootDir *os.Root, link PlannedLink, target hardlinkTarget)
 	if linkErr != nil && !errors.Is(linkErr, fs.ErrExist) {
 		return errtrace.WithStack(linkError(linkErr))
 	}
-	targetInfo, err := rootDir.Lstat(target.rel)
-	if err != nil {
-		return errtrace.WithStack(err)
-	}
-	if os.SameFile(sourceInfo, targetInfo) {
+	targetInfo, statErr := rootDir.Lstat(target.rel)
+	if statErr == nil && os.SameFile(sourceInfo, targetInfo) {
 		return nil
 	}
 	// Another file at the target stays a conflict.
 	if linkErr != nil {
+		if statErr != nil {
+			return errtrace.WithStack(statErr)
+		}
 		return errtrace.WithStack(linkErr)
 	}
+	// A new link that the call cannot prove is removed, also when the target cannot be read.
 	return errtrace.WithStack(errors.Join(
 		fmt.Errorf("%w: the hardlink of %q is not the file below %q", ErrSourceOutsideSourceFolder, link.Source, link.SourceFolder),
+		statErr,
 		rootDir.Remove(target.rel),
 	))
 }
