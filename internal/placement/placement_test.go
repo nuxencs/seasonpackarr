@@ -129,6 +129,25 @@ func TestLink_ReusesExistingHardlink(t *testing.T) {
 	requireSameFile(t, source, target)
 }
 
+// A source folder can overlap the import root, so a source can be at its own hardlink target. The link keeps the file
+// as it is and counts it as linked.
+func TestLink_KeepsSourceAtItsOwnHardlinkTarget(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "import")
+	source := writeSource(t, filepath.Join(root, packName), episode1)
+	before, err := os.Stat(source)
+	require.NoError(t, err)
+
+	outcomes := New(newPackInfo(t), PackFolderDestination(root)).Link([]PlannedLink{{Source: source, TorrentPath: episode1}})
+
+	require.Equal(t, []Outcome{{Status: Linked, Target: source}}, outcomes)
+	after, err := os.Stat(source)
+	require.NoError(t, err)
+	require.True(t, os.SameFile(before, after))
+	contents, err := os.ReadFile(source)
+	require.NoError(t, err)
+	require.Equal(t, []byte("episode"), contents)
+}
+
 func TestLink_KeepsOtherFileAtHardlinkTarget(t *testing.T) {
 	dir := t.TempDir()
 	root := filepath.Join(dir, "import")
@@ -527,4 +546,37 @@ func TestLink_MakesNothingWithoutLinks(t *testing.T) {
 
 	assert.Empty(t, outcomes)
 	assert.NoDirExists(t, root)
+}
+
+func TestLinkError_NamesDifferentFilesystems(t *testing.T) {
+	err := linkError(&os.LinkError{Op: "link", Old: "/data/tv/a.mkv", New: "/import/a.mkv", Err: errNotSameDevice})
+
+	require.ErrorIs(t, err, ErrDifferentFilesystems)
+	require.ErrorIs(t, err, errNotSameDevice)
+	require.ErrorContains(t, err, "the hardlink source and the import root are on different filesystems")
+
+	other := &os.LinkError{Op: "link", Err: fs.ErrPermission}
+	require.Equal(t, error(other), linkError(other))
+}
+
+// The test needs a second filesystem. Linux has /dev/shm as tmpfs, so the test runs in CI.
+func TestLink_FailsBetweenTwoFilesystems(t *testing.T) {
+	sourceDir, err := os.MkdirTemp("/dev/shm", "placement-")
+	if err != nil {
+		t.Skip("no /dev/shm for a second filesystem")
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(sourceDir) })
+	root := filepath.Join(t.TempDir(), "import")
+	require.NoError(t, os.MkdirAll(root, 0o755))
+	source := writeSource(t, sourceDir, "one.mkv")
+	// A probe link that works shows one filesystem.
+	if os.Link(source, filepath.Join(root, "probe.mkv")) == nil {
+		t.Skip("/dev/shm is on the filesystem of the temporary folder")
+	}
+
+	outcomes := New(newPackInfo(t), PackFolderDestination(root)).Link([]PlannedLink{{Source: source, TorrentPath: episode1}})
+
+	require.Equal(t, Failed, outcomes[0].Status)
+	require.ErrorIs(t, outcomes[0].Err, ErrDifferentFilesystems)
+	require.NoFileExists(t, filepath.Join(root, packName, episode1))
 }

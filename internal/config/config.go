@@ -166,6 +166,16 @@ clients:
       excludeCategories: []
       excludeTags: []
 
+    # Source Folders
+    # Absolute paths of folders whose episode files join the inventory of this client, for example a library of Usenet downloads.
+    # seasonpackarr reads the release name of each file from its file name only. It scans the folders at startup and then
+    # each sourceFolderScanInterval.
+    # A folder that does not exist gives a warning, not an error. Read the configuration guide before you add a folder.
+    #
+    # Optional
+    #
+    sourceFolders: []
+
   # Below you can find an example on how to define a second qBittorrent client
   # If you want to define even more clients just copy this segment and adjust the values accordingly
   #
@@ -225,6 +235,14 @@ clients:
   #  import:
   #    savePath: "/data/torrents/tv-hd"
   #    tags: [ "seasonpackarr" ]
+
+# Source Folder Scan Interval
+# Time between two scans of the source folders of all clients. Minimum: 1m.
+# A longer interval lets the disks of a large library spin down between the scans.
+#
+# Default: "15m"
+#
+# sourceFolderScanInterval: "15m"
 
 # seasonpackarr logs file
 # If not defined, logs to stdout
@@ -514,6 +532,10 @@ func validateClientConfig(clientName string, client *domain.Client) error {
 		return fmt.Errorf("client %q: %w", clientName, err)
 	}
 
+	if err := validateSourceFolders(clientName, client.SourceFolders); err != nil {
+		return err
+	}
+
 	imp := client.Import
 	if imp.SavePath != "" {
 		if _, err := os.Stat(imp.SavePath); errors.Is(err, fs.ErrNotExist) {
@@ -527,6 +549,21 @@ func validateClientConfig(clientName string, client *domain.Client) error {
 		}
 	}
 
+	return nil
+}
+
+// validateSourceFolders rejects a relative path, because the scan result would depend on the working directory.
+// A folder that does not exist is no error: a mount can come up after the start, and the scan warns about it.
+func validateSourceFolders(clientName string, folders []string) error {
+	setting := fmt.Sprintf("sourceFolders for client %q (%sCLIENTS_%s_SOURCE_FOLDERS)", clientName, envPrefix, strings.ToUpper(clientName))
+	for _, folder := range folders {
+		if strings.TrimSpace(folder) == "" {
+			return fmt.Errorf("%s has an empty entry; remove it", setting)
+		}
+		if !filepath.IsAbs(folder) {
+			return fmt.Errorf("%s: %q is not an absolute path", setting, folder)
+		}
+	}
 	return nil
 }
 
@@ -624,8 +661,24 @@ func normalizeConfig(cfg *domain.Config) {
 	for _, client := range cfg.Clients {
 		if client != nil {
 			client.Import.ContentLayout = strings.ToLower(client.Import.ContentLayout)
+			client.SourceFolders = cleanSourceFolders(client.SourceFolders)
 		}
 	}
+}
+
+// cleanSourceFolders cleans each absolute path and removes a path that is in the list twice. It keeps the other
+// entries as written, so the validation error names the text of the config.
+func cleanSourceFolders(folders []string) []string {
+	var cleaned []string
+	for _, folder := range folders {
+		if filepath.IsAbs(folder) {
+			folder = filepath.Clean(folder)
+		}
+		if !slices.Contains(cleaned, folder) {
+			cleaned = append(cleaned, folder)
+		}
+	}
+	return cleaned
 }
 
 // validateConfig runs after the merge, so its range rules cover the file and the environment.
@@ -642,6 +695,9 @@ func validateConfig(cfg domain.Config) error {
 	// The negated form also rejects NaN, which every comparison fails.
 	if !(cfg.SmartModeThreshold > 0 && cfg.SmartModeThreshold <= 1) {
 		return errors.New("smartModeThreshold (SEASONPACKARR__SMART_MODE_THRESHOLD) must be greater than 0 and at most 1")
+	}
+	if interval, err := time.ParseDuration(cfg.SourceFolderScanInterval); err != nil || interval < domain.MinSourceFolderScanInterval {
+		return errors.New("sourceFolderScanInterval (SEASONPACKARR__SOURCE_FOLDER_SCAN_INTERVAL) must be a duration of at least 1m, for example \"15m\"")
 	}
 	if err := validateSearch(cfg.Search); err != nil {
 		return err

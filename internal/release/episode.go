@@ -33,25 +33,11 @@ type EpisodeFile struct {
 }
 
 // ParseEpisodeFile validates and parses one episode video for indexed matching.
-// It checks the container before invoking the release parser so obvious
-// non-video files stay on the cheap path.
 func ParseEpisodeFile(path string, size int64) (EpisodeFile, bool) {
-	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
-	if ext != "mkv" && ext != "mp4" {
+	parsed, ext, ok := parseEpisodeVideo(path)
+	if !ok {
 		return EpisodeFile{}, false
 	}
-
-	parsed := parseEpisodeFile(path)
-	if parsed.Type != rls.Episode && len(parsed.SeriesEpisodes()) == 0 {
-		return EpisodeFile{}, false
-	}
-
-	// rls reads ".sample" as a tag in Other but still reads a "-sample" suffix as the group.
-	group := rls.MustNormalize(parsed.Group)
-	if group == "sample" || slices.ContainsFunc(parsed.Other, isSampleTag) {
-		return EpisodeFile{}, false
-	}
-
 	return EpisodeFile{
 		path: path,
 		key: episodeMatchKey{
@@ -60,9 +46,51 @@ func ParseEpisodeFile(path string, size int64) (EpisodeFile, bool) {
 			series:     parsed.Series,
 			episode:    parsed.Episode,
 			resolution: parsed.Resolution,
-			group:      group,
+			group:      rls.MustNormalize(parsed.Group),
 		},
 	}, true
+}
+
+// ParseEpisodeName gives the parsed release of the base name of path. It accepts the names that ParseEpisodeFile
+// accepts, so a file of a source folder and a file of a torrent pass one rule.
+func ParseEpisodeName(path string) (*rls.Release, bool) {
+	parsed, _, ok := parseEpisodeVideo(path)
+	if !ok {
+		return nil, false
+	}
+	return &parsed, true
+}
+
+// HasEpisodeVideoExt reports whether path has the container of an episode video, mkv or mp4 in any letter case.
+// ParseEpisodeName rejects each other path before it calls the release parser.
+func HasEpisodeVideoExt(path string) bool {
+	_, ok := episodeVideoExt(path)
+	return ok
+}
+
+func episodeVideoExt(path string) (string, bool) {
+	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
+	return ext, ext == "mkv" || ext == "mp4"
+}
+
+// parseEpisodeVideo accepts an mkv or mp4 episode that is not a sample, and gives the container in lower case. It
+// checks the container before it calls the release parser, so other files stay on the cheap path.
+func parseEpisodeVideo(path string) (rls.Release, string, bool) {
+	ext, ok := episodeVideoExt(path)
+	if !ok {
+		return rls.Release{}, "", false
+	}
+
+	parsed := parseEpisodeFile(path)
+	if parsed.Type != rls.Episode && len(parsed.SeriesEpisodes()) == 0 {
+		return rls.Release{}, "", false
+	}
+
+	// rls reads ".sample" as a tag in Other but still reads a "-sample" suffix as the group.
+	if rls.MustNormalize(parsed.Group) == "sample" || slices.ContainsFunc(parsed.Other, isSampleTag) {
+		return rls.Release{}, "", false
+	}
+	return parsed, ext, true
 }
 
 // parseEpisodeFile parses the base name of path with the container in lower case.

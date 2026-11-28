@@ -55,6 +55,11 @@
       "maximum": 1,
       "default": 0.75
     },
+    "sourceFolderScanInterval": {
+      "type": "string",
+      "description": "Go duration between two scans of the source folders. Must be at least 1m.",
+      "default": "15m"
+    },
     "fuzzyMatching": {
       "$ref": "#/$defs/fuzzyMatching"
     },
@@ -124,6 +129,15 @@
         },
         "inventory": {
           "$ref": "#/$defs/inventory"
+        },
+        "sourceFolders": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string",
+            "pattern": "^(/|[A-Za-z]:[\\\\/]|\\\\\\\\)"
+          },
+          "description": "Absolute paths of the source folders. Their episode files join the inventory of the client. A folder that does not exist gives a warning."
         }
       },
       "allOf": [

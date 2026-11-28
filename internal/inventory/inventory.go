@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 // Package inventory owns the connection, the inventory, and the parsed
-// torrent names of each configured client.
+// torrent names of each configured client, and the scan of the source folders.
+// No other package walks a source folder.
 package inventory
 
 import (
@@ -42,6 +43,20 @@ type Store struct {
 	connections map[string]connection
 	inventories map[string]*slot
 	parsed      map[parsedNamesKey]parsedNames
+	// folderScans holds the last finished scan of each source folder path that a scan tried. Clients with the same
+	// path share it.
+	folderScans map[string]folderScan
+	// fullScanEnded is the end of the last scan of all folders, zero before the first one.
+	fullScanEnded time.Time
+	// namedFolders holds the source folders of the config of the last clean-up, and is nil before the first one. A
+	// scan that ends after a clean-up stores no result for a folder that the clean-up dropped.
+	namedFolders map[string]struct{}
+	// scanning lets one scan run at a time. It is a channel and not a mutex, so synctest sees a waiting scan as blocked.
+	scanning chan struct{}
+	// reloaded tells the scan schedule about a clean-up, so it scans each new folder at once.
+	reloaded chan struct{}
+	// parseEpisodeName is release.ParseEpisodeName. A test can count the parses.
+	parseEpisodeName func(path string) (*rls.Release, bool)
 	// cleanUps counts the clean-ups. A read that overlaps a clean-up adds no
 	// parsed-name key, because the clean-up can have removed that key as unused.
 	cleanUps uint64
@@ -101,6 +116,11 @@ func New(connect ConnectFunc, log logger.Logger) *Store {
 		connections: make(map[string]connection),
 		inventories: make(map[string]*slot),
 		parsed:      make(map[parsedNamesKey]parsedNames),
+		folderScans: make(map[string]folderScan),
+		scanning:    make(chan struct{}, 1),
+		reloaded:    make(chan struct{}, 1),
+
+		parseEpisodeName: release.ParseEpisodeName,
 	}
 }
 
@@ -167,16 +187,22 @@ func (c *Client) Adapter() torrentclient.TorrentClient {
 
 // Inventory returns the stored inventory of the client while it is valid, or
 // reads the client. One read runs at a time for each client, and the callers
-// that wait for it get its result. An error is the error of the client read.
+// that wait for it get its result. An error is the error of the client read,
+// also when the source folders have files, because each import needs the
+// client. The inventory adds the files of the last finished scan of each
+// source folder of the client, and does no filesystem work for them.
 func (c *Client) Inventory(ctx context.Context) (*Inventory, error) {
 	for {
 		current, inv := c.store.slotFor(c)
 		if inv != nil {
-			return inv, nil
+			return c.store.withFiles(inv, c), nil
 		}
 		inv, replaced, err := c.store.readSlot(ctx, c, current)
 		if !replaced {
-			return inv, err
+			if err != nil {
+				return nil, err
+			}
+			return c.store.withFiles(inv, c), nil
 		}
 	}
 }
@@ -306,24 +332,43 @@ func (s *Store) DiscardEndpoint(endpoint torrentclient.Endpoint) {
 	})
 }
 
-// Entry is one torrent of an inventory with its parsed release.
+// Entry is one entry of an inventory: a torrent of the client, or a file of a source folder.
 type Entry struct {
+	// Torrent is the zero value for a file entry.
 	Torrent torrentclient.Torrent
-	// Release is shared by reads and by the clients of one endpoint. Callers must not change it.
+	// File is the path of a file of a source folder, and is empty for a torrent entry. A file entry has no hash.
+	File string
+	// Release is shared by reads and by the clients of one endpoint or source folder. Callers must not change it.
 	Release *rls.Release
 }
 
-// Inventory is a read-only view of the torrents of one client read, grouped
-// by season. Its methods yield copies of the entries and no slice, so one
-// caller cannot change what another sees, and a lookup copies no group.
+// IsFile reports whether the entry is a file of a source folder.
+func (e Entry) IsFile() bool {
+	return e.File != ""
+}
+
+// Name returns the torrent name, or the path of a file entry, for the log lines.
+func (e Entry) Name() string {
+	if e.IsFile() {
+		return e.File
+	}
+	return e.Torrent.Name
+}
+
+// Inventory is a read-only view of the torrents of one client read and the files of the last scans of its source
+// folders, grouped by season. Its methods yield copies of the entries and no slice, so one caller cannot change what
+// another sees, and a lookup copies no group.
 type Inventory struct {
 	seasons  map[release.SeasonKey][]Entry
 	torrents int // the torrents in the read, for the startup log
+	// folderSeasons holds the file entries of each source folder of the client, grouped by season.
+	folderSeasons []map[release.SeasonKey][]Entry
 }
 
-// SameSeason yields the entries of the season key. The caller must build the
-// key with the fuzzy matching settings of the Client that gave the inventory
-// (Client.Snapshot), because the read grouped the entries with those settings.
+// SameSeason yields the entries of the season key, the torrent entries before the file entries. A file in two source
+// folders of the client, one below the other, comes once. The caller must build the key with the fuzzy matching
+// settings of the Client that gave the inventory (Client.Snapshot), because the read grouped the entries with those
+// settings.
 func (inv *Inventory) SameSeason(key release.SeasonKey) iter.Seq[Entry] {
 	// The lookup is inside the iterator, so SameSeason stays small enough to
 	// inline and a range over it allocates nothing.
@@ -333,16 +378,63 @@ func (inv *Inventory) SameSeason(key release.SeasonKey) iter.Seq[Entry] {
 				return
 			}
 		}
+		if len(inv.folderSeasons) == 0 {
+			return
+		}
+		inv.sameSeasonFiles(key, yield)
 	}
 }
 
-// SeasonGroups yields the entries of each season, in no fixed order. A caller
-// can range over one group more than once.
+func (inv *Inventory) sameSeasonFiles(key release.SeasonKey, yield func(Entry) bool) {
+	var seen map[string]struct{}
+	if len(inv.folderSeasons) > 1 {
+		seen = make(map[string]struct{})
+	}
+	for _, folder := range inv.folderSeasons {
+		for _, e := range folder[key] {
+			if seen != nil {
+				if _, ok := seen[e.File]; ok {
+					continue
+				}
+				seen[e.File] = struct{}{}
+			}
+			if !yield(e) {
+				return
+			}
+		}
+	}
+}
+
+// SeasonGroups yields the entries of each season, in no fixed order. Each group is the SameSeason of its key: the
+// torrent entries before the file entries, and a file once. A caller can range over one group more than once.
 func (inv *Inventory) SeasonGroups() iter.Seq[iter.Seq[Entry]] {
 	return func(yield func(iter.Seq[Entry]) bool) {
-		for _, group := range inv.seasons {
-			if !yield(slices.Values(group)) {
+		// With no file, a group is its torrent slice, so the range needs no key set and no merge.
+		if len(inv.folderSeasons) == 0 {
+			for _, group := range inv.seasons {
+				if !yield(slices.Values(group)) {
+					return
+				}
+			}
+			return
+		}
+		yielded := make(map[release.SeasonKey]struct{}, len(inv.seasons))
+		for key := range inv.seasons {
+			yielded[key] = struct{}{}
+			if !yield(inv.SameSeason(key)) {
 				return
+			}
+		}
+		// A season with files and no torrent is in no torrent group.
+		for _, folder := range inv.folderSeasons {
+			for key := range folder {
+				if _, ok := yielded[key]; ok {
+					continue
+				}
+				yielded[key] = struct{}{}
+				if !yield(inv.SameSeason(key)) {
+					return
+				}
 			}
 		}
 	}

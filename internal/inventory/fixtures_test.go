@@ -157,3 +157,21 @@ func (f *fakeConnectorByHost) connectCount(host string) int {
 	defer f.mu.Unlock()
 	return f.connects[host]
 }
+
+// fakeProvider is a config provider whose snapshot a test can replace.
+type fakeProvider struct {
+	mu  sync.Mutex
+	cfg domain.Config
+}
+
+func (f *fakeProvider) Snapshot() domain.Config {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.cfg
+}
+
+func (f *fakeProvider) store(cfg domain.Config) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cfg = cfg
+}

@@ -56,7 +56,8 @@ code of the real binary.
   waits 60 real seconds for the query gap.
 - The discovery run tests in `internal/http/` (`search_test.go`,
   `search_cooldown_test.go`, `search_persistence_test.go`,
-  `search_wait_test.go`, `search_limit_test.go`, and `rss_test.go`)
+  `search_wait_test.go`, `search_limit_test.go`, `search_sourcefolder_test.go`,
+  and `rss_test.go`)
   assert what the run adds to the source: the outcomes, the imports, the
   notifications, the log lines of the run, and the report. A search test
   enters through `POST /api/search`. An RSS test enters through the
@@ -87,6 +88,26 @@ code of the real binary.
   (`TestSeasonPackCompare`): each relation, each property of the release
   variant, and each fuzzy matching setting. A new matching rule gets a case
   there. The tests call only exported functions of the package.
+- The scan tests of the inventory module (`internal/inventory/sourcefolder_test.go`)
+  enter through `Store.ReadAtStartup`, the entry of the startup task, with a real
+  temporary folder. They assert only the log lines: the line of each scan, the
+  warnings, and the file count of each client. No test reads a scan result.
+- The scan schedule tests (`internal/inventory/sourcefolder_schedule_test.go`)
+  run `Store.ReadAtStartup` and `Store.ScheduleSourceFolderScans` as the server
+  does, in a `testing/synctest` bubble, so the timer uses the virtual clock. A
+  reload stores the new snapshot and calls `Store.CleanUp`, as the reload
+  parties of `start` do. A search scan calls `Store.ScanSourceFolders`, as a
+  search run does. The tests assert the scan lines. A test that must see a kept or dropped
+  result reads the current file count with `Store.sourceFolderFiles`, and the
+  parse test counts the calls of the parse function of the store. The parse
+  function also lets a test stall a walk.
+- The source folder tests of the season pack processor
+  (`candidate_sourcefolder_test.go`, `match_sourcefolder_test.go`,
+  `import_sourcefolder_test.go` in `internal/seasonpack/`) scan a real
+  temporary folder through `Store.ReadAtStartup`, then call the three
+  operations. They assert the outcome, the files on disk and their inodes, the
+  calls of the fake client, and the log lines. A test that removes a file after
+  the scan proves that the candidate check reads no filesystem.
 - `fixtures_test.go` holds the fakes and fixtures that more than one test file
   of the package uses. A fake that one file uses stays in that file.
 - `internal/torrentclient/torrentclienttest` holds the fake torrent client
@@ -108,7 +129,7 @@ code of the real binary.
   port: it listens on port 0, reads the port, closes the listener, and writes
   that port into its config. Another process can take the port before `start`
   listens. The tests accept this short window, so the server gets no listener
-  input for tests. The tests cover five cases:
+  input for tests. The tests cover six cases:
   - An invalid config returns an error, and the port stays closed until
     `start` returns.
   - A valid config serves an authenticated endpoint.
@@ -116,6 +137,9 @@ code of the real binary.
   - A canceled context shuts down the service.
   - Without a config file and a config directory, the database goes below the
     `XDG_DATA_HOME` of the passed environment.
+  - The startup read scans the source folders of the config and logs the
+    file count of each folder and each client. A reload with a new folder
+    starts a scan of it.
 
   The reload case also requires that the reload drops the client connection
   of the startup inventory read. Thus it fails when `start` does not watch the
@@ -300,6 +324,11 @@ why the search test drives a real Prowlarr.
     episodes, but the third has the excluded tag. The pack reuses the first two
     as hardlinks and downloads only the third from the seeder, as in the
     `partial pack`. Without the scope, the pack would be complete.
+  - `source folder`: no torrent of the client has the episodes. The source
+    folder of the harness config, `/data/media/tv`, has two of three episodes as
+    files. It is on the `/data` volume of the import root. The pack hardlinks
+    them, downloads only the missing episode from the seeder, and seeds, as in
+    the `partial pack`.
   - `candidate rejection`: the client has one episode in another resolution.
     autobrr stores no release row for a rejected announce, so the test reads
     autobrr's log through `GET /api/logs/files/autobrr.log`
@@ -312,6 +341,13 @@ why the search test drives a real Prowlarr.
   would get an inventory without its own episodes. For the same reason, the
   scenarios cannot run in parallel or twice in one stack (`-count=2`). Each
   runner call starts a fresh stack.
+- seasonpackarr reads a source folder only in a scan, and the test cannot see
+  the scan. The harness config sets `sourceFolderScanInterval` to the minimum,
+  `1m`. A scan starts at the latest one interval after the end of the last
+  scan, and a scan of the test files takes milliseconds. Thus the scenario
+  waits one interval and 5 seconds after it wrote the files. `runScenarios`
+  writes them before the filter setup, so the wait overlaps the other
+  scenarios.
 - `requireHarness` gates every test with `daemontest.RequireSettings`, so
   strict mode fails a test with missing settings. Once for each test process,
   it starts the torrent server. `requireAutobrr` and `requireProwlarr` add the
@@ -348,7 +384,9 @@ why the search test drives a real Prowlarr.
   do not share releases and both release parsers see the plain title.
 - The client already holds the present episodes as real single-episode
   torrents (`daemontest.WriteEpisode`), which it checked and seeds before the
-  announce. The seeder holds the full pack.
+  announce. In the `source folder`, the present episodes are only files that
+  `daemontest.WriteEpisode` writes into the source folder. The seeder holds the
+  full pack.
 - autobrr only queues the announce. The test waits with bounded polling for
   the autobrr release to finish its actions, then for the client state. autobrr
   stores a release only when a filter approves it, and the Webhook action

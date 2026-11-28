@@ -85,6 +85,30 @@ func TestSearchCommand_ReadableSummaryAndJSONContract(t *testing.T) {
 	require.JSONEq(t, response, stdout)
 }
 
+func TestSearchCommand_SummaryShowsSourceFolderFilesOnlyWithFiles(t *testing.T) {
+	isolateCLI(t)
+	for _, tt := range []struct {
+		name, response string
+		want           bool
+	}{
+		{"files", `{"scannedTorrents":2,"episodeTorrents":2,"scannedFiles":5,"episodeFiles":4,"coveredEpisodeFiles":1,"outcomes":[],"failures":[]}`, true},
+		{"no files", `{"scannedTorrents":2,"episodeTorrents":2,"outcomes":[],"failures":[]}`, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, tt.response) }))
+			defer server.Close()
+			code, stdout, stderr := runCLI(t, "search", "--url", server.URL, "--dry-run")
+			require.Equal(t, 0, code, stderr)
+			require.Contains(t, stdout, "Scanned: 2 torrents, 2 episode torrents, 0 already covered\n")
+			if tt.want {
+				require.Contains(t, stdout, "Source folders: 5 files, 4 episode files, 1 already covered\n")
+			} else {
+				require.NotContains(t, stdout, "Source folders:")
+			}
+		})
+	}
+}
+
 func TestSearchCommand_InvalidResponses(t *testing.T) {
 	isolateCLI(t)
 	for _, response := range []string{`null`, `{}`, `<html>Sign in</html>`, `{"outcomes":[],"failures":[]} trailing`} {

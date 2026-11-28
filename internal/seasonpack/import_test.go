@@ -303,8 +303,8 @@ func TestImport_BuildsPlanAgainAfterTwoMinutes(t *testing.T) {
 	}
 }
 
-// A plan is valid only for the release name, the client config, and the fuzzy
-// matching settings of its match.
+// A plan is valid only for the release name, the client config with its source
+// folders, and the fuzzy matching settings of its match.
 func TestImport_BuildsPlanAgainWhenItsScopeChanged(t *testing.T) {
 	tests := map[string]func(release *string, cfg *domain.Config){
 		// Both names parse to the same release, so the candidate check passes.
@@ -318,6 +318,9 @@ func TestImport_BuildsPlanAgainWhenItsScopeChanged(t *testing.T) {
 		},
 		"fuzzy matching settings": func(_ *string, cfg *domain.Config) {
 			cfg.FuzzyMatching.SkipYearCompare = true
+		},
+		"source folders": func(_ *string, cfg *domain.Config) {
+			*cfg = withSourceFolders(*cfg, "/srv/tv")
 		},
 	}
 	for name, mutate := range tests {

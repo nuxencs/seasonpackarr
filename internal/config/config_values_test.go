@@ -205,3 +205,138 @@ func TestReload_RejectsBadValueAndKeepsLastSnapshot(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad_ReadsSourceFoldersFromEachSource(t *testing.T) {
+	tests := map[string]struct {
+		contents string
+		environ  []string
+		want     map[string][]string
+	}{
+		"file": {
+			contents: qbitClientConfig + "    sourceFolders: [\"/data/tv\", \"/data/anime\"]\n",
+			want:     map[string][]string{"default": {"/data/tv", "/data/anime"}},
+		},
+		"environment": {
+			contents: qbitClientConfig,
+			environ:  []string{"SEASONPACKARR__CLIENTS_DEFAULT_SOURCE_FOLDERS=/data/tv, /data/anime"},
+			want:     map[string][]string{"default": {"/data/tv", "/data/anime"}},
+		},
+		"anchor for two clients": {
+			contents: `clients:
+  hd:
+    type: qbittorrent
+    host: localhost
+    import:
+      category: tv-hd
+    sourceFolders: &folders ["/data/tv", "/data/anime"]
+  uhd:
+    type: qbittorrent
+    host: localhost
+    import:
+      category: tv-uhd
+    sourceFolders: *folders
+`,
+			want: map[string][]string{"hd": {"/data/tv", "/data/anime"}, "uhd": {"/data/tv", "/data/anime"}},
+		},
+		"no setting": {
+			contents: qbitClientConfig,
+			want:     map[string][]string{"default": nil},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := loadWithFile(t, tt.contents, tt.environ...)
+
+			require.NoError(t, err)
+			for client, want := range tt.want {
+				assert.Equal(t, want, cfg.Clients[client].SourceFolders, client)
+			}
+		})
+	}
+}
+
+func TestLoad_CleansSourceFoldersAndRemovesDoublePaths(t *testing.T) {
+	cfg, err := loadWithFile(t, qbitClientConfig+"    sourceFolders: [\"/data/tv/\", \"/data//anime\", \"/data/tv\", \"/data/x/../tv\"]\n")
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"/data/tv", "/data/anime"}, cfg.Clients["default"].SourceFolders)
+}
+
+func TestLoad_RejectsSourceFolderThatIsNotAnAbsolutePath(t *testing.T) {
+	tests := map[string]struct {
+		folders string
+		want    string
+	}{
+		"relative path": {folders: `["/data/tv", "data/anime"]`, want: `"data/anime" is not an absolute path`},
+		"dot path":      {folders: `["./tv"]`, want: `"./tv" is not an absolute path`},
+		"empty entry":   {folders: `["/data/tv", ""]`, want: "has an empty entry"},
+		"blank entry":   {folders: `["  "]`, want: "has an empty entry"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := loadWithFile(t, qbitClientConfig+"    sourceFolders: "+tt.folders+"\n")
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), `sourceFolders for client "default" (SEASONPACKARR__CLIENTS_DEFAULT_SOURCE_FOLDERS)`)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
+}
+
+func TestLoad_AcceptsSourceFolderThatDoesNotExist(t *testing.T) {
+	cfg, err := loadWithFile(t, qbitClientConfig+"    sourceFolders: [\"/seasonpackarr-test/missing\"]\n")
+
+	require.NoError(t, err, "a mount can come up after the start")
+	assert.Equal(t, []string{"/seasonpackarr-test/missing"}, cfg.Clients["default"].SourceFolders)
+}
+
+func TestReload_RejectsRelativeSourceFolder(t *testing.T) {
+	cfg, configFile := newTestAppConfig(t, qbitClientConfig+"    sourceFolders: [\"/data/tv\"]\n")
+	before := cfg.Snapshot()
+
+	rejection := reloadWithFile(t, cfg, configFile, qbitClientConfig+"    sourceFolders: [\"data/tv\"]\n")
+
+	assert.Contains(t, rejection, `"data/tv" is not an absolute path`)
+	assert.Equal(t, before, cfg.Snapshot())
+}
+
+func TestLoad_SourceFolderScanIntervalHasADefaultAndAMinimum(t *testing.T) {
+	tests := map[string]struct {
+		file    string
+		environ []string
+		want    string
+		wantErr bool
+	}{
+		"default":               {want: "15m"},
+		"minimum":               {file: "sourceFolderScanInterval: 1m\n", want: "1m"},
+		"longer, from the file": {file: "sourceFolderScanInterval: 6h\n", want: "6h"},
+		"from the environment":  {environ: []string{"SEASONPACKARR__SOURCE_FOLDER_SCAN_INTERVAL=2h"}, want: "2h"},
+		"below the minimum":     {file: "sourceFolderScanInterval: 59s\n", wantErr: true},
+		"zero":                  {environ: []string{"SEASONPACKARR__SOURCE_FOLDER_SCAN_INTERVAL=0s"}, wantErr: true},
+		"negative":              {file: "sourceFolderScanInterval: -15m\n", wantErr: true},
+		"not a duration":        {file: "sourceFolderScanInterval: often\n", wantErr: true},
+		"number without a unit": {file: "sourceFolderScanInterval: 15\n", wantErr: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := loadWithFile(t, tt.file+"clients: {}\n", tt.environ...)
+
+			if tt.wantErr {
+				require.ErrorContains(t, err, "sourceFolderScanInterval (SEASONPACKARR__SOURCE_FOLDER_SCAN_INTERVAL) must be a duration of at least 1m")
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, cfg.SourceFolderScanInterval)
+		})
+	}
+}
+
+func TestReload_RejectsSourceFolderScanIntervalBelowTheMinimum(t *testing.T) {
+	cfg, configFile := newTestAppConfig(t, "sourceFolderScanInterval: 30m\nclients: {}\n")
+	before := cfg.Snapshot()
+
+	rejection := reloadWithFile(t, cfg, configFile, "sourceFolderScanInterval: 30s\nclients: {}\n")
+
+	assert.Contains(t, rejection, "sourceFolderScanInterval (SEASONPACKARR__SOURCE_FOLDER_SCAN_INTERVAL) must be a duration of at least 1m")
+	assert.Equal(t, before, cfg.Snapshot())
+}

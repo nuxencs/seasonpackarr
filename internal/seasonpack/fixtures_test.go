@@ -148,3 +148,53 @@ func writeEpisode(t *testing.T, path string) {
 	t.Helper()
 	require.NoError(t, os.WriteFile(path, []byte("0"), 0o644))
 }
+
+// fakeConfig is a config provider with one snapshot.
+type fakeConfig domain.Config
+
+func (f fakeConfig) Snapshot() domain.Config { return domain.Config(f) }
+
+// withSourceFolders returns cfg with folders as the source folders of the client "default".
+func withSourceFolders(cfg domain.Config, folders ...string) domain.Config {
+	client := cfg.Clients["default"].Clone()
+	client.SourceFolders = folders
+	cfg.Clients = map[string]*domain.Client{"default": &client}
+	return cfg
+}
+
+// scanSourceFolders scans the source folders of cfg through the startup read, as the server does.
+func (f *fixture) scanSourceFolders(t *testing.T, cfg domain.Config) {
+	t.Helper()
+	f.store.ReadAtStartup(t.Context(), fakeConfig(cfg))
+}
+
+// folder returns the path of a source folder of the pack. The pack fixture does not make it.
+func (p packFixture) folder() string {
+	return filepath.Join(filepath.Dir(p.sourceDir), "source-folder")
+}
+
+// writeFolderFile writes the file of episode below the source folder, in a season folder as Sonarr does, and returns
+// its path.
+func (p packFixture) writeFolderFile(t *testing.T, episode int) string {
+	t.Helper()
+	return p.writeFolderFileNamed(t, p.episodeFile(episode))
+}
+
+// writeFolderFileNamed writes a one-byte file with name below the season folder of the source folder.
+func (p packFixture) writeFolderFileNamed(t *testing.T, name string) string {
+	t.Helper()
+	path := filepath.Join(p.folder(), "Season 01", name)
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	writeEpisode(t, path)
+	return path
+}
+
+// requireSameFile fails the test unless path and other are hardlinks of one file.
+func requireSameFile(t *testing.T, path, other string) {
+	t.Helper()
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	otherInfo, err := os.Stat(other)
+	require.NoError(t, err)
+	require.True(t, os.SameFile(info, otherInfo), "%s must be a hardlink of %s", other, path)
+}

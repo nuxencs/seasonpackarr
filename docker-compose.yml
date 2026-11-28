@@ -55,6 +55,11 @@ services:
       # SEASONPACKARR__CLIENTS_DEFAULT_INVENTORY_EXCLUDE_CATEGORIES: movies
       # SEASONPACKARR__CLIENTS_DEFAULT_INVENTORY_EXCLUDE_TAGS:
 
+      # Source folders (absolute paths, comma-separated; see docs/CONFIGURATION.md#source-folders)
+      # SEASONPACKARR__CLIENTS_DEFAULT_SOURCE_FOLDERS: /data/media/tv
+      # Time between two scans of the source folders, at least 1m
+      # SEASONPACKARR__SOURCE_FOLDER_SCAN_INTERVAL: 15m
+
       # Prowlarr discovery (see docs/PROWLARR.md)
       # SEASONPACKARR__SEARCH_PROWLARR_URL: http://prowlarr:9696
       # SEASONPACKARR__SEARCH_API_KEY:

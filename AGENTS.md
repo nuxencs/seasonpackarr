@@ -15,7 +15,7 @@ seasonpackarr is a Go service and CLI for TV automation with autobrr and Prowlar
 
 - `/api/candidate`, `/api/match`, `/api/import`, and `/api/search` stay authenticated behind `apiToken`.
 - Matching changes keep the core promise: prevent unnecessary downloads without broadening false positives.
-- The candidate check requests no torrent bytes and no per-torrent file details.
+- The candidate check requests no torrent bytes and no per-torrent file details, and reads no filesystem.
 - The match has no side effects. The import owns all filesystem and client changes.
 - Smart-mode coverage counts distinct valid torrent episode targets and never exceeds 100 percent.
 - Hardlink path construction is safety-critical. Treat target paths and pre-import directory assumptions as high risk, and add regression tests.

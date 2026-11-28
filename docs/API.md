@@ -248,8 +248,12 @@ The `200` report contains these fields:
 
 - `dryRun` and `verify`: the request values.
 - `limit`: the cap that the run used. `0` means no cap.
-- `scannedTorrents`, `episodeTorrents`, `coveredEpisodeTorrents`, and `groups`:
-  inventory counts. See [Search output](PROWLARR.md#search-output).
+- `scannedTorrents`, `episodeTorrents`, and `coveredEpisodeTorrents`: counts of
+  the torrents of the clients.
+- `scannedFiles`, `episodeFiles`, and `coveredEpisodeFiles`: the same counts for
+  the files of the source folders. They are `0` with no source folder.
+- `groups`: the search groups from torrents and from files. See
+  [Search output](PROWLARR.md#search-output).
 - `groupsNotDue`: the search groups that the run skipped, because no query of
   the group to a usable indexer was due. An indexer that failed or went into a
   cooldown earlier in the run is not usable. See

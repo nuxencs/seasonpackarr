@@ -14,20 +14,26 @@ import (
 )
 
 // CleanUp drops the connection and the inventory of each client that cfg no
-// longer has or configures differently, and the parsed names of each endpoint
-// and inventory scope that no client of cfg uses. Without it, each removed
-// client or changed host keeps a full inventory in memory until a restart. It
-// returns the sorted names of the dropped connections and the close errors of
-// their adapters.
+// longer has or configures differently, the parsed names of each endpoint
+// and inventory scope that no client of cfg uses, and the scan result of each
+// source folder that no client of cfg names. Without it, each removed client
+// or changed host keeps a full inventory in memory until a restart. Then it
+// tells the scan schedule to scan the new folders of cfg. It returns the
+// sorted names of the dropped connections and the close errors of their
+// adapters.
 func (s *Store) CleanUp(cfg domain.Config) ([]string, error) {
 	current := func(name string, client domain.Client) bool {
 		configured, ok := cfg.Clients[name]
 		return ok && configured != nil && configured.Equal(client)
 	}
 	usedKeys := make(map[parsedNamesKey]bool, len(cfg.Clients))
+	named := make(map[string]struct{})
 	for _, client := range cfg.Clients {
 		if client != nil {
 			usedKeys[parsedNamesKeyFor(*client)] = true
+			for _, folder := range client.SourceFolders {
+				named[folder] = struct{}{}
+			}
 		}
 	}
 
@@ -53,8 +59,18 @@ func (s *Store) CleanUp(cfg domain.Config) ([]string, error) {
 	maps.DeleteFunc(s.parsed, func(key parsedNamesKey, _ parsedNames) bool {
 		return !usedKeys[key]
 	})
+	s.namedFolders = named
+	maps.DeleteFunc(s.folderScans, func(folder string, _ folderScan) bool {
+		_, ok := named[folder]
+		return !ok
+	})
 	s.mu.Unlock()
 	slices.Sort(dropped)
+	// One pending signal stands for any number of clean-ups, because the schedule reads the newest snapshot.
+	select {
+	case s.reloaded <- struct{}{}:
+	default:
+	}
 
 	// A request can still hold a dropped adapter. See the Close contract of
 	// torrentclient.TorrentClient.

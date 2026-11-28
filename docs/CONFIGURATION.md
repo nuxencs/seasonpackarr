@@ -64,6 +64,7 @@ name.
 | `clients.<name>.apiKey` | qBittorrent only. See [qBittorrent](#qbittorrent). |
 | `clients.<name>.import` | How seasonpackarr adds season packs to this client. See [Import policy](#import-policy). |
 | `clients.<name>.inventory` | qBittorrent only. Limits the torrents that seasonpackarr reads from this client. See [Inventory scope](#inventory-scope). |
+| `clients.<name>.sourceFolders` | Absolute paths of folders whose episode files are part of the inventory of this client. Each client type. See [Source folders](#source-folders). |
 
 ### qBittorrent
 
@@ -263,6 +264,159 @@ Before you set a scope, make sure that you accept these effects:
 - **qBittorrent and qui only:** startup fails when a Transmission or Deluge client sets a scope. An entry that is
   empty or starts or ends with a space also stops startup, because qBittorrent compares exact names.
 
+
+## Source folders
+
+A source folder is a folder whose episode files are part of the inventory of a client, although no torrent of the
+client holds them. Examples are a library that Sonarr fills from Usenet downloads, the files of a torrent that you
+removed from the client, and files that you copied in by hand. seasonpackarr reads the release name of each file from
+the file name only, whichever tool put the file there.
+
+```yaml
+clients:
+  default:
+    sourceFolders: [ "/data/media/tv", "/data/media/anime" ]
+```
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `clients.<name>.sourceFolders` | `[]` | Absolute paths of the source folders of this client. Each client type supports them. The inventory scope does not apply to them. |
+| `sourceFolderScanInterval` | `"15m"` | Time between two scans of the source folders of all clients, at least `"1m"`. See [Scan interval](#scan-interval). |
+
+- Each path must be absolute. A relative path or an empty entry stops the load, also at a
+  [config reload](#config-reload). seasonpackarr cleans each path (`/data/tv/` becomes `/data/tv`) and removes a path
+  that is in the list two times.
+- A folder that does not exist or that seasonpackarr cannot read does not stop the start, because a mount can come up
+  late. seasonpackarr logs a warning with the folder and the client.
+- The environment variable is `SEASONPACKARR__CLIENTS_<NAME>_SOURCE_FOLDERS`, with commas between the paths. A path
+  that contains a comma needs `config.yaml`.
+- To give two clients the same folders, use a YAML anchor on the list:
+
+  ```yaml
+  clients:
+    hd:
+      sourceFolders: &folders [ "/data/media/tv" ]
+    uhd:
+      sourceFolders: *folders
+  ```
+
+  Two clients with the same path share one scan of the folder.
+
+seasonpackarr scans the source folders at startup, then again each `sourceFolderScanInterval`, and at the start of each
+[search](PROWLARR.md#search). Only the search waits for its scan, and it stops the wait when the search request ends.
+Another request never waits for a scan: before the first scan of a folder is complete, that folder supplies no file.
+After each scan, the log has one line with the folder, the number of episode files, and the duration. The line
+`client inventory ready` of a client with source folders also has the number of episode files from its source folders
+(`source_folder_files`).
+
+- One scan runs at a time, and it reads one folder at a time. A scan that must start while another scan runs starts
+  when that scan ends.
+- A complete scan of a folder replaces the last result of that folder in one step.
+- When seasonpackarr cannot read the folder itself, for example because a mount is gone for a short time, the scan
+  logs a warning and keeps the last result. A folder that was missing at startup counts after the first scan that can
+  read it, with no restart.
+- A scan parses only the file names that the last scan of the folder did not have. This includes the names that the
+  last scan did not keep.
+- A [config reload](#config-reload) applies a changed folder list and a changed interval with no restart. A new folder
+  gets a scan at once. The result of a folder that no client names is dropped.
+
+The scan uses these rules:
+
+- It reads the whole tree below the folder, with no depth limit.
+- It skips each file and each folder whose name starts with a dot, for example a trash folder or a metadata folder.
+- It does not follow a symlink below the folder, and a symlink is not a file. The configured folder itself can be a
+  symlink.
+- It reads only regular files with the extension `.mkv` or `.mp4`, in any letter case.
+- It keeps a file only when its name is the name of one episode and not of a sample. A file with an obfuscated name is
+  not kept.
+- It reads names only, not the file size or the file content.
+- It logs a subfolder that it cannot read, skips it, and keeps the rest of the scan.
+
+### Scan interval
+
+A file that arrives in a source folder counts when the next scan of its folder is complete. The next scan starts one
+`sourceFolderScanInterval` after the end of the last scan, also after a long scan at startup. Thus a file can wait for
+one interval and the duration of up to two scans: the rest of a running scan, and the next scan. Each scan reads the folder
+tree, so the disks of the folders cannot spin down while a scan runs. For a large library on disks that spin down, set
+a longer interval, for example `"6h"`.
+
+A changed interval applies at the config reload. The next scan then starts one new interval after the end of the last
+scan. When that time is in the past, the next scan starts at once.
+
+### How seasonpackarr uses the files
+
+The candidate check, the match, and the import use the files of the source folders as they use the episodes of the
+torrents in the client. A compatible file is hardlinked into the pack folder, and only the missing data downloads.
+
+- The candidate check reads the result of the last scan only. It reads no file on disk.
+- A file never gives status `210` (already in client), because only a torrent proves that the client has the pack.
+- The match reads each candidate file one time. The file is reused only when it is a regular file with the size of the
+  file in the torrent. A file that was removed or replaced after the last scan is dropped with the log line
+  `client episode file is not reusable` and the field `source_kind` set to `source_folder`. The coverage rule then
+  accepts or rejects the pack.
+- When a torrent and a file supply the same episode, the torrent wins.
+- [Smart mode](#smart-mode) counts the files of the source folders in the coverage.
+- RSS monitoring and search make their search groups from the torrents and from the files, so a season that is only in
+  a source folder gets searched. A compatible season pack torrent in the client covers a file as it covers a torrent.
+  Each search scans the source folders first and waits for the scan. An RSS poll uses the last scan. The search report
+  counts the files in their own fields. See [Prowlarr discovery](PROWLARR.md#search-output).
+
+### File names
+
+seasonpackarr reads the season, the episode, and the [release variant](../GLOSSARY.md) of a file from its file name
+only. A file gives a hardlink only when its name holds the same release variant as the season pack: the resolution, the
+source, the release group, the HDR formats, the streaming service, and the other properties of the
+[fuzzy matching](#fuzzy-matching) compare. A name that does not hold them gives no match. This costs an extra download,
+never a wrong hardlink.
+
+| Format | Example file name | Result |
+| --- | --- | --- |
+| Scene style | `Series.Title.S01E02.1080p.WEB-DL.DDP5.1.H.264-GRP.mkv` | Matches a pack such as `Series.Title.S01.1080p.WEB-DL.DDP5.1.H.264-GRP`. |
+| TRaSH naming format | `Series Title (2023) - S01E02 - Episode Title [AMZN WEBDL-1080p][DV HDR10][EAC3 5.1][h265]-GRP.mkv` | Matches a pack with the same resolution, source, release group, HDR formats, and streaming service, such as `Series.Title.2023.S01.1080p.AMZN.WEB-DL.DDP5.1.DV.HDR10.H.265-GRP`. For a pack name with no year, see [Years in file names](#years-in-file-names). |
+| Default Sonarr format | `Series Title (2023) - S01E02 - Episode Title WEBDL-1080p.mkv` | No match. The name has no release group, and seasonpackarr reads `1080p` as the release group and finds no resolution. Use a naming format with the release group, for example the TRaSH format. |
+| Obfuscated name | `a3f9c1e07b2d4e8f9a0b.mkv` | Ignored. The name has no episode. |
+
+### Years in file names
+
+A file name with a year (`Series Title (2023) - S01E02 ...`) is of another season than a pack name with no year
+(`Series.Title.S01...`). To let such files match, set
+[`fuzzyMatching.skipYearCompare`](#fuzzy-matching) to `true`. The setting is global: it applies to the torrents of
+each client too, and not only to the files of source folders.
+
+### One filesystem
+
+A hardlink cannot go from one filesystem to another. Each source folder must be on the filesystem of the import root
+of its client. When they are on different filesystems, the import fails for those files, and the error text says that
+the hardlink source and the import root are on different filesystems.
+
+With Docker, a hardlink also cannot go from one bind mount to another, even on the same disk. Mount one parent folder
+that holds the source folders and the import root, for example `/data`, and use paths below it:
+
+```yaml
+volumes:
+  - /mnt/storage/data:/data
+```
+
+Then use `/data/media/tv` as the source folder and `/data/torrents/tv` as the import root.
+
+### Permissions
+
+Linux protects hardlinks (`fs.protected_hardlinks`): a process can make a hardlink to a file only when it owns the
+file, or when it can read and write the file. Thus seasonpackarr must own each file of a source folder, or have read
+and write access to it. A file that another user owns with read access only gives a failed hardlink. Run seasonpackarr
+with the user or the group of the tool that writes the files, for example the same `PUID` and `PGID` as Sonarr.
+
+### Risks
+
+- **A pack that you removed comes back.** A file stays in its source folder after you remove its torrent from the
+  client. When an announce offers the pack again, seasonpackarr imports it again. Remove the files too, or remove their
+  folder from the list.
+- **A failed data check writes into the source file.** The torrent client checks the hardlinked data. When the check
+  fails, the client downloads the bad pieces and writes them through the hardlink into the source file. This can occur
+  when a file has the size of the file in the torrent but other data, for example another encode with the same size.
+- **No folder for incomplete downloads.** Do not use a folder for incomplete downloads, for example the download folder
+  of a Usenet client, as a source folder. A file there can be incomplete or can move at any time.
+
 ## Smart mode
 
 Smart mode rejects a season pack when too few of its episodes are already on disk.
@@ -272,9 +426,9 @@ Smart mode rejects a season pack when too few of its episodes are already on dis
 | `smartMode` | `false` | Turns smart mode on. |
 | `smartModeThreshold` | `0.75` | The minimum coverage that a pack needs. Greater than `0` and at most `1`. |
 
-Coverage is the share of distinct episode files in the torrent that seasonpackarr can reuse from the client. MKV and MP4
-episodes count. Samples, extra videos, and files with a different container do not count. seasonpackarr reads the
-episode count from the torrent and uses no external episode database.
+Coverage is the share of distinct episode files in the torrent that seasonpackarr can reuse from the client and from its
+[source folders](#source-folders). MKV and MP4 episodes count. Samples, extra videos, and files with a different
+container do not count. seasonpackarr reads the episode count from the torrent and uses no external episode database.
 
 Example: the torrent has 12 episode files and the client has 8 reusable episodes. The coverage is `8/12 = 0.67`, so a
 threshold of `0.75` rejects the pack. Coverage cannot go above 100 percent, even when the client has more episodes than
@@ -397,7 +551,7 @@ sets `host`. On other systems, write the names in upper case, as this guide show
 
 - Top-level settings: `SEASONPACKARR__HOST`, `SEASONPACKARR__PORT`, `SEASONPACKARR__API_TOKEN`,
   `SEASONPACKARR__LOG_LEVEL`, `SEASONPACKARR__LOG_PATH`, `SEASONPACKARR__LOG_MAX_SIZE`, `SEASONPACKARR__LOG_MAX_BACKUPS`,
-  `SEASONPACKARR__SMART_MODE`, `SEASONPACKARR__SMART_MODE_THRESHOLD`.
+  `SEASONPACKARR__SMART_MODE`, `SEASONPACKARR__SMART_MODE_THRESHOLD`, `SEASONPACKARR__SOURCE_FOLDER_SCAN_INTERVAL`.
 - Fuzzy matching: `SEASONPACKARR__FUZZY_MATCHING_SKIP_REPACK_COMPARE`,
   `SEASONPACKARR__FUZZY_MATCHING_SIMPLIFY_HDR_COMPARE`, `SEASONPACKARR__FUZZY_MATCHING_SIMPLIFY_WEB_COMPARE`,
   `SEASONPACKARR__FUZZY_MATCHING_SKIP_YEAR_COMPARE`.
@@ -417,6 +571,7 @@ sets `host`. On other systems, write the names in upper case, as this guide show
     `SEASONPACKARR__CLIENTS_<NAME>_INVENTORY_INCLUDE_TAGS`, `SEASONPACKARR__CLIENTS_<NAME>_INVENTORY_EXCLUDE_CATEGORIES`,
     and `SEASONPACKARR__CLIENTS_<NAME>_INVENTORY_EXCLUDE_TAGS`, each as a comma-separated list. Without an `INVENTORY_`
     variable, the scope of `config.yaml` applies.
+  - Source folders: `SEASONPACKARR__CLIENTS_<NAME>_SOURCE_FOLDERS` as a comma-separated list of absolute paths.
 - Prowlarr: see [Prowlarr discovery](PROWLARR.md).
 
 At startup, seasonpackarr logs a warning for each `SEASONPACKARR__` variable that it does not know, for example
@@ -442,7 +597,8 @@ The error names the setting or the variable. It does not show the value, because
   torrent.
 - After seasonpackarr merges `config.yaml` and the environment variables, it checks the ranges: `port` from `1` to
   `65535`, `logMaxSize` at least `1`, `logMaxBackups` at least `0`, `smartModeThreshold` greater than `0` and at
-  most `1`, and `clients.<name>.port` from `0` to `65535`. The ranges apply to both sources.
+  most `1`, `sourceFolderScanInterval` a duration of at least `1m`, and `clients.<name>.port` from `0` to `65535`. The
+  ranges apply to both sources.
 - Each client must have a `host` that its client type can connect to. An empty `host` stops the load. A Deluge `host`
   must be a hostname or IP address, so a URL scheme (`http://`), user info (`user@`), or a path stops the load. For
   qBittorrent and Transmission, a `host` that does not parse as a URL, a URL with no host name such as
@@ -467,12 +623,13 @@ seasonpackarr logs the error and keeps the last valid config.
 
 These settings apply without a restart:
 
-- torrent client connections, import policies, and inventory scopes
+- torrent client connections, import policies, inventory scopes, and source folders
 - API token
 - smart mode and fuzzy matching
 - notification destinations and notification levels
 - log level
 - Prowlarr connection, request spacing, and RSS interval
+- source folder scan interval
 
 These settings need a restart:
 
@@ -480,8 +637,9 @@ These settings need a restart:
 - `logPath`, `logMaxSize`, and `logMaxBackups`
 - `SEASONPACKARR__DISABLE_CONFIG_FILE`
 
-When a reload removes a client or changes its connection, import, or inventory settings, seasonpackarr drops the
-cached connection and inventory of that client. The next request connects again.
+When a reload removes a client or changes its connection, import, inventory, or source folder settings, seasonpackarr
+drops the cached connection and inventory of that client. The next request connects again. A new source folder gets a
+scan at once, and the scan result of a folder that no client names is dropped.
 
 When you remove an optional setting, it returns to its default. A running search or RSS run keeps the config it started
 with. A changed RSS interval sets the time of the next automatic run.

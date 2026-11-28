@@ -133,6 +133,16 @@ clients:
       excludeCategories: []
       excludeTags: []
 
+    # Source Folders
+    # Absolute paths of folders whose episode files join the inventory of this client, for example a library of Usenet downloads.
+    # seasonpackarr reads the release name of each file from its file name only. It scans the folders at startup and then
+    # each sourceFolderScanInterval.
+    # A folder that does not exist gives a warning, not an error. Read the configuration guide before you add a folder.
+    #
+    # Optional
+    #
+    sourceFolders: []
+
   # Below you can find an example on how to define a second qBittorrent client
   # If you want to define even more clients just copy this segment and adjust the values accordingly
   #
@@ -192,6 +202,14 @@ clients:
   #  import:
   #    savePath: "/data/torrents/tv-hd"
   #    tags: [ "seasonpackarr" ]
+
+# Source Folder Scan Interval
+# Time between two scans of the source folders of all clients. Minimum: 1m.
+# A longer interval lets the disks of a large library spin down between the scans.
+#
+# Default: "15m"
+#
+# sourceFolderScanInterval: "15m"
 
 # seasonpackarr logs file
 # If not defined, logs to stdout

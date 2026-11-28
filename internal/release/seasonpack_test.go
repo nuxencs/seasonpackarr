@@ -51,6 +51,8 @@ func TestSeasonPackCompare(t *testing.T) {
 	}{
 		{name: "compatible", want: Compatible},
 		{name: "same pack", other: func(r *rls.Release) { r.Episode = 0 }, want: SamePack},
+		// An S01E00 episode has the episode number of a season pack, but it is one episode and not the pack.
+		{name: "episode zero", other: func(r *rls.Release) { r.Type, r.Episode = rls.Episode, 0 }, want: Compatible},
 		{name: "other season number", other: func(r *rls.Release) { r.Series = 2 }, want: OtherSeason},
 		// The compare checks the season itself, so a caller cannot get "same pack" for another show.
 		{name: "other show with the same release variant", other: func(r *rls.Release) { r.Title, r.Episode = "Other Show", 0 }, want: OtherSeason},
