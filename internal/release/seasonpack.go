@@ -41,9 +41,10 @@ const (
 	OtherSeason Relation = iota
 	// OtherReleaseVariant means the same season, and one property of the release variant differs.
 	OtherReleaseVariant
-	// SamePack means the same season, the same release variant, and the same episode number.
+	// SamePack means the same season, the same release variant, and another season pack: the series type and the same
+	// episode number.
 	SamePack
-	// Compatible means the same season, the same release variant, and another episode number.
+	// Compatible means the same season, the same release variant, and an episode or another episode number.
 	Compatible
 )
 
@@ -59,7 +60,8 @@ func (p SeasonPack) Compare(other *rls.Release) (Relation, Mismatch) {
 	if mismatch, ok := p.variantMismatch(other); ok {
 		return OtherReleaseVariant, mismatch
 	}
-	if p.release.Episode == other.Episode {
+	// An S01E00 episode has the episode number of a season pack, so the type tells the pack from the episode.
+	if other.Type.Is(rls.Series) && p.release.Episode == other.Episode {
 		return SamePack, Mismatch{}
 	}
 	return Compatible, Mismatch{}

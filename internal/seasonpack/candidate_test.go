@@ -133,6 +133,19 @@ func TestCandidate_ReturnsStatusOfEachRejection(t *testing.T) {
 	}
 }
 
+// An S01E00 episode torrent has the episode number of the season pack, but it does not prove that the client has the
+// pack, so it is a candidate and gives no 210.
+func TestCandidate_EpisodeZeroTorrentIsCandidate(t *testing.T) {
+	const episode = "Candidate.S01E00.1080p.WEB-DL.H.264-RlsGrp"
+	f := newFixture(&torrentclienttest.Client{Torrents: []torrentclient.Torrent{{Name: episode, Hash: "ep0"}}})
+
+	outcome := f.processor.Candidate(t.Context(), f.defaultClient(t), "Candidate.S01.1080p.WEB-DL.H.264-RlsGrp")
+
+	require.NoError(t, outcome.Err)
+	assert.Equal(t, domain.StatusSuccessfulMatch, outcome.Status)
+	f.log.Events(t).RequireField(t, "client release passed candidate gate", "client_release", episode)
+}
+
 func TestCandidate_ReadsClientBeforeSeasonPackCheck(t *testing.T) {
 	// `setup filter` sends a single-episode sample and needs 468 to find a client that seasonpackarr cannot read.
 	torrentClient := &torrentclienttest.Client{TorrentsErr: errors.New("client offline")}

@@ -13,6 +13,10 @@ Current comparison logic checks:
 - HDR, optionally simplified
 - streaming service collection
 - episode identity
+- "same pack" (status `210` in the candidate check) needs another season pack:
+  the series type and the episode number of the pack. An `S01E00` episode has
+  the episode number 0 of a season pack, so the type tells the two apart, and
+  the episode is compatible
 
 ## Hardlinking Rules That Matter
 

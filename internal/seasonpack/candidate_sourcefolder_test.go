@@ -34,8 +34,8 @@ func TestCandidate_AcceptsCompatibleSourceFolderFile(t *testing.T) {
 	assert.Equal(t, "source_folder", passed["source_kind"])
 }
 
-// A file whose name has the episode number of the pack (E00 equals the pack) is the same pack by the compare, but
-// only a torrent proves that the client has the pack.
+// A file whose name has the episode number of the pack (E00) gives no 210. The compare reads it as an episode, and
+// the candidate check gives "same pack" for a torrent only, as a second safeguard.
 func TestCandidate_SourceFolderFileNeverGivesAlreadyInClient(t *testing.T) {
 	pack := newPack(t, "FolderSamePack", 2, 0)
 	path := pack.writeFolderFileNamed(t, "FolderSamePack.S01E00.1080p.WEB-DL.H.264-RlsGrp.mkv")
