@@ -106,6 +106,9 @@ type searchReport struct {
 	ScannedTorrents        int  `json:"scannedTorrents"`
 	EpisodeTorrents        int  `json:"episodeTorrents"`
 	CoveredEpisodeTorrents int  `json:"coveredEpisodeTorrents"`
+	ScannedFiles           int  `json:"scannedFiles"`
+	EpisodeFiles           int  `json:"episodeFiles"`
+	CoveredEpisodeFiles    int  `json:"coveredEpisodeFiles"`
 	Groups                 int  `json:"groups"`
 	GroupsNotDue           int  `json:"groupsNotDue"`
 	GroupsDeferred         int  `json:"groupsDeferred"`
@@ -148,6 +151,10 @@ func (r *searchReport) print(w io.Writer, api *apiClient) error {
 	}
 	fmt.Fprintf(&output, "%s %s\n", searchMode(r.DryRun, r.Verify), completion)
 	fmt.Fprintf(&output, "Scanned: %d torrents, %d episode torrents, %d already covered\n", r.ScannedTorrents, r.EpisodeTorrents, r.CoveredEpisodeTorrents)
+	// A service with no source folder, or with empty ones, prints the summary as before.
+	if r.ScannedFiles > 0 {
+		fmt.Fprintf(&output, "Source folders: %d files, %d episode files, %d already covered\n", r.ScannedFiles, r.EpisodeFiles, r.CoveredEpisodeFiles)
+	}
 	limit := "no cap"
 	if r.Limit > 0 {
 		limit = fmt.Sprintf("limit %d", r.Limit)

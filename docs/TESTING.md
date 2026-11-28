@@ -56,7 +56,8 @@ code of the real binary.
   waits 60 real seconds for the query gap.
 - The discovery run tests in `internal/http/` (`search_test.go`,
   `search_cooldown_test.go`, `search_persistence_test.go`,
-  `search_wait_test.go`, `search_limit_test.go`, and `rss_test.go`)
+  `search_wait_test.go`, `search_limit_test.go`, `search_sourcefolder_test.go`,
+  and `rss_test.go`)
   assert what the run adds to the source: the outcomes, the imports, the
   notifications, the log lines of the run, and the report. A search test
   enters through `POST /api/search`. An RSS test enters through the
@@ -95,7 +96,8 @@ code of the real binary.
   run `Store.ReadAtStartup` and `Store.ScheduleSourceFolderScans` as the server
   does, in a `testing/synctest` bubble, so the timer uses the virtual clock. A
   reload stores the new snapshot and calls `Store.CleanUp`, as the reload
-  parties of `start` do. The tests assert the scan lines. A test that must see a kept or dropped
+  parties of `start` do. A search scan calls `Store.ScanSourceFolders`, as a
+  search run does. The tests assert the scan lines. A test that must see a kept or dropped
   result reads the file count of the startup log line (`sourceFolderFiles`),
   and the parse test counts the calls of the parse function of the store.
 - The source folder tests of the season pack processor

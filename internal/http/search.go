@@ -63,6 +63,9 @@ type searchReport struct {
 	ScannedTorrents        int             `json:"scannedTorrents"`
 	EpisodeTorrents        int             `json:"episodeTorrents"`
 	CoveredEpisodeTorrents int             `json:"coveredEpisodeTorrents"`
+	ScannedFiles           int             `json:"scannedFiles"`
+	EpisodeFiles           int             `json:"episodeFiles"`
+	CoveredEpisodeFiles    int             `json:"coveredEpisodeFiles"`
 	Groups                 int             `json:"groups"`
 	GroupsNotDue           int             `json:"groupsNotDue"`
 	GroupsDeferred         int             `json:"groupsDeferred"`
@@ -173,6 +176,10 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 		r.log.Info().Bool("rss", rss).Bool("dry_run", req.DryRun).Bool("verify", req.Verify).Int("torrent_downloads", report.TorrentDownloads).Int("torrent_cache_hits", report.TorrentCacheHits).Int("covered_episode_torrents", report.CoveredEpisodeTorrents).Int("groups", report.Groups).Int("groups_not_due", report.GroupsNotDue).Int("groups_deferred", report.GroupsDeferred).Int("limit", report.Limit).Int("search_requests", report.Requests).Int("outcomes", len(report.Outcomes)).Int("failures", len(report.Failures)).Int64("duration_ms", time.Since(started).Milliseconds()).Msg("Prowlarr run completed")
 	}()
 
+	// An RSS poll uses the last scan, because it runs often and a feed holds few packs.
+	if !rss {
+		r.inv.ScanSourceFolders(ctx, snapshot)
+	}
 	handles := make(map[string]*inventory.Client, len(clients))
 	groups := make(map[seasonSearchKey]*seasonSearch)
 	for _, name := range clients {
@@ -195,26 +202,34 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 		for entries := range clientInventory.SeasonGroups() {
 			// Each group is one season.
 			// Collect packs once so episode-only seasons do not need pairwise scans.
+			// Only a torrent is a pack in the client, and it covers a file episode too.
 			var packs []release.SeasonPack
 			for entry := range entries {
+				if entry.IsFile() {
+					continue
+				}
 				if pack, ok := release.NewSeasonPack(entry.Release, snapshot.FuzzyMatching); ok {
 					packs = append(packs, pack)
 				}
 			}
 			for entry := range entries {
-				report.ScannedTorrents++
+				scanned, episodes, covered := &report.ScannedTorrents, &report.EpisodeTorrents, &report.CoveredEpisodeTorrents
+				if entry.IsFile() {
+					scanned, episodes, covered = &report.ScannedFiles, &report.EpisodeFiles, &report.CoveredEpisodeFiles
+				}
+				*scanned++
 				parsed := entry.Release
 				// Date-based and ambiguous releases need metadata that this feature does
 				// not have. Existing season packs never create search groups.
 				if parsed.Type != rls.Episode || parsed.Series <= 0 || parsed.Episode <= 0 || strings.TrimSpace(parsed.Title) == "" {
 					continue
 				}
-				report.EpisodeTorrents++
+				*episodes++
 				if slices.ContainsFunc(packs, func(pack release.SeasonPack) bool {
 					relation, _ := pack.Compare(parsed)
 					return relation == release.Compatible
 				}) {
-					report.CoveredEpisodeTorrents++
+					*covered++
 					continue
 				}
 				// Years affect compatibility, but never the outgoing query identity.

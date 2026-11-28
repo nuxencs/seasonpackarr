@@ -302,10 +302,11 @@ clients:
 
   Two clients with the same path share one scan of the folder.
 
-seasonpackarr scans the source folders at startup, and then again each `sourceFolderScanInterval`. A request never
-waits for a scan: before the first scan of a folder is complete, that folder supplies no file. After each scan, the log
-has one line with the folder, the number of episode files, and the duration. The line `client inventory ready` of a
-client with source folders also has the number of episode files from its source folders (`source_folder_files`).
+seasonpackarr scans the source folders at startup, then again each `sourceFolderScanInterval`, and at the start of each
+[search](PROWLARR.md#search). Only the search waits for its scan. Another request never waits for a scan: before the
+first scan of a folder is complete, that folder supplies no file. After each scan, the log has one line with the folder,
+the number of episode files, and the duration. The line `client inventory ready` of a client with source folders also
+has the number of episode files from its source folders (`source_folder_files`).
 
 - One scan runs at a time, and it reads one folder at a time. A scan that must start while another scan runs starts
   when that scan ends.
@@ -353,8 +354,10 @@ torrents in the client. A compatible file is hardlinked into the pack folder, an
   accepts or rejects the pack.
 - When a torrent and a file supply the same episode, the torrent wins.
 - [Smart mode](#smart-mode) counts the files of the source folders in the coverage.
-- RSS monitoring and search make their search groups from the torrents of the client only, and the search report does
-  not count the files. When discovery checks a listing, its match also uses the files of the source folders.
+- RSS monitoring and search make their search groups from the torrents and from the files, so a season that is only in
+  a source folder gets searched. A compatible season pack torrent in the client covers a file as it covers a torrent.
+  Each search scans the source folders first and waits for the scan. An RSS poll uses the last scan. The search report
+  counts the files in their own fields. See [Prowlarr discovery](PROWLARR.md#search-output).
 
 ### File names
 

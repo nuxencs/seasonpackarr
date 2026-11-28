@@ -1,6 +1,6 @@
 # Source folders get their release names from file names, and a timer scans them
 
-Users also get episodes from Usenet, and those files never reach the torrent client, so the inventory does not have them. A client can now name source folders, and their episode files join its inventory. seasonpackarr reads the release name of each file from its file name alone, because that needs no second service and works for a folder that any tool filled. A background scan reads the folders at startup, then on an interval, and before each search, because a scan of names is cheap and works on each filesystem. A request reads the last finished scan and never waits for one.
+Users also get episodes from Usenet, and those files never reach the torrent client, so the inventory does not have them. A client can now name source folders, and their episode files join its inventory. seasonpackarr reads the release name of each file from its file name alone, because that needs no second service and works for a folder that any tool filled. A background scan reads the folders at startup, then on an interval, and before each search, because a scan of names is cheap and works on each filesystem. A search waits for its scan. Another request reads the last finished scan and never waits for one.
 
 ## Considered Options
 

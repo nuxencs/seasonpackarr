@@ -405,13 +405,36 @@ func (inv *Inventory) sameSeasonFiles(key release.SeasonKey, yield func(Entry) b
 	}
 }
 
-// SeasonGroups yields the torrent entries of each season, in no fixed order. A caller can range over one group more
-// than once. It yields no file entry: discovery makes its search groups from torrents only.
+// SeasonGroups yields the entries of each season, in no fixed order. Each group is the SameSeason of its key: the
+// torrent entries before the file entries, and a file once. A caller can range over one group more than once.
 func (inv *Inventory) SeasonGroups() iter.Seq[iter.Seq[Entry]] {
 	return func(yield func(iter.Seq[Entry]) bool) {
-		for _, group := range inv.seasons {
-			if !yield(slices.Values(group)) {
+		// With no file, a group is its torrent slice, so the range needs no key set and no merge.
+		if len(inv.folderSeasons) == 0 {
+			for _, group := range inv.seasons {
+				if !yield(slices.Values(group)) {
+					return
+				}
+			}
+			return
+		}
+		yielded := make(map[release.SeasonKey]struct{}, len(inv.seasons))
+		for key := range inv.seasons {
+			yielded[key] = struct{}{}
+			if !yield(inv.SameSeason(key)) {
 				return
+			}
+		}
+		// A season with files and no torrent is in no torrent group.
+		for _, folder := range inv.folderSeasons {
+			for key := range folder {
+				if _, ok := yielded[key]; ok {
+					continue
+				}
+				yielded[key] = struct{}{}
+				if !yield(inv.SameSeason(key)) {
+					return
+				}
 			}
 		}
 	}

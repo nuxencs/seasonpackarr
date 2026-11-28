@@ -126,6 +126,13 @@ func (s *Store) scanIfDue(ctx context.Context, cfg config.Provider, interval tim
 	return time.Now().Add(interval)
 }
 
+// ScanSourceFolders scans each source folder of cfg again and returns at the end of the scan or of ctx. It waits for a
+// running scan first. A search run calls it before it reads the inventories, so a file that arrived after the last
+// timer scan is in its search groups. The scan schedule counts it as a full scan.
+func (s *Store) ScanSourceFolders(ctx context.Context, cfg domain.Config) {
+	s.scanSourceFolders(ctx, cfg, allFolders)
+}
+
 // scanSourceFolders scans the source folders of cfg in scope, after the end of a running scan.
 func (s *Store) scanSourceFolders(ctx context.Context, cfg domain.Config, scope scanScope) {
 	if !s.lockScans(ctx) {
@@ -176,7 +183,9 @@ func (s *Store) scanFolders(ctx context.Context, cfg domain.Config, scope scanSc
 		slices.Sort(clients[folder])
 		s.scanSourceFolder(ctx, folder, clients[folder])
 	}
-	if scope == allFolders {
+	// A scan that ctx stopped is not a full scan, also when it stopped in the last folder. A search request can end at any
+	// time.
+	if scope == allFolders && ctx.Err() == nil {
 		s.mu.Lock()
 		s.fullScanEnded = time.Now()
 		s.mu.Unlock()

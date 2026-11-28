@@ -331,3 +331,26 @@ func TestScheduleSourceFolderScans_CountsTheIntervalFromTheEndOfALongStartupScan
 			"the next scan starts one interval after the end of the startup scan")
 	})
 }
+
+// A search scans the folders and waits for the scan. The timer counts the interval from the end of that scan, so the
+// disk gets no second walk right after a search.
+func TestScanSourceFolders_MovesTheNextTimerScan(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		root := t.TempDir()
+		writeSourceFile(t, root, keptEpisode)
+		scans := startScheduledScans(t, folderConfig("15m", root))
+		time.Sleep(10 * time.Minute)
+
+		writeSourceFile(t, root, "Series.S01E02.1080p.WEB-DL-GRP.mkv")
+		scans.store.ScanSourceFolders(t.Context(), scans.provider.Snapshot())
+		require.Equal(t, []int{1, 2}, scans.scanCounts(t, root), "the scan ends before the call returns")
+
+		time.Sleep(15*time.Minute - time.Nanosecond)
+		synctest.Wait()
+		assert.Equal(t, []int{1, 2}, scans.scanCounts(t, root), "no timer scan within one interval after the search scan")
+
+		time.Sleep(time.Nanosecond)
+		synctest.Wait()
+		assert.Equal(t, []int{1, 2, 2}, scans.scanCounts(t, root))
+	})
+}

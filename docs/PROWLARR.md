@@ -7,9 +7,11 @@ Discovery finds season packs through Prowlarr in two ways:
 - **Search** runs a targeted Prowlarr search when you start it. Use it to find
   older packs or to fill gaps after downtime.
 
-Both start from the episode torrents in your configured clients and use the
-same match and import steps as autobrr. seasonpackarr does not search for shows
-that are not in a client, and it does not download single episodes.
+Both start from the episode torrents in your configured clients and from the
+episode files in their [source folders](CONFIGURATION.md#source-folders), and
+use the same match and import steps as autobrr. seasonpackarr does not search
+for shows that are not in a client or in a source folder, and it does not
+download single episodes.
 
 Discovery and autobrr work independently. Use either one, or both. For
 automatic searches without autobrr or RSS, run `seasonpackarr search` from an
@@ -120,7 +122,9 @@ next attempt. When a client inventory is unavailable, the poll uses isolated
 feed state so it cannot consume entries on behalf of that client. RSS cannot
 guarantee historical coverage.
 
-Listings must parse as season packs for an uncovered series/season in the client.
+Listings must parse as season packs for an uncovered series/season in the client
+or in its source folders. A poll uses the last scan of the source folders and
+starts no scan, so a new file counts after the next scan.
 seasonpackarr checks year compatibility against the episodes before the torrent download. The same variant, source-file, exact-coverage, and duplicate checks listed
 below then apply. RSS respects indexer priority and feed order. One indexer failure
 does not prevent other indexers from running. No eligible episode groups means no
@@ -180,6 +184,10 @@ RSS monitoring runs only on its configured interval and always evaluates imports
 for all clients. The CLI and API run searches across the configured searchable
 indexers. The preview flags apply only to searches.
 
+Each search first scans the source folders of all clients again and waits for
+the scan, so a file that arrived after the last scan counts. The scan reads
+names only. See [Source folders](CONFIGURATION.md#source-folders).
+
 All three modes scan all configured clients unless `SEASONPACKARR__CLIENT`
 selects one. Add `--client default` to select one client.
 Use `--url http://127.0.0.1:42069` to set the seasonpackarr base
@@ -238,6 +246,11 @@ RSS poll has no cap.
   search groups that the preview took.
 - The cap delays work but loses none of it. With 250 search groups and the
   default cap, three import runs query each search group one time.
+- A search group from a source folder counts as any other search group, for
+  the cap and for the [wait time](#wait-time). A large library in a source
+  folder makes many search groups: each season that has no compatible season
+  pack in the client is one. The cap and the wait time keep the load on the
+  indexers small. A first search of a large library takes some import runs.
 
 `limit` in the report is the cap that the run used. `groupsDeferred` counts the
 due search groups that the cap left for a later run. The log line
@@ -245,18 +258,25 @@ due search groups that the cap left for a later run. The log line
 
 ### Search output
 
-The CLI prints a readable summary. Add `--json` to get the complete API report
+The CLI prints a readable summary. With source folders, it has the line
+`Source folders` with the file counts. Add `--json` to get the complete API report
 with scan counts, logical search group count, search request
 count, completed torrent downloads, torrent cache hits, per-listing outcomes,
 and operation failures. `requests` counts targeted feed requests, excluding
 indexer discovery and torrent downloads. Automatic RSS logs include `rss: true`.
-`coveredEpisodeTorrents` counts episode torrent entries
-excluded because a compatible pack already exists. `episodeTorrents` includes
-these entries; `groups` counts only groups that still need a search, and
+`scannedTorrents`, `episodeTorrents`, and `coveredEpisodeTorrents` count
+torrents of the client only. `scannedFiles`, `episodeFiles`, and
+`coveredEpisodeFiles` count the same for the files of the source folders, and
+are `0` with no source folder. `coveredEpisodeTorrents` and
+`coveredEpisodeFiles` count episode entries excluded because a compatible pack
+torrent already exists in the client. `episodeTorrents` and `episodeFiles`
+include these entries; `groups` counts only groups that still need a search,
+from torrents and files, and
 `groupsNotDue` counts the groups of `groups` that are in their
 [wait time](#wait-time), and `groupsDeferred` counts the groups that the
 [search cap](#search-cap) left for a later run. Counts are
-per client and include duplicate episode torrents, not distinct episodes.
+per client and include duplicate episode torrents, not distinct episodes. A file
+in two source folders of one client, one below the other, counts once.
 The CLI exits with a failure code
 if a tracker, client, or listing failed. Normal match rejections are not command
 failures. Logs contain the same outcomes for automatic runs.
@@ -271,14 +291,15 @@ added a stopped torrent; inspect the client before retrying.
 ## How seasonpackarr selects packs
 
 1. Read fresh torrent summaries from each selected client.
-2. Identify episode torrents with a parsed title, positive season, and positive
-   episode number. Ignore movies, season packs, specials, date-based releases,
-   and names that do not provide those identifiers. Scan and episode counts show
-   how much inventory was eligible.
-3. Before creating queries, exclude episode torrents whose release variant
-   already has a compatible season pack in the same client. Apply the existing
-   release and fuzzy-matching rules, including year comparison. A pack for one
-   variant does not suppress another variant. This check uses summaries only.
+2. Identify episode torrents and source folder episode files with a parsed
+   title, positive season, and positive episode number. Ignore movies, season
+   packs, specials, date-based releases, and names that do not provide those
+   identifiers. Scan and episode counts show how much inventory was eligible.
+3. Before creating queries, exclude episode torrents and files whose release
+   variant already has a compatible season pack torrent in the same client.
+   Apply the existing release and fuzzy-matching rules, including year
+   comparison. A pack for one variant does not suppress another variant. This
+   check uses torrent summaries and the last scan of the source folders only.
    Group the remaining episodes by normalized series title and season. Different
    or missing years share one query. Keep parsed years in the local release
    checks, subject to `skipYearCompare`. Reuse a query across clients while
