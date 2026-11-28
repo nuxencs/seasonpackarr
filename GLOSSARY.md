@@ -57,12 +57,16 @@ _Avoid_: Match percentage
 The setting that rejects a season pack when its coverage is below a threshold.
 
 **Inventory**:
-The torrents that seasonpackarr reads from a client for the candidate check, the match, and discovery.
+The torrents of a client and the episode files in its source folders, which seasonpackarr reads for the candidate check, the match, and discovery.
 _Avoid_: Torrent list, client torrents
 
 **Inventory scope**:
-The client setting that limits the inventory: include categories and tags select torrents, and exclude categories and tags drop them. An empty scope is every torrent.
+The client setting that limits the torrents of the inventory: include categories and tags select torrents, and exclude categories and tags drop them. An empty scope is every torrent. It does not limit source folders.
 _Avoid_: Inventory filter
+
+**Source folder**:
+A folder of one client whose episode files are in the inventory, although no torrent of the client holds them. seasonpackarr reads the file names as they are, whichever tool put the files there.
+_Avoid_: Library, library path, local path
 
 **Client type**:
 The torrent client software and protocol version of a client: qBittorrent, Transmission, Deluge 1, or Deluge 2. An alias is a second spelling of one client type.
@@ -92,6 +96,18 @@ _Avoid_: RSS backfill
 **Search**:
 A targeted Prowlarr search for season packs, started on demand or by an external scheduler.
 _Avoid_: Backfill, manual backfill
+
+**Search group**:
+The episodes of one show title and one season number in the inventories of a search, of each year and each client. A search sends one query for it to each indexer.
+_Avoid_: Season group, title group
+
+**Query gap**:
+The minimum time between two queries to one indexer, from a search or from RSS monitoring. It does not apply to torrent downloads.
+_Avoid_: Rate limit, delay
+
+**Wait time**:
+The time after a search queried one indexer for a search group and a client, during which no search sends that query again.
+_Avoid_: Cooldown (for this meaning), exclude time
 
 **Discovery run**:
 One search or one RSS poll, from its start to its report. Only one is active at a time.
