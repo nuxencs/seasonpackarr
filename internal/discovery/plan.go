@@ -28,6 +28,9 @@ type Group struct {
 // PlanRequest is the input of Plan.
 type PlanRequest struct {
 	Groups []Group
+	// Limit is the maximum count of due search groups that the run queries.
+	// 0 means no cap.
+	Limit int
 	// Preview is true for a dry run, with or without verify. The run then
 	// obeys the wait time but stores no search time.
 	Preview bool
@@ -39,6 +42,8 @@ type Plan struct {
 	Groups []PlannedGroup
 	// NotDue counts the search groups with no due query on a usable indexer.
 	NotDue int
+	// Deferred counts the due search groups that the limit left for a later run.
+	Deferred int
 }
 
 // PlannedGroup is one due search group and its due queries, in indexer order.
@@ -73,6 +78,11 @@ func searchGroup(query Query) state.SearchGroup {
 // or a search time that is waitTime old or older. A group with no due query
 // on a usable indexer counts as not due. Plan sends no request without groups.
 //
+// The due groups that waited longest go first: a group with a due client that
+// was never searched, then the group with the oldest search time of a due
+// client. The query text breaks a tie. The groups after the limit count as
+// deferred.
+//
 // The run then stores the search times of the planned queries that Search
 // answers, unless the request is a preview.
 func (r *Run) Plan(ctx context.Context, request PlanRequest) Plan {
@@ -91,30 +101,55 @@ func (r *Run) Plan(ctx context.Context, request PlanRequest) Plan {
 			return Plan{}
 		}
 	}
-	var plan Plan
-	groups := slices.SortedFunc(slices.Values(request.Groups), func(a, b Group) int { return cmp.Compare(a.Query.String(), b.Query.String()) })
-	for _, group := range groups {
+	type dueGroup struct {
+		PlannedGroup
+		// oldest is the oldest search time of a due client. It is zero when a due client was never searched.
+		oldest time.Time
+	}
+	var (
+		plan Plan
+		due  []dueGroup
+	)
+	for _, group := range request.Groups {
 		key := searchGroup(group.Query)
 		clients := slices.Sorted(slices.Values(group.Clients))
-		planned := PlannedGroup{Query: group.Query}
+		planned := dueGroup{Query: group.Query, oldest: now}
 		for _, indexer := range indexers {
-			var due []string
+			var dueClients []string
 			for _, client := range clients {
 				searched, ok := times[state.SearchTarget{Group: key, Client: client, IndexerID: indexer.ID}]
 				if !ok || now.Sub(searched) >= waitTime {
-					due = append(due, client)
+					dueClients = append(dueClients, client)
+					// A missing time is the zero time, so it sorts first.
+					if searched.Before(planned.oldest) {
+						planned.oldest = searched
+					}
 				}
 			}
-			if len(due) > 0 {
-				planned.Queries = append(planned.Queries, PlannedQuery{Indexer: indexer, Clients: due})
-				r.planned[queryKey{key, indexer.ID}] = due
+			if len(dueClients) > 0 {
+				planned.Queries = append(planned.Queries, PlannedQuery{Indexer: indexer, Clients: dueClients})
 			}
 		}
 		if len(planned.Queries) == 0 {
 			plan.NotDue++
 			continue
 		}
-		plan.Groups = append(plan.Groups, planned)
+		due = append(due, planned)
+	}
+	slices.SortFunc(due, func(a, b dueGroup) int {
+		return cmp.Or(a.oldest.Compare(b.oldest), cmp.Compare(a.Query.String(), b.Query.String()))
+	})
+	if request.Limit > 0 && len(due) > request.Limit {
+		plan.Deferred = len(due) - request.Limit
+		due = due[:request.Limit]
+	}
+	for _, group := range due {
+		// Only the queries of the run are in the plan, so Search stores no time for a deferred group.
+		key := searchGroup(group.Query)
+		for _, query := range group.Queries {
+			r.planned[queryKey{key, query.Indexer.ID}] = query.Clients
+		}
+		plan.Groups = append(plan.Groups, group.PlannedGroup)
 	}
 	return plan
 }

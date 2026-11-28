@@ -210,3 +210,20 @@ func (f *searchFixture) runRSS(t *testing.T) searchReport {
 	require.True(t, report.RSS)
 	return report
 }
+
+func TestRSS_IgnoresLimit(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := newSearchFixture(t, fixtureOptions{packEpisodes: 1, clientEpisodes: 1, threshold: 1})
+		f.addSearchGroups(100)
+
+		search := f.searchFor(t, SearchRequest{DryRun: true})
+		require.Equal(t, 1, search.GroupsDeferred)
+		require.NotContains(t, f.queries, "Lifecycle S01", "the search group of the fixture pack is the 101st")
+
+		poll := f.runRSS(t)
+		require.Zero(t, poll.Limit)
+		require.Zero(t, poll.GroupsDeferred)
+		require.Len(t, poll.Outcomes, 1, "an RSS poll must evaluate a listing of each group")
+		require.Equal(t, f.releaseName, poll.Outcomes[0].Title)
+	})
+}

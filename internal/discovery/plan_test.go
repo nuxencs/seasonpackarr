@@ -241,3 +241,61 @@ func TestPlan_DatabaseFailure(t *testing.T) {
 	assert.ErrorIs(t, run.Err(), discovery.ErrDatabase)
 	assert.Empty(t, f.requestsTo("/1/api"))
 }
+
+// groupOrder returns the query text of each search group of plan, in order.
+func groupOrder(plan discovery.Plan) []string {
+	var order []string
+	for _, group := range plan.Groups {
+		order = append(order, group.Query.String())
+	}
+	return order
+}
+
+func TestPlan_NeverSearchedGroupsFirstThenOldestSearchTime(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := newSourceFixture(t)
+		alpha := discovery.Group{Query: discovery.Query{Title: "Alpha", Season: 1}, Clients: []string{"a"}}
+		beta := discovery.Group{Query: discovery.Query{Title: "Beta", Season: 1}, Clients: []string{"a"}}
+		gamma := discovery.Group{Query: discovery.Query{Title: "Gamma", Season: 1}, Clients: []string{"a"}}
+		delta := discovery.Group{Query: discovery.Query{Title: "Delta", Season: 1}, Clients: []string{"a"}}
+		f.importRun(t, gamma)
+		time.Sleep(time.Hour)
+		f.importRun(t, beta, delta)
+		time.Sleep(24 * time.Hour)
+		// Client b was never searched for delta, so the oldest due triple of delta has no search time.
+		delta.Clients = []string{"a", "b"}
+
+		plan := f.preview(t, alpha, beta, gamma, delta)
+
+		assert.Equal(t, []string{"Alpha S01", "Delta S01", "Gamma S01", "Beta S01"}, groupOrder(plan))
+	})
+}
+
+func TestPlan_LimitDefersDueGroups(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := newSourceFixture(t)
+		groups := []discovery.Group{showGroup}
+		for _, title := range []string{"Alpha", "Beta", "Gamma"} {
+			groups = append(groups, discovery.Group{Query: discovery.Query{Title: title, Season: 1}, Clients: []string{"a"}})
+		}
+		f.importRun(t, showGroup)
+
+		for _, tt := range []struct {
+			limit    int
+			order    []string
+			deferred int
+		}{
+			{limit: 2, order: []string{"Alpha S01", "Beta S01"}, deferred: 1},
+			{limit: 3, order: []string{"Alpha S01", "Beta S01", "Gamma S01"}},
+			{limit: 0, order: []string{"Alpha S01", "Beta S01", "Gamma S01"}},
+		} {
+			run := f.begin(t, discovery.KindSearch)
+			plan := run.Plan(t.Context(), discovery.PlanRequest{Groups: groups, Limit: tt.limit, Preview: true})
+			run.End()
+
+			assert.Equal(t, tt.order, groupOrder(plan), "limit %d", tt.limit)
+			assert.Equal(t, tt.deferred, plan.Deferred, "limit %d", tt.limit)
+			assert.Equal(t, 1, plan.NotDue, "a group that is not due must not count against limit %d", tt.limit)
+		}
+	})
+}

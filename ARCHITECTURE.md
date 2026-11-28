@@ -191,11 +191,14 @@
     returns at once, adds no failure, and records no cooldown.
   - The source owns the wait time of 24 hours and the stored search times.
     `Run.Plan` takes the search groups of a search with their clients and
-    returns the work of the run: the due search groups in query order, for
-    each one the usable indexers to query and the due clients of each
-    indexer, and the count of the search groups that are not due. A triple of
-    search group, client, and indexer is due when it has no stored search time
-    or a time that is 24 hours old or older. In an import run, `Run.Search`
+    the cap, and returns the work of the run: the due search groups up to the
+    cap, for each one the usable indexers to query and the due clients of each
+    indexer, the count of the search groups that are not due, and the count
+    of the due search groups after the cap. The groups that waited longest
+    go first: a group with a due triple that has no search time, then the
+    group with the oldest search time of a due triple. The query text breaks
+    a tie. A triple of search group, client, and indexer is due when it has
+    no stored search time or a time that is 24 hours old or older. In an import run, `Run.Search`
     stores the time of each due client after a planned query ends with an
     answer: the last page, the page budget, or a repeated page. A failed
     request, an indexer that went out, a canceled query, and a preview store

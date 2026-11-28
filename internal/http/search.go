@@ -27,11 +27,17 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// defaultSearchLimit is the cap of a search request that omits limit.
+const defaultSearchLimit = 100
+
 // SearchRequest selects one configured client or all clients when empty.
 type SearchRequest struct {
 	ClientName string `json:"clientname"`
 	DryRun     bool   `json:"dryRun"`
 	Verify     bool   `json:"verify"`
+	// Limit is the maximum count of search groups that the search queries.
+	// Nil means defaultSearchLimit, and 0 means no cap.
+	Limit *int `json:"limit"`
 }
 
 type searchOutcome struct {
@@ -62,6 +68,8 @@ type searchReport struct {
 	CoveredEpisodeTorrents int             `json:"coveredEpisodeTorrents"`
 	Groups                 int             `json:"groups"`
 	GroupsNotDue           int             `json:"groupsNotDue"`
+	GroupsDeferred         int             `json:"groupsDeferred"`
+	Limit                  int             `json:"limit"`
 	Requests               int             `json:"requests"`
 	Outcomes               []searchOutcome `json:"outcomes"`
 	Failures               []searchFailure `json:"failures"`
@@ -130,6 +138,16 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 	if req.Verify && !req.DryRun {
 		return report, errors.New("verify requires dryRun")
 	}
+	// An RSS poll has no cap, so its report keeps limit 0.
+	if !rss {
+		report.Limit = defaultSearchLimit
+		if req.Limit != nil {
+			report.Limit = *req.Limit
+		}
+		if report.Limit < 0 {
+			return report, errors.New("limit must not be negative")
+		}
+	}
 	snapshot := r.cfg.Snapshot()
 	kind := discovery.KindSearch
 	if rss {
@@ -155,7 +173,7 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 		for _, outcome := range report.Outcomes {
 			r.log.Info().Bool("rss", rss).Str("clientname", outcome.ClientName).Str("release", outcome.Title).Int("indexer_id", outcome.IndexerID).Str("status", outcome.Status).Str("reason", outcome.Reason).Interface("reusable_episodes", outcome.ReusableEpisodes).Interface("total_episodes", outcome.TotalEpisodes).Msg("Prowlarr result")
 		}
-		r.log.Info().Bool("rss", rss).Bool("dry_run", req.DryRun).Bool("verify", req.Verify).Int("torrent_downloads", report.TorrentDownloads).Int("torrent_cache_hits", report.TorrentCacheHits).Int("covered_episode_torrents", report.CoveredEpisodeTorrents).Int("groups", report.Groups).Int("groups_not_due", report.GroupsNotDue).Int("search_requests", report.Requests).Int("outcomes", len(report.Outcomes)).Int("failures", len(report.Failures)).Int64("duration_ms", time.Since(started).Milliseconds()).Msg("Prowlarr run completed")
+		r.log.Info().Bool("rss", rss).Bool("dry_run", req.DryRun).Bool("verify", req.Verify).Int("torrent_downloads", report.TorrentDownloads).Int("torrent_cache_hits", report.TorrentCacheHits).Int("covered_episode_torrents", report.CoveredEpisodeTorrents).Int("groups", report.Groups).Int("groups_not_due", report.GroupsNotDue).Int("groups_deferred", report.GroupsDeferred).Int("limit", report.Limit).Int("search_requests", report.Requests).Int("outcomes", len(report.Outcomes)).Int("failures", len(report.Failures)).Int64("duration_ms", time.Since(started).Milliseconds()).Msg("Prowlarr run completed")
 	}()
 
 	handles := make(map[string]*inventory.Client, len(clients))
@@ -238,12 +256,12 @@ func (r *searchRunner) discover(ctx context.Context, req SearchRequest, rss bool
 			run.pollRSS(ctx, indexers, groups)
 		}
 	} else {
-		request := discovery.PlanRequest{Preview: req.DryRun}
+		request := discovery.PlanRequest{Limit: report.Limit, Preview: req.DryRun}
 		for _, group := range groups {
 			request.Groups = append(request.Groups, discovery.Group{Query: group.query, Clients: slices.Collect(maps.Keys(group.clients))})
 		}
 		plan := source.Plan(ctx, request)
-		report.GroupsNotDue = plan.NotDue
+		report.GroupsNotDue, report.GroupsDeferred = plan.NotDue, plan.Deferred
 		for _, group := range plan.Groups {
 			for _, query := range group.Queries {
 				for listing := range source.Search(ctx, query.Indexer, group.Query) {

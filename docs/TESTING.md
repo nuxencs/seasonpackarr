@@ -56,7 +56,7 @@ code of the real binary.
   waits 60 real seconds for the query gap.
 - The discovery run tests in `internal/http/` (`search_test.go`,
   `search_cooldown_test.go`, `search_persistence_test.go`,
-  `search_wait_test.go`, and `rss_test.go`)
+  `search_wait_test.go`, `search_limit_test.go`, and `rss_test.go`)
   assert what the run adds to the source: the outcomes, the imports, the
   notifications, the log lines of the run, and the report. A search test
   enters through `POST /api/search`. An RSS test enters through the

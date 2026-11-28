@@ -215,6 +215,29 @@ useful schedule for an external scheduler.
 
 `groupsNotDue` in the report counts the search groups that the run skipped.
 
+### Search cap
+
+A search queries at most 100 search groups, so one run has a known maximum
+length. Use `--limit` (or `limit` in the API request) to set another number,
+for example `seasonpackarr search --limit 25` for a short run. `--limit 0`
+removes the cap. The cap applies to each mode: dry run, verify, and import. An
+RSS poll has no cap.
+
+- The cap counts only the search groups that the run queries. A search group
+  that is not due does not use up the cap.
+- The search groups that waited longest go first: the groups that were never
+  searched, then the group with the oldest search time. For a search group with
+  several due clients and indexers, its oldest search time counts. The query
+  text breaks a tie.
+- A preview stores no search time, so the import run after a preview takes the
+  search groups that the preview took.
+- The cap delays work but loses none of it. With 250 search groups and the
+  default cap, three import runs query each search group one time.
+
+`limit` in the report is the cap that the run used. `groupsDeferred` counts the
+due search groups that the cap left for a later run. The log line
+`Prowlarr run completed` has both values.
+
 ### Search output
 
 The CLI prints a readable summary. Add `--json` to get the complete API report
@@ -226,7 +249,8 @@ indexer discovery and torrent downloads. Automatic RSS logs include `rss: true`.
 excluded because a compatible pack already exists. `episodeTorrents` includes
 these entries; `groups` counts only groups that still need a search, and
 `groupsNotDue` counts the groups of `groups` that are in their
-[wait time](#wait-time). Counts are
+[wait time](#wait-time), and `groupsDeferred` counts the groups that the
+[search cap](#search-cap) left for a later run. Counts are
 per client and include duplicate episode torrents, not distinct episodes.
 The CLI exits with a failure code
 if a tracker, client, or listing failed. Normal match rejections are not command
@@ -260,6 +284,8 @@ added a stopped torrent; inspect the client before retrying.
    `search.indexerIDs`. Try lower numeric indexer priorities first, with indexer
    ID as the tie-breaker. Skip each indexer on which no client of the group is
    due, and skip the group when no indexer is left. See [Wait time](#wait-time).
+   Query the due groups that waited longest first, up to the
+   [search cap](#search-cap).
 5. Use a TV title-and-season query when the indexer advertises those parameters.
    Otherwise use a title and `Sxx` text query. Omit the parsed release year from
    both query forms so trackers can return packs whose names omit it. Keep the
@@ -371,8 +397,17 @@ report fields.
 - No external series database or TVDB/TMDB lookup is used. Ambiguous names are
   not expanded through guesses. Discovery does not search for shows absent from
   the client and does not remove episode torrents or files.
-- A search sends a query of one search group to one indexer for one client at
-  most once in 24 hours. See [Wait time](#wait-time).
+- Three limits protect the trackers. None of them has a config key:
+  - Query gap: two queries to one indexer are at least 60 seconds apart. See
+    [Configure Prowlarr](#configure-prowlarr).
+  - Search cap: a search queries at most 100 search groups by default. See
+    [Search cap](#search-cap).
+  - Wait time: a search sends a query of one search group to one indexer for
+    one client at most once in 24 hours. See [Wait time](#wait-time).
+
+  Thus a daily search is the most frequent useful schedule. Each page of a
+  query costs one query gap, so a search with the default cap of 100 search
+  groups takes 100 minutes or more.
 - Only one RSS or search run executes at a time. Imports to the same client endpoint
   are serialized with webhook imports. Matching stays free of client mutations.
 
